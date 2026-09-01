@@ -1,0 +1,42 @@
+{
+  "_comment": "All XP tuning lives here. Speed is never an input.",
+  "questBase": {
+    "EASY": 150,
+    "MODERATE": 300,
+    "HARD": 500,
+    "EPIC": 900
+  },
+  "difficultyModifier": {
+    "EASY": 0.0,
+    "MODERATE": 0.10,
+    "HARD": 0.25,
+    "EPIC": 0.40
+  },
+  "objectiveCompleted": 40,
+  "objectiveCompletedOptional": 25,
+  "newCell": 12,
+  "newCellExploredBonus": 6,
+  "newRoadsPerKm": 20,
+  "discoveryByCategory": {
+    "NATURE": 40, "HISTORICAL": 60, "CULTURAL": 50, "FOOD": 25, "PUB": 25, "CAFE": 25,
+    "VIEWPOINT": 70, "CYCLING": 30, "LANDMARK": 60, "TRAIL": 50, "CUSTOM": 20
+  },
+  "longDistance": {"thresholdMeters": 40000, "xp": 150, "perExtraKm": 5, "maxXp": 400},
+  "climb": {"thresholdGainMeters": 300, "xp": 100, "perExtraHundredMeters": 40, "maxXp": 400},
+  "socialBonusPerFriend": 60,
+  "storyQuestBonus": 250,
+  "regionCompletedXp": 500,
+  "classBonus": {
+    "EXPLORER": {"NEW_AREA_EXPLORED": 0.25, "NEW_ROAD_EXPLORED": 0.25, "DISCOVERY_FOUND": 0.0},
+    "WIZARD": {"DISCOVERY_FOUND": 0.30, "QUEST_COMPLETED": 0.10},
+    "WARRIOR": {"CLIMB_COMPLETED": 0.30, "LONG_DISTANCE_ADVENTURE": 0.30},
+    "SCRIBE": {"DISCOVERY_FOUND": 0.25, "QUEST_OBJECTIVE_COMPLETED": 0.10}
+  },
+  "classXpShare": 0.6,
+  "caps": {
+    "perRideTotal": 3000,
+    "perRideNewCells": 400,
+    "perRideDiscoveries": 12,
+    "perDayTotal": 8000
+  }
+}
