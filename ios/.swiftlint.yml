@@ -1,0 +1,25 @@
+excluded:
+  - Packages/*/.build
+  - "*.xcodeproj"
+  - DerivedData
+disabled_rules:
+  - trailing_comma
+  - todo
+  - identifier_name
+  - type_body_length
+  - file_length
+  - function_body_length
+  - cyclomatic_complexity
+  - nesting
+opt_in_rules:
+  - empty_count
+  - closure_spacing
+line_length:
+  warning: 140
+  error: 200
+  ignores_comments: true
+  ignores_urls: true
+type_name:
+  max_length: 50
+large_tuple:
+  warning: 3
