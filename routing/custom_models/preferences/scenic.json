@@ -1,0 +1,8 @@
+{
+  "_comment": "Prefer parks, forests and waterside paths.",
+  "priority": [
+    {"if": "road_environment == ROAD && road_class != CYCLEWAY && road_class != RESIDENTIAL", "multiply_by": "0.8"},
+    {"if": "road_class == CYCLEWAY || road_class == TRACK", "multiply_by": "1.2"}
+  ],
+  "distance_influence": 60
+}

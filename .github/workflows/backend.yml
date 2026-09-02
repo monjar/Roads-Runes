@@ -1,0 +1,65 @@
+name: backend
+
+on:
+  push:
+    branches: [master, main]
+    paths: ["backend/**", ".github/workflows/backend.yml"]
+  pull_request:
+    paths: ["backend/**", ".github/workflows/backend.yml"]
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: pytest -m "not integration" -q
+        env:
+          ENVIRONMENT: test
+          DEV_AUTH_ENABLED: "true"
+          JWT_SECRET: ci
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: roadsandrunes
+          POSTGRES_USER: rr
+          POSTGRES_PASSWORD: rr
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U rr -d roadsandrunes"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    env:
+      ENVIRONMENT: test
+      DEV_AUTH_ENABLED: "true"
+      JWT_SECRET: ci
+      DATABASE_URL: postgresql+asyncpg://rr:rr@localhost:5432/roadsandrunes
+      TEST_DATABASE_URL: postgresql+asyncpg://rr:rr@localhost:5432/roadsandrunes
+      REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - run: pip install -e ".[dev]"
+      - run: alembic upgrade head
+      - run: pytest -m integration -q
