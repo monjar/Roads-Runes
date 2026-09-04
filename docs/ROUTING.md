@@ -1,5 +1,9 @@
 # Routing
 
+| Route alternatives | Navigation |
+|---|---|
+| ![](screenshots/05-routes.png) | ![](screenshots/06-navigation.png) |
+
 ## Pipeline
 
 ```

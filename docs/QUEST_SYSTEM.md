@@ -1,5 +1,9 @@
 # Quest system
 
+| Quest list | Quest detail | Completion |
+|---|---|---|
+| ![](screenshots/03-quests.png) | ![](screenshots/04-quest-detail.png) | ![](screenshots/07-adventure-complete.png) |
+
 ## Objects
 
 * **Template** (`backend/app/quests/config/templates.json`) – class, type,

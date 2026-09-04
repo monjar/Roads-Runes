@@ -23,6 +23,11 @@ invents navigation.
 
 ## Screens (paged TabView)
 
+| Navigation | Quest | Stats | Objective complete | Always-On |
+|---|---|---|---|---|
+| ![](screenshots/w1-watch-navigation.png) | ![](screenshots/w2-watch-quest.png) | ![](screenshots/w3-watch-stats.png) | ![](screenshots/w4-watch-objective-complete.png) | ![](screenshots/w5-watch-always-on.png) |
+
+
 1. **Navigation** – arrow glyph, distance to turn, direction word, street
    name. Nothing else.
 2. **Quest** – quest title, current objective, distance to it.

@@ -6,6 +6,19 @@ backend on PostgreSQL/PostGIS with GraphHopper routing.
 
 > "There's a quest over there, and I've never ridden through that area."
 
+## Screens
+
+Design renders of the main screens (see [docs/SCREENS.md](docs/SCREENS.md) for
+all of them; these are theme-accurate mockups, not device captures yet).
+
+| World | Route options | Navigation | Adventure complete |
+|---|---|---|---|
+| ![World](docs/screenshots/02-world.png) | ![Routes](docs/screenshots/05-routes.png) | ![Navigation](docs/screenshots/06-navigation.png) | ![Adventure complete](docs/screenshots/07-adventure-complete.png) |
+
+| Watch navigation | Watch quest | Watch stats | Objective complete |
+|---|---|---|---|
+| ![Watch navigation](docs/screenshots/w1-watch-navigation.png) | ![Watch quest](docs/screenshots/w2-watch-quest.png) | ![Watch stats](docs/screenshots/w3-watch-stats.png) | ![Watch objective](docs/screenshots/w4-watch-objective-complete.png) |
+
 ## Repository
 
 ```

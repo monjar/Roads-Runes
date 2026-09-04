@@ -1,5 +1,7 @@
 # Exploration and fog of war
 
+![World map with fog of war](screenshots/02-world.png)
+
 ## Grid
 
 H3 at resolution 9 (`H3_RESOLUTION`, 6–11 allowed). Each user has rows in
