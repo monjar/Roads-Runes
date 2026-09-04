@@ -21,8 +21,8 @@ struct QuestCard: View {
                 Text(quest.description).font(Theme.Typography.body).lineLimit(3)
             }
             HStack(spacing: Theme.Spacing.md) {
-                StatChip(icon: "point.topleft.down.to.point.bottomright.curvepath", text: UnitFormatter.distance(meters: quest.recommendedDistanceKm * 1000, units: units))
-                StatChip(icon: "clock", text: UnitFormatter.duration(seconds: quest.estimatedDurationMinutes * 60))
+                StatChip(icon: "point.topleft.down.to.point.bottomright.curvepath", text: UnitFormatter(units: units).distance(meters: quest.recommendedDistanceKm * 1000))
+                StatChip(icon: "clock", text: UnitFormatter(units: units).duration(seconds: Double(quest.estimatedDurationMinutes * 60)))
                 StatChip(icon: "sparkles", text: "\(quest.baseXP) XP")
                 if quest.status != .available {
                     Spacer()
@@ -52,9 +52,9 @@ struct ObjectiveRow: View {
             }
             Spacer()
             if let distanceMeters, objective.status != .completed {
-                Text(UnitFormatter.distance(meters: distanceMeters, units: units)).font(Theme.Typography.caption.monospacedDigit())
+                Text(UnitFormatter(units: units).distance(meters: distanceMeters)).font(Theme.Typography.caption.monospacedDigit())
             }
-            if objective.provisional {
+            if objective.provisional == true {
                 Image(systemName: "hourglass").font(.caption).foregroundStyle(Theme.Colors.textSecondary)
             }
         }
@@ -64,7 +64,7 @@ struct ObjectiveRow: View {
         guard objective.progress.target > 1, objective.status != .completed else { return nil }
         switch objective.objectiveType {
         case .completeDistance, .exploreNewRoads, .exploreDistance:
-            return "\(UnitFormatter.distance(meters: objective.progress.current, units: units)) of \(UnitFormatter.distance(meters: objective.progress.target, units: units))"
+            return "\(UnitFormatter(units: units).distance(meters: objective.progress.current)) of \(UnitFormatter(units: units).distance(meters: objective.progress.target))"
         case .reachElevation, .completeClimb:
             return "\(Int(objective.progress.current)) of \(Int(objective.progress.target)) m"
         default:

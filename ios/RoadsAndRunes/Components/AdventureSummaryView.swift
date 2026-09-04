@@ -7,6 +7,8 @@ struct AdventureSummaryView: View {
     let units: Units
     let onDone: () -> Void
 
+    private var formatter: UnitFormatter { UnitFormatter(units: units) }
+
     var body: some View {
         ScrollView {
             VStack(spacing: Theme.Spacing.lg) {
@@ -21,16 +23,16 @@ struct AdventureSummaryView: View {
 
                 VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                     summaryLine(icon: "sparkles", text: "\(summary.discoveries.count) discover\(summary.discoveries.count == 1 ? "y" : "ies")")
-                    summaryLine(icon: "map", text: "\(UnitFormatter.distance(meters: summary.newTerritoryMeters, units: units)) new territory")
+                    summaryLine(icon: "map", text: "\(formatter.distance(meters: summary.newTerritoryMeters)) new territory")
                     summaryLine(icon: "hexagon", text: "\(summary.newCells) new areas uncovered")
                     ForEach(summary.levelUps.indices, id: \.self) { i in
                         let lu = summary.levelUps[i]
-                        summaryLine(icon: "arrow.up.circle.fill", text: "\(lu.kind == "CLASS" ? "Class level" : "Level") \(lu.from) → \(lu.to)", accent: true)
+                        summaryLine(icon: "arrow.up.circle.fill", text: "\(lu.kind == .classLevel ? "Class level" : "Level") \(lu.from) → \(lu.to)", accent: true)
                     }
                     ForEach(summary.abilitiesUnlocked, id: \.id) { ability in
                         summaryLine(icon: "lock.open.fill", text: "\(ability.name) available", accent: true)
                     }
-                    ForEach(summary.titlesUnlocked, id: \.self) { title in
+                    ForEach(summary.titlesUnlocked ?? [], id: \.self) { title in
                         summaryLine(icon: "crown.fill", text: "Title earned: \(title)", accent: true)
                     }
                 }
@@ -51,9 +53,9 @@ struct AdventureSummaryView: View {
                 }
 
                 HStack(spacing: Theme.Spacing.lg) {
-                    RideMetric(title: "Ridden", value: UnitFormatter.distance(meters: summary.ride.distanceMeters, units: units), compact: true)
-                    RideMetric(title: "Climbed", value: UnitFormatter.elevation(meters: summary.ride.elevationGainMeters, units: units), compact: true)
-                    RideMetric(title: "Time", value: UnitFormatter.duration(seconds: summary.ride.durationSeconds), compact: true)
+                    RideMetric(title: "Ridden", value: formatter.distance(meters: summary.ride.distanceMeters), compact: true)
+                    RideMetric(title: "Climbed", value: formatter.elevation(meters: summary.ride.elevationGainMeters), compact: true)
+                    RideMetric(title: "Time", value: formatter.duration(seconds: Double(summary.ride.durationSeconds)), compact: true)
                 }
 
                 if !summary.flags.isEmpty {

@@ -18,9 +18,9 @@ struct RouteCard: View {
             }
             ElevationSparkline(samples: route.elevationSamples).frame(height: 36)
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: Theme.Spacing.xs) {
-                RideMetric(title: "Distance", value: UnitFormatter.distance(meters: route.distanceMeters, units: units), compact: true)
-                RideMetric(title: "Time", value: UnitFormatter.duration(seconds: route.estimatedDurationSeconds), compact: true)
-                RideMetric(title: "Climb", value: UnitFormatter.elevation(meters: route.elevationGainMeters, units: units), compact: true)
+                RideMetric(title: "Distance", value: formatter.distance(meters: route.distanceMeters), compact: true)
+                RideMetric(title: "Time", value: formatter.duration(seconds: Double(route.estimatedDurationSeconds)), compact: true)
+                RideMetric(title: "Climb", value: formatter.elevation(meters: route.elevationGainMeters), compact: true)
                 RideMetric(title: "New territory", value: "\(Int(route.newTerritoryFraction * 100))%", compact: true)
                 RideMetric(title: "Cycleways", value: "\(Int(route.cyclewayFraction * 100))%", compact: true)
                 RideMetric(title: "Traffic", value: trafficLabel, compact: true)
@@ -36,6 +36,8 @@ struct RouteCard: View {
         .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).stroke(selected ? Theme.Colors.moss : .clear, lineWidth: 2))
     }
 
+    private var formatter: UnitFormatter { UnitFormatter(units: units) }
+
     private var trafficLabel: String {
         switch route.trafficExposure {
         case ..<0.2: return "Low"
@@ -46,15 +48,15 @@ struct RouteCard: View {
 }
 
 struct SurfaceBar: View {
-    let surface: [String: Double]
+    let surface: SurfaceBreakdown
 
     var body: some View {
         GeometryReader { geo in
             HStack(spacing: 1) {
-                segment(width: geo.size.width * (surface["paved"] ?? 0), color: Theme.Colors.ink.opacity(0.6))
-                segment(width: geo.size.width * (surface["gravel"] ?? 0), color: Theme.Colors.rune)
-                segment(width: geo.size.width * (surface["trail"] ?? 0), color: Theme.Colors.moss)
-                segment(width: geo.size.width * (surface["unknown"] ?? 0), color: Theme.Colors.textSecondary.opacity(0.3))
+                segment(width: geo.size.width * surface.paved, color: Theme.Colors.ink.opacity(0.6))
+                segment(width: geo.size.width * surface.gravel, color: Theme.Colors.rune)
+                segment(width: geo.size.width * surface.trail, color: Theme.Colors.moss)
+                segment(width: geo.size.width * surface.unknown, color: Theme.Colors.textSecondary.opacity(0.3))
             }
             .clipShape(Capsule())
         }
