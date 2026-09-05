@@ -49,7 +49,7 @@ public struct UnitFormatter: Hashable, Sendable {
         let hours = total / 3600
         let minutes = (total % 3600) / 60
         if hours > 0 {
-            return "\(hours)h " + String(format: "%02d", minutes) + "m"
+            return "\(hours)h " + String(format: "%02ld", minutes) + "m"
         }
         if minutes > 0 {
             return "\(minutes) min"

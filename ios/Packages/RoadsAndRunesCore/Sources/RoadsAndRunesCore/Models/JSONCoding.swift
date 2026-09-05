@@ -138,7 +138,7 @@ public enum ISO8601 {
         let hour = secondOfDay / 3600
         let minute = (secondOfDay % 3600) / 60
         let second = secondOfDay % 60
-        return String(format: "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ", year, month, day, hour, minute, second, millis)
+        return String(format: "%04ld-%02ld-%02ldT%02ld:%02ld:%02ld.%03ldZ", year, month, day, hour, minute, second, millis)
     }
 
     // Howard Hinnant's civil calendar algorithms (proleptic Gregorian).

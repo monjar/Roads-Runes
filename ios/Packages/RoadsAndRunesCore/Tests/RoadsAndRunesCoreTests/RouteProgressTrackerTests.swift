@@ -69,8 +69,9 @@ final class RouteProgressTrackerTests: XCTestCase {
     func testOffRouteHysteresis() {
         var tracker = makeTracker()
         _ = tracker.update(position: loop[1])
-        // 100 m west of the west side (outside the square).
-        let far = GeoMath.destination(from: loop[2], bearingDegrees: 270, distanceMeters: 100)
+        // 100 m west of the middle of segment 2 (outside the square).
+        let anchor = Coordinate(latitude: (loop[2].latitude + loop[3].latitude) / 2, longitude: (loop[2].longitude + loop[3].longitude) / 2)
+        let far = GeoMath.destination(from: anchor, bearingDegrees: 270, distanceMeters: 100)
         let one = tracker.update(position: far)
         XCTAssertFalse(one.isOffRoute)
         XCTAssertGreaterThan(one.crossTrackDistance, 40)
@@ -81,10 +82,10 @@ final class RouteProgressTrackerTests: XCTestCase {
         XCTAssertTrue(tracker.isOffRoute)
 
         // 30 m off is inside the off threshold but not yet within the on threshold.
-        let between = GeoMath.destination(from: loop[2], bearingDegrees: 270, distanceMeters: 30)
+        let between = GeoMath.destination(from: anchor, bearingDegrees: 270, distanceMeters: 30)
         XCTAssertTrue(tracker.update(position: between).isOffRoute)
 
-        let near = GeoMath.destination(from: loop[2], bearingDegrees: 270, distanceMeters: 5)
+        let near = GeoMath.destination(from: anchor, bearingDegrees: 270, distanceMeters: 5)
         let back = tracker.update(position: near)
         XCTAssertFalse(back.isOffRoute)
         XCTAssertEqual(back.nearestSegmentIndex, 2)

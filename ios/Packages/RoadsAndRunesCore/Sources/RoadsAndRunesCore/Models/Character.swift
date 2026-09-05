@@ -46,6 +46,12 @@ public struct AbilityState: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
+/// Alias for callers that also need `Swift.Character` in scope and want an
+/// unambiguous spelling for the RPG character.
+public typealias RRCharacter = Character
+
+/// The player's RPG character. Note: this shadows `Swift.Character` inside
+/// modules that import RoadsAndRunesCore; use `Swift.Character` for the text type.
 public struct Character: Codable, Hashable, Identifiable, Sendable {
     public var id: UUID
     public var name: String

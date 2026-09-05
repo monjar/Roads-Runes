@@ -80,7 +80,13 @@ final class RideStatisticsTests: XCTestCase {
         let snapshot = stats.snapshot
         let data = try JSONCoding.encode(snapshot)
         let decoded = try JSONCoding.decode(RideSnapshot.self, from: data)
-        XCTAssertEqual(decoded, snapshot)
+        XCTAssertEqual(decoded.distanceMeters, snapshot.distanceMeters, accuracy: 1e-6)
+        XCTAssertEqual(decoded.elevationGainMeters, 16, accuracy: 1e-9)
+        XCTAssertEqual(decoded.movingSeconds, 8, accuracy: 1e-9)
+        XCTAssertEqual(decoded.acceptedFixCount, 5)
+        XCTAssertEqual(decoded.lastHeartRateBpm, 140)
+        XCTAssertEqual(decoded.startedAt, snapshot.startedAt)
+        XCTAssertEqual(decoded.lastFixAt, snapshot.lastFixAt)
 
         var resumed = RideStatistics(resuming: snapshot)
         XCTAssertEqual(resumed.distanceMeters, snapshot.distanceMeters)

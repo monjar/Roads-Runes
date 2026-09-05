@@ -13,7 +13,8 @@ struct FakeCellIndexing: CellIndexing {
     }
 
     func neighbours(of cell: String) -> [String] {
-        guard let (row, column) = parse(cell) else { return [] }
+        guard let parsed = parse(cell) else { return [] }
+        let (row, column) = parsed
         var result: [String] = []
         for dr in -1...1 {
             for dc in -1...1 where dr != 0 || dc != 0 {
@@ -35,7 +36,8 @@ struct FakeCellIndexing: CellIndexing {
     }
 
     func center(of cell: String) -> Coordinate {
-        guard let (row, column) = parse(cell) else { return Coordinate(latitude: 0, longitude: 0) }
+        guard let parsed = parse(cell) else { return Coordinate(latitude: 0, longitude: 0) }
+        let (row, column) = parsed
         return Coordinate(latitude: Double(row) * Self.step, longitude: Double(column) * Self.step)
     }
 

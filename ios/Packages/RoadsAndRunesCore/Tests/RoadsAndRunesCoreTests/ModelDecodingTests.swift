@@ -169,7 +169,7 @@ final class ModelDecodingTests: XCTestCase {
           "createdAt": "2026-01-01T00:00:00+01:00"
         }
         """
-        let character = try JSONCoding.decode(Character.self, json: json)
+        let character = try JSONCoding.decode(RoadsAndRunesCore.Character.self, json: json)
         XCTAssertEqual(character.name, "Rowan")
         XCTAssertEqual(character.abilities.first?.ability.effects.first?.perRank, 0.15)
         XCTAssertEqual(character.overallLevelProgress, (1820.0 - 1500.0) / 700.0, accuracy: 1e-9)
