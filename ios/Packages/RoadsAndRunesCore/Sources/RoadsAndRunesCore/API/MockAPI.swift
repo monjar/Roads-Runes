@@ -127,7 +127,12 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
                 id: userId, displayName: isMe ? self.user.displayName : "Bea", characterClass: .explorer,
                 overallLevel: isMe ? self.storedCharacter?.overallLevel : 5, title: isMe ? self.storedCharacter?.title : "Pathfinder",
                 questsCompleted: 12, discoveriesFound: 30, favouriteTerrain: "GRAVEL", friendship: isMe ? FriendshipState.none : FriendshipState.friends,
-                recentAdventures: [AdventureSummaryPublic(rideId: SampleData.rideId, questTitle: "Beyond the Water", completedAt: SampleData.referenceDate, distanceMeters: 32400, newTerritoryMeters: 12600, xpAwarded: 420)]
+                recentAdventures: [
+                    AdventureSummaryPublic(
+                        rideId: SampleData.rideId, questTitle: "Beyond the Water", completedAt: SampleData.referenceDate,
+                        distanceMeters: 32400, newTerritoryMeters: 12600, xpAwarded: 420
+                    ),
+                ]
             )
         }
     }

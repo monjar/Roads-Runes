@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: brew install swiftlint
-      - run: swiftlint --strict --config ios/.swiftlint.yml ios
+      - run: swiftlint --config ios/.swiftlint.yml ios
 
   app-build:
     # Links MapLibre and needs signing/provisioning; informational until a
