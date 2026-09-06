@@ -104,7 +104,14 @@ final class ObjectiveTrackerTests: XCTestCase {
         done[1].status = .completed
         var tracker = ObjectiveTracker(objectives: done, start: start)
         XCTAssertTrue(tracker.completedObjectiveIDs.contains(SampleData.objectiveDistanceId))
-        XCTAssertTrue(update(&tracker, at: start, distance: 5000).isEmpty)
+        // Away from both the target and the start: the completed distance objective must not
+        // be re-emitted even though 5 km exceeds its target, and nothing else completes.
+        let elsewhere = GeoMath.destination(from: start, bearingDegrees: 225, distanceMeters: 2000)
+        XCTAssertTrue(update(&tracker, at: elsewhere, distance: 5000).isEmpty)
         XCTAssertEqual(tracker.pendingObjectives.count, 2)
+        // Returning to the start now legitimately completes only the return objective.
+        let events = update(&tracker, at: start, distance: 7000)
+        XCTAssertEqual(events.map { $0.objectiveId }, [SampleData.objectiveReturnId])
+        XCTAssertEqual(tracker.pendingObjectives.count, 1)
     }
 }

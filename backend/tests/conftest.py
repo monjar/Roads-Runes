@@ -20,6 +20,7 @@ os.environ.setdefault("LLM_PROVIDER", "none")
 
 from app.core.config import get_settings  # noqa: E402
 from app.db.models import Base  # noqa: E402
+from app.db.postgis import apply_postgis  # noqa: E402
 from app.db.session import configure_engine, make_engine  # noqa: E402
 from app.jobs.handlers import HANDLERS  # noqa: E402
 from app.jobs.queue import InlineJobQueue  # noqa: E402
@@ -42,6 +43,8 @@ async def engine(settings):
     async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+        if eng.dialect.name == "postgresql":
+            await conn.run_sync(apply_postgis)
     configure_engine(eng)
     yield eng
     await eng.dispose()

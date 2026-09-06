@@ -62,4 +62,5 @@ jobs:
           cache-dependency-path: backend/pyproject.toml
       - run: pip install -e ".[dev]"
       - run: alembic upgrade head
-      - run: pytest -m integration -q
+      - run: alembic downgrade base && alembic upgrade head
+      - run: pytest -q  # full suite against PostGIS, integration tests included
