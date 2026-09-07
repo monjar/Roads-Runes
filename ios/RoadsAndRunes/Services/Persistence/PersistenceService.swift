@@ -14,12 +14,16 @@ final class PersistenceService {
         let configuration = inMemory
             ? ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
             : ModelConfiguration(schema: schema, url: url)
-        do {
-            container = try ModelContainer(for: schema, configurations: [configuration])
-        } catch {
+        if let stored = try? ModelContainer(for: schema, configurations: [configuration]) {
+            container = stored
+        } else {
             // A corrupt store must not brick the app; fall back to memory and log.
-            AppLog.sync.error("swiftdata_container_failed \(error.localizedDescription, privacy: .public)")
-            container = try! ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+            AppLog.sync.error("swiftdata_container_failed; using in-memory store")
+            let memory = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+            guard let fallback = try? ModelContainer(for: schema, configurations: [memory]) else {
+                fatalError("SwiftData in-memory container could not be created")
+            }
+            container = fallback
         }
     }
 
@@ -34,7 +38,11 @@ final class PersistenceService {
             existing.serverRideId = serverRideId ?? existing.serverRideId
             existing.navigationState = state.rawValue
         } else {
-            context.insert(LocalActiveRide(clientRideId: clientRideId, serverRideId: serverRideId, questId: questId, routeId: routeId, bikeId: bikeId, startedAt: startedAt, navigationState: state.rawValue))
+            let ride = LocalActiveRide(
+                clientRideId: clientRideId, serverRideId: serverRideId, questId: questId, routeId: routeId, bikeId: bikeId,
+                startedAt: startedAt, navigationState: state.rawValue
+            )
+            context.insert(ride)
         }
         save()
     }
@@ -51,7 +59,11 @@ final class PersistenceService {
     }
 
     func append(fix: LocationFix, rideClientId: UUID, sequence: Int) {
-        context.insert(LocalRidePoint(rideClientId: rideClientId, sequence: sequence, latitude: fix.coordinate.latitude, longitude: fix.coordinate.longitude, timestamp: fix.timestamp, altitude: fix.altitude, horizontalAccuracy: fix.horizontalAccuracy, speed: fix.speed, heartRate: fix.heartRate))
+        let point = LocalRidePoint(
+            rideClientId: rideClientId, sequence: sequence, latitude: fix.coordinate.latitude, longitude: fix.coordinate.longitude,
+            timestamp: fix.timestamp, altitude: fix.altitude, horizontalAccuracy: fix.horizontalAccuracy, speed: fix.speed, heartRate: fix.heartRate
+        )
+        context.insert(point)
     }
 
     func points(rideClientId: UUID, onlyPending: Bool = false) -> [LocalRidePoint] {

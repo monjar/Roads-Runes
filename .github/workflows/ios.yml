@@ -9,11 +9,9 @@ on:
 
 jobs:
   core-package:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app
       - name: Build and test RoadsAndRunesCore
         working-directory: ios/Packages/RoadsAndRunesCore
         run: |
@@ -21,7 +19,7 @@ jobs:
           swift test
 
   lint:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - run: brew install swiftlint
@@ -30,11 +28,10 @@ jobs:
   app-build:
     # Links MapLibre and needs signing/provisioning; informational until a
     # signing setup exists.
-    runs-on: macos-14
+    runs-on: macos-15
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - run: sudo xcode-select -s /Applications/Xcode_15.4.app
       - run: brew install xcodegen
       - run: xcodegen generate
         working-directory: ios

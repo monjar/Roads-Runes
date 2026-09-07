@@ -180,7 +180,11 @@ struct LocationPermissionView: View {
             Spacer()
             Image(systemName: "location.circle.fill").font(.system(size: 64)).foregroundStyle(Theme.Colors.river)
             Text("Your position is your character").font(Theme.Typography.title).multilineTextAlignment(.center)
-            Text("Roads & Runes needs your location to show the world map, the fog around you and the quests nearby. During a ride it records your route in the background so the map clears and objectives complete even when your phone is locked. We never share your live location.")
+            Text(
+                "Roads & Runes needs your location to show the world map, the fog around you and the quests nearby. " +
+                "During a ride it records your route in the background so the map clears and objectives complete even when your phone is locked. " +
+                "We never share your live location."
+            )
                 .font(Theme.Typography.body).multilineTextAlignment(.center).foregroundStyle(Theme.Colors.textSecondary).padding(.horizontal, Theme.Spacing.lg)
             Spacer()
             Button {
