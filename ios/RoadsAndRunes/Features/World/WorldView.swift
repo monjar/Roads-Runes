@@ -5,7 +5,6 @@ import SwiftUI
 struct WorldView: View {
     @Environment(AppContainer.self) private var container
     @State private var model: WorldViewModel?
-    @State private var sheetDetent: PresentationDetent = .fraction(0.28)
 
     var body: some View {
         NavigationStack {
@@ -36,42 +35,43 @@ struct WorldView: View {
 
     @ViewBuilder
     private func content(_ model: WorldViewModel) -> some View {
-        ZStack(alignment: .top) {
-            MapLibreView(
-                styleURL: Config.mapStyleURL(for: styleKey),
-                center: model.center ?? container.location.lastFix?.coordinate ?? SampleData.origin,
-                zoom: 13.5,
-                cells: model.cells,
-                route: [],
-                markers: model.markers,
-                onRegionChanged: { center, _ in
-                    Task { await model.load(around: center) }
-                },
-                onMarkerTap: { marker in model.select(marker: marker) }
-            )
-            .ignoresSafeArea()
-            HStack(spacing: Theme.Spacing.sm) {
-                HStack {
-                    if let stats = model.stats {
-                        Text("\(UnitFormatter(units: model.units).distance(meters: stats.newTerritoryKm * 1000)) new · \(stats.cellsVisited) areas")
-                            .font(Theme.Typography.caption.weight(.semibold)).foregroundStyle(Theme.Colors.moss)
-                    } else {
-                        Text("Exploring…").font(Theme.Typography.caption)
+        VStack(spacing: 0) {
+            ZStack(alignment: .top) {
+                MapLibreView(
+                    styleURL: Config.mapStyleURL(for: styleKey),
+                    center: model.center ?? container.location.lastFix?.coordinate ?? SampleData.origin,
+                    zoom: 13.5,
+                    cells: model.cells,
+                    route: [],
+                    markers: model.markers,
+                    onRegionChanged: { center, _ in
+                        Task { await model.load(around: center) }
+                    },
+                    onMarkerTap: { marker in model.select(marker: marker) }
+                )
+                .ignoresSafeArea(edges: .top)
+                HStack(spacing: Theme.Spacing.sm) {
+                    HStack {
+                        if let stats = model.stats {
+                            Text("\(UnitFormatter(units: model.units).distance(meters: stats.newTerritoryKm * 1000)) new · \(stats.cellsVisited) areas")
+                                .font(Theme.Typography.caption.weight(.semibold)).foregroundStyle(Theme.Colors.moss)
+                        } else {
+                            Text("Exploring…").font(Theme.Typography.caption)
+                        }
                     }
+                    .padding(.horizontal, Theme.Spacing.md).padding(.vertical, Theme.Spacing.sm)
+                    .background(.regularMaterial, in: Capsule())
+                    Spacer()
+                    MapStyleMenu()
                 }
-                .padding(.horizontal, Theme.Spacing.md).padding(.vertical, Theme.Spacing.sm)
-                .background(.regularMaterial, in: Capsule())
-                Spacer()
-                MapStyleMenu()
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.top, Theme.Spacing.sm)
             }
-            .padding(.horizontal, Theme.Spacing.md)
-            .padding(.top, Theme.Spacing.sm)
+            NearbyQuestsPanel(model: model)
+                .frame(height: 260)
         }
-        .sheet(isPresented: .constant(true)) {
-            NearbyQuestsSheet(model: model)
-                .presentationDetents([.fraction(0.28), .medium, .large], selection: $sheetDetent)
-                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
-                .interactiveDismissDisabled()
+        .navigationDestination(item: Binding(get: { model.selectedQuest }, set: { model.selectedQuest = $0 })) { quest in
+            QuestDetailView(quest: quest)
         }
     }
 
@@ -106,12 +106,12 @@ struct MapStyleMenu: View {
     }
 }
 
-struct NearbyQuestsSheet: View {
-    @Environment(AppContainer.self) private var container
+struct NearbyQuestsPanel: View {
     let model: WorldViewModel
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            Capsule().fill(Color.black.opacity(0.2)).frame(width: 36, height: 5).padding(.top, Theme.Spacing.sm)
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                     HStack {
@@ -126,7 +126,7 @@ struct NearbyQuestsSheet: View {
                         EmptyState(icon: "map", title: "No quests yet", message: "Move the map or wait for your location to load nearby adventures.")
                     }
                     ForEach(model.nearbyQuests) { quest in
-                        NavigationLink(value: quest) {
+                        Button { model.selectedQuest = quest } label: {
                             QuestCard(quest: quest, compact: false, units: model.units)
                         }
                         .buttonStyle(.plain)
@@ -134,11 +134,9 @@ struct NearbyQuestsSheet: View {
                 }
                 .padding(Theme.Spacing.md)
             }
-            .background(Theme.Colors.parchment)
-            .navigationDestination(for: Quest.self) { quest in QuestDetailView(quest: quest) }
-            .navigationDestination(item: Binding(get: { model.selectedQuest }, set: { model.selectedQuest = $0 })) { quest in
-                QuestDetailView(quest: quest)
-            }
         }
+        .background(Theme.Colors.parchment)
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20))
+        .shadow(color: .black.opacity(0.15), radius: 12, y: -4)
     }
 }

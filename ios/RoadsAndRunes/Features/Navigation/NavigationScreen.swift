@@ -47,7 +47,7 @@ struct NavigationScreen: View {
                 }
                 HStack(spacing: Theme.Spacing.sm) {
                     Button(recorder.state == .paused ? "Resume" : "Pause") {
-                        recorder.state == .paused ? recorder.resume() : recorder.pause()
+                        if recorder.state == .paused { recorder.resume() } else { recorder.pause() }
                     }
                     .buttonStyle(.borderedProminent).tint(Color(white: 0.2)).controlSize(.large).frame(maxWidth: .infinity)
                     Button("End ride") { confirmingEnd = true }
