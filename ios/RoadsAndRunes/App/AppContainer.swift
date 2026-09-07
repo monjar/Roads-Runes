@@ -55,15 +55,21 @@ final class AppContainer {
         self.rideRecorder = recorder
         self.mapPreferences = MapPreferencesStore()
         watch.onCommand = { [weak recorder] command in
-            guard let recorder else { return }
-            switch command {
-            case .pause: recorder.pause()
-            case .resume: recorder.resume()
-            case .end: Task { await recorder.finish() }
+            Task { @MainActor in
+                guard let recorder else { return }
+                switch command {
+                case .pause: recorder.pause()
+                case .resume: recorder.resume()
+                case .end: await recorder.finish()
+                }
             }
         }
-        watch.onHeartRate = { [weak recorder] bpm in recorder?.record(heartRate: bpm) }
-        health.onHeartRate = { [weak recorder] bpm in recorder?.record(heartRate: bpm) }
+        watch.onHeartRate = { [weak recorder] bpm in
+            Task { @MainActor in recorder?.record(heartRate: bpm) }
+        }
+        health.onHeartRate = { [weak recorder] bpm in
+            Task { @MainActor in recorder?.record(heartRate: bpm) }
+        }
     }
 
     func bootstrap() async {
@@ -92,7 +98,7 @@ final class AppContainer {
         return documents.appendingPathComponent("RoadsAndRunes", isDirectory: true)
     }
 
-    static let preview: AppContainer = AppContainer(api: MockAPI(), inMemory: true)
+    @MainActor static let preview: AppContainer = AppContainer(api: MockAPI(), inMemory: true)
 }
 
 /// Client-side map/battery preferences persisted in UserDefaults; the server

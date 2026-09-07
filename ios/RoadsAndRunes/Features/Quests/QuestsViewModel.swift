@@ -25,12 +25,15 @@ final class QuestsViewModel {
         do {
             async let activeTask = container.api.quests(near: origin ?? SampleData.origin, status: .active, limit: 5, cursor: nil)
             async let acceptedTask = container.api.quests(near: origin ?? SampleData.origin, status: .accepted, limit: 10, cursor: nil)
-            async let availableTask: Page<Quest> = origin.map { try await container.api.quests(near: $0, status: .available) } ?? Page(items: container.persistence.cachedQuests())
             async let completedTask = container.api.quests(near: origin ?? SampleData.origin, status: .completed, limit: 20, cursor: nil)
-            let (act, acc, avail, comp) = try await (activeTask, acceptedTask, availableTask, completedTask)
+            let (act, acc, comp) = try await (activeTask, acceptedTask, completedTask)
             active = act.items + acc.items
-            available = avail.items
             completed = comp.items
+            if let origin {
+                available = try await container.api.quests(near: origin, status: .available).items
+            } else {
+                available = container.persistence.cachedQuests()
+            }
             container.persistence.cache(quests: available)
             error = nil
         } catch {

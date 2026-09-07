@@ -16,9 +16,6 @@ struct WorldView: View {
                     ProgressView()
                 }
             }
-            .navigationDestination(item: Binding(get: { model?.selectedQuest }, set: { model?.selectedQuest = $0 })) { quest in
-                QuestDetailView(quest: quest)
-            }
         }
         .task {
             if model == nil { model = WorldViewModel(container: container) }
@@ -139,6 +136,9 @@ struct NearbyQuestsSheet: View {
             }
             .background(Theme.Colors.parchment)
             .navigationDestination(for: Quest.self) { quest in QuestDetailView(quest: quest) }
+            .navigationDestination(item: Binding(get: { model.selectedQuest }, set: { model.selectedQuest = $0 })) { quest in
+                QuestDetailView(quest: quest)
+            }
         }
     }
 }

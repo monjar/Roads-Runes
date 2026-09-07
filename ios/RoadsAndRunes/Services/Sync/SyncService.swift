@@ -119,7 +119,7 @@ final class SyncService {
                 upload.lastError = error.localizedDescription
                 persistence.save()
                 if upload.attempts > 50 { persistence.remove(upload) }
-                if case APIError.network = error { break }  // still offline; try later
+                if let apiError = error as? APIError, case .network = apiError { break }  // still offline; try later
             }
         }
         pendingCount = persistence.pendingUploads().count

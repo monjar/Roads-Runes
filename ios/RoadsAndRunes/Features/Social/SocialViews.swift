@@ -29,7 +29,11 @@ final class SocialViewModel {
 
     func respond(_ request: FriendRequest, accept: Bool) async {
         do {
-            requests = accept ? try await container.api.acceptFriendRequest(id: request.id) : try await container.api.declineFriendRequest(id: request.id)
+            if accept {
+                requests = try await container.api.acceptFriendRequest(id: request.id)
+            } else {
+                requests = try await container.api.declineFriendRequest(id: request.id)
+            }
             if accept { container.analytics.track(.friendAdded, properties: ["userId": request.user.id.uuidString]) }
             friends = (try? await container.api.friends()) ?? friends
         } catch { self.error = error.localizedDescription }

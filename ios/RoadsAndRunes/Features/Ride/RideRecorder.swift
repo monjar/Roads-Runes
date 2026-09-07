@@ -71,7 +71,9 @@ final class RideRecorder {
         self.routePackages = routePackages
         self.analytics = analytics
         self.session = session
-        location.onFix = { [weak self] fix in self?.handle(fix: fix) }
+        location.onFix = { [weak self] fix in
+            Task { @MainActor in self?.handle(fix: fix) }
+        }
     }
 
     var units: Units { session.units }
