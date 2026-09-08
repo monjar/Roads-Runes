@@ -72,7 +72,7 @@ end to end.
 | Phase | Scope | State |
 |---|---|---|
 | 0 Repository | layout, CI, lint, compose, envs | done |
-| 1 Exploration | sign in, world, H3 fog, ride recording, cells | backend done; iOS written, needs device validation |
+| 1 Exploration | sign in, world, H3 fog, ride recording, cells | backend done and tested; iOS written, needs device validation |
 | 2 Explorer RPG | XP, levels, 13+ templates, generation, completion, abilities | backend done; iOS written |
 | 3 Routing | GraphHopper, alternatives, scoring, elevation, surface, POIs, packages | done (needs a GraphHopper instance + field validation) |
 | 4 Navigation | turn-by-turn, off-route, progress, crash recovery | client logic written, untested on a bike |
@@ -82,8 +82,11 @@ end to end.
 | 8 Integrations | Strava OAuth/upload, GPX/TCX, HealthKit | backend done; HealthKit client written |
 | 9 Living world | story arcs, regions, events | schema only |
 
-No Swift toolchain was available while this was written: the iOS/watchOS
-code has not been compiled. Expect a first pass of compiler fixes in Xcode
-before field testing (spec §80 lists the mandatory field tests).
+Verification so far: the backend suite (unit + HTTP end-to-end) passes on
+SQLite and, in CI, against PostGIS after the Alembic migration; the
+`RoadsAndRunesCore` Swift package builds and its tests pass on macOS in CI.
+The iPhone and Watch app targets were written without a local Xcode and are
+compiled only by the best-effort CI job; expect a compiler-fix pass in Xcode
+before the field tests in spec §80.
 
 See `docs/ARCHITECTURE.md` for the design and `docs/API.md` for the contract.

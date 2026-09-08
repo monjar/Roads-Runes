@@ -98,7 +98,9 @@ is unit-tested with `swift test`. The app target adds SwiftUI features,
 CoreLocation/HealthKit/WatchConnectivity/MapLibre integrations, SwiftData
 persistence and the design-system components. The Watch target mirrors
 navigation, quest and stats screens over WatchConnectivity and runs the
-HealthKit workout session so it works with the phone locked.
+HealthKit workout session so it works with the phone locked. H3 on device is
+the uber/h3 C library vendored as a local Swift package (`ios/Packages/H3`)
+behind the `CellIndexing` protocol.
 
 See `docs/WATCH.md`, `docs/EXPLORATION.md`, `docs/ROUTING.md`,
 `docs/QUEST_SYSTEM.md`, `docs/PRIVACY.md`.
