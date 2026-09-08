@@ -29,8 +29,7 @@ packages:
     url: https://github.com/maplibre/maplibre-gl-native-distribution
     from: "6.5.0"
   H3:
-    url: https://github.com/uber/h3
-    from: "4.1.0"
+    path: Packages/H3
 
 targets:
   RoadsAndRunes:

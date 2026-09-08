@@ -40,7 +40,7 @@ tile server before beta.
 
 * `RoadsAndRunesCore` (local)
 * MapLibre Native iOS (`maplibre-gl-native-distribution`)
-* uber/h3 (C library) — wrapped by `Services/Location/H3CellIndexing.swift`
+* `H3` (local package vendoring the uber/h3 v4.1.0 C library, since upstream has no SwiftPM manifest) — wrapped by `Services/Location/H3CellIndexing.swift`
 
 ## Tests
 

@@ -36,6 +36,7 @@ jobs:
       - run: xcodegen generate
         working-directory: ios
       - run: >
-          xcodebuild -project ios/RoadsAndRunes.xcodeproj -scheme RoadsAndRunes
+          xcodebuild -project RoadsAndRunes.xcodeproj -scheme RoadsAndRunes
           -destination 'generic/platform=iOS Simulator' build
           CODE_SIGNING_ALLOWED=NO -quiet
+        working-directory: ios
