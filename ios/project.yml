@@ -86,7 +86,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
 
   RoadsAndRunesWatch:
-    type: application.watchapp2
+    type: application
     platform: watchOS
     sources:
       - path: RoadsAndRunesWatch
