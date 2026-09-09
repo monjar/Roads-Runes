@@ -21,12 +21,12 @@ final class KeychainTokenStore: TokenStore, @unchecked Sendable {
         guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data else {
             return nil
         }
-        return try? JSONCoding.decoder.decode(AuthTokens.self, from: data)
+        return try? JSONCoding.decode(AuthTokens.self, from: data)
     }
 
     func save(_ tokens: AuthTokens) {
         lock.lock(); defer { lock.unlock() }
-        guard let data = try? JSONCoding.encoder.encode(tokens) else { return }
+        guard let data = try? JSONCoding.encode(tokens) else { return }
         var query = baseQuery
         SecItemDelete(query as CFDictionary)
         query[kSecValueData as String] = data
