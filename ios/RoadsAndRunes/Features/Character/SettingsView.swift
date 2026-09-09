@@ -21,7 +21,9 @@ struct SettingsView: View {
             }
             Section("Privacy") {
                 Picker("New rides are", selection: $settings.defaultRideVisibility) {
-                    Text("Private").tag(Visibility.private); Text("Friends").tag(Visibility.friends); Text("Public").tag(Visibility.public)
+                    Text("Private").tag(RoadsAndRunesCore.Visibility.privateOnly)
+                    Text("Friends").tag(RoadsAndRunesCore.Visibility.friends)
+                    Text("Public").tag(RoadsAndRunesCore.Visibility.publicAll)
                 }
                 Text("Your live location and ride start/end points are never shown to anyone.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
             }
