@@ -1,0 +1,26 @@
+{
+  "EXPLORER": {
+    "name": "Explorer",
+    "tagline": "Rewards discovering new territory.",
+    "description": "Cycle new roads, visit new neighbourhoods, discover trails, parks and viewpoints, and connect unexplored regions.",
+    "flag": null
+  },
+  "WIZARD": {
+    "name": "Wizard",
+    "tagline": "Hidden knowledge, puzzles and unusual locations.",
+    "description": "Historical landmarks, strange architecture, ancient sites and puzzle chains.",
+    "flag": "wizard_class"
+  },
+  "WARRIOR": {
+    "name": "Warrior",
+    "tagline": "Physical challenges without competitive speed.",
+    "description": "Climbing, long distance, demanding terrain, endurance and hilltop destinations.",
+    "flag": "warrior_class"
+  },
+  "SCRIBE": {
+    "name": "Scribe",
+    "tagline": "Document the world.",
+    "description": "Photograph landmarks, write notes, document trails and record community knowledge.",
+    "flag": "scribe_class"
+  }
+}

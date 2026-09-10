@@ -1,0 +1,8 @@
+{
+  "_comment": "Do not avoid climbs.",
+  "priority": [
+    {"if": "average_slope >= 6", "multiply_by": "1.1"}
+  ],
+  "speed": [],
+  "distance_influence": 70
+}

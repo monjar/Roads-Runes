@@ -1,0 +1,37 @@
+[
+  {"id": "explorer_trail_sense", "characterClass": "EXPLORER", "name": "Trail Sense", "description": "Reveal more interesting nearby paths.", "requiredClassLevel": 2, "maxRank": 3,
+   "effects": [{"type": "QUEST_POI_VISIBILITY", "perRank": 0.15}, {"type": "ROUTE_TRAIL_CANDIDATES", "perRank": 1}]},
+  {"id": "explorer_cartographer", "characterClass": "EXPLORER", "name": "Cartographer", "description": "Increase information available about unexplored areas.", "requiredClassLevel": 5, "maxRank": 3,
+   "effects": [{"type": "FOG_REVEAL_RADIUS_CELLS", "perRank": 1}]},
+  {"id": "explorer_pathfinder", "characterClass": "EXPLORER", "name": "Pathfinder", "description": "Reveal unusual route alternatives.", "requiredClassLevel": 8, "maxRank": 2,
+   "effects": [{"type": "ROUTE_EXTRA_ALTERNATIVE", "perRank": 1}]},
+  {"id": "explorer_far_wanderer", "characterClass": "EXPLORER", "name": "Far Wanderer", "description": "Additional rewards for distant discoveries.", "requiredClassLevel": 12, "maxRank": 3,
+   "effects": [{"type": "XP_BONUS_FAR_CELLS", "perRank": 0.10}]},
+
+  {"id": "wizard_arcane_sight", "characterClass": "WIZARD", "name": "Arcane Sight", "description": "Reveal hidden quest markers.", "requiredClassLevel": 2, "maxRank": 3,
+   "effects": [{"type": "HIDDEN_QUEST_VISIBILITY", "perRank": 0.2}]},
+  {"id": "wizard_foresight", "characterClass": "WIZARD", "name": "Foresight", "description": "Reveal more route details before selection.", "requiredClassLevel": 5, "maxRank": 2,
+   "effects": [{"type": "ROUTE_DETAIL_LEVEL", "perRank": 1}]},
+  {"id": "wizard_ley_finder", "characterClass": "WIZARD", "name": "Ley Finder", "description": "Reveal thematic chains connecting landmarks.", "requiredClassLevel": 8, "maxRank": 2,
+   "effects": [{"type": "LANDMARK_CHAIN_QUESTS", "perRank": 1}]},
+  {"id": "wizard_second_chance", "characterClass": "WIZARD", "name": "Second Chance", "description": "Allow one missed optional quest objective.", "requiredClassLevel": 12, "maxRank": 1,
+   "effects": [{"type": "FORGIVE_OPTIONAL_OBJECTIVE", "perRank": 1}]},
+
+  {"id": "warrior_second_wind", "characterClass": "WARRIOR", "name": "Second Wind", "description": "Reveal optional extensions late in rides.", "requiredClassLevel": 2, "maxRank": 2,
+   "effects": [{"type": "LATE_RIDE_EXTENSIONS", "perRank": 1}]},
+  {"id": "warrior_mountainborn", "characterClass": "WARRIOR", "name": "Mountainborn", "description": "Unlock climbing-oriented quests.", "requiredClassLevel": 5, "maxRank": 1,
+   "effects": [{"type": "UNLOCK_TEMPLATE", "template": "WARRIOR_SUMMIT"}]},
+  {"id": "warrior_endurance", "characterClass": "WARRIOR", "name": "Endurance", "description": "Bonus XP for long adventures.", "requiredClassLevel": 8, "maxRank": 3,
+   "effects": [{"type": "XP_BONUS_LONG_DISTANCE", "perRank": 0.10}]},
+  {"id": "warrior_vanguard", "characterClass": "WARRIOR", "name": "Vanguard", "description": "Additional challenge objectives.", "requiredClassLevel": 12, "maxRank": 2,
+   "effects": [{"type": "EXTRA_CHALLENGE_OBJECTIVES", "perRank": 1}]},
+
+  {"id": "scribe_archivist", "characterClass": "SCRIBE", "name": "Archivist", "description": "Enhanced personal discovery library.", "requiredClassLevel": 2, "maxRank": 2,
+   "effects": [{"type": "DISCOVERY_LIBRARY_DETAIL", "perRank": 1}]},
+  {"id": "scribe_rumour", "characterClass": "SCRIBE", "name": "Rumour", "description": "Reveal community discoveries.", "requiredClassLevel": 5, "maxRank": 3,
+   "effects": [{"type": "COMMUNITY_DISCOVERY_VISIBILITY", "perRank": 0.2}]},
+  {"id": "scribe_chronicler", "characterClass": "SCRIBE", "name": "Chronicler", "description": "Create shareable adventure routes.", "requiredClassLevel": 8, "maxRank": 1,
+   "effects": [{"type": "SHAREABLE_ROUTES", "perRank": 1}]},
+  {"id": "scribe_historian", "characterClass": "SCRIBE", "name": "Historian", "description": "Reveal additional historical information.", "requiredClassLevel": 12, "maxRank": 2,
+   "effects": [{"type": "HISTORICAL_DETAIL", "perRank": 1}]}
+]

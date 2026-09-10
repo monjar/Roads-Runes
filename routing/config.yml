@@ -1,0 +1,63 @@
+# GraphHopper configuration for Roads & Runes (GraphHopper 9/10).
+# Mounted into the container at /config.yml; custom models at /custom_models.
+graphhopper:
+  datareader.file: /data/region.osm.pbf
+  graph.location: /data/graph-cache
+
+  # Elevation is required for gradient-aware routing and route analysis.
+  graph.elevation.provider: srtm
+  graph.elevation.cache_dir: /data/elevation-cache
+  graph.elevation.interpolate: bilinear
+
+  # Every encoded value referenced by the custom models must be listed here.
+  graph.encoded_values: >-
+    road_class, road_class_link, road_environment, road_access, surface, smoothness,
+    bike_network, max_speed, track_type, mtb_rating, hike_rating, average_slope,
+    max_slope, bike_access, bike_average_speed, bike_priority, bike_road_access,
+    mtb_access, mtb_average_speed, mtb_priority, racingbike_access,
+    racingbike_average_speed, racingbike_priority
+
+  import.osm.ignored_highways: motorway,trunk
+
+  profiles:
+    - name: road
+      custom_model_files: [/custom_models/road.json]
+    - name: gravel
+      custom_model_files: [/custom_models/gravel.json]
+    - name: mountain
+      custom_model_files: [/custom_models/mountain.json]
+    - name: hybrid
+      custom_model_files: [/custom_models/hybrid.json]
+
+  # No CH: request-time custom models need flexible routing. LM keeps it fast.
+  profiles_ch: []
+  profiles_lm:
+    - profile: road
+    - profile: gravel
+    - profile: mountain
+    - profile: hybrid
+  prepare.lm.landmarks: 16
+  prepare.lm.threads: 2
+
+  routing.max_visited_nodes: 3000000
+  routing.non_ch.max_waypoint_distance: 200000
+  routing.max_round_trip_distance: 150000
+  routing.lm.active_landmarks: 8
+
+server:
+  application_connectors:
+    - type: http
+      port: 8989
+      bind_host: 0.0.0.0
+  request_log:
+    appenders: []
+  admin_connectors:
+    - type: http
+      port: 8990
+      bind_host: localhost
+
+logging:
+  appenders:
+    - type: console
+      time_zone: UTC
+      log_format: "%d{YYYY-MM-dd HH:mm:ss.SSS} [%-5p] %c{1} - %m%n"

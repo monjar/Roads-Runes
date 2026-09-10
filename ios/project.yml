@@ -1,0 +1,162 @@
+name: RoadsAndRunes
+options:
+  bundleIdPrefix: com.roadsandrunes
+  deploymentTarget:
+    iOS: "17.0"
+    watchOS: "10.0"
+  xcodeVersion: "16.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_STRICT_CONCURRENCY: minimal
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+  configs:
+    Debug:
+      API_BASE_URL: "http://localhost:8000"
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+    Release:
+      API_BASE_URL: "https://api.roadsandrunes.app"
+
+packages:
+  RoadsAndRunesCore:
+    path: Packages/RoadsAndRunesCore
+  MapLibre:
+    url: https://github.com/maplibre/maplibre-gl-native-distribution
+    from: "6.5.0"
+  H3:
+    path: Packages/H3
+
+targets:
+  RoadsAndRunes:
+    type: application
+    platform: iOS
+    sources:
+      - path: RoadsAndRunes
+        excludes: ["Resources/Info.plist", "Resources/Fonts/*.txt"]
+    dependencies:
+      - package: RoadsAndRunesCore
+      - package: MapLibre
+        product: MapLibre
+      - package: H3
+        product: H3
+      - target: RoadsAndRunesWatch
+    info:
+      path: RoadsAndRunes/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: Roads & Runes
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UIAppFonts: [Caprasimo-Regular.ttf, Figtree-Regular.ttf, Figtree-SemiBold.ttf, Figtree-Bold.ttf]
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        API_BASE_URL: $(API_BASE_URL)
+        MAP_STYLE_MINIMAL: https://tiles.openfreemap.org/styles/positron
+        MAP_STYLE_CYCLING: https://tiles.openfreemap.org/styles/liberty
+        MAP_STYLE_ADVENTURE: https://tiles.openfreemap.org/styles/bright
+        MAP_STYLE_DETAILED: https://tiles.openfreemap.org/styles/liberty
+        NSLocationWhenInUseUsageDescription: Roads & Runes shows your position on the world map and the quests around you.
+        NSLocationAlwaysAndWhenInUseUsageDescription: During a ride, Roads & Runes records your route in the background so the map clears and objectives complete even when your phone is locked.
+        NSLocationAlwaysUsageDescription: During a ride, Roads & Runes records your route in the background so the map clears and objectives complete even when your phone is locked.
+        NSHealthShareUsageDescription: Read heart rate during rides to show it on your Watch and in your journal.
+        NSHealthUpdateUsageDescription: Save your rides as cycling workouts in Health.
+        NSMotionUsageDescription: Motion data improves distance accuracy when GPS is weak.
+        NSCameraUsageDescription: Photograph discoveries for your journal.
+        NSPhotoLibraryUsageDescription: Attach photos to discoveries and adventures.
+        UIBackgroundModes: [location, processing]
+        LSApplicationQueriesSchemes: [strava]
+        CFBundleURLTypes:
+          - CFBundleURLName: com.roadsandrunes.app
+            CFBundleURLSchemes: [roadsandrunes]
+    entitlements:
+      path: RoadsAndRunes/Resources/RoadsAndRunes.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
+        com.apple.security.application-groups: [group.com.roadsandrunes.app]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.roadsandrunes.app
+        TARGETED_DEVICE_FAMILY: "1"
+
+  RoadsAndRunesWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - path: RoadsAndRunesWatch
+        excludes: ["Resources/Info.plist"]
+    dependencies:
+      - package: RoadsAndRunesCore
+    info:
+      path: RoadsAndRunesWatch/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: Roads & Runes
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        WKCompanionAppBundleIdentifier: com.roadsandrunes.app
+        WKApplication: true
+        WKRunsIndependentlyOfCompanionApp: false
+        NSHealthShareUsageDescription: Read heart rate during rides.
+        NSHealthUpdateUsageDescription: Save rides as cycling workouts.
+        NSLocationWhenInUseUsageDescription: Show your position on the ride map.
+        WKBackgroundModes: [workout-processing]
+    entitlements:
+      path: RoadsAndRunesWatch/Resources/RoadsAndRunesWatch.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.security.application-groups: [group.com.roadsandrunes.app]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.roadsandrunes.app.watchkitapp
+        TARGETED_DEVICE_FAMILY: "4"
+
+  RoadsAndRunesTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [RoadsAndRunesTests]
+    dependencies:
+      - target: RoadsAndRunes
+      - package: RoadsAndRunesCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.roadsandrunes.app.tests
+
+  RoadsAndRunesWatchTests:
+    type: bundle.unit-test
+    platform: watchOS
+    sources: [RoadsAndRunesWatchTests]
+    dependencies:
+      - target: RoadsAndRunesWatch
+      - package: RoadsAndRunesCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.roadsandrunes.app.watchkitapp.tests
+
+schemes:
+  RoadsAndRunes:
+    build:
+      targets:
+        RoadsAndRunes: all
+        RoadsAndRunesTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets: [RoadsAndRunesTests]
+  RoadsAndRunesWatch:
+    build:
+      targets:
+        RoadsAndRunesWatch: all
+        RoadsAndRunesWatchTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets: [RoadsAndRunesWatchTests]

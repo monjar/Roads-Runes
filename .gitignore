@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+test.db
+*.db-journal
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+
+# Xcode / Swift
+ios/*.xcodeproj
+ios/*.xcworkspace
+ios/**/xcuserdata/
+ios/**/DerivedData/
+ios/**/.build/
+ios/**/*.xcresult
+.swiftpm/
+*.hmap
+*.ipa
+
+# Routing data
+routing/data/*
+!routing/data/.gitkeep
+*.osm.pbf
+graph-cache/
+elevation-cache/
+
+# OS
+.DS_Store

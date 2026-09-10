@@ -1,0 +1,108 @@
+from __future__ import annotations
+
+import uuid
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query
+
+from app.characters.service import get_character
+from app.core.deps import CurrentUser, DBDep, SettingsDep, get_job_queue, get_llm
+from app.core.pagination import Page, clamp_limit
+from app.quests import service
+from app.quests.schemas import (
+    QuestCompleteRequest,
+    QuestCompletion,
+    QuestGenerateRequest,
+    QuestOut,
+    QuestProgressRequest,
+    QuestStartRequest,
+)
+
+router = APIRouter(prefix="/quests", tags=["quests"])
+
+
+@router.get("", response_model=Page[QuestOut])
+async def list_quests(
+    user: CurrentUser,
+    db: DBDep,
+    settings: SettingsDep,
+    llm: Annotated[object, Depends(get_llm)],
+    latitude: float | None = Query(default=None, ge=-90, le=90),
+    longitude: float | None = Query(default=None, ge=-180, le=180),
+    status: str | None = None,
+    limit: int | None = None,
+) -> Page[QuestOut]:
+    size = clamp_limit(limit)
+    if latitude is not None and longitude is not None and status in (None, "AVAILABLE"):
+        character = await get_character(db, user)
+        await service.ensure_available(db, settings, llm, user, character, latitude, longitude)  # type: ignore[arg-type]
+    rows = await service.list_quests(db, user, status, latitude, longitude, size)
+    return Page(items=[service.quest_out(q) for q in rows], nextCursor=None)
+
+
+@router.post("/generate", response_model=Page[QuestOut])
+async def generate(
+    payload: QuestGenerateRequest,
+    user: CurrentUser,
+    db: DBDep,
+    settings: SettingsDep,
+    llm: Annotated[object, Depends(get_llm)],
+) -> Page[QuestOut]:
+    character = await get_character(db, user)
+    quests = await service.generate_quests(
+        db,
+        settings,
+        llm,
+        user,
+        character,
+        payload.latitude,
+        payload.longitude,
+        payload.count,
+        payload.request,
+    )  # type: ignore[arg-type]
+    return Page(items=[service.quest_out(q) for q in quests], nextCursor=None)
+
+
+@router.get("/{quest_id}", response_model=QuestOut)
+async def get(quest_id: uuid.UUID, user: CurrentUser, db: DBDep) -> QuestOut:
+    return service.quest_out(await service.get_quest(db, user, quest_id))
+
+
+@router.post("/{quest_id}/accept", response_model=QuestOut)
+async def accept(quest_id: uuid.UUID, user: CurrentUser, db: DBDep) -> QuestOut:
+    return service.quest_out(await service.accept(db, user, quest_id))
+
+
+@router.post("/{quest_id}/start", response_model=QuestOut)
+async def start(quest_id: uuid.UUID, payload: QuestStartRequest | None, user: CurrentUser, db: DBDep) -> QuestOut:
+    return service.quest_out(await service.start(db, user, quest_id, payload.rideId if payload else None))
+
+
+@router.post("/{quest_id}/progress", response_model=QuestOut)
+async def progress(quest_id: uuid.UUID, payload: QuestProgressRequest, user: CurrentUser, db: DBDep) -> QuestOut:
+    return service.quest_out(await service.record_progress(db, user, quest_id, payload.events))
+
+
+@router.post("/{quest_id}/complete", response_model=QuestCompletion)
+async def complete(
+    quest_id: uuid.UUID,
+    payload: QuestCompleteRequest | None,
+    user: CurrentUser,
+    db: DBDep,
+    settings: SettingsDep,
+    jobs: Annotated[object, Depends(get_job_queue)],
+) -> QuestCompletion:
+    from app.rides.processing import complete_quest_with_ride, complete_quest_without_ride
+
+    quest = await service.get_quest(db, user, quest_id)
+    ride_id = payload.rideId if payload else None
+    if ride_id is not None:
+        result = await complete_quest_with_ride(db, settings, user, quest, ride_id)
+    else:
+        result = await complete_quest_without_ride(db, settings, user, quest)
+    return QuestCompletion(**result)
+
+
+@router.post("/{quest_id}/abandon", response_model=QuestOut)
+async def abandon(quest_id: uuid.UUID, user: CurrentUser, db: DBDep) -> QuestOut:
+    return service.quest_out(await service.abandon(db, user, quest_id))

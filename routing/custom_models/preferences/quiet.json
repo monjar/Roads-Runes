@@ -1,0 +1,9 @@
+{
+  "_comment": "Request-time overlay for high trafficAversion. Merged by app/routing/custom_models.py.",
+  "priority": [
+    {"if": "road_class == PRIMARY", "multiply_by": "0.1"},
+    {"else_if": "road_class == SECONDARY", "multiply_by": "0.3"},
+    {"else_if": "road_class == TERTIARY", "multiply_by": "0.6"}
+  ],
+  "distance_influence": 60
+}

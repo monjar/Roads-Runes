@@ -1,0 +1,40 @@
+name: ios
+
+on:
+  push:
+    branches: [master, main]
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+  pull_request:
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+
+jobs:
+  core-package:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test RoadsAndRunesCore
+        working-directory: ios/Packages/RoadsAndRunesCore
+        run: |
+          swift build
+          swift test
+
+  lint:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install swiftlint
+      - run: swiftlint --config ios/.swiftlint.yml ios
+
+  app-build:
+    # Unsigned simulator build of the iPhone app and its embedded Watch app.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: xcodegen generate
+        working-directory: ios
+      - run: >
+          xcodebuild -project RoadsAndRunes.xcodeproj -scheme RoadsAndRunes
+          -destination 'generic/platform=iOS Simulator' build
+          CODE_SIGNING_ALLOWED=NO -quiet
+        working-directory: ios
