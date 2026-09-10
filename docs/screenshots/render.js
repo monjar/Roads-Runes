@@ -1,331 +1,458 @@
-// Renders the design mockups in this folder. Usage: npm i playwright && npx playwright install chromium && node render.js
-// These are HTML/CSS renders of the screens as designed (spec §4, §33, §40–47), not device captures.
+// Renders the design mockups in this folder from the Claude Design system in
+// docs/design ("Cycling Companion"): the chosen options 9a, 10a, 11a/11b, 12a/12b,
+// 13b, 14a, 15b, 2a and the Watch pages from 7a/16a, drawn with the same
+// tokens, type and layout the SwiftUI code uses. They are HTML/CSS renders,
+// not device captures. Maps are synthetic ink maps (no tiles, no network).
+//
+// Usage: npm i playwright && npx playwright install chromium && node render.js
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
+
 const OUT = __dirname;
-fs.mkdirSync(OUT, { recursive: true });
+const FONTS = path.join(__dirname, '..', '..', 'ios', 'RoadsAndRunes', 'Resources', 'Fonts');
 
-const C = { parchment: '#F7F0E0', deep: '#EBDEC7', moss: '#3D7049', rune: '#CC8C30', river: '#38789E', ember: '#C24A33', ink: '#1C1A17', sub: '#6B655C' };
+const C = {
+  cream: '#f5ead8', surface: '#ebddc5', track: '#dcd3c4', line: '#c0b6a5', hatch: '#a19786',
+  ink: '#201e1d', inkSoft: '#474238', muted: '#645c50', mutedLight: '#82796a',
+  terracotta: '#c67139', terracottaDeep: '#8c491a', terracottaLight: '#f6a06b', terracottaTint: '#ffe1d0', terracottaText: '#643312',
+  sage: '#7a8a5e', sageDeep: '#56633f', sageLight: '#aebf92', sageTint: '#e1eecc', sageText: '#3d472b', compactGravel: '#728157',
+  wizard: '#6b5f8f', scribe: '#4f6b7a', heart: '#ff8f8f',
+};
 
-const base = `
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { width: 393px; height: 852px; overflow: hidden; background: ${C.parchment}; color: ${C.ink}; font-family: -apple-system, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif; position: relative; }
-  .serif { font-family: "New York", Georgia, "Times New Roman", serif; }
-  .status { height: 54px; display: flex; justify-content: space-between; align-items: flex-end; padding: 0 28px 8px; font-size: 15px; font-weight: 600; }
-  .home { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); width: 134px; height: 5px; border-radius: 3px; background: ${C.ink}; opacity: .8; }
-  .tabbar { position: absolute; bottom: 0; left: 0; right: 0; height: 84px; background: rgba(247,240,224,.96); border-top: 1px solid rgba(0,0,0,.08); display: flex; justify-content: space-around; padding-top: 10px; }
-  .tab { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; color: ${C.sub}; width: 70px; }
-  .tab.active { color: ${C.moss}; font-weight: 600; }
-  .tab .ico { width: 26px; height: 26px; border-radius: 7px; background: currentColor; opacity: .85; }
-  .content { padding: 0 16px; }
-  h1 { font-size: 30px; font-weight: 700; margin: 8px 0 2px; }
-  h2 { font-size: 20px; font-weight: 600; margin: 18px 0 8px; }
-  .muted { color: ${C.sub}; font-size: 13px; }
-  .card { background: #fff; border-radius: 16px; padding: 14px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
-  .row { display: flex; align-items: center; justify-content: space-between; }
-  .chip { font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 999px; }
-  .chip.EASY { background: rgba(61,112,73,.18); color: ${C.moss}; }
-  .chip.MODERATE { background: rgba(56,120,158,.18); color: ${C.river}; }
-  .chip.HARD { background: rgba(204,140,48,.2); color: ${C.rune}; }
-  .stats { display: flex; gap: 14px; margin-top: 10px; font-size: 12px; color: ${C.sub}; }
-  .stats b { color: ${C.ink}; font-weight: 600; }
-  .btn { display: block; text-align: center; background: ${C.moss}; color: #fff; font-weight: 600; font-size: 17px; padding: 14px; border-radius: 14px; }
-  .btn.secondary { background: ${C.deep}; color: ${C.ink}; }
-  .xpbar { height: 10px; border-radius: 6px; background: ${C.deep}; overflow: hidden; margin-top: 6px; }
-  .xpbar i { display: block; height: 100%; background: linear-gradient(90deg, ${C.rune}, ${C.ember}); }
-  .metric { display: flex; flex-direction: column; }
-  .metric .l { font-size: 10px; font-weight: 700; letter-spacing: .06em; color: ${C.sub}; }
-  .metric .v { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .surface { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin-top: 8px; }
-  .obj { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid rgba(0,0,0,.06); font-size: 15px; }
-  .obj .dot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid ${C.sub}; flex: none; }
-  .obj .dot.done { background: ${C.moss}; border-color: ${C.moss}; position: relative; }
-  .obj .dot.done::after { content: ""; position: absolute; left: 6px; top: 2px; width: 6px; height: 11px; border: solid #fff; border-width: 0 2.5px 2.5px 0; transform: rotate(45deg); }
-  .obj .dot.optional { border-style: dashed; }
+function fontFace(family, file, weight) {
+  const data = fs.readFileSync(path.join(FONTS, file)).toString('base64');
+  return `@font-face{font-family:'${family}';font-weight:${weight};src:url(data:font/ttf;base64,${data}) format('truetype')}`;
+}
+
+const fonts = [
+  fontFace('Caprasimo', 'Caprasimo-Regular.ttf', 400),
+  fontFace('Figtree', 'Figtree-Regular.ttf', 400),
+  fontFace('Figtree', 'Figtree-SemiBold.ttf', 600),
+  fontFace('Figtree', 'Figtree-Bold.ttf', 700),
+].join('\n');
+
+// ---- Icons -----------------------------------------------------------------
+const P = {
+  star: 'M12 2l3 7 7 3-7 3-3 7-3-7-7-3 7-3z',
+  shield: 'M12 2l8 3v7c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V5z',
+  drop: 'M12 2c4 5 6 9 6 13a6 6 0 0 1-12 0c0-4 2-8 6-13z',
+  book: 'M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20',
+  chevronRight: 'm9 18 6-6-6-6',
+  chevronLeft: 'm15 18-6-6 6-6',
+  check: 'M5 12l5 5L20 7',
+  turnLeft: 'M9 14 4 9l5-5M4 9h11a5 5 0 0 1 5 5v6',
+  arrowUp: 'M12 19V5M5 12l7-7 7 7',
+  pause: 'M8 5h3v14H8zM13 5h3v14h-3z',
+  play: 'M7 4l13 8-13 8z',
+  bike: 'M5 17a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19 17a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM5 14l3-7h4l3 7M12 7h3l4 7',
+  plus: 'M12 5v14M5 12h14',
+  map: 'M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15',
+};
+
+function icon(d, { size = 18, color = 'currentColor', fill = false, stroke = 2.75 } = {}) {
+  const f = fill ? `fill="${color}"` : `fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round"`;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" ${f}><path d="${d}"/></svg>`;
+}
+
+function globe(size = 18) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`;
+}
+
+function ring(size = 14, color = C.cream) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.5"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5" fill="${color}"/><path d="M12 4v4M12 16v4M4 12h4M16 12h4"/></svg>`;
+}
+
+const CLASS = {
+  explorer: { color: C.sage, text: C.sageDeep, light: C.sageLight, glyph: (s, c) => icon(P.star, { size: s, color: c, fill: true }) },
+  wizard: { color: C.wizard, text: C.wizard, light: '#b9afd9', glyph: (s, c) => ring(s, c) },
+  warrior: { color: C.terracotta, text: C.terracottaDeep, light: C.terracottaLight, glyph: (s, c) => icon(P.shield, { size: s, color: c, fill: true }) },
+  scribe: { color: C.scribe, text: C.scribe, light: '#a3bcc9', glyph: (s, c) => icon(P.drop, { size: s, color: c, fill: true }) },
+};
+
+function emblem(cls, size = 32, inverted = false) {
+  const k = CLASS[cls];
+  const bg = inverted ? C.cream : k.color;
+  const fg = inverted ? k.color : C.cream;
+  return `<span style="width:${size}px;height:${size}px;border-radius:50%;background:${bg};display:inline-flex;align-items:center;justify-content:center;flex:none">${k.glyph(Math.round(size * 0.44), fg)}</span>`;
+}
+
+function diamond(color, label = '', size = 22, dashed = false, done = false) {
+  if (dashed) return `<span style="width:${size}px;height:${size}px;display:inline-flex;align-items:center;justify-content:center;flex:none"><span style="width:${size * 0.8}px;height:${size * 0.8}px;transform:rotate(45deg);border-radius:${size * 0.22}px;border:2px dashed ${C.mutedLight}"></span></span>`;
+  const inner = done ? icon(P.check, { size: size * 0.55, color: '#fff', stroke: 3.5 }) : `<b style="color:#fff;font-size:${size * 0.5}px">${label}</b>`;
+  return `<span style="width:${size}px;height:${size}px;display:inline-flex;align-items:center;justify-content:center;flex:none;position:relative"><span style="position:absolute;width:${size * 0.8}px;height:${size * 0.8}px;transform:rotate(45deg);border-radius:${size * 0.22}px;background:${color}"></span><span style="position:relative;display:flex">${inner}</span></span>`;
+}
+
+// ---- Synthetic ink map --------------------------------------------------------
+function seeded(seed) {
+  let s = seed >>> 0;
+  return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+}
+
+function roads(w, h, seed) {
+  const rnd = seeded(seed);
+  let out = '';
+  const wave = (x0, y0, x1, y1) => {
+    const mx = (x0 + x1) / 2 + (rnd() - 0.5) * 60;
+    const my = (y0 + y1) / 2 + (rnd() - 0.5) * 60;
+    return `M${x0},${y0} Q${mx},${my} ${x1},${y1}`;
+  };
+  for (let y = -20; y < h + 40; y += 34 + rnd() * 30) {
+    const major = rnd() > 0.7;
+    out += `<path d="${wave(-20, y, w + 20, y + (rnd() - 0.5) * 90)}" stroke="${C.inkSoft}" stroke-width="${major ? 2.2 : 1}" fill="none" opacity="${major ? 0.9 : 0.7}"/>`;
+  }
+  for (let x = -20; x < w + 40; x += 30 + rnd() * 34) {
+    const major = rnd() > 0.75;
+    out += `<path d="${wave(x, -20, x + (rnd() - 0.5) * 90, h + 20)}" stroke="${C.inkSoft}" stroke-width="${major ? 2 : 1}" fill="none" opacity="${major ? 0.9 : 0.7}"/>`;
+  }
+  // a river
+  out += `<path d="M-10,${h * 0.62} C${w * 0.2},${h * 0.5} ${w * 0.4},${h * 0.72} ${w * 0.6},${h * 0.6} S${w * 0.9},${h * 0.5} ${w + 10},${h * 0.56}" stroke="${C.scribe}" stroke-width="7" fill="none" opacity=".35"/>`;
+  return out;
+}
+
+/**
+ * Ink map: roads everywhere at 15% under cream fog with a hatch; full contrast
+ * inside the explored region, whose edge is a dashed ink line with a soft glow.
+ */
+function inkMap(w, h, { seed = 7, region, overlays = '', labels = true, id = 'm' } = {}) {
+  const reg = region || `M${w * 0.15},${h * 0.24} C${w * 0.23},${h * 0.17} ${w * 0.45},${h * 0.15} ${w * 0.63},${h * 0.17} C${w * 0.8},${h * 0.2} ${w * 0.88},${h * 0.27} ${w * 0.83},${h * 0.35} C${w * 0.79},${h * 0.4} ${w * 0.85},${h * 0.46} ${w * 0.75},${h * 0.5} C${w * 0.63},${h * 0.54} ${w * 0.48},${h * 0.5} ${w * 0.38},${h * 0.55} C${w * 0.28},${h * 0.6} ${w * 0.13},${h * 0.57} ${w * 0.1},${h * 0.51} C${w * 0.08},${h * 0.44} ${w * 0.18},${h * 0.4} ${w * 0.14},${h * 0.35} C${w * 0.11},${h * 0.3} ${w * 0.1},${h * 0.28} ${w * 0.15},${h * 0.24} Z`;
+  const outside = `M0,0H${w}V${h}H0Z ${reg}`;
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block;background:${C.cream}">
+  <defs>
+    <pattern id="hatch${id}" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" stroke="${C.hatch}" stroke-width="1"/></pattern>
+    <filter id="glow${id}" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="8"/></filter>
+    <clipPath id="clip${id}"><path d="${outside}" clip-rule="evenodd"/></clipPath>
+  </defs>
+  <g>${roads(w, h, seed)}</g>
+  <g clip-path="url(#clip${id})">
+    <path d="${outside}" fill="${C.cream}" fill-opacity=".93" fill-rule="evenodd"/>
+    <path d="${outside}" fill="url(#hatch${id})" opacity=".28" fill-rule="evenodd"/>
+    <path d="${reg}" fill="none" stroke="${C.terracottaDeep}" stroke-width="22" opacity=".22" filter="url(#glow${id})"/>
+  </g>
+  <path d="${reg}" fill="none" stroke="${C.muted}" stroke-width="1.5" stroke-dasharray="5 4"/>
+  ${labels ? `<text x="${w * 0.75}" y="${h * 0.64}" font-family="Caprasimo" font-size="13" fill="${C.mutedLight}" opacity=".8" text-anchor="middle" font-style="italic">unexplored</text><text x="${w * 0.22}" y="${h * 0.74}" font-family="Caprasimo" font-size="13" fill="${C.mutedLight}" opacity=".8" text-anchor="middle" font-style="italic">unexplored</text>` : ''}
+  ${overlays}
+</svg>`;
+}
+
+const svgDiamond = (x, y, color, label, size = 26) => `<g transform="translate(${x},${y})"><rect x="${-size / 2}" y="${-size / 2}" width="${size}" height="${size}" rx="6" fill="${color}" stroke="#fff" stroke-width="3" transform="rotate(45)"/><text x="0" y="4.5" font-family="Figtree" font-weight="700" font-size="12" fill="#fff" text-anchor="middle">${label}</text></g>`;
+const svgMystery = (x, y) => `<g transform="translate(${x},${y})"><circle r="13" fill="${C.cream}" fill-opacity=".9" stroke="${C.mutedLight}" stroke-width="2" stroke-dasharray="3 2"/><text y="5" font-family="Figtree" font-weight="700" font-size="14" fill="${C.muted}" text-anchor="middle">?</text></g>`;
+const svgFriend = (x, y, letter, color) => `<g transform="translate(${x},${y})"><circle r="12" fill="${color}" stroke="#fff" stroke-width="2.5"/><text y="4.5" font-family="Caprasimo" font-size="12" fill="${C.cream}" text-anchor="middle">${letter}</text></g>`;
+const svgRider = (x, y, deg = 0, size = 22) => `<g transform="translate(${x},${y})"><circle r="${size}" fill="${C.sage}" fill-opacity=".25"/><circle r="${size / 2}" fill="${C.sage}" stroke="#fff" stroke-width="4"/><path transform="rotate(${deg}) scale(${size / 22})" d="M0 -6l4 10-4-2.3-4 2.3z" fill="#fff"/></g>`;
+const svgRoute = (d, color = C.terracotta, w = 5, dash = '') => `<path d="${d}" fill="none" stroke="${color}" stroke-width="${w + 14}" stroke-opacity=".16" stroke-linecap="round"/><path d="${d}" fill="none" stroke="#fff" stroke-width="${w + 4}" stroke-opacity=".95" stroke-linecap="round" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" ${dash ? `stroke-dasharray="${dash}"` : ''}/>`;
+
+// ---- Chrome ------------------------------------------------------------------
+const base = `<meta charset="utf-8"><style>
+${fonts}
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:402px;height:874px;overflow:hidden;background:${C.cream};color:${C.ink};font-family:Figtree,system-ui,sans-serif;position:relative;-webkit-font-smoothing:antialiased}
+.voice{font-family:Caprasimo,serif;font-weight:400}
+.island{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:126px;height:37px;border-radius:24px;background:#000;z-index:50}
+.status{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;padding:21px 34px 0;font-size:17px;font-weight:600;z-index:40}
+.status svg{vertical-align:middle}
+.home{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:139px;height:5px;border-radius:100px;background:rgba(0,0,0,.25);z-index:60}
+.home.light{background:rgba(255,255,255,.7)}
+.tabbar{position:absolute;left:20px;right:20px;bottom:30px;height:62px;border-radius:999px;background:${C.ink};display:flex;align-items:center;justify-content:space-around;padding:0 10px;color:${C.line};font-size:11px;font-weight:600;z-index:600;box-shadow:0 12px 32px rgba(46,43,37,.25)}
+.tab{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 12px;border-radius:999px}
+.tab.on{color:${C.cream};background:${C.terracotta};padding:8px 18px}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.card{background:${C.surface};border-radius:24px;padding:14px 16px}
+.row{display:flex;gap:12px;align-items:center;padding:12px 14px;border-radius:22px;background:${C.surface}}
+.tile{flex:1;background:${C.surface};border-radius:20px;padding:12px 14px}
+.tile b{display:block;font-size:22px;font-weight:700;line-height:1}
+.tile span{display:block;font-size:11px;color:${C.muted};margin-top:5px}
+.primary{height:60px;border-radius:999px;background:${C.terracotta};color:${C.cream};display:flex;align-items:center;justify-content:center;font-family:Caprasimo,serif;font-size:19px;box-shadow:0 12px 32px rgba(46,43,37,.22);flex:1}
+.secondary{padding:0 18px;height:60px;border-radius:999px;background:${C.surface};display:flex;align-items:center;font-size:14px;font-weight:600}
+.chip{padding:5px 10px;border-radius:999px;font-size:12px;font-weight:600}
+.sheet{background:${C.cream};border-radius:32px 32px 0 0;box-shadow:0 -8px 24px rgba(46,43,37,.12)}
+.handle{width:40px;height:5px;border-radius:3px;background:${C.line};margin:0 auto}
+.muted{color:${C.muted}}
 </style>`;
 
 function status(dark) {
-  return `<div class="status" style="${dark ? 'color:#fff' : ''}"><span>9:41</span><span>●●●● ▲ ▮</span></div>`;
+  const c = dark ? '#fff' : '#000';
+  return `<div class="island"></div><div class="status" style="color:${c}"><span>9:41</span><span style="display:flex;gap:7px;align-items:center">
+  <svg width="19" height="12" viewBox="0 0 19 12"><rect x="0" y="7.5" width="3.2" height="4.5" rx=".7" fill="${c}"/><rect x="4.8" y="5" width="3.2" height="7" rx=".7" fill="${c}"/><rect x="9.6" y="2.5" width="3.2" height="9.5" rx=".7" fill="${c}"/><rect x="14.4" y="0" width="3.2" height="12" rx=".7" fill="${c}"/></svg>
+  <svg width="17" height="12" viewBox="0 0 17 12"><path d="M8.5 3.2C10.8 3.2 12.9 4.1 14.4 5.6L15.5 4.5C13.7 2.7 11.2 1.5 8.5 1.5C5.8 1.5 3.3 2.7 1.5 4.5L2.6 5.6C4.1 4.1 6.2 3.2 8.5 3.2Z" fill="${c}"/><path d="M8.5 6.8C9.9 6.8 11.1 7.3 12 8.2L13.1 7.1C11.8 5.9 10.2 5.1 8.5 5.1C6.8 5.1 5.2 5.9 3.9 7.1L5 8.2C5.9 7.3 7.1 6.8 8.5 6.8Z" fill="${c}"/><circle cx="8.5" cy="10.5" r="1.5" fill="${c}"/></svg>
+  <svg width="27" height="13" viewBox="0 0 27 13"><rect x=".5" y=".5" width="23" height="12" rx="3.5" stroke="${c}" stroke-opacity=".35" fill="none"/><rect x="2" y="2" width="20" height="9" rx="2" fill="${c}"/><path d="M25 4.5V8.5C25.8 8.2 26.5 7.2 26.5 6.5C26.5 5.8 25.8 4.8 25 4.5Z" fill="${c}" fill-opacity=".4"/></svg></span></div>`;
 }
+
 function tabbar(active) {
-  const tabs = ['World', 'Quests', 'Journal', 'Character'];
-  return `<div class="tabbar">${tabs.map(t => `<div class="tab ${t === active ? 'active' : ''}"><div class="ico"></div>${t}</div>`).join('')}</div>`;
+  const tabs = [['World', globe()], ['Quests', icon(P.star)], ['Journal', icon(P.book)], ['Character', icon(P.shield)]];
+  return `<div class="tabbar">${tabs.map(([t, i]) => `<div class="tab ${t === active ? 'on' : ''}">${i}${t}</div>`).join('')}</div>`;
 }
 
-// ---- Map SVG with fog of war ---------------------------------------------
-function hexPath(cx, cy, r) {
-  const pts = [];
-  for (let i = 0; i < 6; i++) { const a = Math.PI / 180 * (60 * i + 30); pts.push(`${(cx + r * Math.cos(a)).toFixed(1)},${(cy + r * Math.sin(a)).toFixed(1)}`); }
-  return `M${pts.join('L')}Z`;
-}
-function mapSVG(w, h, opts = {}) {
-  const r = 22, dx = r * Math.sqrt(3), dy = r * 1.5;
-  const px = opts.player || [190, 470];
-  let hexes = '';
-  for (let row = -1; row * dy < h + r; row++) {
-    for (let col = -1; col * dx < w + dx; col++) {
-      const cx = col * dx + (row % 2 ? dx / 2 : 0), cy = row * dy;
-      const d = Math.hypot(cx - px[0], cy - px[1]);
-      const seed = Math.abs(Math.sin(cx * 12.9898 + cy * 78.233)) ;
-      let fill = 'rgba(20,16,12,.58)';
-      if (d < 120) fill = 'none';
-      else if (d < 190 && seed > 0.35) fill = 'none';
-      else if (d < 260 && seed > 0.7) fill = 'rgba(20,16,12,.28)';
-      // quest-revealed cells
-      for (const q of opts.quests || []) { if (Math.hypot(cx - q[0], cy - q[1]) < 30) fill = 'rgba(20,16,12,.25)'; }
-      if (opts.explored && d < 90) hexes += `<path d="${hexPath(cx, cy, r)}" fill="none" stroke="rgba(61,112,73,.45)" stroke-width="1"/>`;
-      if (fill !== 'none') hexes += `<path d="${hexPath(cx, cy, r)}" fill="${fill}" stroke="rgba(247,240,224,.15)" stroke-width="1"/>`;
-    }
-  }
-  const streets = [];
-  for (let i = 0; i < 12; i++) streets.push(`<line x1="0" y1="${i * 78 + 20}" x2="${w}" y2="${i * 78 + 60}" />`);
-  for (let i = 0; i < 8; i++) streets.push(`<line x1="${i * 62 + 10}" y1="0" x2="${i * 62 - 30}" y2="${h}" />`);
-  const route = opts.route ? `<path d="${opts.route}" fill="none" stroke="${C.rune}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity=".95"/>` : '';
-  const markers = (opts.quests || []).map(q => `<g transform="translate(${q[0]},${q[1]})"><path d="M0,-26 C-12,-26 -14,-12 -14,-10 C-14,0 0,14 0,14 C0,14 14,0 14,-10 C14,-12 12,-26 0,-26Z" fill="${q[2] || C.rune}" stroke="#fff" stroke-width="2"/><circle r="4" cy="-11" fill="#fff"/></g>`).join('');
-  const pois = (opts.pois || []).map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="6" fill="${C.river}" stroke="#fff" stroke-width="2"/>`).join('');
-  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block">
-    <rect width="${w}" height="${h}" fill="#EFE7D6"/>
-    <path d="M-20,${h * .62} C120,${h * .5} 200,${h * .74} ${w + 20},${h * .58} L${w + 20},${h * .66} C200,${h * .82} 120,${h * .58} -20,${h * .70}Z" fill="#B7D2DE"/>
-    <ellipse cx="${w * .78}" cy="${h * .28}" rx="70" ry="48" fill="#CFE0B8"/>
-    <g stroke="#fff" stroke-width="3">${streets.join('')}</g>
-    <g stroke="#E3D9C4" stroke-width="1">${streets.join('')}</g>
-    ${route}${pois}
-    ${hexes}
-    ${markers}
-    <g transform="translate(${px[0]},${px[1]})"><circle r="16" fill="rgba(56,120,158,.25)"/><circle r="8" fill="${C.river}" stroke="#fff" stroke-width="3"/></g>
-  </svg>`;
+function questRow(cls, eyebrow, title, meta) {
+  const k = CLASS[cls];
+  return `<div class="row"><div style="width:64px;height:64px;border-radius:18px;background:${k.color};display:flex;align-items:center;justify-content:center;flex:none">${k.glyph(26, C.cream)}</div><div style="flex:1"><div class="eyebrow" style="color:${k.text}">${eyebrow}</div><div class="voice" style="font-size:18px;margin-top:2px">${title}</div><div style="font-size:12.5px;color:${C.muted}">${meta}</div></div>${icon(P.chevronRight, { color: C.muted })}</div>`;
 }
 
+// ---- iPhone screens ------------------------------------------------------------
 const screens = {};
 
-screens['01-onboarding-class'] = `
-${status()}
-<div class="content">
-  <p class="muted" style="margin-top:8px">STEP 2 OF 3</p>
-  <h1 class="serif">Choose your class</h1>
-  <p class="muted" style="margin-bottom:16px">Your class shapes the quests the world offers you. You can change it later.</p>
-  <div class="card" style="border:2px solid ${C.moss}">
-    <div class="row"><b style="font-size:18px">Explorer</b><span class="chip EASY">SELECTED</span></div>
-    <p class="muted" style="margin-top:6px">Rewards discovering new territory: new roads, neighbourhoods, trails, parks and viewpoints.</p>
-    <div class="stats"><span>Trail Sense</span><span>Cartographer</span><span>Pathfinder</span></div>
+// 11a — Choose your class
+screens['01-onboarding-class'] = () => {
+  const card = (cls, name, tagline, desc, chosen) => `<div style="display:flex;gap:14px;align-items:center;padding:14px 16px;border-radius:26px;background:${C.surface};${chosen ? `border:2px solid ${CLASS[cls].color}` : ''}">${emblem(cls, 56)}<div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:baseline"><span class="voice" style="font-size:20px">${name}</span>${chosen ? `<span class="eyebrow" style="color:${C.sageDeep}">Chosen</span>` : ''}</div><div style="font-size:13px;color:${C.inkSoft};line-height:1.4">${tagline}</div><div style="font-size:11.5px;color:${C.muted};margin-top:4px">${desc}</div></div></div>`;
+  return `${status(false)}
+  <div style="padding:74px 22px 0;display:flex;flex-direction:column;gap:12px">
+    <div class="voice" style="font-size:32px;line-height:1.05">How do you<br>like to explore?</div>
+    <div style="font-size:13.5px;color:${C.muted};line-height:1.45">Your class shapes your quests and bonuses. It never locks you out of anything.</div>
+    <div style="padding:14px 18px;border-radius:999px;background:${C.surface};font-size:16px">Amirali</div>
+    ${card('explorer', 'Explorer', 'Chart unknown territory. New roads and unvisited areas earn the most.', 'Cartographer · Trail Sense · Pathfinder · Long Road', true)}
+    ${card('wizard', 'Wizard', 'Seek strange places and hidden knowledge. Riddles, ruins, ley lines.', 'Wayfinder · Arcane Sight · Foresight', false)}
+    ${card('warrior', 'Warrior', 'Take on hills, distance and rough ground. Speed never counts.', 'Endurance · Second Wind · Mountainborn', false)}
+    ${card('scribe', 'Scribe', 'Record places and stories for others. Photos, notes, routes.', 'Archivist · Rumour · Chronicler', false)}
   </div>
-  ${[['Wizard', 'Hidden knowledge, puzzles and unusual locations.'], ['Warrior', 'Climbs, distance and demanding terrain. Never speed.'], ['Scribe', 'Document the world: photos, notes, community knowledge.']].map(([n, d]) => `
-  <div class="card" style="opacity:.55"><div class="row"><b style="font-size:18px">${n}</b><span class="muted">🔒 Coming soon</span></div><p class="muted" style="margin-top:6px">${d}</p></div>`).join('')}
-  <div style="position:absolute;left:16px;right:16px;bottom:44px"><a class="btn">Continue as Explorer</a></div>
-</div>
-<div class="home"></div>`;
+  <div style="position:absolute;left:20px;right:20px;bottom:30px;display:flex"><div class="primary">Ride as an Explorer</div></div>
+  <div class="home"></div>`;
+};
 
-const worldRoute = 'M190,470 C240,430 300,420 320,360 C340,300 300,250 250,240';
-screens['02-world'] = `
-<div style="position:absolute;inset:0">${mapSVG(393, 852, { quests: [[250, 240, C.rune], [90, 300, C.river], [320, 560, C.moss]], pois: [[140, 400], [300, 470]], explored: true })}</div>
-<div style="position:absolute;top:0;left:0;right:0">${status()}</div>
-<div style="position:absolute;top:60px;left:16px;right:16px;display:flex;gap:8px">
-  <div class="card" style="margin:0;padding:8px 12px;flex:1;display:flex;justify-content:space-between;align-items:center"><span class="muted" style="font-size:12px">Rotherhithe</span><b style="color:${C.moss};font-size:13px">96 km new · 412 areas</b></div>
-  <div class="card" style="margin:0;padding:8px 12px;font-weight:600">Adventure ▾</div>
-</div>
-<div style="position:absolute;left:0;right:0;bottom:84px;background:${C.parchment};border-radius:20px 20px 0 0;padding:10px 16px 8px;box-shadow:0 -4px 20px rgba(0,0,0,.15)">
-  <div style="width:36px;height:5px;border-radius:3px;background:rgba(0,0,0,.2);margin:0 auto 10px"></div>
-  <div class="row"><h2 style="margin:0">Nearby adventures</h2><span class="muted">3 quests</span></div>
-  <div class="card" style="margin-top:10px;margin-bottom:8px">
-    <div class="row"><b>Beyond the River</b><span class="chip MODERATE">MODERATE</span></div>
-    <p class="muted" style="margin-top:4px">Cross to Deptford Creek and see what the far bank holds.</p>
-    <div class="stats"><span><b>28 km</b></span><span><b>2 h</b></span><span><b>350 XP</b></span><span>62% new territory</span></div>
+// 9a — World, the new home
+screens['02-world'] = () => {
+  const overlays = svgMystery(300, 340) + svgMystery(120, 620) + svgMystery(330, 470) + svgMystery(70, 560) + svgMystery(250, 700)
+    + svgDiamond(230, 250, C.sage, 'Q') + svgDiamond(150, 380, C.wizard, 'Q') + svgDiamond(330, 250, C.terracotta, 'Q')
+    + svgFriend(120, 300, 'M', C.wizard) + svgRider(201, 330, 0, 22);
+  return `<div style="position:absolute;inset:0">${inkMap(402, 874, { seed: 11, overlays, id: 'w' })}</div>
+  ${status(false)}
+  <div style="position:absolute;top:60px;left:16px;right:16px;display:flex;justify-content:space-between;align-items:flex-start;z-index:500">
+    <div style="display:flex;align-items:center;gap:10px;padding:6px 14px 6px 6px;border-radius:999px;background:${C.ink};color:${C.cream};box-shadow:0 3px 10px rgba(46,43,37,.2)">${emblem('explorer', 32)}<div><div style="font-size:13px;font-weight:700;line-height:1.1">Amirali · Explorer 8</div><div style="height:4px;border-radius:2px;background:${C.inkSoft};margin-top:4px;width:110px"><div style="width:83%;height:100%;border-radius:2px;background:${C.sageLight}"></div></div></div></div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px"><div style="padding:9px 14px;border-radius:999px;background:rgba(245,234,216,.94);font-size:12px;font-weight:600;box-shadow:0 1px 2px rgba(46,43,37,.14)">31% of Southwark explored</div><div style="width:40px;height:40px;border-radius:50%;background:rgba(245,234,216,.94);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 2px rgba(46,43,37,.14)">${icon(P.map, { size: 16 })}</div></div>
   </div>
-  <div class="card" style="margin-bottom:0">
-    <div class="row"><b>Three Shadows on the Map</b><span class="chip EASY">EASY</span></div>
-    <div class="stats"><span><b>18 km</b></span><span><b>1 h 15</b></span><span><b>150 XP</b></span></div>
+  <div style="position:absolute;top:400px;right:120px;z-index:500;padding:6px 10px;border-radius:999px;background:${C.ink};color:${C.cream};font-size:11px;font-weight:600;white-space:nowrap">Unexplored woodland · 11 km east</div>
+  <div class="sheet" style="position:absolute;left:0;right:0;bottom:0;z-index:500;padding:12px 20px 110px;display:flex;flex-direction:column;gap:12px;box-shadow:0 -8px 24px rgba(46,43,37,.16)">
+    <div class="handle"></div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="voice" style="font-size:22px">Nearby</span><span style="font-size:13px;color:${C.muted}">3 quests · 5 mysteries</span></div>
+    ${questRow('explorer', 'Explorer quest · 3.2 km away', 'The Lost Dockyards', '18 km · easy · 2 objectives · 280 XP')}
+    ${questRow('wizard', 'Wizard quest · any class', 'Ley Lines', '22 km · three markers · 350 XP · Rune Fragment')}
   </div>
-</div>
-${tabbar('World')}
-<div class="home"></div>`;
+  ${tabbar('World')}
+  <div class="home"></div>`;
+};
 
-screens['03-quests'] = `
-${status()}
-<div class="content">
-  <h1 class="serif">Quests</h1>
-  <h2>Active</h2>
-  <div class="card" style="border-left:4px solid ${C.rune}">
-    <div class="row"><b>The Forgotten Railway</b><span class="chip HARD">HARD</span></div>
-    <p class="muted" style="margin-top:4px">2 of 3 objectives · next: Reach Old Station · 4.2 km</p>
-    <div class="xpbar"><i style="width:66%"></i></div>
+// Quests tab: the current quest as the big card, nearby as rows
+screens['03-quests'] = () => `${status(false)}
+  <div style="padding:66px 22px 0;display:flex;flex-direction:column;gap:14px">
+    <div class="voice" style="font-size:32px">Quests</div>
+    <div style="border-radius:28px;background:${C.ink};color:${C.cream};padding:18px 20px;display:flex;flex-direction:column;gap:10px;position:relative;overflow:hidden"><div style="position:absolute;right:-40px;top:-40px;width:200px;height:200px;border-radius:50%;background:repeating-radial-gradient(circle,transparent 0 9px,rgba(245,234,216,.08) 9px 10px)"></div><div class="eyebrow" style="color:${C.sageLight}">Current quest · 2 objectives left</div><div class="voice" style="font-size:26px;line-height:1.05">The Forgotten Railway</div><div style="font-size:13.5px;color:${C.line};line-height:1.45">Explore the abandoned railway trail east of the river.</div><div style="display:flex;gap:14px;font-size:14px;font-weight:600"><span>18 km</span><span>Moderate</span><span style="color:${C.sageLight}">+300 XP</span></div><div style="display:flex;gap:8px;margin-top:2px"><div style="flex:1;height:48px;border-radius:999px;background:${C.terracotta};display:flex;align-items:center;justify-content:center;font-family:Caprasimo,serif;font-size:16px">Continue</div><div style="padding:0 18px;height:48px;border-radius:999px;border:1px solid rgba(245,234,216,.2);display:flex;align-items:center;font-size:13px;font-weight:600">Details</div></div></div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="voice" style="font-size:20px">Nearby adventures</span><span style="font-size:13px;color:${C.muted}">3</span></div>
+    ${questRow('explorer', 'Explorer quest · 3.2 km away', 'The Green Beyond', '27 km · moderate · 3 objectives · 420 XP')}
+    ${questRow('wizard', 'Wizard quest · 4.1 km away', 'Ley Lines', '22 km · easy · 3 objectives · 350 XP')}
+    ${questRow('warrior', 'Warrior quest · 6.8 km away', 'Trial of the Hill', '34 km · hard · 2 objectives · 450 XP')}
   </div>
-  <h2>Nearby</h2>
-  ${[['Beyond the River', 'MODERATE', '28 km', '2 h', '350 XP'], ['Three Shadows on the Map', 'EASY', '18 km', '1 h 15', '150 XP'], ['Coffee at the Frontier', 'EASY', '14 km', '1 h', '150 XP']].map(q => `
-  <div class="card"><div class="row"><b>${q[0]}</b><span class="chip ${q[1]}">${q[1]}</span></div><div class="stats"><span><b>${q[2]}</b></span><span><b>${q[3]}</b></span><span><b>${q[4]}</b></span></div></div>`).join('')}
-  <h2>Recommended for Explorers</h2>
-  <div class="card"><div class="row"><b>Walking the Edge</b><span class="chip MODERATE">MODERATE</span></div><p class="muted" style="margin-top:4px">Push the frontier of your map in four places.</p></div>
-</div>
-${tabbar('Quests')}
-<div class="home"></div>`;
+  ${tabbar('Quests')}
+  <div class="home"></div>`;
 
-screens['04-quest-detail'] = `
-${status()}
-<div class="content">
-  <p class="muted" style="margin-top:6px">← Quests</p>
-  <span class="chip MODERATE" style="display:inline-block;margin-top:10px">MODERATE · EXPLORER</span>
-  <h1 class="serif">Beyond the River</h1>
-  <p style="font-size:15px;line-height:1.4;margin:6px 0 10px">Water marks the edge of your map. Deptford Creek is on the other side. Cross to it and see what the far bank holds.</p>
-  <div class="stats" style="margin-bottom:14px"><span><b>28 km</b> recommended</span><span><b>2 h</b></span><span><b>350 XP</b></span></div>
-  <div class="card">
-    <b>Objectives</b>
-    <div class="obj"><div class="dot"></div><div>Reach Deptford Creek<div class="muted">within 100 m · 6.8 km away</div></div></div>
-    <div class="obj"><div class="dot optional"></div><div>Ride 3 km of new roads on the way<div class="muted">optional · +25 XP</div></div></div>
-    <div class="obj" style="border:0"><div class="dot"></div><div>Return home<div class="muted">within 300 m of your start</div></div></div>
-  </div>
-  <div class="card"><b>Rewards</b><div class="stats"><span><b>+350 XP</b> base</span><span>+ exploration</span><span>+ discoveries</span></div></div>
-  <div style="height:120px">${mapSVG(361, 120, { player: [60, 90], quests: [[290, 40]] })}</div>
-  <div style="position:absolute;left:16px;right:16px;bottom:100px;display:flex;gap:10px"><a class="btn secondary" style="flex:1">Accept</a><a class="btn" style="flex:2">Plan route</a></div>
-</div>
-${tabbar('Quests')}
-<div class="home"></div>`;
-
-function spark(seed) {
-  let d = 'M0,30'; for (let i = 1; i <= 40; i++) { const y = 30 - 22 * Math.abs(Math.sin(i / 6 + seed)) * Math.abs(Math.cos(i / 11)); d += ` L${i * 8},${y.toFixed(1)}`; } return `<svg width="320" height="34"><path d="${d}" fill="none" stroke="${C.river}" stroke-width="2"/></svg>`;
-}
-function routeCard(label, sel, dist, time, climb, newT, cw, traffic, s, pois, seed) {
-  return `<div class="card" style="${sel ? `border:2px solid ${C.moss}` : ''}">
-    <div class="row"><b style="font-size:17px">${label}</b><span style="color:${sel ? C.moss : C.sub}">${sel ? '●' : '○'}</span></div>
-    ${spark(seed)}
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px">
-      <div class="metric"><span class="l">DISTANCE</span><span class="v">${dist}</span></div><div class="metric"><span class="l">TIME</span><span class="v">${time}</span></div><div class="metric"><span class="l">CLIMB</span><span class="v">${climb}</span></div>
-      <div class="metric"><span class="l">NEW TERRITORY</span><span class="v">${newT}</span></div><div class="metric"><span class="l">CYCLEWAYS</span><span class="v">${cw}</span></div><div class="metric"><span class="l">TRAFFIC</span><span class="v">${traffic}</span></div>
+// 10a — Quest detail, map-led
+screens['04-quest-detail'] = () => {
+  const route = 'M200,300 C150,260 120,220 110,160 C105,130 130,90 170,80';
+  const overlays = svgRoute('M200,300 C150,260 120,220 110,160', C.sage, 4) + svgRoute('M110,160 C105,130 130,90 170,80', C.terracotta, 5, '1 9') + svgRoute('M170,80 C230,60 300,110 290,200 C280,250 240,280 200,300', C.sage, 4, '10 8')
+    + svgDiamond(110, 160, C.sage, '1') + svgDiamond(150, 96, C.terracotta, '2') + svgDiamond(170, 80, C.sage, '3') + svgRider(200, 300, 200, 20);
+  return `<div style="position:absolute;top:0;left:0">${inkMap(402, 360, { seed: 3, labels: false, id: 'q', overlays, region: 'M60,120 C110,60 260,50 330,90 C380,120 370,220 330,280 C290,340 120,340 70,290 C30,250 30,170 60,120 Z' })}</div>
+  ${status(false)}
+  <div style="position:absolute;top:60px;left:16px;right:16px;display:flex;justify-content:space-between;z-index:500"><div style="width:40px;height:40px;border-radius:50%;background:rgba(245,234,216,.92);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 2px rgba(46,43,37,.14)">${icon(P.chevronLeft)}</div><div style="padding:0 14px;height:40px;border-radius:999px;background:${C.sage};color:${C.cream};display:flex;align-items:center;gap:8px" class="eyebrow">${icon(P.star, { size: 14, color: C.cream, fill: true })}Explorer quest</div></div>
+  <div class="sheet" style="position:absolute;left:0;right:0;top:332px;bottom:0;padding:14px 22px 0;display:flex;flex-direction:column;gap:12px;z-index:500">
+    <div class="voice" style="font-size:30px;line-height:1.05">The Green Beyond</div>
+    <p style="font-size:14px;line-height:1.5;color:${C.inkSoft}">Rumours speak of an old trail hidden beyond the eastern woods.</p>
+    <div style="display:flex;flex-direction:column;gap:8px;font-size:14px">
+      <div style="display:flex;gap:12px;align-items:center">${diamond(C.sage, '1')}Reach Sydenham Woods<span style="margin-left:auto;color:${C.muted};font-size:12px">12 km</span></div>
+      <div style="display:flex;gap:12px;align-items:center">${diamond(C.terracotta, '2')}Explore 3 km of unseen trails<span style="margin-left:auto;color:${C.muted};font-size:12px">gravel</span></div>
+      <div style="display:flex;gap:12px;align-items:center">${diamond(C.sage, '3')}Find the viewpoint<span style="margin-left:auto;color:${C.muted};font-size:12px">hidden</span></div>
+      <div style="display:flex;gap:12px;align-items:center">${diamond(C.sage, '', 22, true)}Return by a different route<span style="margin-left:auto;color:${C.muted};font-size:12px">optional</span></div>
     </div>
-    <div class="surface"><i style="flex:${s[0]};background:rgba(28,26,23,.6)"></i><i style="flex:${s[1]};background:${C.rune}"></i><i style="flex:${s[2]};background:${C.moss}"></i></div>
-    <p class="muted" style="margin-top:8px">${pois}</p></div>`;
-}
-screens['05-routes'] = `
-${status()}
-<div class="content">
-  <p class="muted" style="margin-top:6px">← Beyond the River</p>
-  <h1 class="serif">Choose a route</h1>
-  <p class="muted" style="margin-bottom:10px">“around 25 km, quiet roads, a pub near the end” · Gravel bike</p>
-  ${routeCard('Relaxed', false, '23.1 km', '1 h 30', '120 m', '48%', '61%', 'Low', [85, 12, 3], 'Thames Path · The Crown 19.4 km in · +3 min', 1)}
-  ${routeCard('Adventure', true, '27.4 km', '1 h 50', '210 m', '71%', '44%', 'Low', [55, 35, 10], 'Stave Hill · Thames Path · The Crown 22.6 km in · +2 min', 2)}
-  ${routeCard('Gravel', false, '26.0 km', '1 h 45', '180 m', '64%', '30%', 'Medium', [40, 52, 8], 'Deptford Creek · The Crown 21.1 km in · +4 min', 3)}
-</div>
-<div style="position:absolute;left:16px;right:16px;bottom:44px"><a class="btn">Download route & start ride</a></div>
-<div class="home"></div>`;
+    <div style="display:flex;gap:8px"><div class="tile"><b>27 km</b><span>Journey</span></div><div class="tile"><b>2h 10m</b><span>At your pace</span></div><div class="tile"><b style="color:${C.sageDeep}">420</b><span>XP + Map Fragment</span></div></div>
+    <div style="display:flex;gap:8px;align-items:center;font-size:12.5px;color:${C.muted}"><span class="chip" style="background:${C.terracottaTint};color:${C.terracottaText}">Moderate for you</span>38% gravel, fine on the Boardman · back before sunset</div>
+  </div>
+  <div style="position:absolute;left:20px;right:20px;bottom:30px;z-index:600;display:flex;gap:10px"><div class="secondary">Accept</div><div class="primary">Begin quest</div></div>
+  <div class="home"></div>`;
+};
 
-screens['06-navigation'] = `
-<div style="position:absolute;inset:0;background:#000"></div>
-<div style="position:absolute;top:0;left:0;right:0">${status(true)}</div>
-<div style="position:absolute;top:54px;left:0;right:0;height:230px;background:#000;color:#fff;padding:10px 20px;display:flex;flex-direction:column;justify-content:center">
-  <div style="display:flex;align-items:center;gap:18px">
-    <svg width="96" height="96" viewBox="0 0 96 96"><path d="M30,84 L30,40 Q30,26 44,26 L60,26" fill="none" stroke="#FFC733" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/><path d="M52,10 L74,26 L52,42Z" fill="#FFC733"/></svg>
-    <div><div style="font-size:72px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums">180 <span style="font-size:32px;font-weight:600">m</span></div><div style="font-size:22px;font-weight:600;letter-spacing:.08em;color:#FFC733;margin-top:4px">RIGHT</div></div>
+// 2a — Three ways to ride it
+screens['05-routes'] = () => {
+  const surface = (paved, compact, loose) => `<div style="display:flex;height:7px;border-radius:4px;overflow:hidden"><span style="width:${paved}%;background:${C.inkSoft}"></span><span style="width:${compact}%;background:${C.compactGravel}"></span><span style="width:${loose}%;background:repeating-linear-gradient(90deg,${C.terracotta} 0 3px,${C.cream} 3px 5px)"></span><span style="flex:1;background:${C.line}"></span></div>`;
+  const card = (bar, title, badge, nums, strip, why, selected) => `<div class="card" style="display:flex;gap:14px;align-items:center;${selected ? `border:2px solid ${C.terracotta}` : ''}"><div style="width:6px;align-self:stretch;border-radius:3px;background:${bar}"></div><div style="flex:1;display:flex;flex-direction:column;gap:6px"><div style="display:flex;justify-content:space-between;align-items:baseline"><span class="voice" style="font-size:20px">${title}</span>${badge}</div><div style="display:flex;gap:14px;font-size:14px;font-weight:600">${nums}</div>${strip}<div style="font-size:12.5px;color:${C.muted};line-height:1.45">${why}</div></div></div>`;
+  const overlays = svgRoute('M200,150 C120,120 60,180 90,240 C120,290 200,270 260,240 C320,210 330,140 280,110', C.mutedLight, 4, '6 8') + svgRoute('M200,150 C260,110 340,140 320,200 C300,250 240,280 190,260', C.sage, 4) + svgRoute('M200,150 C140,100 80,120 70,190 C60,250 130,300 210,290 C300,280 340,220 300,170', C.terracotta, 5)
+    + `<circle cx="300" cy="170" r="6" fill="${C.terracotta}" stroke="#fff" stroke-width="3"/>` + svgRider(200, 150, 0, 16);
+  return `<div style="position:absolute;top:0;left:0">${inkMap(402, 320, { seed: 5, labels: false, id: 'r', overlays, region: 'M-10,-10H412V330H-10Z' })}</div>
+  ${status(false)}
+  <div style="position:absolute;top:60px;left:16px;right:16px;display:flex;gap:8px;align-items:center;z-index:500"><div style="width:40px;height:40px;border-radius:50%;background:rgba(245,234,216,.92);display:flex;align-items:center;justify-content:center">${icon(P.chevronLeft)}</div><div style="flex:1;padding:10px 14px;border-radius:999px;background:rgba(245,234,216,.92);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">“30–40 km, mostly quiet, some gravel, pub toward the end”</div></div>
+  <div class="sheet" style="position:absolute;left:0;right:0;top:292px;bottom:0;padding:14px 18px 0;display:flex;flex-direction:column;gap:10px;z-index:500">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 4px"><span class="voice" style="font-size:22px">Three ways to ride it</span><span style="font-size:13px;color:${C.terracottaDeep}">Adjust</span></div>
+    ${card(C.terracotta, 'Adventure', `<span class="eyebrow" style="background:${C.terracotta};color:${C.cream};padding:3px 9px;border-radius:999px">Best match</span>`, '<span>35.4 km</span><span>2h 10m</span><span>↑ 310 m</span>', surface(52, 30, 8), `38% gravel · 3 climbs · 64% cycleways and quiet roads · <b style="color:${C.ink}">The Crown at 26 km</b>`, true)}
+    ${card(C.sage, 'Relaxed', '', '<span>31.8 km</span><span>1h 50m</span><span>↑ 180 m</span>', surface(88, 8, 0), 'Quietest · 76% cycleways and quiet roads · gentle · no pub on route', false)}
+    ${card(`repeating-linear-gradient(${C.mutedLight} 0 5px,transparent 5px 8px)`, 'Fast', '', '<span>28.2 km</span><span>1h 31m</span><span>↑ 150 m</span>', surface(97, 0, 0), '19 min quicker · more main-road riding · almost entirely paved', false)}
   </div>
-  <div style="font-size:28px;font-weight:600;margin-top:10px">Rotherhithe Street</div>
-  <div style="font-size:14px;opacity:.6;margin-top:4px">then ↰ Left onto Mill Road · 620 m</div>
-</div>
-<div style="position:absolute;top:284px;left:0;right:0;height:380px">${mapSVG(393, 380, { player: [196, 250], route: 'M196,250 C210,190 260,170 300,120 C320,95 330,80 340,40', pois: [[300, 120]], quests: [[340, 40, C.rune]] })}</div>
-<div style="position:absolute;top:664px;left:0;right:0;bottom:0;background:#111;color:#fff;padding:12px 20px">
-  <div style="display:flex;align-items:center;gap:10px;font-size:15px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,.12)"><span style="color:#FFC733">◎</span><span style="flex:1"><b>Reach Old Station</b> <span style="opacity:.6">· The Forgotten Railway</span></span><b style="font-variant-numeric:tabular-nums">1.4 km</b></div>
-  <div style="display:flex;justify-content:space-around;padding-top:12px;text-align:center">
-    ${[['12.6', 'KM'], ['48:12', 'TIME'], ['23', 'KM/H'], ['140', 'M CLIMB'], ['132', 'BPM']].map(m => `<div><div style="font-size:24px;font-weight:600;font-variant-numeric:tabular-nums">${m[0]}</div><div style="font-size:10px;font-weight:700;opacity:.55;letter-spacing:.06em">${m[1]}</div></div>`).join('')}
+  <div style="position:absolute;left:20px;right:20px;bottom:30px;z-index:600;display:flex;flex-direction:column;gap:8px"><div style="display:flex;justify-content:center;gap:6px;font-size:12px;color:${C.sageDeep};font-weight:600">Map, directions, elevation and stops download when you start</div><div class="primary">${icon(P.play, { size: 16, color: C.cream, fill: true })}&nbsp;&nbsp;Start ride</div></div>
+  <div class="home"></div>`;
+};
+
+function navMap(seed, id) {
+  const overlays = svgRoute('M120,760 C160,700 190,640 200,560 C210,480 230,430 260,380 C290,330 330,300 360,280', C.terracotta, 7) + `<circle cx="260" cy="380" r="7" fill="${C.terracotta}" stroke="#fff" stroke-width="3"/>` + svgDiamond(330, 300, C.sage, 'Q', 28) + svgRider(200, 560, 35, 28);
+  return inkMap(402, 874, { seed, labels: false, id, overlays, region: 'M-10,-10H412V884H-10Z' });
+}
+
+function statsPill(a, b, c, bLabel = 'km new territory', cLabel = 'ride time') {
+  return `<div style="position:absolute;left:14px;right:14px;bottom:30px;z-index:500;background:${C.ink};border-radius:32px;padding:16px 22px;display:flex;align-items:center;color:${C.cream};box-shadow:0 12px 32px rgba(46,43,37,.25)">
+    <div style="flex:1"><div style="font-size:30px;font-weight:700;line-height:1">${a}</div><div style="font-size:11px;color:${C.line};margin-top:4px">km ridden</div></div>
+    <div style="flex:1;text-align:center;border-left:1px solid rgba(245,234,216,.15);border-right:1px solid rgba(245,234,216,.15)"><div style="font-size:30px;font-weight:700;line-height:1;color:${C.sageLight}">${b}</div><div style="font-size:11px;color:${C.line};margin-top:4px">${bLabel}</div></div>
+    <div style="flex:1;text-align:right"><div style="font-size:30px;font-weight:700;line-height:1">${c}</div><div style="font-size:11px;color:${C.line};margin-top:4px">${cLabel}</div></div>
+    <div style="margin-left:18px;width:48px;height:48px;border-radius:50%;background:${C.inkSoft};display:flex;align-items:center;justify-content:center">${icon(P.pause, { size: 18, color: C.cream, fill: true })}</div>
+  </div>`;
+}
+
+// 12a — Navigation with quest objective
+screens['06-navigation'] = () => `<div style="position:absolute;inset:0">${navMap(21, 'n')}</div>
+  ${status(false)}
+  <div style="position:absolute;top:56px;left:14px;right:14px;z-index:500;display:flex;flex-direction:column;gap:8px">
+    <div style="background:${C.cream};border-radius:30px;padding:18px 20px;display:flex;gap:18px;align-items:center;box-shadow:0 6px 18px rgba(46,43,37,.18)">${icon(P.turnLeft, { size: 56, stroke: 3 })}<div style="flex:1"><div style="font-size:56px;font-weight:700;line-height:.95;letter-spacing:-.02em">180<span style="font-size:24px;font-weight:600;margin-left:4px">m</span></div><div style="font-size:18px;font-weight:600;margin-top:6px">Turn left</div><div style="font-size:15px;color:${C.muted}">Rotherhithe Street</div></div><div style="align-self:flex-start;display:flex;flex-direction:column;align-items:center;gap:2px;color:${C.muted}">${icon(P.arrowUp, { size: 18, color: C.muted })}<span style="font-size:10px">then 0.6 km</span></div></div>
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:999px;background:${C.ink};color:${C.cream};box-shadow:0 4px 12px rgba(46,43,37,.2)"><span style="width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center"><span style="width:14px;height:14px;transform:rotate(45deg);border-radius:4px;background:${C.sage}"></span></span><div style="flex:1;font-size:14px"><span class="eyebrow" style="color:${C.sageLight}">Quest · </span><b>Find the Old Pump House</b></div><b style="font-size:16px">1.2 km</b></div>
+    <div style="display:flex;justify-content:space-between;padding:0 2px"><span style="padding:9px 14px;border-radius:999px;background:${C.ink};color:${C.cream};font-size:12px;font-weight:600;display:flex;gap:8px;align-items:center"><span style="width:9px;height:9px;border-radius:50%;background:${C.sageLight}"></span>Watch · navigating</span></div>
   </div>
-  <div style="display:flex;gap:10px;margin-top:14px"><a class="btn secondary" style="flex:1;background:#2a2a2a;color:#fff;padding:10px">Pause</a><a class="btn" style="flex:1;background:${C.ember};padding:10px">End ride</a></div>
+  ${statsPill('14.3', '2.6', '1:02')}
+  <div class="home"></div>`;
+
+// 12b — Objective complete
+screens['10-objective-complete'] = () => `<div style="position:absolute;inset:0">${navMap(21, 'o')}</div>
+  ${status(false)}
+  <div style="position:absolute;top:56px;left:14px;right:14px;z-index:500;display:flex;flex-direction:column;gap:8px;align-items:center">
+    <div style="width:100%;background:${C.sage};color:${C.cream};border-radius:30px;padding:20px 22px;display:flex;gap:18px;align-items:center;box-shadow:0 6px 18px rgba(46,43,37,.18)"><div style="width:64px;height:64px;border-radius:50%;background:${C.cream};display:flex;align-items:center;justify-content:center;flex:none">${icon(P.star, { size: 28, color: C.sage, fill: true })}</div><div style="flex:1"><div class="eyebrow">Objective complete</div><div class="voice" style="font-size:24px;line-height:1.1;margin-top:4px">Old Pump House discovered</div><div style="font-size:15px;margin-top:6px;font-weight:600">1 objective left</div></div></div>
+    <div style="padding:8px 14px;border-radius:999px;background:rgba(245,234,216,.94);font-size:12.5px;color:${C.muted};font-weight:600">Continue straight · 600 m</div>
+  </div>
+  ${statsPill('15.5', '3.1', '1:02')}
+  <div class="home"></div>`;
+
+// 13b — Adventure complete, map reveal first
+screens['07-adventure-complete'] = () => {
+  const overlays = svgRoute('M200,120 C150,150 110,200 100,260 C95,300 130,330 170,320 C210,310 230,270 260,250 C300,230 330,180 300,140 C270,110 230,100 200,120', C.sage, 4)
+    + `<circle cx="100" cy="260" r="7" fill="${C.terracotta}" stroke="#fff" stroke-width="3"/><circle cx="170" cy="320" r="7" fill="${C.terracotta}" stroke="#fff" stroke-width="3"/><circle cx="300" cy="140" r="7" fill="${C.terracotta}" stroke="#fff" stroke-width="3"/>`;
+  return `<div style="position:absolute;top:0;left:0">${inkMap(402, 470, { seed: 9, labels: false, id: 'a', overlays, region: 'M70,100 C120,60 260,50 320,110 C360,150 350,260 320,320 C280,380 140,380 90,330 C40,280 30,150 70,100 Z' })}</div>
+  ${status(false)}
+  <div style="position:absolute;top:60px;left:16px;right:16px;z-index:500;display:flex;justify-content:center"><div style="padding:8px 16px;border-radius:999px;background:${C.ink};color:${C.cream};font-size:12.5px;font-weight:600;display:flex;gap:8px;align-items:center"><span style="width:10px;height:10px;border-radius:50%;background:${C.sageLight}"></span>12.6 km² revealed · Southwark 31% → 36%</div></div>
+  <div class="sheet" style="position:absolute;left:0;right:0;bottom:0;z-index:500;padding:14px 22px 104px;display:flex;flex-direction:column;gap:12px">
+    <div class="handle"></div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-end"><div><div class="eyebrow" style="color:${C.sageDeep}">Adventure complete</div><div class="voice" style="font-size:28px;line-height:1.05;margin-top:4px">The Forgotten Railway</div></div><div style="font-size:40px;font-weight:700;line-height:1;letter-spacing:-.03em;color:${C.sageDeep}">+420<span style="font-size:14px;font-weight:600;margin-left:3px">XP</span></div></div>
+    <div style="display:flex;gap:8px"><div class="tile"><b>3</b><span>New places</span></div><div class="tile"><b>12.6 km</b><span>New territory</span></div><div class="tile"><b>4.2 km</b><span>New roads</span></div></div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;color:${C.muted}"><span>32.4 km · 2h 08m · 340 m climbed</span><span>Explorer +300 · General +120</span></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="chip" style="background:${C.sageTint};color:${C.sageText}">Class level 8 → 9</span><span class="chip" style="background:${C.sageTint};color:${C.sageText}">Pathfinder available</span></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="chip" style="background:${C.surface};font-weight:400">Old Pump House</span><span class="chip" style="background:${C.surface};font-weight:400">Railway viaduct</span><span class="chip" style="background:${C.surface};font-weight:400">Hidden garden</span></div>
+  </div>
+  <div style="position:absolute;left:20px;right:20px;bottom:30px;z-index:600;display:flex"><div class="primary">Collect rewards</div></div>
+  <div class="home"></div>`;
+};
+
+// 14a — Journal, adventures
+screens['08-journal'] = () => {
+  const entry = (cls, title, xp, meta) => `<div class="row"><div style="width:64px;height:64px;border-radius:18px;background:${cls ? CLASS[cls].color : C.track};display:flex;align-items:center;justify-content:center;flex:none">${cls ? CLASS[cls].glyph(24, C.cream) : icon(P.bike, { size: 24, color: C.muted })}</div><div style="flex:1"><div style="display:flex;justify-content:space-between"><span class="voice" style="font-size:17px">${title}</span><span style="font-size:12px;color:${cls ? CLASS[cls].text : C.sageDeep};font-weight:600">${xp}</span></div><div style="font-size:12.5px;color:${C.muted}">${meta}</div></div></div>`;
+  return `${status(false)}
+  <div style="padding:66px 22px 0;display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="voice" style="font-size:32px">Journal</span><span style="font-size:13px;color:${C.muted}">142 km² · 41 discoveries</span></div>
+    <div style="display:flex;gap:6px;padding:5px;border-radius:999px;background:${C.surface}"><span style="flex:1;text-align:center;padding:8px 0;border-radius:999px;background:${C.ink};color:${C.cream};font-size:13px;font-weight:600">Adventures</span><span style="flex:1;text-align:center;padding:8px 0;font-size:13px;font-weight:600;color:${C.muted}">Discoveries</span><span style="flex:1;text-align:center;padding:8px 0;font-size:13px;font-weight:600;color:${C.muted}">Map</span><span style="flex:1;text-align:center;padding:8px 0;font-size:13px;font-weight:600;color:${C.muted}">Stats</span></div>
+    <div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline"><span class="voice" style="font-size:20px">September</span><span style="font-size:12px;color:${C.muted}">5 adventures</span></div><div style="display:flex;gap:16px;margin-top:8px;font-size:14px"><span><b>38 km</b> new roads</span><span><b>11</b> discoveries</span><span><b>4</b> quests</span><span><b>1,430 m</b></span></div></div>
+    ${entry('explorer', 'The Forgotten Railway', '+420 XP', 'Sat 6 Sep · 32.4 km · 3 discoveries · 12.6 km new')}
+    ${entry('wizard', 'Ley Lines', '+350 XP', 'Sun 31 Aug · 22.1 km · Rune Fragment · with Maya')}
+    ${entry(null, 'Free ride · Thames east', '+90 XP', 'Wed 27 Aug · 18.0 km · 4.2 km new')}
+    ${entry('explorer', 'The Lost Dockyards', '+280 XP', 'Sat 23 Aug · 17.6 km · 2 discoveries')}
+  </div>
+  ${tabbar('Journal')}
+  <div class="home"></div>`;
+};
+
+// 11b — Character sheet
+screens['09-character'] = () => `${status(true)}
+  <div style="height:250px;background:${C.sage};color:${C.cream};padding:66px 22px 0;position:relative;overflow:hidden"><div style="position:absolute;inset:-60px -40px auto auto;width:320px;height:320px;border-radius:50%;background:repeating-radial-gradient(circle,transparent 0 11px,rgba(245,234,216,.12) 11px 12px)"></div><div style="position:relative;display:flex;gap:16px;align-items:center">${emblem('explorer', 84, true)}<div><div class="voice" style="font-size:30px;line-height:1">Amirali</div><div style="font-size:14px;font-weight:600;margin-top:4px">Explorer — Level 8</div><div style="font-size:12px;opacity:.85">“Wanderer” · Keeper of the South</div></div></div><div style="position:relative;margin-top:20px"><div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600"><span>Explorer 8</span><span>1,820 / 2,200 XP</span></div><div style="height:8px;border-radius:4px;background:rgba(32,30,29,.25);margin-top:6px"><div style="width:83%;height:100%;border-radius:4px;background:${C.cream}"></div></div></div></div>
+  <div class="sheet" style="margin-top:-26px;padding:18px 22px 0;display:flex;flex-direction:column;gap:14px;position:relative;box-shadow:none">
+    <div style="display:flex;gap:8px"><div class="tile"><b>142 km²</b><span>Explored</span></div><div class="tile"><b>41</b><span>Discoveries</span></div><div class="tile"><b>19</b><span>Quests</span></div></div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="voice" style="font-size:20px">Abilities</span><span style="font-size:12px;color:${C.muted}">2 of 4 unlocked</span></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><span class="chip" style="padding:8px 12px;background:${C.sage};color:${C.cream};font-size:12.5px">Cartographer</span><span class="chip" style="padding:8px 12px;background:${C.sage};color:${C.cream};font-size:12.5px">Trail Sense</span><span class="chip" style="padding:8px 12px;border:1.5px dashed ${C.hatch};color:${C.muted};font-size:12.5px">Pathfinder · Lv 10</span><span class="chip" style="padding:8px 12px;border:1.5px dashed ${C.hatch};color:${C.muted};font-size:12.5px">Long Road · Lv 14</span></div>
+    <div class="card" style="display:flex;flex-direction:column;gap:8px"><div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-weight:700;font-size:14px">Cycling profile</span><span style="font-size:11.5px;color:${C.muted}">Keeps quests suitable · separate from your level</span></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-size:12.5px;color:${C.inkSoft}"><span>Typical ride <b>20–40 km</b></span><span>Climbing <b>Moderate</b></span><span>Gravel <b>Medium</b></span><span>Traffic <b>Low</b></span><span>Bike <b>Boardman ADV 8.8</b></span><span style="color:${C.terracottaDeep};font-weight:600">Adjust ›</span></div></div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="voice" style="font-size:20px">Bikes</span></div>
+    <div class="row" style="padding:10px 14px"><span style="width:36px;height:36px;border-radius:50%;background:${C.cream};display:inline-flex;align-items:center;justify-content:center">${icon(P.bike, { size: 16 })}</span><div style="flex:1"><div class="voice" style="font-size:17px">Boardman ADV 8.8</div><div style="font-size:12.5px;color:${C.muted}">Gravel · default · gravel ok</div></div>${icon(P.chevronRight, { color: C.muted, size: 14 })}</div>
+  </div>
+  ${tabbar('Character')}
+  <div class="home"></div>`;
+
+// 15b — Friends, the light feed
+screens['11-friends'] = () => {
+  const avatar = (letter, name, color) => `<div style="display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12px"><span style="width:52px;height:52px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;color:${C.cream};font-family:Caprasimo,serif;font-size:20px">${letter}</span>${name}</div>`;
+  const feed = (letter, color, html, meta, bg = C.surface, metaColor = C.muted) => `<div class="row" style="align-items:flex-start;background:${bg}"><span style="width:36px;height:36px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;color:${C.cream};font-family:Caprasimo,serif;flex:none">${letter}</span><div style="flex:1"><div style="font-size:13.5px">${html}</div><div style="font-size:12px;color:${metaColor}">${meta}</div></div></div>`;
+  return `${status(false)}
+  <div style="padding:66px 22px 0;display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="voice" style="font-size:32px">Friends</span><span style="font-size:13px;color:${C.terracottaDeep};font-weight:600">Add</span></div>
+    <div class="row" style="justify-content:space-between;padding:12px 16px"><div><div style="font-weight:700;font-size:14px">Exact locations are never shared</div><div style="font-size:12px;color:${C.muted}">Friends see finished adventures, never where you are.</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;font-weight:600;color:${C.muted}"><span style="width:40px;height:24px;border-radius:12px;background:${C.sage};position:relative"><span style="position:absolute;right:3px;top:3px;width:18px;height:18px;border-radius:50%;background:${C.cream}"></span></span>Visible</div></div>
+    <div style="display:flex;gap:12px">${avatar('M', 'Maya', C.wizard)}${avatar('P', 'Parastoo', C.scribe)}${avatar('J', 'Jonah', C.terracotta)}${avatar('L', 'Lena', C.sage)}<div style="display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12px;color:${C.muted}"><span style="width:52px;height:52px;border-radius:50%;border:1.5px dashed ${C.hatch};display:flex;align-items:center;justify-content:center">${icon(P.plus, { size: 20, color: C.muted })}</span>Invite</div></div>
+    <div class="voice" style="font-size:20px;margin-top:4px">Look where people went</div>
+    ${feed('M', C.wizard, '<b>Maya</b> completed <b>The Seven Bridges</b>', 'Yesterday · 41 km · 7 discoveries')}
+    ${feed('A', C.sage, '<b>You</b> discovered <b>Greenwich Foot Tunnel</b>', 'Sat · Historical')}
+    ${feed('P', C.scribe, '<b>Parastoo</b> explored <b>8.4 km of new territory</b>', 'Fri · Lewisham')}
+    ${feed('✦', C.sage, '<b>Traveller encounter</b> · you crossed paths with Maya', 'Sat 14:02 · +10 XP each', C.sageTint, C.sageText)}
+  </div>
+  ${tabbar('Character')}
+  <div class="home"></div>`;
+};
+
+// ---- Watch screens (7a / 16a) ------------------------------------------------------
+const watchBase = `<meta charset="utf-8"><style>${fonts}
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:198px;height:242px;overflow:hidden;background:transparent;font-family:-apple-system,"SF Pro",system-ui,sans-serif;color:#fff;-webkit-font-smoothing:antialiased}
+.face{width:198px;height:242px;border-radius:48px;background:#000;padding:22px 18px 16px;display:flex;flex-direction:column;overflow:hidden;position:relative}
+.time{position:absolute;top:10px;right:22px;font-size:12px;font-weight:600;color:${C.terracottaLight}}
+</style>`;
+
+const watch = {};
+
+watch['w1-watch-navigation'] = () => `<div class="face" style="align-items:center;padding-top:20px"><span class="time">9:41</span>
+  ${icon(P.turnLeft, { size: 44, color: C.terracottaLight, stroke: 3 })}
+  <div style="font-size:46px;font-weight:700;line-height:1;letter-spacing:-.02em;margin-top:2px">180<span style="font-size:20px;font-weight:600">m</span></div>
+  <div style="font-size:15px;font-weight:700;letter-spacing:.1em;margin-top:4px">LEFT</div>
+  <div style="font-size:13px;color:${C.line};margin-top:2px;text-align:center">Rotherhithe St</div>
+  <div style="margin-top:auto;font-size:14px;color:${C.line}"><b style="color:#fff">21.4</b> km/h</div>
 </div>`;
 
-screens['07-adventure-complete'] = `
-${status()}
-<div class="content" style="text-align:center;padding-top:16px">
-  <p style="font-size:12px;font-weight:800;letter-spacing:.25em;color:${C.rune}">ADVENTURE COMPLETE</p>
-  <h1 class="serif" style="font-size:34px;margin-top:8px">The Forgotten Railway</h1>
-  <p class="muted">Quest complete</p>
-  <div style="font-size:64px;font-weight:800;color:${C.moss};margin:18px 0 12px">+420 XP</div>
-  <div class="card" style="text-align:left">
-    ${[['✦', '3 discoveries'], ['▦', '12.6 km new territory'], ['⬡', '34 new areas uncovered'], ['↑', 'Level 7 → 8', true], ['🔓', 'Cartographer available', true], ['♛', 'Title earned: Wanderer', true]].map(l => `<div style="display:flex;gap:12px;padding:6px 0;font-size:16px;${l[2] ? `color:${C.rune};font-weight:600` : ''}"><span style="width:20px;text-align:center">${l[0]}</span>${l[1]}</div>`).join('')}
-  </div>
-  <div class="card" style="text-align:left;font-size:13px">
-    ${[['Quest completed', 385], ['Objective completed', 80], ['New area explored', 468], ['New road explored', 252], ['Discovery found', 130], ['Class bonus', 180]].map(l => `<div class="row" style="padding:3px 0"><span>${l[0]}</span><b>+${l[1]}</b></div>`).join('')}
-    <div class="row" style="padding:6px 0 0;border-top:1px solid rgba(0,0,0,.08);margin-top:4px"><span class="muted">Capped per ride</span><b>+420</b></div>
-  </div>
-  <div style="display:flex;justify-content:space-around;margin:8px 0 16px">
-    <div class="metric"><span class="l">RIDDEN</span><span class="v">32.4 km</span></div><div class="metric"><span class="l">CLIMBED</span><span class="v">340 m</span></div><div class="metric"><span class="l">TIME</span><span class="v">2 h 04</span></div>
-  </div>
-  <a class="btn">Back to the world</a>
-</div>
-<div class="home"></div>`;
+watch['w2-watch-quest'] = () => `<div class="face"><span class="time">9:41</span>
+  <div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.08em;color:${C.sageLight}"><span style="width:10px;height:10px;transform:rotate(45deg);border-radius:2px;background:${C.sageLight}"></span>QUEST</div>
+  <div style="font-size:15px;font-weight:600;margin-top:4px;color:${C.line};line-height:1.15">The Forgotten Railway</div>
+  <div style="font-size:11px;color:${C.mutedLight};margin-top:12px">OBJECTIVE</div>
+  <div style="font-size:19px;font-weight:600;line-height:1.15;margin-top:2px">Reach the old station</div>
+  <div style="font-size:40px;font-weight:700;letter-spacing:-.02em;margin-top:auto;line-height:1">1.4<span style="font-size:18px;font-weight:600;color:${C.line}"> km</span></div>
+  <div style="font-size:12px;color:${C.mutedLight}">2 of 3 objectives</div>
+</div>`;
 
-screens['08-journal'] = `
-${status()}
-<div class="content">
-  <h1 class="serif">Journal</h1>
-  <div style="display:flex;gap:8px;margin:8px 0 12px">${['Adventures', 'Discoveries', 'World', 'Statistics'].map((t, i) => `<span class="chip" style="background:${i === 0 ? C.moss : C.deep};color:${i === 0 ? '#fff' : C.ink};padding:7px 12px;font-size:12px">${t}</span>`).join('')}</div>
-  <div class="card" style="padding:0;overflow:hidden">
-    <div style="height:120px">${mapSVG(361, 120, { player: [300, 60], route: 'M40,90 C120,30 200,100 300,60', explored: true })}</div>
-    <div style="padding:12px 14px"><div class="row"><b>The Forgotten Railway</b><b style="color:${C.moss}">+420 XP</b></div><p class="muted" style="margin-top:3px">Sun 1 Jun · 32.4 km · 340 m · 3 discoveries · 12.6 km new</p></div>
+watch['w3-watch-stats'] = () => `<div class="face" style="padding:24px 20px 18px"><span class="time">9:41</span>
+  <div style="font-size:11px;color:${C.mutedLight};font-weight:600;letter-spacing:.06em">RIDE</div>
+  <div style="font-size:40px;font-weight:700;line-height:1;letter-spacing:-.02em;margin-top:4px">15.5<span style="font-size:16px;font-weight:600;color:${C.line}"> km</span></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 8px;margin-top:16px;font-size:18px;font-weight:600">
+    <div>1:02:14<div style="font-size:10px;color:${C.mutedLight};font-weight:500">TIME</div></div>
+    <div>↑ 186<div style="font-size:10px;color:${C.mutedLight};font-weight:500">CLIMBED</div></div>
+    <div style="color:${C.heart}">146<div style="font-size:10px;color:${C.mutedLight};font-weight:500">BPM</div></div>
+    <div style="color:${C.mutedLight}">19.2<div style="font-size:10px;color:${C.mutedLight};font-weight:500">KM/H</div></div>
   </div>
-  <div class="card" style="padding:0;overflow:hidden">
-    <div style="height:120px">${mapSVG(361, 120, { player: [80, 70], route: 'M80,70 C160,20 260,110 320,50', explored: true })}</div>
-    <div style="padding:12px 14px"><div class="row"><b>Beyond the Water</b><b style="color:${C.moss}">+265 XP</b></div><p class="muted" style="margin-top:3px">Sat 24 May · 26.1 km · 190 m · 1 discovery · 8.2 km new</p></div>
-  </div>
-  <h2>Exploration</h2>
-  <div class="card" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-    ${[['NEW TERRITORY', '96.2 km'], ['UNIQUE ROADS', '210 km'], ['REGIONS VISITED', '7'], ['QUESTS COMPLETED', '12'], ['DISCOVERIES', '30'], ['TOTAL DISTANCE', '812 km']].map(m => `<div class="metric"><span class="l">${m[0]}</span><span class="v">${m[1]}</span></div>`).join('')}
-  </div>
-</div>
-${tabbar('Journal')}
-<div class="home"></div>`;
+</div>`;
 
-screens['09-character'] = `
-${status()}
-<div class="content">
-  <h1 class="serif">Character</h1>
-  <div class="card">
-    <div style="display:flex;gap:14px;align-items:center"><div style="width:64px;height:64px;border-radius:50%;background:${C.deep};display:flex;align-items:center;justify-content:center;font-size:30px">🧭</div><div><div style="font-size:22px;font-weight:600" class="serif">Rowan</div><div class="muted">Wanderer · Explorer</div></div><div style="margin-left:auto" class="chip HARD">1 ability point</div></div>
-    <div style="margin-top:14px" class="row"><b style="font-size:13px">Level 8</b><span class="muted">4,180 / 4,800 XP</span></div><div class="xpbar"><i style="width:35%"></i></div>
-    <div style="margin-top:12px" class="row"><b style="font-size:13px">Explorer level 6</b><span class="muted">2,510 / 3,080 XP</span></div><div class="xpbar"><i style="width:60%"></i></div>
-  </div>
-  <h2>Abilities</h2>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-    ${[['Trail Sense', 'Rank 2/3', 'Reveal more interesting nearby paths.', 1], ['Cartographer', 'Unlock', 'Increase information about unexplored areas.', 2], ['Pathfinder', 'Lv 8', 'Reveal unusual route alternatives.', 0], ['Far Wanderer', 'Lv 12', 'Rewards for distant discoveries.', 0]].map(a => `<div class="card" style="margin:0;opacity:${a[3] ? 1 : .55}"><b>${a[0]}</b><div style="font-size:11px;font-weight:700;color:${a[3] === 2 ? '#fff' : C.rune};${a[3] === 2 ? `background:${C.moss};display:inline-block;padding:3px 8px;border-radius:8px;margin-top:4px` : 'margin-top:4px'}">${a[1]}</div><p class="muted" style="margin-top:6px;font-size:12px">${a[2]}</p></div>`).join('')}
-  </div>
-  <h2>Bikes & rider profile</h2>
-  <div class="card"><div class="row"><b>Boardman ADV 8.8</b><span class="muted">Gravel · default</span></div><p class="muted" style="margin-top:4px">Comfortable 30 km · 400 m climb · gravel OK</p></div>
-</div>
-${tabbar('Character')}
-<div class="home"></div>`;
+watch['w4-watch-objective-complete'] = () => `<div class="face" style="background:${C.sage};align-items:center;text-align:center;padding:24px 16px 16px">
+  <div style="width:56px;height:56px;border-radius:50%;background:${C.cream};display:flex;align-items:center;justify-content:center">${icon(P.star, { size: 24, color: C.sage, fill: true })}</div>
+  <div style="font-size:11px;font-weight:700;letter-spacing:.1em;margin-top:12px">OBJECTIVE COMPLETE</div>
+  <div style="font-size:17px;font-weight:600;line-height:1.15;margin-top:4px">Old Pump House discovered</div>
+  <div style="font-size:30px;font-weight:700;margin-top:auto;letter-spacing:-.02em">+50 XP</div>
+</div>`;
 
-// ---- Watch -------------------------------------------------------------
-const watchBase = `<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { width: 198px; height: 242px; background: #000; color: #fff; font-family: -apple-system, "SF Pro Rounded", "Helvetica Neue", Arial, sans-serif; border-radius: 44px; overflow: hidden; position: relative; }
-  .time { position: absolute; top: 10px; right: 22px; font-size: 13px; font-weight: 600; color: #FFC733; }
-  .center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
-  .big { font-size: 46px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
-  .label { font-size: 11px; font-weight: 700; letter-spacing: .12em; color: #FFC733; }
-  .street { font-size: 15px; font-weight: 600; margin-top: 8px; padding: 0 18px; }
-  .dots { position: absolute; bottom: 12px; left: 0; right: 0; display: flex; justify-content: center; gap: 5px; }
-  .dots i { width: 5px; height: 5px; border-radius: 50%; background: #444; } .dots i.on { background: #fff; }
-</style>`;
-const dots = n => `<div class="dots">${[0, 1, 2, 3].map(i => `<i class="${i === n ? 'on' : ''}"></i>`).join('')}</div>`;
-screens['w1-watch-navigation'] = watchBase + `<div class="time">9:41</div><div class="center">
-  <svg width="56" height="56" viewBox="0 0 96 96"><path d="M30,84 L30,40 Q30,26 44,26 L60,26" fill="none" stroke="#FFC733" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/><path d="M52,10 L74,26 L52,42Z" fill="#FFC733"/></svg>
-  <div class="big" style="margin-top:6px">180 m</div><div class="label" style="margin-top:6px">RIGHT</div><div class="street">Rotherhithe Street</div></div>${dots(0)}`;
-screens['w2-watch-quest'] = watchBase + `<div class="time">9:41</div><div class="center">
-  <div class="label" style="color:#9aa">THE FORGOTTEN RAILWAY</div><div style="font-size:12px;color:#888;margin-top:14px">Objective</div><div style="font-size:19px;font-weight:700;margin-top:4px;padding:0 14px">Reach Old Station</div><div class="big" style="font-size:36px;margin-top:12px;color:#FFC733">1.4 km</div></div>${dots(1)}`;
-screens['w3-watch-stats'] = watchBase + `<div class="time">9:41</div><div class="center" style="justify-content:center;gap:10px">
-  ${[['12.6 km', 'DISTANCE'], ['48:12', 'DURATION'], ['140 m', 'ELEVATION'], ['132 bpm', 'HEART RATE']].map(m => `<div><div style="font-size:24px;font-weight:700;font-variant-numeric:tabular-nums">${m[0]}</div><div style="font-size:9px;font-weight:700;letter-spacing:.1em;color:#888">${m[1]}</div></div>`).join('')}</div>${dots(2)}`;
-screens['w4-watch-objective-complete'] = watchBase + `<div class="center" style="background:#0f2a17">
-  <div style="width:44px;height:44px;border-radius:50%;background:${C.moss};display:flex;align-items:center;justify-content:center;font-size:24px">✓</div>
-  <div class="label" style="margin-top:10px;color:#9fd8ac">OBJECTIVE COMPLETE</div><div style="font-size:17px;font-weight:700;margin-top:6px">Old Station discovered</div><div class="big" style="font-size:30px;margin-top:8px;color:#FFC733">+50 XP</div></div>`;
-screens['w5-watch-always-on'] = watchBase + `<div class="time" style="color:#777">9:41</div><div class="center" style="color:#bbb">
-  <svg width="44" height="44" viewBox="0 0 96 96"><path d="M30,84 L30,40 Q30,26 44,26 L60,26" fill="none" stroke="#999" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/><path d="M52,10 L74,26 L52,42Z" fill="#999"/></svg>
-  <div class="big" style="margin-top:8px;font-weight:600">180 m</div><div class="street" style="color:#888">Rotherhithe St</div></div>`;
+watch['w5-watch-always-on'] = () => `<div class="face" style="align-items:center;padding-top:20px;color:rgba(255,255,255,.7)">
+  ${icon(P.turnLeft, { size: 36, color: 'rgba(255,255,255,.7)', stroke: 2.5 })}
+  <div style="font-size:42px;font-weight:500;line-height:1;letter-spacing:-.02em;margin-top:2px">180<span style="font-size:20px">m</span></div>
+  <div style="font-size:14px;font-weight:600;letter-spacing:.1em;margin-top:4px">LEFT</div>
+  <div style="margin-top:auto;font-size:14px;color:rgba(255,255,255,.5)">21 km/h</div>
+</div>`;
 
+// ---- Render --------------------------------------------------------------------
 (async () => {
-  const browser = await chromium.launch();
-  for (const [name, html] of Object.entries(screens)) {
-    const watch = name.startsWith('w');
-    const page = await browser.newPage({ viewport: watch ? { width: 198, height: 242 } : { width: 393, height: 852 }, deviceScaleFactor: 2 });
-    await page.setContent((watch ? '' : base) + html);
-    await page.screenshot({ path: path.join(OUT, `${name}.png`), omitBackground: watch });
+  const browser = await chromium.launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {});
+  const shoot = async (name, html, isWatch) => {
+    const page = await browser.newPage({ viewport: isWatch ? { width: 198, height: 242 } : { width: 402, height: 874 }, deviceScaleFactor: 2 });
+    await page.setContent((isWatch ? watchBase : base) + html);
+    await page.evaluate(() => document.fonts.ready);
+    await page.screenshot({ path: path.join(OUT, `${name}.png`), omitBackground: isWatch });
     await page.close();
-    console.log('wrote', name);
-  }
+    console.log('rendered', name);
+  };
+  for (const [name, fn] of Object.entries(screens)) await shoot(name, fn(), false);
+  for (const [name, fn] of Object.entries(watch)) await shoot(name, fn(), true);
   await browser.close();
 })();

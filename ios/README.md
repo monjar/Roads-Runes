@@ -10,6 +10,17 @@ ios/
   RoadsAndRunesTests/         app unit tests
 ```
 
+## Design
+
+The UI implements the Claude Design project in `../docs/design` ("Cycling
+Companion"). Tokens live in `RoadsAndRunes/Components/Theme.swift`
+(`Theme.Colors`, `Theme.Typography`, button styles, `ClassStyle`) and, for
+the Watch, `WatchTheme` in `RoadsAndRunesWatch/App/ContentView.swift`.
+Caprasimo (titles, quest and route names, primary buttons) and Figtree
+(body, every number) are bundled in `RoadsAndRunes/Resources/Fonts` under the
+SIL Open Font License and registered through `UIAppFonts` in `project.yml`.
+`../docs/SCREENS.md` maps each screen to its design option.
+
 ## Generate the project
 
 ```bash

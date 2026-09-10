@@ -8,14 +8,23 @@ backend on PostgreSQL/PostGIS with GraphHopper routing.
 
 ## Screens
 
-Design renders of the main screens (see [docs/SCREENS.md](docs/SCREENS.md) for
-all of them; these are theme-accurate mockups, not device captures yet).
+The UI follows the Claude Design project *Cycling Companion*
+(`docs/design/`): cream ground, terracotta for the route and the primary
+action, sage for the rider and success, class hues for emblems and markers
+only, Caprasimo for titles and Figtree for numbers. The renders below are
+drawn from that design with the app's tokens and fonts (all of them, with
+the design option each implements, in [docs/SCREENS.md](docs/SCREENS.md));
+they are not device captures yet.
 
-| World | Route options | Navigation | Adventure complete |
+| World (9a) | Quest detail (10a) | Navigation (12a) | Adventure complete (13b) |
 |---|---|---|---|
-| ![World](docs/screenshots/02-world.png) | ![Routes](docs/screenshots/05-routes.png) | ![Navigation](docs/screenshots/06-navigation.png) | ![Adventure complete](docs/screenshots/07-adventure-complete.png) |
+| ![World](docs/screenshots/02-world.png) | ![Quest detail](docs/screenshots/04-quest-detail.png) | ![Navigation](docs/screenshots/06-navigation.png) | ![Adventure complete](docs/screenshots/07-adventure-complete.png) |
 
-| Watch navigation | Watch quest | Watch stats | Objective complete |
+| Three ways to ride it (2a) | Character (11b) | Journal (14a) | Objective complete (12b) |
+|---|---|---|---|
+| ![Routes](docs/screenshots/05-routes.png) | ![Character](docs/screenshots/09-character.png) | ![Journal](docs/screenshots/08-journal.png) | ![Objective complete](docs/screenshots/10-objective-complete.png) |
+
+| Watch navigation | Watch quest | Watch ride | Watch objective complete |
 |---|---|---|---|
 | ![Watch navigation](docs/screenshots/w1-watch-navigation.png) | ![Watch quest](docs/screenshots/w2-watch-quest.png) | ![Watch stats](docs/screenshots/w3-watch-stats.png) | ![Watch objective](docs/screenshots/w4-watch-objective-complete.png) |
 
@@ -26,6 +35,8 @@ backend/   FastAPI modular monolith (auth, characters, progression, quests,
            routing, exploration, rides, discoveries, social, integrations)
 ios/       Xcode project (XcodeGen) — iPhone app, Watch app, and the
            pure-Swift RoadsAndRunesCore package
+docs/      architecture, API contract, subsystem docs, the Claude Design
+           export (docs/design) and rendered screens
 routing/   GraphHopper configuration and bike custom models
 infra/     docker-compose, environment matrix, OSM download script
 docs/      product spec, architecture, API, quest/exploration/routing/watch/

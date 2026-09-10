@@ -96,7 +96,14 @@ the API client, navigation state machine, route progress and objective
 tracking, ride statistics, exploration recording and persistence formats, and
 is unit-tested with `swift test`. The app target adds SwiftUI features,
 CoreLocation/HealthKit/WatchConnectivity/MapLibre integrations, SwiftData
-persistence and the design-system components. The Watch target mirrors
+persistence and the design-system components. The design system is the
+Claude Design project in `docs/design` (tokens in `Components/Theme.swift`:
+cream/surface ground, terracotta for the route and primary action, sage for
+the rider and success, class hues for emblems and markers, Caprasimo and
+Figtree bundled as fonts); screens map to the design's option ids in
+`docs/SCREENS.md`. Maps follow the ink-map rules: unexplored ground is cream
+with roads ghosting through, explored cells carry a dashed ink edge, quest
+waypoints are diamonds, mysteries dashed "?" circles, the rider a sage circle. The Watch target mirrors
 navigation, quest and stats screens over WatchConnectivity and runs the
 HealthKit workout session so it works with the phone locked. H3 on device is
 the uber/h3 C library vendored as a local Swift package (`ios/Packages/H3`)
