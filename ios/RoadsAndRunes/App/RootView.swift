@@ -48,10 +48,10 @@ struct MainTabView: View {
     }
 }
 
-extension AdventureSummary: Identifiable {
+extension AdventureSummary: @retroactive Identifiable {
     public var id: UUID { ride.id }
 }
 
-extension ActiveRideState: Identifiable {
+extension ActiveRideState: @retroactive Identifiable {
     public var id: UUID { clientRideId }
 }

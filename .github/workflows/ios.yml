@@ -26,10 +26,8 @@ jobs:
       - run: swiftlint --config ios/.swiftlint.yml ios
 
   app-build:
-    # Links MapLibre and needs signing/provisioning; informational until a
-    # signing setup exists.
+    # Unsigned simulator build of the iPhone app and its embedded Watch app.
     runs-on: macos-15
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - run: brew install xcodegen

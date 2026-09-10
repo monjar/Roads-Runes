@@ -84,9 +84,9 @@ end to end.
 
 Verification so far: the backend suite (unit + HTTP end-to-end) passes on
 SQLite and, in CI, against PostGIS after the Alembic migration; the
-`RoadsAndRunesCore` Swift package builds and its tests pass on macOS in CI.
-The iPhone and Watch app targets were written without a local Xcode and are
-compiled only by the best-effort CI job; expect a compiler-fix pass in Xcode
-before the field tests in spec §80.
+`RoadsAndRunesCore` Swift package builds and its tests pass on macOS in CI;
+the iPhone app and its embedded Watch app compile in CI (Xcode 16, unsigned
+simulator build). The apps have not been run on a device or simulator yet:
+the field tests in spec §80 are still open.
 
 See `docs/ARCHITECTURE.md` for the design and `docs/API.md` for the contract.

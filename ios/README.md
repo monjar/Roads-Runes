@@ -49,8 +49,9 @@ cd Packages/RoadsAndRunesCore && swift test      # no Xcode needed
 xcodebuild -scheme RoadsAndRunes -destination 'platform=iOS Simulator,name=iPhone 15' test
 ```
 
-## Caveat
+## Status
 
-This code was written without a Swift toolchain available to the author and
-has not been compiled. Expect a pass of compiler fixes in Xcode, then the
-field tests listed in `docs/PRODUCT_SPEC.md` §80.
+Both app targets compile in CI (`xcodegen generate` + unsigned
+`xcodebuild ... -destination 'generic/platform=iOS Simulator'`). They have
+not been run on a simulator or device yet; the field tests listed in
+`docs/PRODUCT_SPEC.md` §80 are still open.
