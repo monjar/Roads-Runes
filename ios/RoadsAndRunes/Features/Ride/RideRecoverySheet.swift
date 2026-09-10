@@ -9,21 +9,25 @@ struct RideRecoverySheet: View {
     var body: some View {
         let formatter = UnitFormatter(units: container.session.units)
         VStack(spacing: Theme.Spacing.lg) {
-            Image(systemName: "arrow.counterclockwise.circle.fill").font(.system(size: 48)).foregroundStyle(Theme.Colors.rune)
-            Text("We found an unfinished ride").font(Theme.Typography.title)
+            SheetHandle()
+            ZStack {
+                Circle().fill(Theme.Colors.surface)
+                Image(systemName: "arrow.counterclockwise").font(.system(size: 28, weight: .bold)).foregroundStyle(Theme.Colors.terracotta)
+            }
+            .frame(width: 72, height: 72)
+            Text("We found an unfinished ride").font(Theme.Typography.title).foregroundStyle(Theme.Colors.ink).multilineTextAlignment(.center)
             Text("Started \(state.startedAt.formatted(date: .abbreviated, time: .shortened)) · \(formatter.distance(meters: state.stats.distanceMeters)) · \(formatter.duration(seconds: state.stats.elapsedSeconds))")
-                .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary).multilineTextAlignment(.center)
+                .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).multilineTextAlignment(.center)
             VStack(spacing: Theme.Spacing.sm) {
-                Button { Task { await container.rideRecorder.resumeRecovered() } } label: { Text("Resume").frame(maxWidth: .infinity) }
-                    .buttonStyle(.borderedProminent).controlSize(.large).tint(Theme.Colors.moss)
-                Button { Task { await container.rideRecorder.finishRecovered() } } label: { Text("Finish and save").frame(maxWidth: .infinity) }
-                    .buttonStyle(.bordered).controlSize(.large)
-                Button(role: .destructive) { container.rideRecorder.discardRecovered() } label: { Text("Discard").frame(maxWidth: .infinity) }
-                    .buttonStyle(.bordered).controlSize(.large).tint(Theme.Colors.ember)
+                Button("Resume") { Task { await container.rideRecorder.resumeRecovered() } }.buttonStyle(.primary)
+                Button("Finish and save") { Task { await container.rideRecorder.finishRecovered() } }.buttonStyle(.secondaryWide)
+                Button("Discard") { container.rideRecorder.discardRecovered() }
+                    .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.terracottaDeep)
             }
         }
         .padding(Theme.Spacing.lg)
         .presentationDetents([.medium])
+        .presentationBackground(Theme.Colors.cream)
         .interactiveDismissDisabled()
     }
 }

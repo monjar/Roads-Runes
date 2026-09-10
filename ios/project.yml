@@ -37,7 +37,7 @@ targets:
     platform: iOS
     sources:
       - path: RoadsAndRunes
-        excludes: ["Resources/Info.plist"]
+        excludes: ["Resources/Info.plist", "Resources/Fonts/*.txt"]
     dependencies:
       - package: RoadsAndRunesCore
       - package: MapLibre
@@ -52,6 +52,7 @@ targets:
         CFBundleShortVersionString: "0.1.0"
         CFBundleVersion: "1"
         UILaunchScreen: {}
+        UIAppFonts: [Caprasimo-Regular.ttf, Figtree-Regular.ttf, Figtree-SemiBold.ttf, Figtree-Bold.ttf]
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false

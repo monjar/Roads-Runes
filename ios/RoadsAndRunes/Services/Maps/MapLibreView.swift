@@ -13,6 +13,11 @@ struct MapMarker: Identifiable, Hashable {
 
 /// MapLibre wrapper: fog-of-war polygons, route line, markers, user location.
 /// Layers are (re)built from SwiftUI state; heavy work stays in the coordinator.
+///
+/// Ink map conventions (design turn 2): unexplored ground is cream with roads
+/// ghosting through; explored cells are outlined with a dashed ink line; quest
+/// waypoints are diamonds, mysteries are dashed "?" circles, the rider is a
+/// sage circle; the selected route is terracotta with a white casing.
 struct MapLibreView: UIViewRepresentable {
     var styleURL: URL
     var center: Coordinate?
@@ -34,6 +39,7 @@ struct MapLibreView: UIViewRepresentable {
         view.attributionButton.alpha = 0.5
         view.showsUserLocation = true
         view.compassView.isHidden = navigationMode
+        view.backgroundColor = UIColor(hex: 0xEBDDC5)
         if let center {
             view.setCenter(CLLocationCoordinate2D(latitude: center.latitude, longitude: center.longitude), zoomLevel: zoom, animated: false)
         }
@@ -97,31 +103,35 @@ struct MapLibreView: UIViewRepresentable {
             guard hash != lastCellsHash else { return }
             lastCellsHash = hash
             let features: [MLNPolygonFeature] = parent.cells.compactMap { cell in
-                guard cell.polygon.count >= 3, cell.state != .visited else { return nil }
+                guard cell.polygon.count >= 3, cell.state != .visited, cell.state != .explored else { return nil }
                 var coords = cell.polygon.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
                 let feature = MLNPolygonFeature(coordinates: &coords, count: UInt(coords.count))
                 feature.attributes = ["state": cell.state.rawValue]
                 return feature
             }
             let exploredOutline: [MLNPolygonFeature] = parent.cells.compactMap { cell in
-                guard cell.state == .explored, cell.polygon.count >= 3 else { return nil }
+                guard cell.state == .explored || cell.state == .visited, cell.polygon.count >= 3 else { return nil }
                 var coords = cell.polygon.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
-                return MLNPolygonFeature(coordinates: &coords, count: UInt(coords.count))
+                let feature = MLNPolygonFeature(coordinates: &coords, count: UInt(coords.count))
+                feature.attributes = ["state": cell.state.rawValue]
+                return feature
             }
             let source = ensureSource(style, id: "rr-fog")
             source.shape = MLNShapeCollectionFeature(shapes: features)
             if style.layer(withIdentifier: "rr-fog-fill") == nil {
+                // Unexplored ground is cream; discovered cells let the map show through a little more.
                 let fill = MLNFillStyleLayer(identifier: "rr-fog-fill", source: source)
-                fill.fillColor = NSExpression(format: "TERNARY(state == 'DISCOVERED', %@, %@)", UIColor(white: 0.08, alpha: 0.30), UIColor(white: 0.08, alpha: 0.58))
-                fill.fillOutlineColor = NSExpression(forConstantValue: UIColor(white: 0.97, alpha: 0.15))
+                fill.fillColor = NSExpression(format: "TERNARY(state == 'DISCOVERED', %@, %@)", UIColor(hex: 0xF5EAD8, alpha: 0.62), UIColor(hex: 0xF5EAD8, alpha: 0.93))
+                fill.fillOutlineColor = NSExpression(forConstantValue: UIColor(hex: 0xA19786, alpha: 0.18))
                 style.addLayer(fill)
             }
             let outlineSource = ensureSource(style, id: "rr-explored")
             outlineSource.shape = MLNShapeCollectionFeature(shapes: exploredOutline)
             if style.layer(withIdentifier: "rr-explored-line") == nil {
                 let line = MLNLineStyleLayer(identifier: "rr-explored-line", source: outlineSource)
-                line.lineColor = NSExpression(forConstantValue: UIColor(red: 0.24, green: 0.44, blue: 0.30, alpha: 0.45))
-                line.lineWidth = NSExpression(forConstantValue: 1)
+                line.lineColor = NSExpression(format: "TERNARY(state == 'EXPLORED', %@, %@)", UIColor(hex: 0x645C50, alpha: 0.7), UIColor(hex: 0x645C50, alpha: 0.35))
+                line.lineWidth = NSExpression(forConstantValue: 1.2)
+                line.lineDashPattern = NSExpression(forConstantValue: [4, 3])
                 style.addLayer(line)
             }
         }
@@ -139,14 +149,20 @@ struct MapLibreView: UIViewRepresentable {
                 source.shape = nil
             }
             if style.layer(withIdentifier: "rr-route-line") == nil {
+                let glow = MLNLineStyleLayer(identifier: "rr-route-glow", source: source)
+                glow.lineColor = NSExpression(forConstantValue: UIColor(hex: 0xC67139, alpha: 0.16))
+                glow.lineWidth = NSExpression(forConstantValue: 18)
+                glow.lineCap = NSExpression(forConstantValue: "round")
+                glow.lineJoin = NSExpression(forConstantValue: "round")
+                style.addLayer(glow)
                 let casing = MLNLineStyleLayer(identifier: "rr-route-casing", source: source)
                 casing.lineColor = NSExpression(forConstantValue: UIColor.white)
-                casing.lineWidth = NSExpression(forConstantValue: 8)
+                casing.lineWidth = NSExpression(forConstantValue: 9)
                 casing.lineCap = NSExpression(forConstantValue: "round")
                 casing.lineJoin = NSExpression(forConstantValue: "round")
                 style.addLayer(casing)
                 let line = MLNLineStyleLayer(identifier: "rr-route-line", source: source)
-                line.lineColor = NSExpression(forConstantValue: UIColor(red: 0.80, green: 0.55, blue: 0.19, alpha: 0.95))
+                line.lineColor = NSExpression(forConstantValue: UIColor(hex: 0xC67139))
                 line.lineWidth = NSExpression(forConstantValue: 5)
                 line.lineCap = NSExpression(forConstantValue: "round")
                 line.lineJoin = NSExpression(forConstantValue: "round")
@@ -180,6 +196,9 @@ struct MapLibreView: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MLNMapView, viewFor annotation: MLNAnnotation) -> MLNAnnotationView? {
+            if annotation is MLNUserLocation {
+                return RiderLocationView()
+            }
             guard let point = annotation as? MLNPointAnnotation, let kindRaw = point.subtitle, let kind = MapMarker.Kind(rawValue: kindRaw) else { return nil }
             let identifier = "marker-\(kindRaw)"
             let view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) ?? MarkerAnnotationView(reuseIdentifier: identifier, kind: kind)
@@ -198,27 +217,100 @@ struct MapLibreView: UIViewRepresentable {
     }
 }
 
+/// Shape carries meaning before colour: quests and objectives are diamonds,
+/// mysteries are dashed "?" circles, stops are small ink dots.
 final class MarkerAnnotationView: MLNAnnotationView {
     init(reuseIdentifier: String, kind: MapMarker.Kind) {
         super.init(reuseIdentifier: reuseIdentifier)
-        let size: CGFloat = kind == .discovery || kind == .poi ? 14 : 26
-        frame = CGRect(x: 0, y: 0, width: size, height: size)
-        layer.cornerRadius = size / 2
-        layer.borderWidth = 2
-        layer.borderColor = UIColor.white.cgColor
-        backgroundColor = Self.color(for: kind)
-        centerOffset = CGVector(dx: 0, dy: -size / 2)
+        switch kind {
+        case .quest, .questActive, .objective, .objectiveDone:
+            let size: CGFloat = 30
+            frame = CGRect(x: 0, y: 0, width: size, height: size)
+            let diamond = UIView(frame: CGRect(x: 5, y: 5, width: 20, height: 20))
+            diamond.backgroundColor = Self.color(for: kind)
+            diamond.layer.cornerRadius = 5
+            diamond.layer.borderWidth = 2.5
+            diamond.layer.borderColor = UIColor.white.cgColor
+            diamond.transform = CGAffineTransform(rotationAngle: .pi / 4)
+            addSubview(diamond)
+            if kind == .objectiveDone {
+                let check = UILabel(frame: bounds)
+                check.text = "✓"
+                check.font = .systemFont(ofSize: 13, weight: .heavy)
+                check.textColor = .white
+                check.textAlignment = .center
+                addSubview(check)
+            }
+        case .discovery:
+            let size: CGFloat = 26
+            frame = CGRect(x: 0, y: 0, width: size, height: size)
+            let ring = CAShapeLayer()
+            ring.path = UIBezierPath(ovalIn: bounds.insetBy(dx: 1.5, dy: 1.5)).cgPath
+            ring.fillColor = UIColor(hex: 0xF5EAD8, alpha: 0.92).cgColor
+            ring.strokeColor = UIColor(hex: 0x82796A).cgColor
+            ring.lineWidth = 2
+            ring.lineDashPattern = [3, 2]
+            layer.addSublayer(ring)
+            let label = UILabel(frame: bounds)
+            label.text = "?"
+            label.font = .systemFont(ofSize: 14, weight: .bold)
+            label.textColor = UIColor(hex: 0x645C50)
+            label.textAlignment = .center
+            addSubview(label)
+        case .poi:
+            let size: CGFloat = 16
+            frame = CGRect(x: 0, y: 0, width: size, height: size)
+            layer.cornerRadius = size / 2
+            layer.borderWidth = 2.5
+            layer.borderColor = UIColor.white.cgColor
+            backgroundColor = UIColor(hex: 0x201E1D)
+        }
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = 0.25
+        layer.shadowOffset = CGSize(width: 0, height: 3)
+        layer.shadowRadius = 4
     }
 
     required init?(coder: NSCoder) { nil }
 
     private static func color(for kind: MapMarker.Kind) -> UIColor {
         switch kind {
-        case .quest: return UIColor(red: 0.80, green: 0.55, blue: 0.19, alpha: 1)
-        case .questActive: return UIColor(red: 0.76, green: 0.29, blue: 0.20, alpha: 1)
-        case .objective: return UIColor(red: 1.0, green: 0.78, blue: 0.20, alpha: 1)
-        case .objectiveDone: return UIColor(red: 0.24, green: 0.44, blue: 0.30, alpha: 1)
-        case .discovery, .poi: return UIColor(red: 0.22, green: 0.47, blue: 0.62, alpha: 1)
+        case .quest: return UIColor(hex: 0x7A8A5E)
+        case .questActive: return UIColor(hex: 0xC67139)
+        case .objective: return UIColor(hex: 0xC67139)
+        case .objectiveDone: return UIColor(hex: 0x56633F)
+        case .discovery: return UIColor(hex: 0x82796A)
+        case .poi: return UIColor(hex: 0x201E1D)
         }
+    }
+}
+
+/// "You are here": a sage circle with a white ring and a soft halo.
+final class RiderLocationView: MLNUserLocationAnnotationView {
+    private let halo = CALayer()
+    private let dot = CALayer()
+
+    init() {
+        super.init(frame: CGRect(x: 0, y: 0, width: 44, height: 44))
+        halo.frame = bounds
+        halo.cornerRadius = 22
+        halo.backgroundColor = UIColor(hex: 0x7A8A5E, alpha: 0.25).cgColor
+        dot.frame = CGRect(x: 11, y: 11, width: 22, height: 22)
+        dot.cornerRadius = 11
+        dot.backgroundColor = UIColor(hex: 0x7A8A5E).cgColor
+        dot.borderColor = UIColor.white.cgColor
+        dot.borderWidth = 4
+        dot.shadowColor = UIColor.black.cgColor
+        dot.shadowOpacity = 0.3
+        dot.shadowOffset = CGSize(width: 0, height: 3)
+        dot.shadowRadius = 5
+        layer.addSublayer(halo)
+        layer.addSublayer(dot)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func update() {
+        // Static rendering; the map moves under the rider.
     }
 }

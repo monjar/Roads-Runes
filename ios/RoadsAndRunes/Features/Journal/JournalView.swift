@@ -7,6 +7,8 @@ final class JournalViewModel {
     private(set) var adventures: [AdventureEntry] = []
     private(set) var discoveries: [UserDiscovery] = []
     private(set) var stats: ExplorationStats?
+    private(set) var cells: [CellRender] = []
+    private(set) var mapCenter: Coordinate?
     var error: String?
     private let container: AppContainer
 
@@ -22,37 +24,112 @@ final class JournalViewModel {
         } catch {
             self.error = error.localizedDescription
         }
+        let center = container.location.lastFix?.coordinate ?? adventures.first?.quest?.origin ?? SampleData.origin
+        if let world = try? await container.api.world(center: center, radiusMeters: 8000) {
+            mapCenter = center
+            cells = FogGrid(indexing: container.cellIndexing).render(serverCells: world.cells, localStates: [:])
+        }
+    }
+
+    struct DiscoveryItem: Identifiable, Hashable {
+        let summary: DiscoverySummary
+        let date: Date?
+        let questTitle: String?
+        var id: UUID { summary.id }
+        var group: String { DiscoveryIcon.group(for: summary.category) }
+    }
+
+    /// Discoveries with names and kinds, collected from the adventures that found them.
+    var discoveryItems: [DiscoveryItem] {
+        var seen: Set<UUID> = []
+        var items: [DiscoveryItem] = []
+        let dates = Dictionary(discoveries.map { ($0.discoveryId, $0.discoveredAt) }, uniquingKeysWith: { a, _ in a })
+        for entry in adventures {
+            for summary in entry.discoveries where !seen.contains(summary.id) {
+                seen.insert(summary.id)
+                items.append(DiscoveryItem(summary: summary, date: dates[summary.id] ?? summary.discoveredAt ?? entry.ride.startedAt, questTitle: entry.quest?.title))
+            }
+        }
+        return items.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+    }
+
+    struct MonthSummary {
+        let title: String
+        let adventures: Int
+        let newTerritoryMeters: Double
+        let discoveries: Int
+        let quests: Int
+        let climbMeters: Double
+    }
+
+    var latestMonth: MonthSummary? {
+        guard let first = adventures.max(by: { $0.ride.startedAt < $1.ride.startedAt }) else { return nil }
+        let calendar = Calendar.current
+        let key = calendar.dateComponents([.year, .month], from: first.ride.startedAt)
+        let inMonth = adventures.filter { calendar.dateComponents([.year, .month], from: $0.ride.startedAt) == key }
+        return MonthSummary(
+            title: first.ride.startedAt.formatted(.dateTime.month(.wide)),
+            adventures: inMonth.count,
+            newTerritoryMeters: inMonth.reduce(0) { $0 + $1.newTerritoryMeters },
+            discoveries: inMonth.reduce(0) { $0 + $1.discoveries.count },
+            quests: inMonth.filter { $0.quest != nil }.count,
+            climbMeters: inMonth.reduce(0) { $0 + $1.ride.elevationGainMeters }
+        )
     }
 }
 
+enum JournalSection: Int, CaseIterable, Hashable {
+    case adventures, discoveries, map, stats
+
+    var title: String {
+        switch self {
+        case .adventures: return "Adventures"
+        case .discoveries: return "Discoveries"
+        case .map: return "Map"
+        case .stats: return "Stats"
+        }
+    }
+}
+
+/// Journal (design 14a/14b): the month in exploration terms, completed quests as
+/// entries, the explored world as the collection's cover. Statistics is a tab,
+/// not the headline (spec §41–42).
 struct JournalView: View {
     @Environment(AppContainer.self) private var container
     @State private var model: JournalViewModel?
-    @State private var section = 0
+    @State private var section: JournalSection = .adventures
+    @State private var filter: String? = nil
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                Picker("Section", selection: $section) {
-                    Text("Adventures").tag(0); Text("Discoveries").tag(1); Text("World").tag(2); Text("Statistics").tag(3)
-                }
-                .pickerStyle(.segmented).padding(Theme.Spacing.md)
-                ScrollView {
-                    if let model {
-                        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                            switch section {
-                            case 0: adventures(model)
-                            case 1: discoveries(model)
-                            case 2: WorldStatsView(stats: model.stats, units: model.units)
-                            default: StatsView(stats: model.stats, units: model.units)
-                            }
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Journal").font(Theme.Typography.voice(32, relativeTo: .largeTitle)).foregroundStyle(Theme.Colors.ink)
+                        Spacer()
+                        if let stats = model?.stats {
+                            Text("\(exploredArea(stats)) · \(stats.discoveriesFound) discoveries").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
                         }
-                        .padding(.horizontal, Theme.Spacing.md)
+                    }
+                    SegmentedPill(options: JournalSection.allCases, title: { $0.title }, selection: $section)
+                    if let model {
+                        if let error = model.error { ErrorLine(text: error) }
+                        switch section {
+                        case .adventures: adventures(model)
+                        case .discoveries: discoveries(model)
+                        case .map: mapSection(model)
+                        case .stats: StatsView(stats: model.stats, units: model.units)
+                        }
+                    } else {
+                        ProgressView().tint(Theme.Colors.terracotta).frame(maxWidth: .infinity)
                     }
                 }
+                .padding(.horizontal, 22)
+                .padding(.top, 8)
+                .padding(.bottom, 24)
             }
-            .background(Theme.Colors.parchment)
-            .navigationTitle("Journal")
+            .background(Theme.Colors.cream)
+            .toolbar(.hidden, for: .navigationBar)
             .refreshable { await model?.load() }
         }
         .task {
@@ -64,48 +141,157 @@ struct JournalView: View {
         }
     }
 
+    private func exploredArea(_ stats: ExplorationStats) -> String {
+        let area = Double(stats.cellsVisited) * 0.1053
+        return area >= 10 ? "\(Int(area.rounded())) km²" : String(format: "%.1f km²", area)
+    }
+
+    // MARK: Adventures (14a)
+
     @ViewBuilder
     private func adventures(_ model: JournalViewModel) -> some View {
+        let f = UnitFormatter(units: model.units)
+        if let month = model.latestMonth {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(month.title).font(Theme.Typography.heading).foregroundStyle(Theme.Colors.ink)
+                    Spacer()
+                    Text("\(month.adventures) adventure\(month.adventures == 1 ? "" : "s")").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                }
+                HStack(spacing: 16) {
+                    fact(f.distance(meters: month.newTerritoryMeters), "new roads")
+                    fact("\(month.discoveries)", "discoveries")
+                    fact("\(month.quests)", "quests")
+                    fact(f.elevation(meters: month.climbMeters), "")
+                }
+            }
+            .card()
+        }
         if model.adventures.isEmpty {
-            EmptyState(icon: "book", title: "No adventures yet", message: "Your completed rides, quests and discoveries will be recorded here.")
+            EmptyState(icon: "book.closed", title: "No adventures yet", message: "Your completed rides, quests and discoveries will be recorded here.")
         }
         ForEach(model.adventures) { entry in
             NavigationLink { AdventureDetailView(entry: entry) } label: {
-                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                    HStack {
-                        Text(entry.quest?.title ?? entry.ride.title ?? "Free ride").font(Theme.Typography.heading)
-                        Spacer()
-                        Text("+\(entry.xpAwarded) XP").font(Theme.Typography.heading).foregroundStyle(Theme.Colors.moss)
-                    }
-                    let f = UnitFormatter(units: model.units)
-                    Text("\(entry.ride.startedAt.formatted(date: .abbreviated, time: .omitted)) · \(f.distance(meters: entry.ride.distanceMeters)) · \(f.elevation(meters: entry.ride.elevationGainMeters)) · \(entry.discoveries.count) discoveries · \(f.distance(meters: entry.newTerritoryMeters)) new")
-                        .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
-                }
-                .card()
+                AdventureRow(entry: entry, units: model.units)
             }
             .buttonStyle(.plain)
         }
     }
 
+    private func fact(_ value: String, _ label: String) -> some View {
+        (Text(value).font(Theme.Typography.text(14, .bold)) + Text(label.isEmpty ? "" : " \(label)").font(Theme.Typography.text(14)))
+            .foregroundStyle(Theme.Colors.ink)
+            .lineLimit(1)
+    }
+
+    // MARK: Discoveries (14b)
+
     @ViewBuilder
     private func discoveries(_ model: JournalViewModel) -> some View {
-        if model.discoveries.isEmpty {
-            EmptyState(icon: "sparkles", title: "Nothing discovered yet", message: "Ride past landmarks, parks, cafés and viewpoints to add them to your library.")
-        }
-        ForEach(model.discoveries) { item in
-            NavigationLink { DiscoveryDetailView(discoveryId: item.discoveryId) } label: {
-                HStack {
-                    Image(systemName: "mappin.and.ellipse").foregroundStyle(Theme.Colors.river)
-                    VStack(alignment: .leading) {
-                        Text(item.note?.isEmpty == false ? item.note! : "Discovered \(item.discoveredAt.formatted(date: .abbreviated, time: .omitted))").font(Theme.Typography.body).lineLimit(1)
-                        if let rating = item.rating { Text(String(repeating: "★", count: rating)).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.rune) }
-                    }
-                    Spacer()
+        let items = model.discoveryItems
+        let groups = ["Natural", "Historical", "Cultural", "Cycling"].filter { g in items.contains { $0.group == g } }
+        mapCard(model, height: 210)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                FilterChip(text: "All \(items.count)", selected: filter == nil) { filter = nil }
+                ForEach(groups, id: \.self) { group in
+                    FilterChip(text: "\(group) \(items.filter { $0.group == group }.count)", selected: filter == group) { filter = group }
                 }
-                .card()
             }
-            .buttonStyle(.plain)
         }
+        let visible = items.filter { filter == nil || $0.group == filter }
+        if visible.isEmpty {
+            EmptyState(icon: "sparkle", title: "Nothing discovered yet", message: "Ride past landmarks, parks, pubs and viewpoints to add them to your collection.")
+        }
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            ForEach(visible) { item in
+                NavigationLink { DiscoveryDetailView(discoveryId: item.id) } label: {
+                    DiscoveryTile(name: item.summary.name, category: item.summary.category, subtitle: subtitle(for: item))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func subtitle(for item: JournalViewModel.DiscoveryItem) -> String {
+        var parts = [item.group]
+        if let date = item.date { parts.append(date.formatted(.dateTime.day().month(.abbreviated))) }
+        if let quest = item.questTitle { parts.append(quest) }
+        return parts.joined(separator: " · ")
+    }
+
+    // MARK: Map
+
+    @ViewBuilder
+    private func mapSection(_ model: JournalViewModel) -> some View {
+        mapCard(model, height: 360)
+        if let stats = model.stats {
+            HStack(spacing: 8) {
+                FactTile(value: "\(stats.cellsVisited)", label: "Areas visited")
+                FactTile(value: "\(stats.cellsExplored)", label: "Fully explored")
+                FactTile(value: "\(stats.cellsDiscovered ?? 0)", label: "Revealed by quests")
+            }
+            Text("Open the World to keep clearing the fog.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+        }
+    }
+
+    private func mapCard(_ model: JournalViewModel, height: CGFloat) -> some View {
+        ZStack(alignment: .bottomLeading) {
+            MapLibreView(
+                styleURL: Config.mapStyleURL(for: .adventure),
+                center: model.mapCenter ?? SampleData.origin,
+                zoom: 11.5,
+                cells: model.cells,
+                route: [],
+                markers: []
+            )
+            .allowsHitTesting(false)
+            if let stats = model.stats {
+                StatusPill(text: "\(stats.cellsVisited) areas · \(stats.cellsExplored) fully explored").padding(12)
+            }
+        }
+        .frame(height: height)
+        .background(Theme.Colors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+    }
+}
+
+/// Journal entry (design 14a): ink thumbnail, Caprasimo title, XP, one line of facts.
+struct AdventureRow: View {
+    let entry: AdventureEntry
+    let units: Units
+
+    var body: some View {
+        let f = UnitFormatter(units: units)
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(entry.quest.map { ClassStyle.color($0.characterClass) } ?? Theme.Colors.track)
+                Image(systemName: entry.quest.map { ClassStyle.symbol($0.characterClass) } ?? "bicycle")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundStyle(entry.quest == nil ? Theme.Colors.muted : Theme.Colors.cream)
+            }
+            .frame(width: 64, height: 64)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(entry.quest?.title ?? entry.ride.title ?? "Free ride").font(Theme.Typography.cardTitle).foregroundStyle(Theme.Colors.ink).lineLimit(1)
+                    Spacer(minLength: 6)
+                    Text("+\(entry.xpAwarded) XP")
+                        .font(Theme.Typography.captionStrong)
+                        .foregroundStyle(entry.quest.map { ClassStyle.textColor($0.characterClass) } ?? Theme.Colors.sageDeep)
+                }
+                Text(meta(f)).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).lineLimit(1)
+            }
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
+    }
+
+    private func meta(_ f: UnitFormatter) -> String {
+        var parts = [entry.ride.startedAt.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)), f.distance(meters: entry.ride.distanceMeters)]
+        if !entry.discoveries.isEmpty { parts.append("\(entry.discoveries.count) discover\(entry.discoveries.count == 1 ? "y" : "ies")") }
+        if entry.newTerritoryMeters > 0 { parts.append("\(f.distance(meters: entry.newTerritoryMeters)) new") }
+        return parts.joined(separator: " · ")
     }
 }
 
@@ -117,122 +303,165 @@ struct StatsView: View {
     var body: some View {
         if let stats {
             let f = UnitFormatter(units: units)
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Theme.Spacing.md) {
-                RideMetric(title: "New territory", value: f.distance(meters: stats.newTerritoryKm * 1000), compact: true)
-                RideMetric(title: "Unique roads", value: f.distance(meters: stats.uniqueRoadsKm * 1000), compact: true)
-                RideMetric(title: "Regions visited", value: "\(stats.regionsVisited)", compact: true)
-                RideMetric(title: "Quests completed", value: "\(stats.questsCompleted)", compact: true)
-                RideMetric(title: "Discoveries", value: "\(stats.discoveriesFound)", compact: true)
-                RideMetric(title: "Story quests", value: "\(stats.storyQuestsCompleted)", compact: true)
-                RideMetric(title: "Total distance", value: f.distance(meters: stats.totalDistanceMeters), compact: true)
-                RideMetric(title: "Total climb", value: f.elevation(meters: stats.totalElevationMeters), compact: true)
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                FactTile(value: f.distance(meters: stats.newTerritoryKm * 1000), label: "New territory")
+                FactTile(value: f.distance(meters: stats.uniqueRoadsKm * 1000), label: "Unique roads")
+                FactTile(value: "\(stats.regionsVisited)", label: "Regions visited")
+                FactTile(value: "\(stats.questsCompleted)", label: "Quests completed")
+                FactTile(value: "\(stats.discoveriesFound)", label: "Discoveries")
+                FactTile(value: "\(stats.storyQuestsCompleted)", label: "Story quests")
+                FactTile(value: f.distance(meters: stats.totalDistanceMeters), label: "Total distance")
+                FactTile(value: f.elevation(meters: stats.totalElevationMeters), label: "Total climb")
             }
-            .card()
             if let avg = stats.averageSpeedMps {
-                HStack {
-                    RideMetric(title: "Average speed", value: f.speed(metersPerSecond: avg), compact: true)
-                    Spacer()
-                    if let max = stats.maxSpeedMps { RideMetric(title: "Max speed", value: f.speed(metersPerSecond: max), compact: true) }
+                HStack(spacing: 8) {
+                    FactTile(value: f.speed(metersPerSecond: avg), label: "Average speed", valueColor: Theme.Colors.muted)
+                    if let max = stats.maxSpeedMps { FactTile(value: f.speed(metersPerSecond: max), label: "Max speed", valueColor: Theme.Colors.muted) }
                 }
-                .card().opacity(0.8)
+                .opacity(0.8)
             }
         } else {
-            ProgressView()
+            ProgressView().tint(Theme.Colors.terracotta).frame(maxWidth: .infinity)
         }
-    }
-}
-
-struct WorldStatsView: View {
-    let stats: ExplorationStats?
-    let units: Units
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Text("Explored world").font(Theme.Typography.heading)
-            if let stats {
-                RideMetric(title: "Areas visited", value: "\(stats.cellsVisited)")
-                RideMetric(title: "Areas fully explored", value: "\(stats.cellsExplored)")
-                RideMetric(title: "Revealed by quests", value: "\(stats.cellsDiscovered ?? 0)")
-                Text("Open the World tab to see the fog you have cleared.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
-            } else { ProgressView() }
-        }
-        .card()
     }
 }
 
 struct AdventureDetailView: View {
     @Environment(AppContainer.self) private var container
+    @Environment(\.dismiss) private var dismiss
     let entry: AdventureEntry
     @State private var geometry: RideGeometry?
     @State private var notes: String = ""
-    @State private var shareURL: URL?
 
     var body: some View {
         let f = UnitFormatter(units: container.session.units)
-        ScrollView {
-            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                MapLibreView(styleURL: Config.mapStyleURL(for: .minimal), center: geometry?.path.first, zoom: 12, cells: [], route: geometry?.path ?? [], markers: [])
-                    .frame(height: 220).clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
-                Text(entry.quest?.title ?? "Free ride").font(Theme.Typography.display)
-                Text("+\(entry.xpAwarded) XP").font(Theme.Typography.title).foregroundStyle(Theme.Colors.moss)
-                HStack(spacing: Theme.Spacing.lg) {
-                    RideMetric(title: "Ridden", value: f.distance(meters: entry.ride.distanceMeters), compact: true)
-                    RideMetric(title: "Climbed", value: f.elevation(meters: entry.ride.elevationGainMeters), compact: true)
-                    RideMetric(title: "Time", value: f.duration(seconds: Double(entry.ride.durationSeconds)), compact: true)
-                    RideMetric(title: "New", value: f.distance(meters: entry.newTerritoryMeters), compact: true)
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    IconCircleButton(symbol: "chevron.left", background: Theme.Colors.surface) { dismiss() }
+                    Spacer()
+                    if let quest = entry.quest {
+                        Eyebrow(text: "\(ClassStyle.name(quest.characterClass)) quest · \(entry.ride.startedAt.formatted(date: .abbreviated, time: .omitted))", color: ClassStyle.textColor(quest.characterClass))
+                    } else {
+                        Eyebrow(text: entry.ride.startedAt.formatted(date: .abbreviated, time: .omitted))
+                    }
+                }
+                HStack(alignment: .bottom) {
+                    Text(entry.quest?.title ?? entry.ride.title ?? "Free ride").font(Theme.Typography.voice(28, relativeTo: .title)).foregroundStyle(Theme.Colors.ink)
+                    Spacer(minLength: 8)
+                    Text("+\(entry.xpAwarded) XP").font(Theme.Typography.text(22, .bold)).foregroundStyle(Theme.Colors.sageDeep)
+                }
+                MapLibreView(styleURL: Config.mapStyleURL(for: .adventure), center: geometry?.path.first ?? entry.quest?.origin, zoom: 12, cells: [], route: geometry?.path ?? [], markers: markers)
+                    .frame(height: 220)
+                    .background(Theme.Colors.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                HStack(spacing: 8) {
+                    FactTile(value: f.distance(meters: entry.ride.distanceMeters), label: "Ridden")
+                    FactTile(value: f.duration(seconds: Double(entry.ride.durationSeconds)), label: "Time")
+                    FactTile(value: f.elevation(meters: entry.ride.elevationGainMeters), label: "Climbed")
+                    FactTile(value: f.distance(meters: entry.newTerritoryMeters), label: "New", valueColor: Theme.Colors.sageDeep)
                 }
                 if !entry.discoveries.isEmpty {
-                    Text("Discoveries").font(Theme.Typography.heading)
-                    ForEach(entry.discoveries) { DiscoveryCard(discovery: $0) }
+                    SectionHeader(title: "Discoveries", subtitle: "\(entry.discoveries.count)")
+                    ForEach(entry.discoveries) { discovery in
+                        NavigationLink { DiscoveryDetailView(discoveryId: discovery.id) } label: {
+                            DiscoveryCard(discovery: discovery, subtitle: DiscoveryIcon.group(for: discovery.category))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                Text("Notes").font(Theme.Typography.heading)
-                TextField("What made this ride memorable?", text: $notes, axis: .vertical).textFieldStyle(.roundedBorder).lineLimit(3...6)
-                    .onSubmit { Task { _ = try? await container.api.updateRide(id: entry.ride.id, RidePatch(notes: notes)) } }
-                HStack {
-                    Button("Save notes") { Task { _ = try? await container.api.updateRide(id: entry.ride.id, RidePatch(notes: notes)) } }.buttonStyle(.bordered)
-                    ShareLink(item: container.api.rideExportURL(id: entry.ride.id, format: .gpx)) { Label("Export GPX", systemImage: "square.and.arrow.up") }.buttonStyle(.bordered)
+                SectionHeader(title: "Notes")
+                TextField("What made this ride memorable?", text: $notes, axis: .vertical)
+                    .font(Theme.Typography.text(15))
+                    .lineLimit(3...6)
+                    .padding(14)
+                    .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.tile, style: .continuous))
+                HStack(spacing: 8) {
+                    Button("Save notes") { Task { _ = try? await container.api.updateRide(id: entry.ride.id, RidePatch(notes: notes)) } }.buttonStyle(.inkPill)
+                    ShareLink(item: container.api.rideExportURL(id: entry.ride.id, format: .gpx)) { Label("Export GPX", systemImage: "square.and.arrow.up") }.buttonStyle(.surfacePill)
                 }
             }
-            .padding(Theme.Spacing.md)
+            .padding(.horizontal, 22)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
         }
-        .background(Theme.Colors.parchment)
-        .navigationBarTitleDisplayMode(.inline)
+        .background(Theme.Colors.cream)
+        .toolbar(.hidden, for: .navigationBar)
         .task {
             notes = entry.notes ?? ""
             geometry = try? await container.api.rideGeometry(id: entry.ride.id)
         }
     }
+
+    private var markers: [MapMarker] {
+        entry.discoveries.map { MapMarker(id: $0.id.uuidString, coordinate: $0.coordinate, kind: .discovery, title: $0.name) }
+    }
 }
 
 struct DiscoveryDetailView: View {
     @Environment(AppContainer.self) private var container
+    @Environment(\.dismiss) private var dismiss
     let discoveryId: UUID
     @State private var discovery: Discovery?
     @State private var note = ""
     @State private var rating = 0
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    IconCircleButton(symbol: "chevron.left", background: Theme.Colors.surface) { dismiss() }
+                    Spacer()
+                }
                 if let discovery {
-                    DiscoveryCard(discovery: discovery.summary)
-                    if let description = discovery.description { Text(description).font(Theme.Typography.body) }
-                    Text("Your note").font(Theme.Typography.heading)
-                    TextField("Stop safely before writing.", text: $note, axis: .vertical).textFieldStyle(.roundedBorder).lineLimit(3...6)
-                    HStack {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            Circle().fill(DiscoveryIcon.color(for: discovery.category))
+                            Image(systemName: DiscoveryIcon.symbol(for: discovery.category)).font(.system(size: 22, weight: .bold)).foregroundStyle(Theme.Colors.cream)
+                        }
+                        .frame(width: 56, height: 56)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(discovery.name).font(Theme.Typography.voice(26, relativeTo: .title)).foregroundStyle(Theme.Colors.ink)
+                            Text(DiscoveryIcon.group(for: discovery.category)).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                        }
+                    }
+                    if let description = discovery.description {
+                        Text(description).font(Theme.Typography.text(14)).foregroundStyle(Theme.Colors.inkSoft).lineSpacing(3)
+                    }
+                    let marker = MapMarker(id: discovery.id.uuidString, coordinate: discovery.coordinate, kind: .discovery, title: discovery.name)
+                    MapLibreView(styleURL: Config.mapStyleURL(for: .adventure), center: discovery.coordinate, zoom: 14, cells: [], route: [], markers: [marker])
+                        .frame(height: 160)
+                        .background(Theme.Colors.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                        .allowsHitTesting(false)
+                    SectionHeader(title: "Your note")
+                    TextField("Stop safely before writing.", text: $note, axis: .vertical)
+                        .font(Theme.Typography.text(15))
+                        .lineLimit(3...6)
+                        .padding(14)
+                        .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.tile, style: .continuous))
+                    HStack(spacing: 6) {
                         ForEach(1...5, id: \.self) { star in
-                            Image(systemName: star <= rating ? "star.fill" : "star").foregroundStyle(Theme.Colors.rune).onTapGesture { rating = star }
+                            Image(systemName: star <= rating ? "star.fill" : "star")
+                                .font(.system(size: 20))
+                                .foregroundStyle(Theme.Colors.terracotta)
+                                .onTapGesture { rating = star }
                         }
                     }
                     Button("Save") {
                         Task { _ = try? await container.api.updateUserDiscovery(id: discoveryId, UserDiscoveryIn(note: note, rating: rating == 0 ? nil : rating)) }
                     }
-                    .buttonStyle(.borderedProminent).tint(Theme.Colors.moss)
-                } else { ProgressView() }
+                    .buttonStyle(.inkPill)
+                } else {
+                    ProgressView().tint(Theme.Colors.terracotta).frame(maxWidth: .infinity)
+                }
             }
-            .padding(Theme.Spacing.md)
+            .padding(.horizontal, 22)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
         }
-        .background(Theme.Colors.parchment)
+        .background(Theme.Colors.cream)
+        .toolbar(.hidden, for: .navigationBar)
         .task {
             discovery = try? await container.api.discovery(id: discoveryId)
             note = discovery?.userDiscovery?.note ?? ""

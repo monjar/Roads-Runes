@@ -1,7 +1,9 @@
 import RoadsAndRunesCore
 import SwiftUI
 
-/// Default tab (spec §4): map, fog, quest markers, discoveries, nearby quests.
+/// The World is the home (design 9a): a full-screen ink map that only exists
+/// where you have ridden. Fog is the hero; the character chip sits top-left,
+/// one Nearby sheet rises from the bottom.
 struct WorldView: View {
     @Environment(AppContainer.self) private var container
     @State private var model: WorldViewModel?
@@ -12,9 +14,13 @@ struct WorldView: View {
                 if let model {
                     content(model)
                 } else {
-                    ProgressView()
+                    ZStack {
+                        Theme.Colors.cream.ignoresSafeArea()
+                        ProgressView().tint(Theme.Colors.terracotta)
+                    }
                 }
             }
+            .toolbar(.hidden, for: .navigationBar)
         }
         .task {
             if model == nil { model = WorldViewModel(container: container) }
@@ -35,44 +41,48 @@ struct WorldView: View {
 
     @ViewBuilder
     private func content(_ model: WorldViewModel) -> some View {
-        VStack(spacing: 0) {
-            ZStack(alignment: .top) {
-                MapLibreView(
-                    styleURL: Config.mapStyleURL(for: styleKey),
-                    center: model.center ?? container.location.lastFix?.coordinate ?? SampleData.origin,
-                    zoom: 13.5,
-                    cells: model.cells,
-                    route: [],
-                    markers: model.markers,
-                    onRegionChanged: { center, _ in
-                        Task { await model.load(around: center) }
-                    },
-                    onMarkerTap: { marker in model.select(marker: marker) }
-                )
-                .ignoresSafeArea(edges: .top)
-                HStack(spacing: Theme.Spacing.sm) {
-                    HStack {
-                        if let stats = model.stats {
-                            Text("\(UnitFormatter(units: model.units).distance(meters: stats.newTerritoryKm * 1000)) new · \(stats.cellsVisited) areas")
-                                .font(Theme.Typography.caption.weight(.semibold)).foregroundStyle(Theme.Colors.moss)
-                        } else {
-                            Text("Exploring…").font(Theme.Typography.caption)
-                        }
+        ZStack(alignment: .top) {
+            MapLibreView(
+                styleURL: Config.mapStyleURL(for: styleKey),
+                center: model.center ?? container.location.lastFix?.coordinate ?? SampleData.origin,
+                zoom: 13.5,
+                cells: model.cells,
+                route: [],
+                markers: model.markers,
+                onRegionChanged: { center, _ in
+                    Task { await model.load(around: center) }
+                },
+                onMarkerTap: { marker in model.select(marker: marker) }
+            )
+            .ignoresSafeArea()
+            VStack(spacing: 0) {
+                HStack(alignment: .top) {
+                    if let character = container.session.character {
+                        CharacterChip(character: character)
                     }
-                    .padding(.horizontal, Theme.Spacing.md).padding(.vertical, Theme.Spacing.sm)
-                    .background(.regularMaterial, in: Capsule())
                     Spacer()
-                    MapStyleMenu()
+                    VStack(alignment: .trailing, spacing: 8) {
+                        MapPill(text: exploredText(model))
+                        MapStyleMenu()
+                    }
                 }
-                .padding(.horizontal, Theme.Spacing.md)
-                .padding(.top, Theme.Spacing.sm)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                Spacer(minLength: 0)
+                NearbyQuestsPanel(model: model, position: container.location.lastFix?.coordinate)
             }
-            NearbyQuestsPanel(model: model)
-                .frame(height: 260)
         }
+        .background(Theme.Colors.cream)
         .navigationDestination(item: Binding(get: { model.selectedQuest }, set: { model.selectedQuest = $0 })) { quest in
             QuestDetailView(quest: quest)
         }
+    }
+
+    private func exploredText(_ model: WorldViewModel) -> String {
+        guard let stats = model.stats else { return "Exploring…" }
+        let area = Double(stats.cellsVisited) * 0.1053
+        let areaText = area >= 10 ? "\(Int(area.rounded())) km²" : String(format: "%.1f km²", area)
+        return "\(areaText) explored"
     }
 
     private var styleKey: Config.MapStyleKey {
@@ -98,45 +108,58 @@ struct MapStyleMenu: View {
                 }
             }
         } label: {
-            Label(container.mapPreferences.mapStyle.rawValue.capitalized, systemImage: "chevron.down")
-                .font(Theme.Typography.caption.weight(.semibold))
-                .padding(.horizontal, Theme.Spacing.md).padding(.vertical, Theme.Spacing.sm)
-                .background(.regularMaterial, in: Capsule())
+            Image(systemName: "map")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Theme.Colors.ink)
+                .frame(width: 40, height: 40)
+                .background(Theme.Colors.cream.opacity(0.94), in: Circle())
+                .shadow(color: Theme.Colors.ink.opacity(0.14), radius: 2, y: 1)
         }
+        .accessibilityLabel("Map style")
     }
 }
 
+/// "Nearby · 3 quests · 5 mysteries": quest rows with class tiles.
 struct NearbyQuestsPanel: View {
     let model: WorldViewModel
+    var position: Coordinate?
 
     var body: some View {
-        VStack(spacing: 0) {
-            Capsule().fill(Color.black.opacity(0.2)).frame(width: 36, height: 5).padding(.top, Theme.Spacing.sm)
-            ScrollView {
-                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                    HStack {
-                        Text("Nearby adventures").font(Theme.Typography.title)
-                        Spacer()
-                        Text("\(model.nearbyQuests.count) quests").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
-                    }
+        VStack(spacing: 12) {
+            SheetHandle()
+            HStack(alignment: .firstTextBaseline) {
+                Text("Nearby").font(Theme.Typography.voice(22, relativeTo: .title2)).foregroundStyle(Theme.Colors.ink)
+                Spacer()
+                Text(summaryLine).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+            }
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 10) {
                     if let error = model.error, model.nearbyQuests.isEmpty {
-                        Text(error).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.ember)
+                        ErrorLine(text: error)
                     }
                     if model.nearbyQuests.isEmpty && !model.isLoading {
-                        EmptyState(icon: "map", title: "No quests yet", message: "Move the map or wait for your location to load nearby adventures.")
+                        EmptyState(icon: "sparkle", title: "No quests here yet", message: "Move the map or wait for your location to find adventures nearby.")
                     }
                     ForEach(model.nearbyQuests) { quest in
                         Button { model.selectedQuest = quest } label: {
-                            QuestCard(quest: quest, compact: false, units: model.units)
+                            QuestCard(quest: quest, units: model.units, distanceMeters: position.map { GeoMath.distance($0, quest.origin) })
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(Theme.Spacing.md)
+                .padding(.bottom, Theme.Layout.tabBarClearance)
             }
         }
-        .background(Theme.Colors.parchment)
-        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20))
-        .shadow(color: .black.opacity(0.15), radius: 12, y: -4)
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .frame(height: 340)
+        .sheetSurface()
+        .ignoresSafeArea(edges: .bottom)
+    }
+
+    private var summaryLine: String {
+        let quests = model.nearbyQuests.count
+        let mysteries = model.snapshot?.discoveries.filter { !$0.discoveredByUser }.count ?? 0
+        return "\(quests) quest\(quests == 1 ? "" : "s") · \(mysteries) myster\(mysteries == 1 ? "y" : "ies")"
     }
 }

@@ -10,6 +10,7 @@ final class QuestsViewModel {
     private(set) var completed: [Quest] = []
     private(set) var isLoading = false
     var error: String?
+    var selectedQuest: Quest?
 
     private let container: AppContainer
 
