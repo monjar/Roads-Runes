@@ -14,9 +14,10 @@ from app.core.errors import install_error_handlers
 from app.core.llm import build_llm
 from app.core.logging import configure_logging, get_logger
 from app.core.rate_limit import RateLimiter
+from app.discoveries import osm_import
 from app.jobs.handlers import HANDLERS
 from app.jobs.queue import InlineJobQueue, RedisJobQueue
-from app.routing.engine import SyntheticRouter, choose_engine
+from app.routing.engine import SyntheticRouter, build_engine
 
 log = get_logger(__name__)
 
@@ -36,9 +37,9 @@ async def build_state(app: FastAPI, settings: Settings) -> None:
     if settings.environment == "test":
         app.state.router = SyntheticRouter()
     else:
-        app.state.router = await choose_engine(settings.graphhopper_url, settings.graphhopper_timeout_seconds)
+        app.state.router = await build_engine(settings)
         if settings.is_production and app.state.router.name == "synthetic":
-            raise RuntimeError("GraphHopper is unreachable; refusing to serve synthetic routes in production")
+            raise RuntimeError("No routing engine is reachable; refusing to serve synthetic routes in production")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -55,6 +56,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             flags=settings.flags,
         )
         yield
+        osm_import.cancel_all()
         jobs = getattr(app.state, "jobs", None)
         if isinstance(jobs, InlineJobQueue):
             await jobs.drain()

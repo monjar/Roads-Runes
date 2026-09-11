@@ -1,8 +1,10 @@
-# GraphHopper configuration for Roads & Runes (GraphHopper 9/10).
+# GraphHopper configuration for Roads & Runes (GraphHopper 10; image pinned in infra/docker-compose.yml).
 # Mounted into the container at /config.yml; custom models at /custom_models.
 graphhopper:
   datareader.file: /data/region.osm.pbf
   graph.location: /data/graph-cache
+  # Overlays are named relative to this; bare names not found here (bike.json…) come from the jar.
+  custom_models.directory: /custom_models
 
   # Elevation is required for gradient-aware routing and route analysis.
   graph.elevation.provider: srtm
@@ -13,21 +15,25 @@ graphhopper:
   graph.encoded_values: >-
     road_class, road_class_link, road_environment, road_access, surface, smoothness,
     bike_network, max_speed, track_type, mtb_rating, hike_rating, average_slope,
-    max_slope, bike_access, bike_average_speed, bike_priority, bike_road_access,
+    max_slope, roundabout, bike_access, bike_average_speed, bike_priority,
     mtb_access, mtb_average_speed, mtb_priority, racingbike_access,
     racingbike_average_speed, racingbike_priority
 
   import.osm.ignored_highways: motorway,trunk
 
+  # Each profile is GraphHopper's bundled base model (access, priority and
+  # average speed from OSM tags) followed by our overlay, which only
+  # multiplies priority down/up and caps speed. The overlays alone set no
+  # base speed, so they must not be used without the bundled model first.
   profiles:
     - name: road
-      custom_model_files: [/custom_models/road.json]
+      custom_model_files: [racingbike.json, road.json]
     - name: gravel
-      custom_model_files: [/custom_models/gravel.json]
+      custom_model_files: [bike.json, gravel.json]
     - name: mountain
-      custom_model_files: [/custom_models/mountain.json]
+      custom_model_files: [mtb.json, mountain.json]
     - name: hybrid
-      custom_model_files: [/custom_models/hybrid.json]
+      custom_model_files: [bike.json, hybrid.json]
 
   # No CH: request-time custom models need flexible routing. LM keeps it fast.
   profiles_ch: []

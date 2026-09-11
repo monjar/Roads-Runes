@@ -31,7 +31,9 @@ services:
   graphhopper:
     # Needs routing/data/region.osm.pbf (see scripts/download-osm.sh). Started
     # only with `--profile routing` so the core stack works without an extract.
-    image: israelhikingmap/graphhopper:latest
+    # Pinned: routing/config.yml and the custom models target GraphHopper 10;
+    # :latest tracks unreleased snapshots.
+    image: israelhikingmap/graphhopper:10.2
     profiles: ["routing"]
     command: ["--config", "/config.yml", "--input", "/data/region.osm.pbf"]
     environment:

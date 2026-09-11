@@ -66,11 +66,13 @@ def build_custom_model(
             }
         )
 
-    model: dict[str, Any] = {
-        "priority": priority,
-        "speed": speed,
-        "distance_influence": 70 if prefs.trafficAversion > 0.6 else 100,
-    }
+    model: dict[str, Any] = {"priority": priority, "speed": speed}
+    # GraphHopper (with LM) only accepts a query-time distance_influence at or above
+    # the profile's base (road 90, hybrid 80, gravel 70, mountain 60), so the overlay
+    # may raise it for riders who want directness but never lower it; traffic-averse
+    # riders keep the base's detour tolerance and get quiet roads through priority.
+    if prefs.trafficAversion <= 0.6:
+        model["distance_influence"] = 100
     # Internal hint for the synthetic router only; GraphHopper ignores unknown keys? It does not — strip before sending.
     model["_gravel"] = prefs.gravelPreference
     return model
@@ -78,3 +80,38 @@ def build_custom_model(
 
 def strip_internal(model: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in model.items() if not k.startswith("_")}
+
+
+VALHALLA_BICYCLE_TYPE = {
+    "ROAD": "Road",
+    "GRAVEL": "Cross",
+    "MOUNTAIN": "Mountain",
+    "HYBRID": "Hybrid",
+    "FOLDING": "Hybrid",
+    "OTHER": "Hybrid",
+}
+
+
+def valhalla_costing(prefs: RoutePreferences, bike_type: str, allow_gravel: bool, allow_trails: bool) -> dict[str, Any]:
+    """The same preferences as Valhalla bicycle costing, for rides outside GraphHopper's graph.
+
+    Valhalla has fewer knobs: quiet roads and cycleways both lower `use_roads`,
+    gravel appetite lowers `avoid_bad_surfaces` (bikes that cannot take gravel
+    avoid it strongly), and hill tolerance is `use_hills`.
+    """
+    quiet = max(prefs.trafficAversion, prefs.cyclewayPreference * 0.8)
+    avoid_rough = 0.6 - prefs.gravelPreference * 0.6 if allow_gravel else 0.9
+    if bike_type == "ROAD":
+        avoid_rough = max(avoid_rough, 0.7)
+    if allow_trails and bike_type == "MOUNTAIN":
+        avoid_rough = min(avoid_rough, 0.1)
+    return {
+        "bicycle_type": VALHALLA_BICYCLE_TYPE.get(bike_type, "Hybrid"),
+        "use_roads": _unit(1 - quiet),
+        "use_hills": _unit(prefs.hillTolerance),
+        "avoid_bad_surfaces": _unit(avoid_rough),
+    }
+
+
+def _unit(value: float) -> float:
+    return round(min(1.0, max(0.0, value)), 2)

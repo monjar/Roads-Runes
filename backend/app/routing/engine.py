@@ -1,7 +1,9 @@
 """Routing engine clients.
 
 `GraphHopperClient` talks to a GraphHopper instance configured from
-`routing/config.yml` (custom bike profiles, LM, elevation, details).
+`routing/config.yml` (custom bike profiles, LM, elevation, details) and
+knows only the extract it imported; `ValhallaClient` (valhalla.py) routes
+anywhere, and `RegionalRouter` picks between them per request.
 `SyntheticRouter` is a deterministic fallback used in tests and when no
 engine is reachable; it produces geometrically plausible loops so the rest
 of the pipeline (analysis, scoring, packages) can be exercised. Synthetic
@@ -17,6 +19,7 @@ from typing import Any, Protocol
 
 import httpx
 
+from app.core.config import Settings
 from app.core.geo import destination_point, haversine_m
 from app.core.logging import EVENT_ROUTE_GENERATION_FAILED, get_logger
 
@@ -59,6 +62,7 @@ class EngineRequest:
     custom_model: dict[str, Any] | None = None
     alternatives: int = 1
     heading: float | None = None
+    costing: dict[str, Any] | None = None  # Valhalla bicycle costing for the same preferences
 
 
 @dataclass
@@ -93,6 +97,19 @@ class GraphHopperClient:
                 return r.status_code == 200
         except httpx.HTTPError:
             return False
+
+    async def bbox(self) -> tuple[float, float, float, float] | None:
+        """The loaded graph's extent as (min_lon, min_lat, max_lon, max_lat)."""
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                r = await client.get(f"{self.base_url}/info")
+            box = r.json().get("bbox") if r.status_code == 200 else None
+        except (httpx.HTTPError, ValueError):
+            return None
+        if not box or len(box) != 4:
+            return None
+        min_lon, min_lat, max_lon, max_lat = (float(v) for v in box)
+        return min_lon, min_lat, max_lon, max_lat
 
     async def route(self, request: EngineRequest) -> list[EngineRoute]:
         body: dict[str, Any] = {
@@ -298,21 +315,80 @@ class SyntheticRouter:
             steps = 40
             for i in range(steps):
                 t = i / steps
-                bulge = 0.0008 * math.sin(math.pi * t) * (1 if seed % 2 == 0 else -1)
+                # Size and side of the bend both follow the seed, so each label's alternative
+                # is a different path (seeds 17 apart would otherwise share one).
+                bulge = 0.0008 * (1 + (seed % 5) * 0.5) * math.sin(math.pi * t) * (1 if seed % 2 == 0 else -1)
                 lat = lat1 + (lat2 - lat1) * t + bulge
                 lon = lon1 + (lon2 - lon1) * t + bulge
-                ele = 15 + 25 * math.sin(math.pi * t) + seed
+                # The seed is a large hash; only a few metres of it may reach the elevation.
+                ele = 15 + 25 * math.sin(math.pi * t) + seed % 11
                 coords.append([lon, lat, round(ele, 1)])
         last = points[-1]
         coords.append([last[1], last[0], 15.0])
         return coords
 
 
-async def choose_engine(graphhopper_url: str, timeout: float, prefer_synthetic: bool = False) -> RoutingEngine:
-    if prefer_synthetic:
+class RegionalRouter:
+    """GraphHopper where its graph covers the ride, another engine everywhere else.
+
+    GraphHopper carries the project's custom bike models but only knows the
+    extract it imported; the fallback (Valhalla) covers the world. A ride goes
+    to GraphHopper only when every point, and for a loop the circle it may
+    sweep, lies inside the graph; if GraphHopper fails anyway the fallback answers.
+    """
+
+    name = "regional"
+
+    def __init__(self, local: RoutingEngine, bbox: tuple[float, float, float, float], fallback: RoutingEngine) -> None:
+        self.local = local
+        self.bbox = bbox  # (min_lon, min_lat, max_lon, max_lat)
+        self.fallback = fallback
+
+    async def healthy(self) -> bool:
+        return await self.local.healthy() or await self.fallback.healthy()
+
+    def covers(self, request: EngineRequest) -> bool:
+        min_lon, min_lat, max_lon, max_lat = self.bbox
+        reach_m = (request.round_trip_distance_m or 0.0) / math.pi
+        for lat, lon in request.points:
+            dlat = reach_m / 111_320
+            dlon = reach_m / (111_320 * max(0.2, math.cos(math.radians(lat))))
+            if not (min_lat + dlat <= lat <= max_lat - dlat and min_lon + dlon <= lon <= max_lon - dlon):
+                return False
+        return True
+
+    async def route(self, request: EngineRequest) -> list[EngineRoute]:
+        if self.covers(request):
+            try:
+                return await self.local.route(request)
+            except RoutingUnavailable as exc:
+                log.warning("local_routing_failed_using_fallback", engine=self.local.name, error=str(exc)[:300])
+        return await self.fallback.route(request)
+
+
+async def build_engine(settings: Settings) -> RoutingEngine:
+    """The engine for ROUTING_ENGINE (routing/README.md).
+
+    auto: GraphHopper inside its graph and Valhalla elsewhere; Valhalla alone
+    when GraphHopper is down; the synthetic router only when neither answers
+    (development; production refuses to start on it).
+    """
+    from app.routing.valhalla import ValhallaClient  # valhalla.py imports this module
+
+    mode = settings.routing_engine
+    if mode == "synthetic":
         return SyntheticRouter()
-    gh = GraphHopperClient(graphhopper_url, timeout)
-    if await gh.healthy():
-        return gh
-    log.warning("graphhopper_unreachable_using_synthetic", url=graphhopper_url)
+    gh = GraphHopperClient(settings.graphhopper_url, settings.graphhopper_timeout_seconds)
+    valhalla = ValhallaClient(settings.valhalla_url, settings.valhalla_timeout_seconds, settings.valhalla_api_key)
+    if mode in ("auto", "graphhopper") and await gh.healthy():
+        bbox = await gh.bbox() if mode == "auto" else None
+        return RegionalRouter(gh, bbox, valhalla) if bbox else gh
+    if mode in ("auto", "valhalla") and await valhalla.healthy():
+        return valhalla
+    log.warning(
+        "routing_unreachable_using_synthetic",
+        mode=mode,
+        graphhopper=settings.graphhopper_url,
+        valhalla=settings.valhalla_url,
+    )
     return SyntheticRouter()

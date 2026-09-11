@@ -16,7 +16,10 @@
 5. **Safety is not a game system.** Abilities and LLM output influence quest
    generation, narrative and visibility only. Routing safety comes from
    GraphHopper base profiles that block motorways/trunk roads and honour bike
-   access; request-time overlays can only tighten them.
+   access; request-time overlays can only tighten them. Outside GraphHopper's
+   graph, Valhalla's bicycle costing honours OSM bicycle access (never
+   motorways) but, unlike our profiles, may use trunk roads where bikes are
+   legally allowed; low `use_roads` only makes them less likely.
 
 ## Backend: modular monolith
 
@@ -29,7 +32,7 @@ FastAPI  ──►  app/api/v1/router.py  ──►  module routers
                                           │
                                    services (async SQLAlchemy 2)
                                           │
-                       PostgreSQL + PostGIS ── Redis ── GraphHopper
+      PostgreSQL + PostGIS ── Redis ── GraphHopper (region) / Valhalla (world) ── Overpass
 ```
 
 Each module owns `models.py` (SQLAlchemy), `schemas.py` (pydantic, camelCase
@@ -49,7 +52,13 @@ Key module notes:
   `generator.py` is deterministic (seeded by user + day) and geographic;
   `narrative.py` optionally rewrites text with an LLM; `service.py` handles
   lifecycle and reveals target cells on the map.
-* **routing** – `engine.py` (GraphHopper client + synthetic fallback),
+* **discoveries** – `osm_import.py` imports places from OpenStreetMap
+  (Overpass) per 0.1° tile the first time an area is used, so quests and route
+  stops work anywhere; `poi_import_areas` records the tiles fetched.
+* **routing** – `engine.py` (GraphHopper client, `RegionalRouter` sending a
+  ride to GraphHopper inside its graph and to Valhalla elsewhere, synthetic
+  fallback), `valhalla.py` (worldwide client: bicycle costing, loops through
+  waypoints, details from `trace_attributes`),
   `custom_models.py` (preference → custom model overlay), `analysis.py`
   (elevation, climbs, surface, cycleway, traffic), `scoring.py` (weights in
   `config/scoring.json`), `pois.py` (corridor search), `preferences.py`

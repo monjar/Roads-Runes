@@ -8,7 +8,7 @@
     {"else_if": "bike_network != MISSING", "multiply_by": "1.2"},
     {"else_if": "road_class == RESIDENTIAL || road_class == LIVING_STREET", "multiply_by": "1.1"},
     {"if": "surface == GRAVEL || surface == FINE_GRAVEL || surface == COMPACTED", "multiply_by": "0.8"},
-    {"if": "surface == DIRT || surface == GROUND || surface == GRASS || surface == SAND || surface == MUD", "multiply_by": "0.3"},
+    {"if": "surface == DIRT || surface == GROUND || surface == GRASS || surface == SAND", "multiply_by": "0.3"},
     {"if": "road_class == TRACK && track_type != GRADE1 && track_type != GRADE2", "multiply_by": "0.4"},
     {"if": "road_class == PATH", "multiply_by": "0.4"},
     {"if": "road_class == STEPS", "multiply_by": "0"}
