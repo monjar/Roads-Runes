@@ -28,9 +28,9 @@ ALL_FEATURE_FLAGS: tuple[str, ...] = (
 )
 
 DEFAULT_FLAGS: dict[str, bool] = {
-    "wizard_class": False,
-    "warrior_class": False,
-    "scribe_class": False,
+    "wizard_class": True,
+    "warrior_class": True,
+    "scribe_class": True,
     "party_quests": False,
     "fog_of_war": True,
     "story_quests": False,
@@ -53,6 +53,19 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     graphhopper_url: str = "http://localhost:8989"
     graphhopper_timeout_seconds: float = 20.0
+    # "auto": GraphHopper where its graph covers the ride, Valhalla everywhere else
+    # (routing/README.md). The public Valhalla server is for development only.
+    routing_engine: Literal["auto", "graphhopper", "valhalla", "synthetic"] = "auto"
+    valhalla_url: str = "https://valhalla1.openstreetmap.de"
+    valhalla_api_key: str = ""
+    valhalla_timeout_seconds: float = 30.0
+    # Discoveries are imported from OpenStreetMap per area on first use (discoveries/osm_import.py).
+    poi_import_enabled: bool = True
+    # Place names in a ride request ("a ride in Notting Hill") are resolved by these, in order.
+    geocoding_enabled: bool = True
+    photon_url: str = "https://photon.komoot.io/api"
+    nominatim_url: str = "https://nominatim.openstreetmap.org/search"
+    overpass_urls: str = "https://overpass-api.de/api/interpreter,https://overpass.private.coffee/api/interpreter"
     object_storage_url: str = ""
 
     jwt_secret: str = "change-me-in-real-environments"

@@ -46,3 +46,14 @@ class UserDiscovery(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     tags: Mapped[list[Any]] = mapped_column(JSONType, default=list, nullable=False)
     photo_ids: Mapped[list[Any]] = mapped_column(JSONType, default=list, nullable=False)
     visibility: Mapped[str] = mapped_column(String(10), nullable=False, default="PRIVATE")
+
+
+class PoiImportArea(Base):
+    """A 0.1° tile whose OpenStreetMap places have been imported (discoveries/osm_import.py)."""
+
+    __tablename__ = "poi_import_areas"
+
+    key: Mapped[str] = mapped_column(String(24), primary_key=True)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="OK")
+    poi_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    imported_at: Mapped[datetime] = mapped_column(TZDateTime, nullable=False)

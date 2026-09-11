@@ -11,12 +11,15 @@ from collections.abc import AsyncIterator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import NullPool
 
 os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("DEV_AUTH_ENABLED", "true")
 os.environ.setdefault("JOB_QUEUE", "inline")
 os.environ.setdefault("JWT_SECRET", "test-secret")
 os.environ.setdefault("LLM_PROVIDER", "none")
+os.environ.setdefault("POI_IMPORT_ENABLED", "false")  # tests opt in with a fake fetcher
 
 from app.core.config import get_settings  # noqa: E402
 from app.db.models import Base  # noqa: E402
@@ -39,7 +42,12 @@ def settings():
 
 @pytest.fixture
 async def engine(settings):
-    eng = make_engine(TEST_DB_URL)
+    # asyncpg connections belong to the event loop that opened them and every test runs in
+    # its own loop, so on PostgreSQL no pooled connection may outlive a test.
+    if TEST_DB_URL.startswith("postgresql"):
+        eng = create_async_engine(TEST_DB_URL, poolclass=NullPool)
+    else:
+        eng = make_engine(TEST_DB_URL)
     async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)

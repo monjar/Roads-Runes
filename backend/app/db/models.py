@@ -8,7 +8,7 @@ from app.characters.models import (  # noqa: F401
     RiderProfile,
 )
 from app.db.base import Base
-from app.discoveries.models import Discovery, UserDiscovery  # noqa: F401
+from app.discoveries.models import Discovery, PoiImportArea, UserDiscovery  # noqa: F401
 from app.exploration.models import UserExplorationCell  # noqa: F401
 from app.integrations.models import StravaConnection  # noqa: F401
 from app.notifications.models import DeviceToken  # noqa: F401
