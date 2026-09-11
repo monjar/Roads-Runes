@@ -53,8 +53,12 @@ alembic upgrade head && uvicorn app.main:app --reload
 ```
 
 The API is at http://localhost:8000/docs. `POST /api/v1/auth/dev` signs in
-without Apple credentials in development. Real routing needs GraphHopper
-(`make osm && make routing`); without it development serves synthetic routes.
+without Apple credentials in development. A hosted development backend runs on
+Fly at https://roadsandrunes.fly.dev (two apps, `infra/README.md`); Release
+builds of the app point at it. Routing and quests work anywhere
+(Valhalla, and places imported from OpenStreetMap on first use);
+`make osm && make routing` adds GraphHopper with the custom bike models for
+Greater London (`routing/README.md`).
 
 iOS:
 
@@ -85,10 +89,10 @@ end to end.
 | 0 Repository | layout, CI, lint, compose, envs | done |
 | 1 Exploration | sign in, world, H3 fog, ride recording, cells | backend done and tested; iOS written, needs device validation |
 | 2 Explorer RPG | XP, levels, 13+ templates, generation, completion, abilities | backend done; iOS written |
-| 3 Routing | GraphHopper, alternatives, scoring, elevation, surface, POIs, packages | done (needs a GraphHopper instance + field validation) |
+| 3 Routing | GraphHopper (London) + Valhalla (worldwide), alternatives, scoring, elevation, surface, POIs, packages | done (needs field validation) |
 | 4 Navigation | turn-by-turn, off-route, progress, crash recovery | client logic written, untested on a bike |
 | 5 Watch | workout, turns, quest, stats, haptics, Always-On | written, untested on hardware |
-| 6 Other classes | Wizard/Warrior/Scribe | catalog + one template each, behind flags |
+| 6 Other classes | Wizard/Warrior/Scribe | on by default; 5–6 quest templates each: hidden puzzle targets, pace/duration objectives, photo and note records |
 | 7 Social | friends, feed, parties | backend done, flag-gated; minimal UI |
 | 8 Integrations | Strava OAuth/upload, GPX/TCX, HealthKit | backend done; HealthKit client written |
 | 9 Living world | story arcs, regions, events | schema only |

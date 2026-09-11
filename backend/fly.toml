@@ -1,0 +1,41 @@
+# Roads & Runes API on Fly.io.
+#
+#   cd backend && fly deploy
+#
+# Secrets (never in this file): DATABASE_URL, JWT_SECRET, DEV_AUTH_ENABLED.
+# The database is a separate app with PostGIS and a volume (infra/fly/db).
+# GraphHopper is not deployed here, so routing goes through Valhalla; see
+# routing/README.md before pointing this at real riders.
+app = "roadsandrunes"
+primary_region = "lhr"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  release_command = "alembic upgrade head"
+
+[env]
+  ENVIRONMENT = "development"
+  LOG_LEVEL = "INFO"
+  JOB_QUEUE = "inline"          # rides are processed in-process; no Redis to run
+  ROUTING_ENGINE = "valhalla"   # no GraphHopper graph on Fly
+  POI_IMPORT_ENABLED = "true"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"   # a development backend: sleeps when idle, wakes on request
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    path = "/api/v1/health"
+    method = "GET"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "15s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

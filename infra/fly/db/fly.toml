@@ -1,0 +1,27 @@
+# PostgreSQL + PostGIS for Roads & Runes, private to the Fly network.
+#
+#   fly volumes create pgdata -a roadsandrunes-db -r lhr -s 3
+#   fly secrets set POSTGRES_PASSWORD=... -a roadsandrunes-db
+#   cd infra/fly/db && fly deploy
+#
+# No [http_service]: the API reaches it at roadsandrunes-db.internal:5432 over
+# the private network, and nothing else can. One machine, one volume: fine for
+# development, but there is no failover and no managed backup (see README).
+app = "roadsandrunes-db"
+primary_region = "lhr"
+
+[build]
+  image = "postgis/postgis:16-3.4"
+
+[env]
+  POSTGRES_DB = "roadsandrunes"
+  POSTGRES_USER = "rr"
+  PGDATA = "/var/lib/postgresql/data/pgdata"
+
+[[mounts]]
+  source = "pgdata"
+  destination = "/var/lib/postgresql/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
