@@ -68,6 +68,7 @@ public struct ObjectiveTracker: Sendable {
         distanceMeters: Double,
         elevationGainMeters: Double,
         newTerritoryMeters: Double,
+        elapsedSeconds: Double = 0,
         timestamp: Date
     ) -> [ObjectiveEvent] {
         var events: [ObjectiveEvent] = []
@@ -102,8 +103,22 @@ public struct ObjectiveTracker: Sendable {
                     completed = true
                     value = distanceMeters
                 }
+            case .rideDuration:
+                let minutes = elapsedSeconds / 60
+                if minutes >= objective.progress.target, objective.progress.target > 0 {
+                    completed = true
+                    value = minutes
+                }
+            case .sustainSpeed:
+                // Average over the ride so far; the server decides finally, at the end.
+                let speed = elapsedSeconds > 0 ? (distanceMeters / 1000) / (elapsedSeconds / 3600) : 0
+                if speed >= objective.progress.target, objective.progress.target > 0,
+                   distanceMeters >= (objective.targetMeters ?? 0) {
+                    completed = true
+                    value = speed
+                }
             case .photoLocation, .writeNote, .completeWithFriend, .completeRoute, .unknown:
-                completed = false
+                completed = false  // these need the rider to act, or the server to decide
             }
             if completed {
                 completedObjectiveIDs.insert(objective.id)
@@ -126,7 +141,7 @@ public struct ObjectiveTracker: Sendable {
     }
 
     /// Live progress for UI (`current`/`target`).
-    public func progress(for objective: Objective, distanceMeters: Double, elevationGainMeters: Double, newTerritoryMeters: Double) -> ObjectiveProgress {
+    public func progress(for objective: Objective, distanceMeters: Double, elevationGainMeters: Double, newTerritoryMeters: Double, elapsedSeconds: Double = 0) -> ObjectiveProgress {
         if completedObjectiveIDs.contains(objective.id) {
             return ObjectiveProgress(current: objective.progress.target, target: objective.progress.target)
         }
@@ -140,6 +155,11 @@ public struct ObjectiveTracker: Sendable {
         case .visitMultipleLocations:
             let total = Double(cellTargets[objective.id]?.count ?? 0)
             return ObjectiveProgress(current: Double(visitedCells[objective.id]?.count ?? 0), target: total > 0 ? total : objective.progress.target)
+        case .rideDuration:
+            return ObjectiveProgress(current: elapsedSeconds / 60, target: objective.progress.target)
+        case .sustainSpeed:
+            let speed = elapsedSeconds > 0 ? (distanceMeters / 1000) / (elapsedSeconds / 3600) : 0
+            return ObjectiveProgress(current: speed, target: objective.progress.target)
         default:
             return objective.progress
         }

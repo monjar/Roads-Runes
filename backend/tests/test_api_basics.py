@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from httpx import AsyncClient
 
@@ -28,9 +30,12 @@ async def test_refresh_rotation(client: AsyncClient):
 
 
 @pytest.mark.anyio
-async def test_character_and_locked_classes(user_client: AsyncClient):
+async def test_character_and_locked_classes(user_client: AsyncClient, settings, monkeypatch):
+    # The classes ship enabled; a flag can still take one away.
+    monkeypatch.setattr(settings, "feature_flags", "!wizard_class")
     r = await user_client.post("/character", json={"name": "Merlin", "characterClass": "WIZARD"})
     assert r.status_code == 403 and r.json()["error"]["code"] == "FEATURE_DISABLED"
+    monkeypatch.undo()
     r = await user_client.post("/character", json={"name": "Rowan", "characterClass": "EXPLORER"})
     assert r.status_code == 201
     data = r.json()
@@ -40,6 +45,16 @@ async def test_character_and_locked_classes(user_client: AsyncClient):
     assert r.status_code == 409
     r = await user_client.get("/users/me")
     assert r.json()["hasCharacter"] is True and r.json()["settings"]["defaultRideVisibility"] == "PRIVATE"
+
+
+@pytest.mark.anyio
+async def test_every_class_can_be_played(client: AsyncClient):
+    """Wizard, Warrior and Scribe have quests of their own now, so they ship on."""
+    for subject, character_class in (("merlin", "WIZARD"), ("brenna", "WARRIOR"), ("quill", "SCRIBE")):
+        await sign_in(client, subject=subject, name=subject.title())
+        r = await client.post("/character", json={"name": subject.title(), "characterClass": character_class})
+        assert r.status_code == 201, r.text
+        assert r.json()["characterClass"] == character_class
 
 
 @pytest.mark.anyio
@@ -90,3 +105,17 @@ async def test_friends_flow_and_privacy(client: AsyncClient):
     assert (await client.get(f"/users/{a['user']['id']}")).json()["friendship"] == "FRIENDS"
     r = await client.post("/parties", json={"questId": str(a["user"]["id"])})
     assert r.status_code == 403 and r.json()["error"]["code"] == "FEATURE_DISABLED"
+
+
+@pytest.mark.anyio
+async def test_custom_adventure_ride_keeps_its_title(explorer_client: AsyncClient):
+    r = await explorer_client.post(
+        "/rides",
+        json={
+            "clientRideId": str(uuid.uuid4()),
+            "startedAt": "2026-06-01T09:00:00Z",
+            "title": "  Pub ride to Greenwich  ",
+        },
+    )
+    assert r.status_code == 201
+    assert r.json()["title"] == "Pub ride to Greenwich" and r.json()["questId"] is None

@@ -17,6 +17,8 @@ final class RideRecorder {
     private(set) var clientRideId = UUID()
     private(set) var stats = RideSnapshot()
     private(set) var progress: ProgressUpdate?
+    /// Custom adventure name (spec §31); quest rides are named by the quest.
+    private(set) var title: String?
     private(set) var currentObjective: Objective?
     private(set) var completedObjectiveIDs: Set<UUID> = []
     private(set) var recentObjectiveCompletion: Objective?
@@ -86,12 +88,13 @@ final class RideRecorder {
 
     // MARK: - Lifecycle
 
-    func start(package: RoutePackage, quest: Quest?, bikeId: UUID?) async {
+    func start(package: RoutePackage, quest: Quest?, bikeId: UUID?, title: String? = nil) async {
         guard !isActive else { return }
         try? routePackages.save(package)
         self.package = package
         self.quest = quest ?? package.quest
         self.bikeId = bikeId
+        self.title = self.quest == nil ? title : nil
         clientRideId = UUID()
         startedAt = Date()
         sequence = 0
@@ -114,7 +117,9 @@ final class RideRecorder {
         watch.configure(batteryMode: batteryMode)
 
         persistence.upsertActiveRide(clientRideId: clientRideId, serverRideId: nil, questId: self.quest?.id, routeId: package.route.id, bikeId: bikeId, startedAt: startedAt, state: .active)
-        ride = try? await api.createRide(RideCreate(clientRideId: clientRideId, startedAt: startedAt, questId: self.quest?.id, bikeId: bikeId, routeId: package.route.id))
+        ride = try? await api.createRide(RideCreate(
+            clientRideId: clientRideId, startedAt: startedAt, questId: self.quest?.id, bikeId: bikeId, routeId: package.route.id, title: self.title
+        ))
         if let ride { persistence.upsertActiveRide(clientRideId: clientRideId, serverRideId: ride.id, questId: self.quest?.id, routeId: package.route.id, bikeId: bikeId, startedAt: startedAt, state: .active) }
 
         transition(to: .active)
@@ -219,7 +224,7 @@ final class RideRecorder {
             handleOffRoute(update.isOffRoute, at: enriched.timestamp)
         }
         if var tracker = objectiveTracker {
-            let events = tracker.update(position: enriched.coordinate, distanceMeters: stats.distanceMeters, elevationGainMeters: stats.elevationGainMeters, newTerritoryMeters: newTerritoryMeters, timestamp: enriched.timestamp)
+            let events = tracker.update(position: enriched.coordinate, distanceMeters: stats.distanceMeters, elevationGainMeters: stats.elevationGainMeters, newTerritoryMeters: newTerritoryMeters, elapsedSeconds: stats.elapsedSeconds, timestamp: enriched.timestamp)
             objectiveTracker = tracker
             if !events.isEmpty { handle(objectiveEvents: events) }
             currentObjective = tracker.pendingObjectives.first
@@ -235,6 +240,30 @@ final class RideRecorder {
 
     func record(heartRate bpm: Int) {
         lastHeartRate = bpm
+    }
+
+    /// Scribe objectives the GPS cannot judge: the rider photographs or writes.
+    /// The photograph stays on the device (there is no photo storage yet); the
+    /// note goes to the discovery the objective belongs to.
+    func complete(objective: Objective, note: String? = nil, photo: Data? = nil) async {
+        guard var tracker = objectiveTracker else { return }
+        let event = tracker.markCompleted(objective.id, at: location.lastFix?.coordinate, timestamp: Date())
+        objectiveTracker = tracker
+        guard let event else { return }
+        handle(objectiveEvents: [event])
+        currentObjective = tracker.pendingObjectives.first
+        if let photo { store(photo: photo, for: objective) }
+        if let note, !note.isEmpty, let discoveryId = objective.discoveryId {
+            _ = try? await api.updateUserDiscovery(id: discoveryId, UserDiscoveryIn(note: note))
+        }
+        persist(force: true)
+    }
+
+    private func store(photo: Data, for objective: Objective) {
+        let directory = AppContainer.storageDirectory()
+            .appendingPathComponent("RidePhotos/\(clientRideId.uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? photo.write(to: directory.appendingPathComponent("\(objective.id.uuidString).jpg"))
     }
 
     private func handle(objectiveEvents events: [ObjectiveEvent]) {
@@ -304,7 +333,9 @@ final class RideRecorder {
 
     private func ensureServerRide() async {
         guard ride == nil else { return }
-        ride = try? await api.createRide(RideCreate(clientRideId: clientRideId, startedAt: startedAt, questId: quest?.id, bikeId: bikeId, routeId: package?.route.id))
+        ride = try? await api.createRide(RideCreate(
+            clientRideId: clientRideId, startedAt: startedAt, questId: quest?.id, bikeId: bikeId, routeId: package?.route.id, title: title
+        ))
         if let ride { persistence.upsertActiveRide(clientRideId: clientRideId, serverRideId: ride.id, questId: quest?.id, routeId: package?.route.id, bikeId: bikeId, startedAt: startedAt, state: state) }
     }
 
@@ -368,7 +399,7 @@ final class RideRecorder {
             navigationState: state, startedAt: startedAt, updatedAt: now, stats: stats,
             pendingCells: exploration?.pendingUpload ?? [], visitedCells: Array(exploration?.visitedCells ?? []),
             completedObjectiveIDs: Array(completedObjectiveIDs), pendingObjectiveEvents: pendingObjectiveEvents,
-            lastFix: lastFix, lastSegmentIndex: progress?.nearestSegmentIndex ?? 0
+            lastFix: lastFix, lastSegmentIndex: progress?.nearestSegmentIndex ?? 0, title: title
         )
         try? activeRideStore.save(snapshot)
         persistence.save()
@@ -386,6 +417,7 @@ final class RideRecorder {
         clientRideId = saved.clientRideId
         startedAt = saved.startedAt
         bikeId = saved.bikeId
+        title = saved.title
         statistics = RideStatistics(resuming: saved.stats)
         stats = statistics.snapshot
         completedObjectiveIDs = Set(saved.completedObjectiveIDs)
@@ -414,6 +446,7 @@ final class RideRecorder {
         clientRideId = saved.clientRideId
         startedAt = saved.startedAt
         bikeId = saved.bikeId
+        title = saved.title
         ride = nil
         if let rideId = saved.rideId { ride = try? await api.ride(id: rideId) }
         statistics = RideStatistics(resuming: saved.stats)

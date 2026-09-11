@@ -23,10 +23,14 @@ from typing import Any
 import h3
 
 from app.core.geo import destination_point, haversine_m
+from app.core.logging import get_logger
 from app.exploration.cells import cell_center, cell_for, frontier_cells
 from app.quests.templates import DIFFICULTIES, templates_for
 
 REGION_RADIUS_M = 250.0  # radius around a cell centre that counts as "entered"
+
+
+log = get_logger(__name__)
 
 
 @dataclass
@@ -76,11 +80,15 @@ class GeneratedObjective:
     target_cells: list[str] | None = None
     target_elevation_meters: float | None = None
     target_count: int | None = None
+    # Targets that are neither a distance nor a count: km/h to hold, minutes to ride.
+    target_value: float | None = None
     discovery_id: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     @property
     def progress_target(self) -> float:
+        if self.target_value:
+            return float(self.target_value)
         if self.target_count:
             return float(self.target_count)
         if self.target_meters:
@@ -176,6 +184,17 @@ def _poi_candidates(ctx: GenerationContext, rules: dict[str, Any]) -> list[POICa
     return out
 
 
+def _fact_for(poi: POICandidate) -> str:
+    """One line about a place, from its OpenStreetMap tags. Wizard and Scribe
+    quests read it out; it is never invented."""
+    tags = poi.tags or {}
+    for key in ("historic", "tourism", "leisure", "natural", "amenity", "shop"):
+        value = tags.get(key)
+        if value:
+            return f"The map files it as {str(value).replace('_', ' ')}."
+    return "The map says almost nothing about it."
+
+
 def _difficulty(distance_km: float, ctx: GenerationContext, elevation_m: float = 0.0) -> str:
     ratio = distance_km / max(ctx.comfortable_distance_km, 5)
     if elevation_m > ctx.comfortable_elevation_gain * 1.5:
@@ -212,6 +231,11 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
         variables["elevationMeters"] = int(
             _scale_range(rng, rules["elevationMeters"], max(0.6, ctx.comfortable_elevation_gain / 300))
         )
+    if "durationMinutes" in rules:
+        variables["durationMinutes"] = int(_scale_range(rng, rules["durationMinutes"], scale))
+    if "speedKmh" in rules:
+        # Pace is personal, not a function of how far the rider usually goes.
+        variables["speedKmh"] = round(_scale_range(rng, rules["speedKmh"], 1.0), 1)
 
     poi: POICandidate | None = None
     if "poiCategory" in rules:
@@ -222,6 +246,7 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
             return None
         poi = rng.choice(candidates)
         variables["poiName"] = poi.name
+        variables["poiFact"] = _fact_for(poi)
         farthest_m = haversine_m(ctx.latitude, ctx.longitude, poi.latitude, poi.longitude)
 
     region_cells: list[str] = []
@@ -304,7 +329,24 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
             obj.extra = {"safety": "Stop safely before completing this objective."}
         elif otype == "COMPLETE_CLIMB":
             obj.target_elevation_meters = float(variables.get("elevationMeters", 300))
+        elif otype == "RIDE_DURATION":
+            obj.target_value = float(variables.get("durationMinutes", 60))
+        elif otype == "SUSTAIN_SPEED":
+            obj.target_value = float(variables.get("speedKmh", 20))
+            # A fast two kilometres is not a tempo ride.
+            obj.extra = {"minDistanceMeters": float(variables.get("distanceKm", 10)) * 1000 * 0.8}
+        if spec.get("hidden"):
+            # A puzzle: the app is told there is a target, never where it is,
+            # until the ride is processed (`objective_out`).
+            obj.extra = {**obj.extra, "hidden": True}
         objectives.append(obj)
+
+    # A puzzle hides the whole place: a photo or note objective on the same POI
+    # would otherwise pin on the map exactly what the riddle withholds.
+    if poi is not None and any(o.extra.get("hidden") for o in objectives):
+        for o in objectives:
+            if o.discovery_id == poi.id:
+                o.extra = {**o.extra, "hidden": True}
 
     distance_km = variables.get("distanceKm")
     if distance_km is None:
@@ -342,6 +384,15 @@ def _same_targets(a: GeneratedQuest, b: GeneratedQuest) -> bool:
     return ta == tb
 
 
+def _try_instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int) -> GeneratedQuest | None:
+    """One malformed template must not cost the rider every quest."""
+    try:
+        return instantiate(template, ctx, salt=salt)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("quest_template_failed", template=template["id"], error=str(exc)[:200])
+        return None
+
+
 def generate(
     ctx: GenerationContext, count: int = 3, exclude_template_ids: set[str] | None = None
 ) -> list[GeneratedQuest]:
@@ -362,7 +413,7 @@ def generate(
     while pool and len(generated) < count and attempts < 40:
         attempts += 1
         template = rng.choices([p[0] for p in pool], weights=[p[1] for p in pool], k=1)[0]
-        quest = instantiate(template, ctx, salt=attempts)
+        quest = _try_instantiate(template, ctx, attempts)
         pool = [p for p in pool if p[0]["id"] != template["id"]]
         if quest is not None:
             generated.append(quest)
@@ -372,7 +423,7 @@ def generate(
     while len(generated) < count and salt < 140:
         salt += 1
         template = rng.choice(candidates)
-        quest = instantiate(template, ctx, salt=salt)
+        quest = _try_instantiate(template, ctx, salt)
         if quest is None:
             continue
         if any(

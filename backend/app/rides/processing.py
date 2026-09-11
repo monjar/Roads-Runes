@@ -50,6 +50,7 @@ def evaluate_objectives(
     points: list[CleanPoint],
     *,
     distance_m: float,
+    duration_s: float,
     elevation_gain_m: float,
     new_roads_m: float,
     new_cells: set[str],
@@ -117,6 +118,16 @@ def evaluate_objectives(
                         <= (o.radius_meters or 120) * 1.5
                     )
             o.progress_current = 1.0 if done else 0.0
+        elif t == "RIDE_DURATION":
+            minutes = duration_s / 60
+            o.progress_current = min(o.progress_target, minutes)
+            done = minutes >= o.progress_target
+        elif t == "SUSTAIN_SPEED":
+            # Average speed over the whole ride, so stopping for a café costs pace.
+            speed_kmh = (distance_m / 1000) / (duration_s / 3600) if duration_s > 0 else 0.0
+            o.progress_current = min(o.progress_target, round(speed_kmh, 1))
+            # A short spin does not count: the distance floor lives in extra.
+            done = speed_kmh >= o.progress_target and distance_m >= float(o.extra.get("minDistanceMeters", 0))
         elif t == "COMPLETE_ROUTE":
             done = distance_m >= (o.target_meters or 0) * 0.9
             o.progress_current = min(o.progress_target, distance_m)
@@ -282,6 +293,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
                 quest,
                 points,
                 distance_m=ride.distance_meters,
+                duration_s=float(ride.duration_seconds or 0),
                 elevation_gain_m=ride.elevation_gain_meters,
                 new_roads_m=exploration.new_territory_m,
                 new_cells=set(exploration.new_cells),

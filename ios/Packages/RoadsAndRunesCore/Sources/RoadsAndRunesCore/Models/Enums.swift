@@ -34,6 +34,9 @@ public enum ObjectiveType: String, SafeEnum {
     case returnToStart = "RETURN_TO_START"
     case completeWithFriend = "COMPLETE_WITH_FRIEND"
     case completeRoute = "COMPLETE_ROUTE"
+    /// Warrior: effort measured over the whole ride.
+    case rideDuration = "RIDE_DURATION"
+    case sustainSpeed = "SUSTAIN_SPEED"
     case unknown = "UNKNOWN"
 }
 

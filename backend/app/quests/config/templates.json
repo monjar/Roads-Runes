@@ -7,14 +7,37 @@
       "questType": "EXPLORE_NEW_ROADS",
       "minLevel": 1,
       "weight": 3,
-      "objectiveRules": {"newTerritoryKm": [3, 8], "distanceKm": [12, 35]},
+      "objectiveRules": {
+        "newTerritoryKm": [
+          3,
+          8
+        ],
+        "distanceKm": [
+          12,
+          35
+        ]
+      },
       "objectives": [
-        {"type": "EXPLORE_NEW_ROADS", "title": "Ride {newTerritoryKm} km of roads you have never ridden", "required": true},
-        {"type": "COMPLETE_DISTANCE", "title": "Cover at least {distanceKm} km", "required": false}
+        {
+          "type": "EXPLORE_NEW_ROADS",
+          "title": "Ride {newTerritoryKm} km of roads you have never ridden",
+          "required": true
+        },
+        {
+          "type": "COMPLETE_DISTANCE",
+          "title": "Cover at least {distanceKm} km",
+          "required": false
+        }
       ],
       "narrative": [
-        {"title": "Uncharted Lanes", "description": "The map beyond your usual roads is still blank. Fill in {newTerritoryKm} km of it."},
-        {"title": "Into the Unknown", "description": "Every road you have never ridden is a line waiting to be drawn. Draw {newTerritoryKm} km today."}
+        {
+          "title": "Uncharted Lanes",
+          "description": "The map beyond your usual roads is still blank. Fill in {newTerritoryKm} km of it."
+        },
+        {
+          "title": "Into the Unknown",
+          "description": "Every road you have never ridden is a line waiting to be drawn. Draw {newTerritoryKm} km today."
+        }
       ]
     },
     {
@@ -23,13 +46,34 @@
       "questType": "EXPLORE_REGION",
       "minLevel": 1,
       "weight": 3,
-      "objectiveRules": {"regionCount": 3, "regionDistanceKm": [3, 12], "distanceKm": [15, 35]},
+      "objectiveRules": {
+        "regionCount": 3,
+        "regionDistanceKm": [
+          3,
+          12
+        ],
+        "distanceKm": [
+          15,
+          35
+        ]
+      },
       "objectives": [
-        {"type": "VISIT_MULTIPLE_LOCATIONS", "title": "Enter three unexplored regions", "required": true, "count": 3}
+        {
+          "type": "VISIT_MULTIPLE_LOCATIONS",
+          "title": "Enter three unexplored regions",
+          "required": true,
+          "count": 3
+        }
       ],
       "narrative": [
-        {"title": "Three Shadows on the Map", "description": "Three patches of fog lie within reach. Ride into each and let the light in."},
-        {"title": "The Triad", "description": "Three regions, three first visits. Connect them any way you like."}
+        {
+          "title": "Three Shadows on the Map",
+          "description": "Three patches of fog lie within reach. Ride into each and let the light in."
+        },
+        {
+          "title": "The Triad",
+          "description": "Three regions, three first visits. Connect them any way you like."
+        }
       ]
     },
     {
@@ -38,13 +82,31 @@
       "questType": "VISIT_POI",
       "minLevel": 1,
       "weight": 2,
-      "objectiveRules": {"poiCategory": "NATURE", "poiDistanceKm": [4, 15], "requireUnexplored": true},
+      "objectiveRules": {
+        "poiCategory": "NATURE",
+        "poiDistanceKm": [
+          4,
+          15
+        ],
+        "requireUnexplored": true
+      },
       "objectives": [
-        {"type": "VISIT_POI", "title": "Reach {poiName}", "required": true, "radiusMeters": 80}
+        {
+          "type": "VISIT_POI",
+          "title": "Reach {poiName}",
+          "required": true,
+          "radiusMeters": 80
+        }
       ],
       "narrative": [
-        {"title": "Green Beyond the Fog", "description": "{poiName} lies past the edge of what you know. Go and stand in it."},
-        {"title": "A Quiet Place", "description": "Somewhere beyond your explored roads is {poiName}. Find your own way there."}
+        {
+          "title": "Green Beyond the Fog",
+          "description": "{poiName} lies past the edge of what you know. Go and stand in it."
+        },
+        {
+          "title": "A Quiet Place",
+          "description": "Somewhere beyond your explored roads is {poiName}. Find your own way there."
+        }
       ]
     },
     {
@@ -53,14 +115,36 @@
       "questType": "COMPLETE_LOOP",
       "minLevel": 2,
       "weight": 2,
-      "objectiveRules": {"distanceKm": [15, 40], "newTerritoryFraction": 0.5},
+      "objectiveRules": {
+        "distanceKm": [
+          15,
+          40
+        ],
+        "newTerritoryFraction": 0.5
+      },
       "objectives": [
-        {"type": "COMPLETE_DISTANCE", "title": "Ride a loop of at least {distanceKm} km", "required": true},
-        {"type": "EXPLORE_DISTANCE", "title": "Make more than half of it new territory", "required": true},
-        {"type": "RETURN_TO_START", "title": "Return to where you began", "required": true, "radiusMeters": 300}
+        {
+          "type": "COMPLETE_DISTANCE",
+          "title": "Ride a loop of at least {distanceKm} km",
+          "required": true
+        },
+        {
+          "type": "EXPLORE_DISTANCE",
+          "title": "Make more than half of it new territory",
+          "required": true
+        },
+        {
+          "type": "RETURN_TO_START",
+          "title": "Return to where you began",
+          "required": true,
+          "radiusMeters": 300
+        }
       ],
       "narrative": [
-        {"title": "The Long Way Round", "description": "Leave home, and make sure most of the way back is new."}
+        {
+          "title": "The Long Way Round",
+          "description": "Leave home, and make sure most of the way back is new."
+        }
       ]
     },
     {
@@ -69,12 +153,27 @@
       "questType": "VISIT_LOCATION",
       "minLevel": 1,
       "weight": 2,
-      "objectiveRules": {"poiCategory": "LANDMARK", "poiDistanceKm": [5, 18], "requireUnexplored": true},
+      "objectiveRules": {
+        "poiCategory": "LANDMARK",
+        "poiDistanceKm": [
+          5,
+          18
+        ],
+        "requireUnexplored": true
+      },
       "objectives": [
-        {"type": "VISIT_POI", "title": "Reach {poiName}", "required": true, "radiusMeters": 60}
+        {
+          "type": "VISIT_POI",
+          "title": "Reach {poiName}",
+          "required": true,
+          "radiusMeters": 60
+        }
       ],
       "narrative": [
-        {"title": "The Unseen Marker", "description": "{poiName} has stood there longer than your map. Add it to yours."}
+        {
+          "title": "The Unseen Marker",
+          "description": "{poiName} has stood there longer than your map. Add it to yours."
+        }
       ]
     },
     {
@@ -83,13 +182,36 @@
       "questType": "CONNECT_REGIONS",
       "minLevel": 3,
       "weight": 2,
-      "objectiveRules": {"regionCount": 2, "regionDistanceKm": [4, 12], "newTerritoryKm": [2, 6]},
+      "objectiveRules": {
+        "regionCount": 2,
+        "regionDistanceKm": [
+          4,
+          12
+        ],
+        "newTerritoryKm": [
+          2,
+          6
+        ]
+      },
       "objectives": [
-        {"type": "VISIT_MULTIPLE_LOCATIONS", "title": "Pass through two regions you already know", "required": true, "count": 2, "explored": true},
-        {"type": "EXPLORE_NEW_ROADS", "title": "Join them by {newTerritoryKm} km of unknown roads", "required": true}
+        {
+          "type": "VISIT_MULTIPLE_LOCATIONS",
+          "title": "Pass through two regions you already know",
+          "required": true,
+          "count": 2,
+          "explored": true
+        },
+        {
+          "type": "EXPLORE_NEW_ROADS",
+          "title": "Join them by {newTerritoryKm} km of unknown roads",
+          "required": true
+        }
       ],
       "narrative": [
-        {"title": "The Missing Link", "description": "Two places you know, joined by roads you don't. Close the gap."}
+        {
+          "title": "The Missing Link",
+          "description": "Two places you know, joined by roads you don't. Close the gap."
+        }
       ]
     },
     {
@@ -98,14 +220,40 @@
       "questType": "EXPLORE_REGION",
       "minLevel": 2,
       "weight": 2,
-      "objectiveRules": {"regionCount": 1, "regionDistanceKm": [6, 15], "newTerritoryKm": [2, 5]},
+      "objectiveRules": {
+        "regionCount": 1,
+        "regionDistanceKm": [
+          6,
+          15
+        ],
+        "newTerritoryKm": [
+          2,
+          5
+        ]
+      },
       "objectives": [
-        {"type": "VISIT_REGION", "title": "Reach an unexplored region", "required": true},
-        {"type": "EXPLORE_NEW_ROADS", "title": "Come back by a different way ({newTerritoryKm} km new)", "required": true},
-        {"type": "RETURN_TO_START", "title": "Return to your start", "required": true, "radiusMeters": 300}
+        {
+          "type": "VISIT_REGION",
+          "title": "Reach an unexplored region",
+          "required": true
+        },
+        {
+          "type": "EXPLORE_NEW_ROADS",
+          "title": "Come back by a different way ({newTerritoryKm} km new)",
+          "required": true
+        },
+        {
+          "type": "RETURN_TO_START",
+          "title": "Return to your start",
+          "required": true,
+          "radiusMeters": 300
+        }
       ],
       "narrative": [
-        {"title": "There and Back, Differently", "description": "Go somewhere new. Then refuse to come home the same way."}
+        {
+          "title": "There and Back, Differently",
+          "description": "Go somewhere new. Then refuse to come home the same way."
+        }
       ]
     },
     {
@@ -114,13 +262,35 @@
       "questType": "VISIT_POI",
       "minLevel": 3,
       "weight": 2,
-      "objectiveRules": {"poiCategory": "VIEWPOINT", "poiDistanceKm": [5, 20]},
+      "objectiveRules": {
+        "poiCategory": "VIEWPOINT",
+        "poiDistanceKm": [
+          5,
+          20
+        ],
+        "elevationMeters": [
+          120,
+          400
+        ]
+      },
       "objectives": [
-        {"type": "VISIT_POI", "title": "Reach {poiName}", "required": true, "radiusMeters": 80},
-        {"type": "REACH_ELEVATION", "title": "Climb at least {elevationMeters} m on the way", "required": false}
+        {
+          "type": "VISIT_POI",
+          "title": "Reach {poiName}",
+          "required": true,
+          "radiusMeters": 80
+        },
+        {
+          "type": "REACH_ELEVATION",
+          "title": "Climb at least {elevationMeters} m on the way",
+          "required": false
+        }
       ],
       "narrative": [
-        {"title": "A Higher Vantage", "description": "From {poiName} you can see where you have been. Earn the view."}
+        {
+          "title": "A Higher Vantage",
+          "description": "From {poiName} you can see where you have been. Earn the view."
+        }
       ]
     },
     {
@@ -129,13 +299,32 @@
       "questType": "VISIT_POI",
       "minLevel": 2,
       "weight": 2,
-      "objectiveRules": {"poiCategory": "TRAIL", "poiDistanceKm": [3, 15], "requiresGravel": true},
+      "objectiveRules": {
+        "poiCategory": "TRAIL",
+        "poiDistanceKm": [
+          3,
+          15
+        ],
+        "requiresGravel": true
+      },
       "objectives": [
-        {"type": "VISIT_POI", "title": "Find the start of {poiName}", "required": true, "radiusMeters": 80},
-        {"type": "EXPLORE_NEW_ROADS", "title": "Ride 2 km of it", "required": false}
+        {
+          "type": "VISIT_POI",
+          "title": "Find the start of {poiName}",
+          "required": true,
+          "radiusMeters": 80
+        },
+        {
+          "type": "EXPLORE_NEW_ROADS",
+          "title": "Ride 2 km of it",
+          "required": false
+        }
       ],
       "narrative": [
-        {"title": "Off the Tarmac", "description": "{poiName} is not a road. That is the point."}
+        {
+          "title": "Off the Tarmac",
+          "description": "{poiName} is not a road. That is the point."
+        }
       ]
     },
     {
@@ -144,13 +333,34 @@
       "questType": "VISIT_LOCATION",
       "minLevel": 5,
       "weight": 1,
-      "objectiveRules": {"regionCount": 1, "regionDistanceKm": [15, 30], "distanceKm": [35, 70]},
+      "objectiveRules": {
+        "regionCount": 1,
+        "regionDistanceKm": [
+          15,
+          30
+        ],
+        "distanceKm": [
+          35,
+          70
+        ]
+      },
       "objectives": [
-        {"type": "VISIT_REGION", "title": "Reach a region far beyond your map", "required": true},
-        {"type": "COMPLETE_DISTANCE", "title": "Ride at least {distanceKm} km", "required": true}
+        {
+          "type": "VISIT_REGION",
+          "title": "Reach a region far beyond your map",
+          "required": true
+        },
+        {
+          "type": "COMPLETE_DISTANCE",
+          "title": "Ride at least {distanceKm} km",
+          "required": true
+        }
       ],
       "narrative": [
-        {"title": "Far Wanderer", "description": "Somewhere past the edge of the known, a region waits for the first wheel."}
+        {
+          "title": "Far Wanderer",
+          "description": "Somewhere past the edge of the known, a region waits for the first wheel."
+        }
       ]
     },
     {
@@ -159,14 +369,43 @@
       "questType": "VISIT_POI",
       "minLevel": 1,
       "weight": 2,
-      "objectiveRules": {"poiCategory": "NATURE", "poiTagAny": ["water", "river", "lake", "canal", "coast"], "poiDistanceKm": [4, 18], "requireUnexplored": true},
+      "objectiveRules": {
+        "poiCategory": "NATURE",
+        "poiTagAny": [
+          "water",
+          "river",
+          "lake",
+          "canal",
+          "coast"
+        ],
+        "poiDistanceKm": [
+          4,
+          18
+        ],
+        "requireUnexplored": true
+      },
       "objectives": [
-        {"type": "VISIT_POI", "title": "Reach {poiName}", "required": true, "radiusMeters": 100},
-        {"type": "EXPLORE_NEW_ROADS", "title": "Ride 3 km of new roads on the way", "required": false}
+        {
+          "type": "VISIT_POI",
+          "title": "Reach {poiName}",
+          "required": true,
+          "radiusMeters": 100
+        },
+        {
+          "type": "EXPLORE_NEW_ROADS",
+          "title": "Ride 3 km of new roads on the way",
+          "required": false
+        }
       ],
       "narrative": [
-        {"title": "Beyond the Water", "description": "Water marks the edge of your map. {poiName} is on the other side."},
-        {"title": "Beyond the River", "description": "Cross to {poiName} and see what the far bank holds."}
+        {
+          "title": "Beyond the Water",
+          "description": "Water marks the edge of your map. {poiName} is on the other side."
+        },
+        {
+          "title": "Beyond the River",
+          "description": "Cross to {poiName} and see what the far bank holds."
+        }
       ]
     },
     {
@@ -175,13 +414,33 @@
       "questType": "VISIT_POI",
       "minLevel": 1,
       "weight": 2,
-      "objectiveRules": {"poiCategory": "CAFE", "poiDistanceKm": [5, 20], "requireUnexplored": true},
+      "objectiveRules": {
+        "poiCategory": "CAFE",
+        "poiDistanceKm": [
+          5,
+          20
+        ],
+        "requireUnexplored": true
+      },
       "objectives": [
-        {"type": "VISIT_POI", "title": "Reach {poiName}", "required": true, "radiusMeters": 60},
-        {"type": "RETURN_TO_START", "title": "Return home", "required": false, "radiusMeters": 300}
+        {
+          "type": "VISIT_POI",
+          "title": "Reach {poiName}",
+          "required": true,
+          "radiusMeters": 60
+        },
+        {
+          "type": "RETURN_TO_START",
+          "title": "Return home",
+          "required": false,
+          "radiusMeters": 300
+        }
       ],
       "narrative": [
-        {"title": "Coffee at the Frontier", "description": "There is a café in the fog. Go and drink there."}
+        {
+          "title": "Coffee at the Frontier",
+          "description": "There is a café in the fog. Go and drink there."
+        }
       ]
     },
     {
@@ -190,12 +449,27 @@
       "questType": "EXPLORE_REGION",
       "minLevel": 2,
       "weight": 2,
-      "objectiveRules": {"regionCount": 4, "frontier": true, "regionDistanceKm": [2, 10]},
+      "objectiveRules": {
+        "regionCount": 4,
+        "frontier": true,
+        "regionDistanceKm": [
+          2,
+          10
+        ]
+      },
       "objectives": [
-        {"type": "VISIT_MULTIPLE_LOCATIONS", "title": "Push the frontier in four places", "required": true, "count": 4}
+        {
+          "type": "VISIT_MULTIPLE_LOCATIONS",
+          "title": "Push the frontier in four places",
+          "required": true,
+          "count": 4
+        }
       ],
       "narrative": [
-        {"title": "Walking the Edge", "description": "Your map has an edge. Ride along it and push it outwards in four places."}
+        {
+          "title": "Walking the Edge",
+          "description": "Your map has an edge. Ride along it and push it outwards in four places."
+        }
       ]
     },
     {
@@ -204,25 +478,62 @@
       "questType": "EXPLORE_NEW_ROADS",
       "minLevel": 6,
       "weight": 1,
-      "objectiveRules": {"newTerritoryKm": [10, 20], "distanceKm": [40, 80]},
+      "objectiveRules": {
+        "newTerritoryKm": [
+          10,
+          20
+        ],
+        "distanceKm": [
+          40,
+          80
+        ]
+      },
       "objectives": [
-        {"type": "EXPLORE_NEW_ROADS", "title": "Ride {newTerritoryKm} km of unknown roads", "required": true},
-        {"type": "COMPLETE_DISTANCE", "title": "Ride at least {distanceKm} km", "required": true}
+        {
+          "type": "EXPLORE_NEW_ROADS",
+          "title": "Ride {newTerritoryKm} km of unknown roads",
+          "required": true
+        },
+        {
+          "type": "COMPLETE_DISTANCE",
+          "title": "Ride at least {distanceKm} km",
+          "required": true
+        }
       ],
       "narrative": [
-        {"title": "The Great Unknown", "description": "A whole day of roads you have never seen."}
+        {
+          "title": "The Great Unknown",
+          "description": "A whole day of roads you have never seen."
+        }
       ]
     },
-
     {
       "id": "WIZARD_HIDDEN_LANDMARK",
       "characterClass": "WIZARD",
       "questType": "VISIT_LOCATION",
       "minLevel": 1,
       "weight": 2,
-      "objectiveRules": {"poiCategory": "HISTORICAL", "poiDistanceKm": [4, 18]},
-      "objectives": [{"type": "VISIT_POI", "title": "Find {poiName}", "required": true, "radiusMeters": 60}],
-      "narrative": [{"title": "The Old Stones", "description": "{poiName} remembers more than the maps admit."}]
+      "objectiveRules": {
+        "poiCategory": "HISTORICAL",
+        "poiDistanceKm": [
+          4,
+          18
+        ]
+      },
+      "objectives": [
+        {
+          "type": "VISIT_POI",
+          "title": "Find {poiName}",
+          "required": true,
+          "radiusMeters": 60
+        }
+      ],
+      "narrative": [
+        {
+          "title": "The Old Stones",
+          "description": "{poiName} remembers more than the maps admit."
+        }
+      ]
     },
     {
       "id": "WARRIOR_SUMMIT",
@@ -230,12 +541,34 @@
       "questType": "COMPLETE_CLIMB",
       "minLevel": 1,
       "weight": 2,
-      "objectiveRules": {"elevationMeters": [300, 900], "distanceKm": [25, 60]},
+      "objectiveRules": {
+        "elevationMeters": [
+          300,
+          900
+        ],
+        "distanceKm": [
+          25,
+          60
+        ]
+      },
       "objectives": [
-        {"type": "REACH_ELEVATION", "title": "Climb {elevationMeters} m", "required": true},
-        {"type": "COMPLETE_DISTANCE", "title": "Ride {distanceKm} km", "required": true}
+        {
+          "type": "REACH_ELEVATION",
+          "title": "Climb {elevationMeters} m",
+          "required": true
+        },
+        {
+          "type": "COMPLETE_DISTANCE",
+          "title": "Ride {distanceKm} km",
+          "required": true
+        }
       ],
-      "narrative": [{"title": "The Long Climb", "description": "Height is earned one pedal stroke at a time."}]
+      "narrative": [
+        {
+          "title": "The Long Climb",
+          "description": "Height is earned one pedal stroke at a time."
+        }
+      ]
     },
     {
       "id": "SCRIBE_DOCUMENT_PLACE",
@@ -243,13 +576,553 @@
       "questType": "PHOTO_LOCATION",
       "minLevel": 1,
       "weight": 2,
-      "objectiveRules": {"poiCategory": "LANDMARK", "poiDistanceKm": [3, 15]},
+      "objectiveRules": {
+        "poiCategory": "LANDMARK",
+        "poiDistanceKm": [
+          3,
+          15
+        ]
+      },
       "objectives": [
-        {"type": "VISIT_POI", "title": "Reach {poiName}", "required": true, "radiusMeters": 60},
-        {"type": "PHOTO_LOCATION", "title": "Stop safely and photograph {poiName}", "required": true},
-        {"type": "WRITE_NOTE", "title": "Write a note about it", "required": false}
+        {
+          "type": "VISIT_POI",
+          "title": "Reach {poiName}",
+          "required": true,
+          "radiusMeters": 60
+        },
+        {
+          "type": "PHOTO_LOCATION",
+          "title": "Stop safely and photograph {poiName}",
+          "required": true
+        },
+        {
+          "type": "WRITE_NOTE",
+          "title": "Write a note about it",
+          "required": false
+        }
       ],
-      "narrative": [{"title": "For the Record", "description": "Someone has to write these places down."}]
+      "narrative": [
+        {
+          "title": "For the Record",
+          "description": "Someone has to write these places down."
+        }
+      ]
+    },
+    {
+      "id": "WIZARD_RIDDLE_VIEWPOINT",
+      "characterClass": "WIZARD",
+      "questType": "VISIT_LOCATION",
+      "minLevel": 1,
+      "weight": 3,
+      "objectiveRules": {
+        "poiCategory": "VIEWPOINT",
+        "poiDistanceKm": [
+          4,
+          16
+        ]
+      },
+      "objectives": [
+        {
+          "type": "VISIT_POI",
+          "title": "Find the high place the riddle points to",
+          "required": true,
+          "radiusMeters": 90,
+          "hidden": true
+        },
+        {
+          "type": "WRITE_NOTE",
+          "title": "Name it in your journal",
+          "required": false
+        }
+      ],
+      "narrative": [
+        {
+          "title": "The Watcher's Seat",
+          "description": "Somewhere above you there is a seat that watches the whole city. The map will not name it until you are standing there."
+        }
+      ]
+    },
+    {
+      "id": "WIZARD_WATER_CIPHER",
+      "characterClass": "WIZARD",
+      "questType": "VISIT_LOCATION",
+      "minLevel": 1,
+      "weight": 2,
+      "objectiveRules": {
+        "poiCategory": "NATURE",
+        "poiTagAny": [
+          "water",
+          "river",
+          "lake",
+          "canal",
+          "coast"
+        ],
+        "poiDistanceKm": [
+          3,
+          14
+        ]
+      },
+      "objectives": [
+        {
+          "type": "VISIT_POI",
+          "title": "Reach the water the riddle describes",
+          "required": true,
+          "radiusMeters": 120,
+          "hidden": true
+        }
+      ],
+      "narrative": [
+        {
+          "title": "What the Water Keeps",
+          "description": "Water remembers every route that crossed it. Find this one and it will tell you its name."
+        }
+      ]
+    },
+    {
+      "id": "WIZARD_STRANGE_MARKER",
+      "characterClass": "WIZARD",
+      "questType": "VISIT_POI",
+      "minLevel": 1,
+      "weight": 3,
+      "objectiveRules": {
+        "poiCategory": "CULTURAL",
+        "poiDistanceKm": [
+          3,
+          15
+        ]
+      },
+      "objectives": [
+        {
+          "type": "VISIT_POI",
+          "title": "Reach {poiName}",
+          "required": true,
+          "radiusMeters": 70
+        },
+        {
+          "type": "WRITE_NOTE",
+          "title": "Write down the oddest detail",
+          "required": false
+        }
+      ],
+      "narrative": [
+        {
+          "title": "A Curious Object",
+          "description": "{poiName} is stranger than it looks. {poiFact}"
+        }
+      ]
+    },
+    {
+      "id": "WIZARD_LEY_LINE",
+      "characterClass": "WIZARD",
+      "questType": "EXPLORE_REGION",
+      "minLevel": 2,
+      "weight": 2,
+      "objectiveRules": {
+        "regionCount": 3,
+        "regionDistanceKm": [
+          3,
+          11
+        ],
+        "distanceKm": [
+          18,
+          40
+        ]
+      },
+      "objectives": [
+        {
+          "type": "VISIT_MULTIPLE_LOCATIONS",
+          "title": "Touch all three points of the line",
+          "required": true,
+          "count": 3
+        }
+      ],
+      "narrative": [
+        {
+          "title": "The Ley Line",
+          "description": "Three points, one straight idea. Ride them in any order; the line does not care."
+        }
+      ]
+    },
+    {
+      "id": "WIZARD_OLD_GROUND",
+      "characterClass": "WIZARD",
+      "questType": "VISIT_POI",
+      "minLevel": 2,
+      "weight": 2,
+      "objectiveRules": {
+        "poiCategory": "HISTORICAL",
+        "poiDistanceKm": [
+          6,
+          22
+        ],
+        "requireUnexplored": true,
+        "newTerritoryKm": [
+          2,
+          6
+        ]
+      },
+      "objectives": [
+        {
+          "type": "VISIT_POI",
+          "title": "Stand where the old ground is",
+          "required": true,
+          "radiusMeters": 70,
+          "hidden": true
+        },
+        {
+          "type": "EXPLORE_NEW_ROADS",
+          "title": "Take {newTerritoryKm} km of roads you have never ridden",
+          "required": false
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Older Than the Road",
+          "description": "The road is new. What it passes is not. {poiFact}"
+        }
+      ]
+    },
+    {
+      "id": "WARRIOR_LONG_HAUL",
+      "characterClass": "WARRIOR",
+      "questType": "COMPLETE_DISTANCE",
+      "minLevel": 1,
+      "weight": 3,
+      "objectiveRules": {
+        "distanceKm": [
+          45,
+          95
+        ],
+        "durationMinutes": [
+          100,
+          240
+        ]
+      },
+      "objectives": [
+        {
+          "type": "COMPLETE_DISTANCE",
+          "title": "Ride {distanceKm} km",
+          "required": true
+        },
+        {
+          "type": "RIDE_DURATION",
+          "title": "Stay out for {durationMinutes} minutes",
+          "required": false
+        }
+      ],
+      "narrative": [
+        {
+          "title": "The Long Haul",
+          "description": "No hills to hide behind, no shortcuts. Just the distance and how you meet it."
+        }
+      ]
+    },
+    {
+      "id": "WARRIOR_STEADY_TEMPO",
+      "characterClass": "WARRIOR",
+      "questType": "COMPLETE_DISTANCE",
+      "minLevel": 1,
+      "weight": 3,
+      "objectiveRules": {
+        "distanceKm": [
+          15,
+          35
+        ],
+        "speedKmh": [
+          19,
+          26
+        ]
+      },
+      "objectives": [
+        {
+          "type": "SUSTAIN_SPEED",
+          "title": "Average {speedKmh} km/h over the ride",
+          "required": true
+        },
+        {
+          "type": "COMPLETE_DISTANCE",
+          "title": "Hold it for {distanceKm} km",
+          "required": true
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Tempo",
+          "description": "Not a race against anyone else: a pace you choose and keep. Stops count against the average, so pick your moment to rest."
+        }
+      ]
+    },
+    {
+      "id": "WARRIOR_HOUR_OF_IRON",
+      "characterClass": "WARRIOR",
+      "questType": "COMPLETE_DISTANCE",
+      "minLevel": 2,
+      "weight": 2,
+      "objectiveRules": {
+        "durationMinutes": [
+          60,
+          150
+        ],
+        "distanceKm": [
+          20,
+          55
+        ]
+      },
+      "objectives": [
+        {
+          "type": "RIDE_DURATION",
+          "title": "Keep riding for {durationMinutes} minutes",
+          "required": true
+        },
+        {
+          "type": "COMPLETE_DISTANCE",
+          "title": "Cover {distanceKm} km while you do",
+          "required": false
+        }
+      ],
+      "narrative": [
+        {
+          "title": "The Iron Hour",
+          "description": "Time on the bike is the whole test. Anything that keeps you moving counts."
+        }
+      ]
+    },
+    {
+      "id": "WARRIOR_HILL_TOLL",
+      "characterClass": "WARRIOR",
+      "questType": "COMPLETE_CLIMB",
+      "minLevel": 2,
+      "weight": 2,
+      "objectiveRules": {
+        "elevationMeters": [
+          450,
+          1200
+        ],
+        "distanceKm": [
+          30,
+          70
+        ],
+        "durationMinutes": [
+          70,
+          160
+        ]
+      },
+      "objectives": [
+        {
+          "type": "COMPLETE_CLIMB",
+          "title": "Climb {elevationMeters} m in total",
+          "required": true
+        },
+        {
+          "type": "RIDE_DURATION",
+          "title": "Stay with it for {durationMinutes} minutes",
+          "required": false
+        }
+      ],
+      "narrative": [
+        {
+          "title": "The Hill Toll",
+          "description": "Every road out of here asks for height. Pay it all in one ride."
+        }
+      ]
+    },
+    {
+      "id": "SCRIBE_THREE_ENTRIES",
+      "characterClass": "SCRIBE",
+      "questType": "PHOTO_LOCATION",
+      "minLevel": 1,
+      "weight": 3,
+      "objectiveRules": {
+        "poiCategory": "HISTORICAL",
+        "poiDistanceKm": [
+          3,
+          16
+        ]
+      },
+      "objectives": [
+        {
+          "type": "VISIT_POI",
+          "title": "Reach {poiName}",
+          "required": true,
+          "radiusMeters": 70
+        },
+        {
+          "type": "PHOTO_LOCATION",
+          "title": "Photograph it",
+          "required": true
+        },
+        {
+          "type": "WRITE_NOTE",
+          "title": "Write what the photograph misses",
+          "required": true
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Two Kinds of Record",
+          "description": "A picture and a sentence hold different things. {poiName} deserves both. {poiFact}"
+        }
+      ]
+    },
+    {
+      "id": "SCRIBE_WATERSIDE_RECORD",
+      "characterClass": "SCRIBE",
+      "questType": "PHOTO_LOCATION",
+      "minLevel": 1,
+      "weight": 2,
+      "objectiveRules": {
+        "poiCategory": "NATURE",
+        "poiTagAny": [
+          "water",
+          "river",
+          "lake",
+          "canal",
+          "coast"
+        ],
+        "poiDistanceKm": [
+          3,
+          15
+        ]
+      },
+      "objectives": [
+        {
+          "type": "VISIT_POI",
+          "title": "Reach {poiName}",
+          "required": true,
+          "radiusMeters": 120
+        },
+        {
+          "type": "PHOTO_LOCATION",
+          "title": "Photograph the water",
+          "required": true
+        },
+        {
+          "type": "WRITE_NOTE",
+          "title": "Note what it sounded like",
+          "required": false
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Waterside Record",
+          "description": "Rivers change faster than maps do. Put down what {poiName} looks like today."
+        }
+      ]
+    },
+    {
+      "id": "SCRIBE_CAFE_LOG",
+      "characterClass": "SCRIBE",
+      "questType": "VISIT_POI",
+      "minLevel": 1,
+      "weight": 2,
+      "objectiveRules": {
+        "poiCategory": "CAFE",
+        "poiDistanceKm": [
+          4,
+          18
+        ]
+      },
+      "objectives": [
+        {
+          "type": "VISIT_POI",
+          "title": "Stop at {poiName}",
+          "required": true,
+          "radiusMeters": 80
+        },
+        {
+          "type": "WRITE_NOTE",
+          "title": "Log the stop: what you had, who was there",
+          "required": true
+        },
+        {
+          "type": "PHOTO_LOCATION",
+          "title": "One photograph for the entry",
+          "required": false
+        }
+      ],
+      "narrative": [
+        {
+          "title": "The Café Log",
+          "description": "Every good ride has a stop in it. This one goes in the book."
+        }
+      ]
+    },
+    {
+      "id": "SCRIBE_ROUTE_SURVEY",
+      "characterClass": "SCRIBE",
+      "questType": "EXPLORE_NEW_ROADS",
+      "minLevel": 2,
+      "weight": 2,
+      "objectiveRules": {
+        "newTerritoryKm": [
+          4,
+          12
+        ],
+        "distanceKm": [
+          15,
+          40
+        ]
+      },
+      "objectives": [
+        {
+          "type": "EXPLORE_NEW_ROADS",
+          "title": "Survey {newTerritoryKm} km of unrecorded road",
+          "required": true
+        },
+        {
+          "type": "PHOTO_LOCATION",
+          "title": "Photograph one thing worth keeping",
+          "required": true
+        },
+        {
+          "type": "WRITE_NOTE",
+          "title": "Say whether it is worth riding again",
+          "required": false
+        }
+      ],
+      "narrative": [
+        {
+          "title": "The Survey",
+          "description": "Nobody has written these roads down. That is the job."
+        }
+      ]
+    },
+    {
+      "id": "SCRIBE_THREE_CORNERS",
+      "characterClass": "SCRIBE",
+      "questType": "EXPLORE_REGION",
+      "minLevel": 2,
+      "weight": 2,
+      "objectiveRules": {
+        "regionCount": 3,
+        "regionDistanceKm": [
+          2,
+          9
+        ],
+        "distanceKm": [
+          14,
+          32
+        ]
+      },
+      "objectives": [
+        {
+          "type": "VISIT_MULTIPLE_LOCATIONS",
+          "title": "Visit three unrecorded corners",
+          "required": true,
+          "count": 3
+        },
+        {
+          "type": "WRITE_NOTE",
+          "title": "One line about the best of them",
+          "required": true
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Three Corners",
+          "description": "Three places nobody has described. Give each of them a minute, then write one down."
+        }
+      ]
     }
   ]
 }

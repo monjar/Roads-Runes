@@ -30,7 +30,14 @@ struct NavigationScreen: View {
                 if recorder.recentObjectiveCompletion != nil, let instruction = recorder.progress?.nextInstruction {
                     MapPill(text: "\(TurnArrowView.phrase(for: instruction.sign)) · \(formatter.distance(meters: recorder.progress?.distanceToNextInstruction ?? instruction.distanceMeters))")
                 } else {
-                    ObjectiveBanner(objective: recorder.currentObjective, quest: recorder.quest, position: recorder.lastFix?.coordinate, formatter: formatter)
+                    ObjectiveBanner(objective: recorder.currentObjective, quest: recorder.quest, title: recorder.title, position: recorder.lastFix?.coordinate, formatter: formatter)
+                }
+                if let objective = recorder.currentObjective, objective.needsRider {
+                    ScribeActions(objective: objective) { note in
+                        Task { await recorder.complete(objective: objective, note: note) }
+                    } onPhoto: { data in
+                        Task { await recorder.complete(objective: objective, photo: data) }
+                    }
                 }
                 HStack {
                     StatusPill(
@@ -99,7 +106,7 @@ struct NavigationScreen: View {
                     .frame(width: 48, height: 48)
                     .background(Theme.Colors.inkSoft, in: Circle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .padding(.leading, 18)
             .accessibilityLabel("Pause ride")
         }
@@ -140,7 +147,7 @@ struct NavigationScreen: View {
                         .frame(height: 56)
                         .background(Theme.Colors.inkSoft, in: Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .frame(width: 120)
             }
         }
@@ -185,8 +192,10 @@ struct TurnCard: View {
                         Text(parts.unit).font(Theme.Typography.text(24, .semibold)).foregroundStyle(Theme.Colors.ink)
                     }
                     Text(TurnArrowView.phrase(for: instruction.sign)).font(Theme.Typography.text(18, .semibold)).foregroundStyle(Theme.Colors.ink)
-                    Text(instruction.streetName.isEmpty ? instruction.text : instruction.streetName)
-                        .font(Theme.Typography.text(15)).foregroundStyle(Theme.Colors.muted).lineLimit(2).minimumScaleFactor(0.8)
+                    if let detail = detailLine(street: instruction.streetName, text: instruction.text, sign: instruction.sign) {
+                        Text(detail)
+                            .font(Theme.Typography.text(15)).foregroundStyle(Theme.Colors.muted).lineLimit(2).minimumScaleFactor(0.8)
+                    }
                 }
                 Spacer(minLength: 0)
                 if let next = route?.instructions.first(where: { $0.index > instruction.index }) {
@@ -210,6 +219,13 @@ struct TurnCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.Colors.cream, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
         .shadow(color: Theme.Colors.ink.opacity(0.18), radius: 12, y: 6)
+    }
+
+    /// The street to turn onto; otherwise the engine's text only when it says more than the
+    /// arrow does ("Turn right" under "Turn right" is noise on unnamed paths).
+    private func detailLine(street: String, text: String, sign: InstructionSign) -> String? {
+        if !street.isEmpty { return street }
+        return text.caseInsensitiveCompare(TurnArrowView.phrase(for: sign)) == .orderedSame ? nil : text
     }
 
     private func split(_ distance: String) -> (value: String, unit: String) {
@@ -285,6 +301,8 @@ struct TurnArrowView: View {
 struct ObjectiveBanner: View {
     let objective: Objective?
     let quest: Quest?
+    /// Custom adventure name shown in place of "Free ride".
+    var title: String?
     let position: Coordinate?
     let formatter: UnitFormatter
 
@@ -303,7 +321,7 @@ struct ObjectiveBanner: View {
                     Text("\(Int(objective.progress.fraction * 100))%").font(Theme.Typography.text(16, .bold).monospacedDigit()).foregroundStyle(Theme.Colors.cream)
                 }
             } else {
-                Text(quest == nil ? "Free ride · every new road counts" : "All objectives complete · head home")
+                Text(quest == nil ? "\(title ?? "Free ride") · every new road counts" : "All objectives complete · head home")
                     .font(Theme.Typography.text(14, .semibold)).foregroundStyle(Theme.Colors.cream).lineLimit(1)
                 Spacer(minLength: 0)
             }

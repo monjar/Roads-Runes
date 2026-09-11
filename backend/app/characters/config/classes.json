@@ -13,8 +13,8 @@
   },
   "WARRIOR": {
     "name": "Warrior",
-    "tagline": "Physical challenges without competitive speed.",
-    "description": "Climbing, long distance, demanding terrain, endurance and hilltop destinations.",
+    "tagline": "Endurance, climbing and a pace you set yourself.",
+    "description": "Long distance, demanding terrain, hilltop destinations, and holding a steady pace over a ride — measured against yourself, never a race with other riders.",
     "flag": "warrior_class"
   },
   "SCRIBE": {
