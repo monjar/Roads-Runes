@@ -106,7 +106,7 @@ struct FriendsView: View {
                                     }
                                     .frame(width: 64)
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.pressable)
                                 .contextMenu { Button("Remove friend", role: .destructive) { Task { await model.remove(friend) } } }
                             }
                             Button { withAnimation(.snappy) { showAdd = true } } label: {
@@ -120,7 +120,7 @@ struct FriendsView: View {
                                 }
                                 .frame(width: 64)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.pressable)
                         }
                     }
                     if model.friends.isEmpty {
@@ -140,7 +140,7 @@ struct FriendsView: View {
                 }
                 .padding(.horizontal, 22)
                 .padding(.top, 8)
-                .padding(.bottom, 24)
+                .padding(.bottom, Theme.Layout.tabBarClearance)
             }
         }
         .background(Theme.Colors.cream)
@@ -282,6 +282,7 @@ struct ProfileView: View {
             if let profile { actionButton(profile).padding(.horizontal, 20).padding(.bottom, 8) }
         }
         .toolbar(.hidden, for: .navigationBar)
+        .hidesTabBar()
         .task { profile = try? await container.api.profile(userId: userId) }
         .sheet(isPresented: $showInvite) { PartyInviteSheet(userId: userId) }
     }
@@ -433,7 +434,7 @@ struct PartyInviteSheet: View {
                         } label: {
                             QuestCard(quest: quest, compact: true, units: container.session.units)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                     }
                 }
             }

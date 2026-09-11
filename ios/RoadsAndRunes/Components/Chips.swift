@@ -78,7 +78,7 @@ struct SegmentedPill<Option: Hashable>: View {
                         .padding(.vertical, 8)
                         .background(selection == option ? Theme.Colors.ink : .clear, in: Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             }
         }
         .padding(5)

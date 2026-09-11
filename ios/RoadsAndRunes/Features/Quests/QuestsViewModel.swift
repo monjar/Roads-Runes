@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import RoadsAndRunesCore
+import UIKit
 
 @MainActor
 @Observable
@@ -10,7 +11,6 @@ final class QuestsViewModel {
     private(set) var completed: [Quest] = []
     private(set) var isLoading = false
     var error: String?
-    var selectedQuest: Quest?
 
     private let container: AppContainer
 
@@ -60,6 +60,9 @@ final class QuestDetailModel {
     private(set) var quest: Quest
     var error: String?
     private(set) var busy = false
+    /// The quest's fixed route (spec §20), drawn on the detail map; tweakable in the planner.
+    private(set) var route: RouteOption?
+    private(set) var routeCamera: MapCamera?
     private let container: AppContainer
 
     init(quest: Quest, container: AppContainer) {
@@ -75,8 +78,16 @@ final class QuestDetailModel {
         if let latest = try? await container.api.quest(id: quest.id) { quest = latest }
     }
 
+    func loadRoute() async {
+        guard route == nil, let fixed = try? await container.api.questRoute(id: quest.id) else { return }
+        route = fixed
+        routeCamera = MapCamera(fit: fixed.path, padding: UIEdgeInsets(top: 110, left: 36, bottom: 64, right: 36))
+    }
+
     func accept() async {
         await perform { try await self.container.api.acceptQuest(id: self.quest.id) }
+        guard error == nil else { return }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
         container.analytics.track(.questAccepted, properties: ["questId": quest.id.uuidString])
     }
 

@@ -27,12 +27,12 @@ nowhere on a primary surface.
 | Choose your class (11a) | World (9a) | Quests |
 |---|---|---|
 | ![Choose class](screenshots/01-onboarding-class.png) | ![World](screenshots/02-world.png) | ![Quests](screenshots/03-quests.png) |
-| Four heraldic cards, each with its fantasy in one line and how it plays. Any class can take any quest; the others are visible but locked behind feature flags. | The home: an ink map that only exists where you have ridden. Fog is the hero; character chip top-left, one Nearby sheet. | The current quest as the big ink card, then nearby adventures as rows with class tiles. |
+| Four heraldic cards, each with its fantasy in one line and how it plays. Any class can take any quest; the others are visible but locked behind feature flags. | The home is a map used like any maps app: a search pill (the rider's emblem and level at its end), place shortcuts (Cafés, Pubs, Parks…), tap a labelled place or long-press to drop a pin, then "Ride here". Fog of war and discoveries stay on the map; quests live on the Quests tab. | The current quest as the big ink card, then nearby adventures as rows with class tiles. |
 
 | Quest detail (10a) | Three ways to ride it (2a) | Navigation (12a) |
 |---|---|---|
 | ![Quest detail](screenshots/04-quest-detail.png) | ![Routes](screenshots/05-routes.png) | ![Navigation](screenshots/06-navigation.png) |
-| Map-led: numbered diamonds, the story in one paragraph, objectives as a checklist, journey facts and the suitability line before Begin. | Stacked cards on one map; each leads with why this route; a surface strip and climbing make differences readable without the map. Never "Route 1/2/3". | Instruction card on cream, the quest as a quieter ink line with distance to the objective replacing speed in the stats pill. |
+| Map-led: the quest's fixed route drawn through numbered diamonds, the story in one paragraph, objectives as a checklist, journey facts (from the route) and the suitability line before Begin. Begin opens the planner on that route; "Tweak the route" reveals the request, distance and bike controls. | Stacked cards on one map; each leads with why this route; a surface strip and climbing make differences readable without the map. Never "Route 1/2/3". | Instruction card on cream, the quest as a quieter ink line with distance to the objective replacing speed in the stats pill. |
 
 | Objective complete (12b) | Adventure complete (13b) | Journal (14a) |
 |---|---|---|
@@ -58,3 +58,4 @@ nowhere on a primary surface.
 - Off route (4c): the instruction card changes voice, not colour alone; one haptic, no dialog.
 - Paused (8d): the stats pill becomes the paused card; Resume is the big sage pill, End sits beside it.
 - Route cannot be generated (8f): the planner shows the server's message and keeps the request editable.
+- Your own adventure (1a without a quest): the dashed "Ride somewhere new" card on the Quests tab, or the terracotta button on the World, opens the planner with no quest; "Ride here" on a place opens it with that destination (A → B, no distance slider). The ride is named from the request or "Ride to <place>", and the Journal and summary show that name instead of "Free ride".

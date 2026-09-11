@@ -18,13 +18,12 @@ struct OnboardingFlow: View {
                 case .needsCharacter:
                     CharacterCreationView(onDone: { step = .bike })
                 default:
+                    // A new character: bike, then location, then the world.
                     switch step {
-                    case .bike:
-                        BikeSetupView(onDone: { step = .location })
                     case .location:
-                        LocationPermissionView(onDone: { step = .welcome })
+                        LocationPermissionView(onDone: { container.session.finishOnboarding() })
                     default:
-                        EmptyView()
+                        BikeSetupView(onDone: { step = .location })
                     }
                 }
             }
@@ -55,15 +54,23 @@ struct WelcomeView: View {
                 .foregroundStyle(Theme.Colors.muted)
                 .lineSpacing(3)
             Spacer()
-            SignInWithAppleButton(.signIn) { request in
-                request.requestedScopes = [.fullName]
-            } onCompletion: { result in
-                Task { await container.session.signInWithApple(result: result) }
+            if Config.allowsAppleSignIn {
+                SignInWithAppleButton(.signIn) { request in
+                    request.requestedScopes = [.fullName]
+                } onCompletion: { result in
+                    Task { await container.session.signInWithApple(result: result) }
+                }
+                .signInWithAppleButtonStyle(.black)
+                .frame(height: 56)
+                .clipShape(Capsule())
+                .padding(.horizontal, 22)
+            } else {
+                Text("Sign in with Apple needs a paid Apple developer account, so this build leaves it out.")
+                    .font(Theme.Typography.caption)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(Theme.Colors.muted)
+                    .padding(.horizontal, 32)
             }
-            .signInWithAppleButtonStyle(.black)
-            .frame(height: 56)
-            .clipShape(Capsule())
-            .padding(.horizontal, 22)
             if Config.allowsDevSignIn {
                 VStack(spacing: Theme.Spacing.sm) {
                     TextField("Developer subject", text: $devSubject).textFieldStyle(CreamFieldStyle()).padding(.horizontal, 22)
@@ -119,7 +126,7 @@ struct CharacterCreationView: View {
                         } label: {
                             ClassCard(info: info, selected: selected == value && info.enabled)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                     }
                     if let error = container.session.lastError { ErrorLine(text: error) }
                 }

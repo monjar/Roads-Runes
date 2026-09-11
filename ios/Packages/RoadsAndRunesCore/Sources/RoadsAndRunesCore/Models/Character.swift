@@ -28,6 +28,23 @@ public struct Ability: Codable, Hashable, Identifiable, Sendable {
         self.maxRank = maxRank
         self.effects = effects
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, characterClass, name, description, requiredClassLevel, maxRank, effects
+    }
+
+    /// `effects` defaults to empty: a ride summary that lists an unlocked ability without
+    /// them must still decode, or the rider never sees "Adventure complete".
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        characterClass = try c.decode(CharacterClass.self, forKey: .characterClass)
+        name = try c.decode(String.self, forKey: .name)
+        description = try c.decode(String.self, forKey: .description)
+        requiredClassLevel = try c.decode(Int.self, forKey: .requiredClassLevel)
+        maxRank = try c.decode(Int.self, forKey: .maxRank)
+        effects = try c.decodeIfPresent([AbilityEffect].self, forKey: .effects) ?? []
+    }
 }
 
 public struct AbilityState: Codable, Hashable, Identifiable, Sendable {

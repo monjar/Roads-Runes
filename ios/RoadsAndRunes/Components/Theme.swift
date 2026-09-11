@@ -274,8 +274,10 @@ struct PrimaryButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity)
             .frame(height: Theme.Layout.primaryButtonHeight)
             .background(Theme.Colors.terracotta, in: Capsule())
+            .contentShape(Capsule())
             .shadow(color: Theme.Colors.ink.opacity(0.22), radius: 16, y: 12)
             .opacity(configuration.isPressed ? 0.85 : 1)
+            .dimmedWhenDisabled()
     }
 }
 
@@ -291,7 +293,9 @@ struct SecondaryButtonStyle: ButtonStyle {
             .frame(maxWidth: expands ? .infinity : nil)
             .frame(height: Theme.Layout.primaryButtonHeight)
             .background(Theme.Colors.surface, in: Capsule())
+            .contentShape(Capsule())
             .opacity(configuration.isPressed ? 0.8 : 1)
+            .dimmedWhenDisabled()
     }
 }
 
@@ -306,7 +310,9 @@ struct InkPillButtonStyle: ButtonStyle {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(selected ? Theme.Colors.ink : Theme.Colors.surface, in: Capsule())
+            .contentShape(Capsule())
             .opacity(configuration.isPressed ? 0.8 : 1)
+            .dimmedWhenDisabled()
     }
 }
 
@@ -319,7 +325,9 @@ struct SageButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity)
             .frame(height: 56)
             .background(Theme.Colors.sage, in: Capsule())
+            .contentShape(Capsule())
             .opacity(configuration.isPressed ? 0.85 : 1)
+            .dimmedWhenDisabled()
     }
 }
 
@@ -339,6 +347,37 @@ extension ButtonStyle where Self == SageButtonStyle {
 extension ButtonStyle where Self == InkPillButtonStyle {
     static var inkPill: InkPillButtonStyle { InkPillButtonStyle() }
     static var surfacePill: InkPillButtonStyle { InkPillButtonStyle(selected: false) }
+}
+
+/// Rows, cards and icons. A plain button only answers taps on its drawn glyphs,
+/// so a tap in a row's gap (or beside a label) did nothing; here the whole
+/// frame answers, and the press shows.
+struct PressableButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(Rectangle())
+            .opacity(configuration.isPressed ? 0.7 : 1)
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .dimmedWhenDisabled()
+    }
+}
+
+extension ButtonStyle where Self == PressableButtonStyle {
+    static var pressable: PressableButtonStyle { PressableButtonStyle() }
+}
+
+/// A disabled button has to look it, or a tap that does nothing reads as broken.
+private struct DimmedWhenDisabled: ViewModifier {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func body(content: Content) -> some View {
+        content.opacity(isEnabled ? 1 : 0.4)
+    }
+}
+
+extension View {
+    func dimmedWhenDisabled() -> some View { modifier(DimmedWhenDisabled()) }
 }
 
 // MARK: - Small shared views
@@ -508,7 +547,7 @@ struct IconCircleButton: View {
                 .background(background, in: Circle())
                 .shadow(color: Theme.Colors.ink.opacity(0.14), radius: 2, y: 1)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }
 

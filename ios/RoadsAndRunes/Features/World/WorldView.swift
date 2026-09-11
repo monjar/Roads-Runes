@@ -1,12 +1,16 @@
 import RoadsAndRunesCore
 import SwiftUI
 
-/// The World is the home (design 9a): a full-screen ink map that only exists
-/// where you have ridden. Fog is the hero; the character chip sits top-left,
-/// one Nearby sheet rises from the bottom.
+/// The World is the home: the map first (design 9a's map with fog of war),
+/// used like any maps app — search, tap a place, long-press to drop a pin,
+/// then ride there. Quests live on the Quests tab.
 struct WorldView: View {
     @Environment(AppContainer.self) private var container
     @State private var model: WorldViewModel?
+    @State private var searching = false
+    @State private var directionsTo: Place?
+    @State private var planningFreeRide = false
+    var onOpenCharacter: () -> Void = {}
 
     var body: some View {
         NavigationStack {
@@ -45,44 +49,101 @@ struct WorldView: View {
             MapLibreView(
                 styleURL: Config.mapStyleURL(for: styleKey),
                 center: model.center ?? container.location.lastFix?.coordinate ?? SampleData.origin,
-                zoom: 13.5,
+                zoom: 14,
                 cells: model.cells,
-                route: [],
                 markers: model.markers,
-                onRegionChanged: { center, _ in
-                    Task { await model.load(around: center) }
-                },
-                onMarkerTap: { marker in model.select(marker: marker) }
+                onRegionChanged: { center, _ in Task { await model.load(around: center) } },
+                onMarkerTap: { marker in withAnimation(.snappy) { model.tapMarker(marker) } },
+                camera: model.camera,
+                onMapTap: { coordinate, feature in withAnimation(.snappy) { model.tapMap(at: coordinate, feature: feature) } },
+                onLongPress: { coordinate in withAnimation(.snappy) { model.dropPin(at: coordinate) } },
+                onVisibleRegionChanged: { model.regionChanged($0) }
             )
             .ignoresSafeArea()
-            VStack(spacing: 0) {
-                HStack(alignment: .top) {
-                    if let character = container.session.character {
-                        CharacterChip(character: character)
-                    }
+
+            VStack(spacing: 10) {
+                WorldSearchBar(character: container.session.character, onSearch: { searching = true }, onCharacter: onOpenCharacter)
+                    .padding(.horizontal, 16)
+                PlaceShortcutChips(active: model.activeShortcut) { shortcut in
+                    Task { await model.runShortcut(shortcut) }
+                }
+                HStack {
                     Spacer()
-                    VStack(alignment: .trailing, spacing: 8) {
-                        MapPill(text: exploredText(model))
-                        MapStyleMenu()
+                    MapStyleMenu()
+                }
+                .padding(.horizontal, 16)
+                Spacer(minLength: 0)
+                HStack {
+                    Spacer()
+                    VStack(spacing: 12) {
+                        IconCircleButton(symbol: "location.fill", size: 48) { model.locateMe() }
+                            .accessibilityLabel("Show my location")
+                        Button { planningFreeRide = true } label: {
+                            Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundStyle(Theme.Colors.cream)
+                                .frame(width: 58, height: 58)
+                                .background(Theme.Colors.terracotta, in: Circle())
+                                .shadow(color: Theme.Colors.ink.opacity(0.25), radius: 6, y: 3)
+                        }
+                        .buttonStyle(.pressable)
+                        .accessibilityLabel("Plan a ride from here")
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 8)
-                Spacer(minLength: 0)
-                NearbyQuestsPanel(model: model, position: container.location.lastFix?.coordinate)
+                bottomCard(model)
             }
+            .padding(.top, 8)
+            // The floating tab bar is drawn over the content, not inset from it.
+            .padding(.bottom, Theme.Layout.tabBarClearance)
         }
         .background(Theme.Colors.cream)
-        .navigationDestination(item: Binding(get: { model.selectedQuest }, set: { model.selectedQuest = $0 })) { quest in
-            QuestDetailView(quest: quest)
+        .fullScreenCover(isPresented: $searching) {
+            PlaceSearchScreen(
+                search: model.search,
+                onPick: { completion in
+                    searching = false
+                    Task { await model.pick(completion) }
+                },
+                onSubmit: { text in
+                    searching = false
+                    Task { await model.submit(text) }
+                },
+                onShortcut: { shortcut in
+                    searching = false
+                    Task { await model.runShortcut(shortcut) }
+                }
+            )
         }
+        .sheet(item: $directionsTo) { place in RoutePlannerView(quest: nil, destination: place) }
+        .sheet(isPresented: $planningFreeRide) { RoutePlannerView(quest: nil) }
     }
 
-    private func exploredText(_ model: WorldViewModel) -> String {
-        guard let stats = model.stats else { return "Exploring…" }
-        let area = Double(stats.cellsVisited) * 0.1053
-        let areaText = area >= 10 ? "\(Int(area.rounded())) km²" : String(format: "%.1f km²", area)
-        return "\(areaText) explored"
+    @ViewBuilder
+    private func bottomCard(_ model: WorldViewModel) -> some View {
+        if let place = model.selectedPlace {
+            PlaceCard(
+                place: place,
+                distanceMeters: model.position.map { GeoMath.distance($0, place.coordinate) },
+                units: model.units,
+                onDirections: { directionsTo = place },
+                onClose: { withAnimation(.snappy) { model.closePlace() } }
+            )
+            .padding(.horizontal, 12)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        } else if let title = model.resultsTitle {
+            PlaceResultsCard(
+                title: title,
+                places: model.results,
+                origin: model.position,
+                units: model.units,
+                isLoading: model.isSearching,
+                onSelect: { place in withAnimation(.snappy) { model.select(place) } },
+                onClose: { withAnimation(.snappy) { model.clearResults() } }
+            )
+            .padding(.horizontal, 12)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
     }
 
     private var styleKey: Config.MapStyleKey {
@@ -108,58 +169,13 @@ struct MapStyleMenu: View {
                 }
             }
         } label: {
-            Image(systemName: "map")
+            Image(systemName: "square.3.layers.3d")
                 .font(.system(size: 16, weight: .bold))
                 .foregroundStyle(Theme.Colors.ink)
-                .frame(width: 40, height: 40)
-                .background(Theme.Colors.cream.opacity(0.94), in: Circle())
+                .frame(width: 42, height: 42)
+                .background(Theme.Colors.cream.opacity(0.96), in: Circle())
                 .shadow(color: Theme.Colors.ink.opacity(0.14), radius: 2, y: 1)
         }
         .accessibilityLabel("Map style")
-    }
-}
-
-/// "Nearby · 3 quests · 5 mysteries": quest rows with class tiles.
-struct NearbyQuestsPanel: View {
-    let model: WorldViewModel
-    var position: Coordinate?
-
-    var body: some View {
-        VStack(spacing: 12) {
-            SheetHandle()
-            HStack(alignment: .firstTextBaseline) {
-                Text("Nearby").font(Theme.Typography.voice(22, relativeTo: .title2)).foregroundStyle(Theme.Colors.ink)
-                Spacer()
-                Text(summaryLine).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
-            }
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 10) {
-                    if let error = model.error, model.nearbyQuests.isEmpty {
-                        ErrorLine(text: error)
-                    }
-                    if model.nearbyQuests.isEmpty && !model.isLoading {
-                        EmptyState(icon: "sparkle", title: "No quests here yet", message: "Move the map or wait for your location to find adventures nearby.")
-                    }
-                    ForEach(model.nearbyQuests) { quest in
-                        Button { model.selectedQuest = quest } label: {
-                            QuestCard(quest: quest, units: model.units, distanceMeters: position.map { GeoMath.distance($0, quest.origin) })
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.bottom, Theme.Layout.tabBarClearance)
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 12)
-        .frame(height: 340)
-        .sheetSurface()
-        .ignoresSafeArea(edges: .bottom)
-    }
-
-    private var summaryLine: String {
-        let quests = model.nearbyQuests.count
-        let mysteries = model.snapshot?.discoveries.filter { !$0.discoveredByUser }.count ?? 0
-        return "\(quests) quest\(quests == 1 ? "" : "s") · \(mysteries) myster\(mysteries == 1 ? "y" : "ies")"
     }
 }

@@ -130,13 +130,24 @@ final class SyncService {
     func pollSummary(rideId: UUID, maxAttempts: Int = 40) async {
         isPolling = true
         defer { isPolling = false }
+        var lastFailure: String?
         for _ in 0..<maxAttempts {
-            if let summary = try? await api.rideSummary(id: rideId) {
-                latestSummary = summary
-                await session.refreshCharacter()
-                if !summary.levelUps.isEmpty { analytics.track(.levelUp, properties: ["rideId": rideId.uuidString]) }
-                if summary.newCells > 0 { analytics.track(.newAreaExplored, properties: ["cells": String(summary.newCells)]) }
-                return
+            do {
+                if let summary = try await api.rideSummary(id: rideId) {
+                    latestSummary = summary
+                    await session.refreshCharacter()
+                    if !summary.levelUps.isEmpty { analytics.track(.levelUp, properties: ["rideId": rideId.uuidString]) }
+                    if summary.newCells > 0 { analytics.track(.newAreaExplored, properties: ["cells": String(summary.newCells)]) }
+                    return
+                }
+            } catch {
+                // "Not ready yet" is a nil summary; an error (offline, or a response that no
+                // longer decodes) is logged once per distinct message so it cannot hide.
+                let message = String(describing: error)
+                if message != lastFailure {
+                    lastFailure = message
+                    AppLog.sync.error("summary_poll_failed ride=\(rideId.uuidString, privacy: .public) error=\(message, privacy: .public)")
+                }
             }
             try? await Task.sleep(for: .seconds(3))
         }

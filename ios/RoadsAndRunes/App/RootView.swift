@@ -8,15 +8,16 @@ struct RootView: View {
         @Bindable var recorder = container.rideRecorder
         @Bindable var sync = container.sync
         Group {
-            switch container.session.state {
-            case .loading:
+            if container.session.state == .loading {
                 ZStack {
                     Theme.Colors.cream.ignoresSafeArea()
                     ProgressView("Loading your world…").font(Theme.Typography.caption).tint(Theme.Colors.terracotta)
                 }
-            case .signedOut, .needsCharacter:
+            } else if container.session.state != .ready || container.session.isOnboarding {
+                // One branch for every onboarding state, so its step survives the character
+                // being created (which makes the session ready before the bike and location steps).
                 OnboardingFlow()
-            case .ready:
+            } else {
                 MainTabView()
             }
         }
@@ -32,7 +33,6 @@ struct RootView: View {
             }
         }
         .tint(Theme.Colors.terracotta)
-        .fontDesign(.default)
     }
 }
 
@@ -63,6 +63,7 @@ enum AppTab: Int, CaseIterable, Identifiable {
 
 struct MainTabView: View {
     @State private var tab: AppTab = .world
+    @State private var tabBar = TabBarVisibility()
 
     init() {
         UITabBar.appearance().isHidden = true
@@ -70,17 +71,22 @@ struct MainTabView: View {
 
     var body: some View {
         TabView(selection: $tab) {
-            WorldView().tag(AppTab.world).toolbar(.hidden, for: .tabBar)
+            WorldView { withAnimation(.snappy(duration: 0.25)) { tab = .character } }.tag(AppTab.world).toolbar(.hidden, for: .tabBar)
             QuestsView().tag(AppTab.quests).toolbar(.hidden, for: .tabBar)
             JournalView().tag(AppTab.journal).toolbar(.hidden, for: .tabBar)
             CharacterView().tag(AppTab.character).toolbar(.hidden, for: .tabBar)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            FloatingTabBar(selected: $tab)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 8)
+            if !tabBar.isHidden {
+                FloatingTabBar(selected: $tab)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
+        .animation(.snappy(duration: 0.3), value: tabBar.isHidden)
         .background(Theme.Colors.cream.ignoresSafeArea())
+        .environment(tabBar)
     }
 }
 
@@ -102,10 +108,11 @@ struct FloatingTabBar: View {
                     .padding(.horizontal, selected == tab ? 18 : 12)
                     .padding(.vertical, 8)
                     .background(selected == tab ? Theme.Colors.terracotta : .clear, in: Capsule())
+                    // The whole slot takes the tap, not only the pill.
+                    .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity)
+                .buttonStyle(.pressable)
                 .accessibilityLabel(tab.title)
                 .accessibilityAddTraits(selected == tab ? [.isSelected] : [])
             }

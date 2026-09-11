@@ -7,6 +7,9 @@ struct QuestsView: View {
     @Environment(AppContainer.self) private var container
     @State private var model: QuestsViewModel?
     @State private var plannerQuest: Quest?
+    @State private var planningCustom = false
+    /// Navigation state lives in the view so setting it always pushes the detail.
+    @State private var selectedQuest: Quest?
 
     var body: some View {
         NavigationStack {
@@ -19,13 +22,17 @@ struct QuestsView: View {
                             CurrentQuestCard(quest: current, units: model.units) {
                                 plannerQuest = current
                             } onDetails: {
-                                model.selectedQuest = current
+                                selectedQuest = current
                             }
                             .disabled(container.rideRecorder.isActive)
                         }
                         if model.active.count > 1 {
                             section("Also accepted", Array(model.active.dropFirst()), empty: "", compact: true)
                         }
+                        Button { planningCustom = true } label: { CustomAdventureCard() }
+                            .buttonStyle(.pressable)
+                            .accessibilityIdentifier("customAdventure")
+                            .disabled(container.rideRecorder.isActive)
                         section("Nearby adventures", model.available, empty: model.isLoading ? "Looking around…" : "Nothing nearby yet. Move around the map or generate more.")
                         if !model.recommended.isEmpty {
                             section("For \(ClassStyle.name(model.characterClass))s", model.recommended, empty: "")
@@ -38,17 +45,22 @@ struct QuestsView: View {
                     }
                     .padding(.horizontal, 22)
                     .padding(.top, 8)
-                    .padding(.bottom, 24)
+                    .padding(.bottom, Theme.Layout.tabBarClearance)
                 }
             }
             .background(Theme.Colors.cream)
             .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(for: Quest.self) { quest in QuestDetailView(quest: quest) }
-            .navigationDestination(item: Binding(get: { model?.selectedQuest }, set: { model?.selectedQuest = $0 })) { quest in
-                QuestDetailView(quest: quest)
-            }
+            .navigationDestination(item: $selectedQuest) { quest in QuestDetailView(quest: quest) }
             .refreshable { await model?.load() }
             .sheet(item: $plannerQuest) { quest in RoutePlannerView(quest: quest) }
+            .sheet(isPresented: $planningCustom) { RoutePlannerView(quest: nil) }
+            // Back from a quest (accepted, abandoned) or from a ride, the list and the current quest have changed.
+            .onChange(of: selectedQuest) { _, quest in
+                if quest == nil { Task { await model?.load() } }
+            }
+            .onChange(of: container.rideRecorder.isActive) { _, active in
+                if !active { Task { await model?.load() } }
+            }
         }
         .task {
             if model == nil { model = QuestsViewModel(container: container) }
@@ -63,10 +75,11 @@ struct QuestsView: View {
             if !empty.isEmpty { Text(empty).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted) }
         } else {
             ForEach(quests) { quest in
-                NavigationLink(value: quest) {
+                Button { selectedQuest = quest } label: {
                     QuestCard(quest: quest, compact: compact, units: model?.units ?? .metric, distanceMeters: distance(to: quest))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
+                .accessibilityIdentifier("questRow")
             }
         }
     }
@@ -93,9 +106,15 @@ struct QuestDetailView: View {
             if let model { content(model) } else { ProgressView().tint(Theme.Colors.terracotta) }
         }
         .toolbar(.hidden, for: .navigationBar)
+        .hidesTabBar()
+        // A ride started from here changes the quest (accepted → completed); show the new state.
+        .onChange(of: container.rideRecorder.isActive) { _, active in
+            if !active { Task { await model?.refresh() } }
+        }
         .task {
             if model == nil { model = QuestDetailModel(quest: quest, container: container) }
             await model?.refresh()
+            await model?.loadRoute()
         }
         .sheet(isPresented: $showPlanner) {
             if let model { RoutePlannerView(quest: model.quest) }
@@ -106,71 +125,74 @@ struct QuestDetailView: View {
     private func content(_ model: QuestDetailModel) -> some View {
         let quest = model.quest
         let formatter = UnitFormatter(units: model.units)
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 0) {
-                ZStack(alignment: .top) {
-                    MapLibreView(
-                        styleURL: Config.mapStyleURL(for: .adventure),
-                        center: quest.origin,
-                        zoom: 12.5,
-                        cells: [],
-                        route: [],
-                        markers: markers(for: quest)
-                    )
-                    .frame(height: 360)
-                    HStack {
-                        IconCircleButton(symbol: "chevron.left") { dismiss() }
-                        Spacer()
+        GeometryReader { geometry in
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 0) {
+                    ZStack(alignment: .top) {
+                        MapLibreView(
+                            styleURL: Config.mapStyleURL(for: .adventure),
+                            center: quest.origin,
+                            zoom: 12.5,
+                            cells: [],
+                            route: model.route?.path ?? [],
+                            markers: markers(for: quest),
+                            camera: model.routeCamera
+                        )
+                        .frame(height: 360)
+                        HStack {
+                            IconCircleButton(symbol: "chevron.left") { dismiss() }.accessibilityLabel("Back").accessibilityIdentifier("quest.back")
+                            Spacer()
+                            HStack(spacing: 8) {
+                                Image(systemName: ClassStyle.symbol(quest.characterClass)).font(.system(size: 13, weight: .bold))
+                                Eyebrow(text: "\(ClassStyle.name(quest.characterClass)) quest", color: Theme.Colors.cream)
+                            }
+                            .foregroundStyle(Theme.Colors.cream)
+                            .padding(.horizontal, 14)
+                            .frame(height: 40)
+                            .background(ClassStyle.color(quest.characterClass), in: Capsule())
+                        }
+                        .padding(.horizontal, 16)
+                        // The scroll view runs under the status bar; keep the controls below it.
+                        .padding(.top, geometry.safeAreaInsets.top + 8)
+                    }
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(quest.title).font(Theme.Typography.voice(30, relativeTo: .largeTitle)).foregroundStyle(Theme.Colors.ink)
+                        Text(quest.narrative.hook ?? quest.description).font(Theme.Typography.text(14)).foregroundStyle(Theme.Colors.inkSoft).lineSpacing(3)
+                        VStack(spacing: 8) {
+                            let objectives = quest.sortedObjectives
+                            ForEach(Array(objectives.enumerated()), id: \.element.id) { offset, objective in
+                                ObjectiveRow(
+                                    objective: objective,
+                                    distanceMeters: model.distance(to: objective),
+                                    units: model.units,
+                                    index: objective.required ? requiredIndex(objectives, offset) : nil,
+                                    accent: ClassStyle.color(quest.characterClass)
+                                )
+                            }
+                        }
                         HStack(spacing: 8) {
-                            Image(systemName: ClassStyle.symbol(quest.characterClass)).font(.system(size: 13, weight: .bold))
-                            Eyebrow(text: "\(ClassStyle.name(quest.characterClass)) quest", color: Theme.Colors.cream)
+                            FactTile(value: formatter.distance(meters: model.route?.distanceMeters ?? quest.recommendedDistanceKm * 1000), label: "Journey")
+                            FactTile(value: formatter.duration(seconds: model.route.map { Double($0.estimatedDurationSeconds) } ?? Double(quest.estimatedDurationMinutes * 60)), label: "At your pace")
+                            FactTile(value: "\(quest.rewards.xp ?? quest.baseXP)", label: rewardLabel(quest), valueColor: Theme.Colors.sageDeep)
                         }
-                        .foregroundStyle(Theme.Colors.cream)
-                        .padding(.horizontal, 14)
-                        .frame(height: 40)
-                        .background(ClassStyle.color(quest.characterClass), in: Capsule())
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                }
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(quest.title).font(Theme.Typography.voice(30, relativeTo: .largeTitle)).foregroundStyle(Theme.Colors.ink)
-                    Text(quest.narrative.hook ?? quest.description).font(Theme.Typography.text(14)).foregroundStyle(Theme.Colors.inkSoft).lineSpacing(3)
-                    VStack(spacing: 8) {
-                        let objectives = quest.sortedObjectives
-                        ForEach(Array(objectives.enumerated()), id: \.element.id) { offset, objective in
-                            ObjectiveRow(
-                                objective: objective,
-                                distanceMeters: model.distance(to: objective),
-                                units: model.units,
-                                index: objective.required ? requiredIndex(objectives, offset) : nil,
-                                accent: ClassStyle.color(quest.characterClass)
-                            )
+                        HStack(spacing: 8) {
+                            SuitabilityChip(difficulty: quest.difficulty)
+                            Text(suitabilityLine(quest)).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).lineLimit(2)
+                        }
+                        if let completion = quest.narrative.completion, quest.status == .completed {
+                            Text(completion).font(Theme.Typography.text(14)).foregroundStyle(Theme.Colors.inkSoft).italic()
                         }
                     }
-                    HStack(spacing: 8) {
-                        FactTile(value: formatter.distance(meters: quest.recommendedDistanceKm * 1000), label: "Journey")
-                        FactTile(value: formatter.duration(seconds: Double(quest.estimatedDurationMinutes * 60)), label: "At your pace")
-                        FactTile(value: "\(quest.rewards.xp ?? quest.baseXP)", label: rewardLabel(quest), valueColor: Theme.Colors.sageDeep)
-                    }
-                    HStack(spacing: 8) {
-                        SuitabilityChip(difficulty: quest.difficulty)
-                        Text(suitabilityLine(quest)).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).lineLimit(2)
-                    }
-                    if let completion = quest.narrative.completion, quest.status == .completed {
-                        Text(completion).font(Theme.Typography.text(14)).foregroundStyle(Theme.Colors.inkSoft).italic()
-                    }
-                    if let error = model.error { ErrorLine(text: error) }
+                    .padding(.horizontal, 22)
+                    .padding(.top, 14)
+                    .padding(.bottom, 130)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .sheetSurface()
+                    .offset(y: -28)
                 }
-                .padding(.horizontal, 22)
-                .padding(.top, 14)
-                .padding(.bottom, 130)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .sheetSurface()
-                .offset(y: -28)
             }
+            .ignoresSafeArea(edges: .top)
         }
-        .ignoresSafeArea(edges: .top)
         actions(model)
             .padding(.horizontal, 20)
             .padding(.bottom, 8)
@@ -206,26 +228,50 @@ struct QuestDetailView: View {
     @ViewBuilder
     private func actions(_ model: QuestDetailModel) -> some View {
         let quest = model.quest
-        HStack(spacing: 10) {
-            switch quest.status {
-            case .available:
-                Button("Accept") { Task { await model.accept() } }.buttonStyle(.secondary)
-                Button("Begin quest") { showPlanner = true }.buttonStyle(.primary)
-            case .accepted:
-                Button("Abandon") { Task { await model.abandon() } }.buttonStyle(.secondary)
-                Button("Plan the ride") { showPlanner = true }.buttonStyle(.primary)
-            case .active:
-                Button("Abandon") { Task { await model.abandon() } }.buttonStyle(.secondary)
-                Button("Continue") { showPlanner = true }.buttonStyle(.primary)
-            default:
-                Text(quest.status.rawValue.capitalized)
-                    .font(Theme.Typography.text(14, .semibold))
-                    .foregroundStyle(Theme.Colors.muted)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: Theme.Layout.primaryButtonHeight)
-                    .background(Theme.Colors.surface, in: Capsule())
+        VStack(alignment: .leading, spacing: 8) {
+            // A failed Accept or Abandon says so beside its button, not below the fold.
+            if let error = model.error { ErrorLine(text: error) }
+            HStack(spacing: 10) {
+                switch quest.status {
+                case .available:
+                    Button { Task { await model.accept() } } label: { busyLabel("Accept", busy: model.busy) }
+                        .buttonStyle(.secondary)
+                        .accessibilityIdentifier("quest.accept")
+                    Button("Begin quest") { showPlanner = true }
+                        .buttonStyle(.primary)
+                        .accessibilityIdentifier("quest.begin")
+                case .accepted:
+                    Button { Task { await model.abandon() } } label: { busyLabel("Abandon", busy: model.busy) }
+                        .buttonStyle(.secondary)
+                        .accessibilityIdentifier("quest.abandon")
+                    Button("Plan the ride") { showPlanner = true }
+                        .buttonStyle(.primary)
+                        .accessibilityIdentifier("quest.plan")
+                case .active:
+                    Button { Task { await model.abandon() } } label: { busyLabel("Abandon", busy: model.busy) }
+                        .buttonStyle(.secondary)
+                        .accessibilityIdentifier("quest.abandon")
+                    Button("Continue") { showPlanner = true }
+                        .buttonStyle(.primary)
+                        .accessibilityIdentifier("quest.continue")
+                default:
+                    Text(quest.status.rawValue.capitalized)
+                        .font(Theme.Typography.text(14, .semibold))
+                        .foregroundStyle(Theme.Colors.muted)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: Theme.Layout.primaryButtonHeight)
+                        .background(Theme.Colors.surface, in: Capsule())
+                }
             }
+            .disabled(model.busy || container.rideRecorder.isActive)
         }
-        .disabled(model.busy || container.rideRecorder.isActive)
+    }
+
+    /// Keeps the button's width while its request runs.
+    private func busyLabel(_ title: String, busy: Bool) -> some View {
+        ZStack {
+            Text(title).opacity(busy ? 0 : 1)
+            if busy { ProgressView().tint(Theme.Colors.ink) }
+        }
     }
 }

@@ -32,6 +32,7 @@ struct ControlsScreen: View {
                                 .font(.system(size: 20, weight: .bold))
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 56)
+                                .contentShape(Capsule())
                         }
                         .buttonStyle(.plain)
                         .background(WatchTheme.sage, in: Capsule())
@@ -44,6 +45,7 @@ struct ControlsScreen: View {
                                 .font(.system(size: 15, weight: .semibold))
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 56)
+                                .contentShape(Capsule())
                         }
                         .buttonStyle(.plain)
                         .background(WatchTheme.surface, in: Capsule())
@@ -73,6 +75,7 @@ struct ControlsScreen: View {
                     .font(.system(size: 15, weight: .semibold))
                     .frame(maxWidth: .infinity)
                     .frame(height: 46)
+                    .contentShape(Capsule())
             }
             .buttonStyle(.plain)
             .background(WatchTheme.accent, in: Capsule())
@@ -84,6 +87,7 @@ struct ControlsScreen: View {
                     .font(.system(size: 15, weight: .semibold))
                     .frame(maxWidth: .infinity)
                     .frame(height: 46)
+                    .contentShape(Capsule())
             }
             .buttonStyle(.plain)
             .background(WatchTheme.surface, in: Capsule())

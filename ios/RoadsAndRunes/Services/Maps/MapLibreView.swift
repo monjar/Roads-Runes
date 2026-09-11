@@ -4,11 +4,29 @@ import RoadsAndRunesCore
 import SwiftUI
 
 struct MapMarker: Identifiable, Hashable {
-    enum Kind: String { case quest, questActive, objective, objectiveDone, discovery, poi }
+    enum Kind: String { case quest, questActive, objective, objectiveDone, discovery, poi, place, result }
     let id: String
     let coordinate: Coordinate
     let kind: Kind
     let title: String
+}
+
+/// A one-shot camera move. A new value (new `id`) moves the map once; the rider
+/// is free to pan afterwards. `fit` wins over `center` when it has 2+ points.
+struct MapCamera: Equatable {
+    let id = UUID()
+    var center: Coordinate?
+    var zoom: Double?
+    var fit: [Coordinate] = []
+    var padding = UIEdgeInsets(top: 80, left: 40, bottom: 80, right: 40)
+}
+
+/// A named place from the base map's POI layer under the rider's finger.
+struct MapFeature: Hashable {
+    let name: String
+    let kind: String?
+    let subkind: String?
+    let coordinate: Coordinate
 }
 
 /// MapLibre wrapper: fog-of-war polygons, route line, markers, user location.
@@ -29,6 +47,11 @@ struct MapLibreView: UIViewRepresentable {
     var navigationMode = false
     var onRegionChanged: ((Coordinate, Double) -> Void)?
     var onMarkerTap: ((MapMarker) -> Void)?
+    var camera: MapCamera?
+    /// Tap on the map away from markers, with the base-map POI there if any.
+    var onMapTap: ((Coordinate, MapFeature?) -> Void)?
+    var onLongPress: ((Coordinate) -> Void)?
+    var onVisibleRegionChanged: ((BoundingBox) -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -46,6 +69,15 @@ struct MapLibreView: UIViewRepresentable {
         if followsUser {
             view.userTrackingMode = navigationMode ? .followWithCourse : .follow
         }
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+        tap.delegate = context.coordinator
+        for recognizer in view.gestureRecognizers ?? [] where (recognizer as? UITapGestureRecognizer)?.numberOfTapsRequired == 2 {
+            tap.require(toFail: recognizer)
+        }
+        view.addGestureRecognizer(tap)
+        let press = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleLongPress(_:)))
+        press.delegate = context.coordinator
+        view.addGestureRecognizer(press)
         return view
     }
 
@@ -66,9 +98,11 @@ struct MapLibreView: UIViewRepresentable {
         context.coordinator.apply(to: view)
     }
 
-    final class Coordinator: NSObject, MLNMapViewDelegate {
+    final class Coordinator: NSObject, MLNMapViewDelegate, UIGestureRecognizerDelegate {
         var parent: MapLibreView
         var userMovedMap = false
+        private var lastCameraId: UUID?
+        private var poiLayerIds: Set<String> = []
         private var styleLoaded = false
         private var annotations: [String: MLNPointAnnotation] = [:]
         private var lastCellsHash = 0
@@ -78,15 +112,26 @@ struct MapLibreView: UIViewRepresentable {
 
         func mapView(_ mapView: MLNMapView, didFinishLoading style: MLNStyle) {
             styleLoaded = true
+            poiLayerIds = Set(style.layers.compactMap { layer in
+                guard let symbols = layer as? MLNSymbolStyleLayer, symbols.sourceLayerIdentifier == "poi" else { return nil }
+                return symbols.identifier
+            })
             lastCellsHash = 0
             lastRouteCount = -1
             apply(to: mapView)
+            reportVisibleRegion(mapView)
         }
 
         func mapView(_ mapView: MLNMapView, regionDidChangeAnimated animated: Bool) {
             if mapView.userTrackingMode == .none { userMovedMap = true }
             let center = Coordinate(latitude: mapView.centerCoordinate.latitude, longitude: mapView.centerCoordinate.longitude)
             parent.onRegionChanged?(center, mapView.zoomLevel)
+            reportVisibleRegion(mapView)
+        }
+
+        private func reportVisibleRegion(_ mapView: MLNMapView) {
+            let bounds = mapView.visibleCoordinateBounds
+            parent.onVisibleRegionChanged?(BoundingBox(minLat: bounds.sw.latitude, minLon: bounds.sw.longitude, maxLat: bounds.ne.latitude, maxLon: bounds.ne.longitude))
         }
 
         func apply(to mapView: MLNMapView) {
@@ -94,6 +139,23 @@ struct MapLibreView: UIViewRepresentable {
             applyFog(style)
             applyRoute(style)
             applyMarkers(mapView)
+            applyCamera(mapView)
+        }
+
+        // MARK: Camera
+
+        private func applyCamera(_ mapView: MLNMapView) {
+            guard let camera = parent.camera, camera.id != lastCameraId, !mapView.bounds.isEmpty else { return }
+            lastCameraId = camera.id
+            userMovedMap = true  // the command owns the camera now; don't snap back to `center`
+            if camera.fit.count >= 2 {
+                var coords = camera.fit.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+                let shape = MLNPolyline(coordinates: &coords, count: UInt(coords.count))
+                mapView.setCamera(mapView.cameraThatFitsShape(shape, direction: 0, edgePadding: camera.padding), animated: true)
+            } else if let center = camera.center {
+                let target = CLLocationCoordinate2D(latitude: center.latitude, longitude: center.longitude)
+                mapView.setCenter(target, zoomLevel: camera.zoom ?? max(mapView.zoomLevel, 15), animated: true)
+            }
         }
 
         // MARK: Fog of war (spec §14)
@@ -180,7 +242,8 @@ struct MapLibreView: UIViewRepresentable {
         // MARK: Markers
 
         private func applyMarkers(_ mapView: MLNMapView) {
-            let wanted = Dictionary(uniqueKeysWithValues: parent.markers.map { ($0.id, $0) })
+            // Keep the first of any duplicate ids rather than trapping on them.
+            let wanted = Dictionary(parent.markers.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             for (id, annotation) in annotations where wanted[id] == nil {
                 mapView.removeAnnotation(annotation)
                 annotations[id] = nil
@@ -213,6 +276,48 @@ struct MapLibreView: UIViewRepresentable {
                   let marker = parent.markers.first(where: { $0.id == entry.key }) else { return }
             parent.onMarkerTap?(marker)
             mapView.deselectAnnotation(annotation, animated: false)
+        }
+
+        // MARK: Taps (places, dropped pins)
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+
+        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+            guard gesture.state == .ended, let mapView = gesture.view as? MLNMapView, let onMapTap = parent.onMapTap else { return }
+            let point = gesture.location(in: mapView)
+            // A tap on a marker is handled by didSelect; don't also treat it as a map tap.
+            for annotation in annotations.values {
+                let marker = mapView.convert(annotation.coordinate, toPointTo: mapView)
+                if hypot(marker.x - point.x, marker.y - point.y) < 22 { return }
+            }
+            let coordinate = mapView.convert(point, toCoordinateFrom: mapView)
+            onMapTap(Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude), poi(at: point, in: mapView))
+        }
+
+        @objc func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+            guard gesture.state == .began, let mapView = gesture.view as? MLNMapView else { return }
+            let coordinate = mapView.convert(gesture.location(in: mapView), toCoordinateFrom: mapView)
+            parent.onLongPress?(Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude))
+        }
+
+        /// The named POI label nearest the finger, from the style's "poi" source layer.
+        private func poi(at point: CGPoint, in mapView: MLNMapView) -> MapFeature? {
+            guard !poiLayerIds.isEmpty else { return nil }
+            let area = CGRect(x: point.x - 18, y: point.y - 18, width: 36, height: 36)
+            let nearest = mapView.visibleFeatures(in: area, styleLayerIdentifiers: poiLayerIds)
+                .compactMap { feature -> (MLNFeature, String, CGFloat)? in
+                    guard let name = feature.attribute(forKey: "name") as? String, !name.isEmpty else { return nil }
+                    let at = mapView.convert(feature.coordinate, toPointTo: mapView)
+                    return (feature, name, hypot(at.x - point.x, at.y - point.y))
+                }
+                .min { $0.2 < $1.2 }
+            guard let (feature, name, _) = nearest else { return nil }
+            return MapFeature(
+                name: name,
+                kind: feature.attribute(forKey: "class") as? String,
+                subkind: feature.attribute(forKey: "subclass") as? String,
+                coordinate: Coordinate(latitude: feature.coordinate.latitude, longitude: feature.coordinate.longitude)
+            )
         }
     }
 }
@@ -257,6 +362,31 @@ final class MarkerAnnotationView: MLNAnnotationView {
             label.textColor = UIColor(hex: 0x645C50)
             label.textAlignment = .center
             addSubview(label)
+        case .place:
+            // The selected place: a terracotta teardrop whose tip sits on the coordinate.
+            frame = CGRect(x: 0, y: 0, width: 30, height: 40)
+            let pin = CAShapeLayer()
+            let path = UIBezierPath(arcCenter: CGPoint(x: 15, y: 15), radius: 13, startAngle: .pi * 0.8, endAngle: .pi * 0.2, clockwise: true)
+            path.addLine(to: CGPoint(x: 15, y: 38))
+            path.close()
+            pin.path = path.cgPath
+            pin.fillColor = Self.color(for: kind).cgColor
+            pin.strokeColor = UIColor.white.cgColor
+            pin.lineWidth = 2.5
+            layer.addSublayer(pin)
+            let dot = CALayer()
+            dot.frame = CGRect(x: 10, y: 10, width: 10, height: 10)
+            dot.cornerRadius = 5
+            dot.backgroundColor = UIColor.white.cgColor
+            layer.addSublayer(dot)
+            centerOffset = CGVector(dx: 0, dy: -18)
+        case .result:
+            let size: CGFloat = 18
+            frame = CGRect(x: 0, y: 0, width: size, height: size)
+            layer.cornerRadius = size / 2
+            layer.borderWidth = 3
+            layer.borderColor = UIColor.white.cgColor
+            backgroundColor = Self.color(for: kind)
         case .poi:
             let size: CGFloat = 16
             frame = CGRect(x: 0, y: 0, width: size, height: size)
@@ -281,6 +411,7 @@ final class MarkerAnnotationView: MLNAnnotationView {
         case .objectiveDone: return UIColor(hex: 0x56633F)
         case .discovery: return UIColor(hex: 0x82796A)
         case .poi: return UIColor(hex: 0x201E1D)
+        case .place, .result: return UIColor(hex: 0xC67139)
         }
     }
 }

@@ -126,7 +126,7 @@ struct JournalView: View {
                 }
                 .padding(.horizontal, 22)
                 .padding(.top, 8)
-                .padding(.bottom, 24)
+                .padding(.bottom, Theme.Layout.tabBarClearance)
             }
             .background(Theme.Colors.cream)
             .toolbar(.hidden, for: .navigationBar)
@@ -174,7 +174,7 @@ struct JournalView: View {
             NavigationLink { AdventureDetailView(entry: entry) } label: {
                 AdventureRow(entry: entry, units: model.units)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
         }
     }
 
@@ -208,7 +208,7 @@ struct JournalView: View {
                 NavigationLink { DiscoveryDetailView(discoveryId: item.id) } label: {
                     DiscoveryTile(name: item.summary.name, category: item.summary.category, subtitle: subtitle(for: item))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             }
         }
     }
@@ -367,7 +367,7 @@ struct AdventureDetailView: View {
                         NavigationLink { DiscoveryDetailView(discoveryId: discovery.id) } label: {
                             DiscoveryCard(discovery: discovery, subtitle: DiscoveryIcon.group(for: discovery.category))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                     }
                 }
                 SectionHeader(title: "Notes")
@@ -383,7 +383,7 @@ struct AdventureDetailView: View {
             }
             .padding(.horizontal, 22)
             .padding(.top, 8)
-            .padding(.bottom, 24)
+            .padding(.bottom, Theme.Layout.tabBarClearance)
         }
         .background(Theme.Colors.cream)
         .toolbar(.hidden, for: .navigationBar)
@@ -458,7 +458,7 @@ struct DiscoveryDetailView: View {
             }
             .padding(.horizontal, 22)
             .padding(.top, 8)
-            .padding(.bottom, 24)
+            .padding(.bottom, Theme.Layout.tabBarClearance)
         }
         .background(Theme.Colors.cream)
         .toolbar(.hidden, for: .navigationBar)

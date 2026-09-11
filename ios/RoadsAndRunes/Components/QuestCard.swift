@@ -117,6 +117,13 @@ struct ObjectiveRow: View {
             return "\(f.distance(meters: objective.progress.current)) of \(f.distance(meters: objective.progress.target))"
         case .reachElevation, .completeClimb:
             return "\(Int(objective.progress.current)) of \(Int(objective.progress.target)) m"
+        case .rideDuration:
+            return "\(Int(objective.progress.current)) of \(Int(objective.progress.target)) min"
+        case .sustainSpeed:
+            // Pace, in the rider's own units.
+            let factor = units == .imperial ? 0.621371 : 1
+            let label = units == .imperial ? "mph" : "km/h"
+            return String(format: "%.1f of %.0f %@", objective.progress.current * factor, objective.progress.target * factor, label)
         default:
             return "\(Int(objective.progress.current)) of \(Int(objective.progress.target))"
         }
@@ -146,18 +153,27 @@ struct CurrentQuestCard: View {
             .font(Theme.Typography.text(14, .semibold))
             .foregroundStyle(Theme.Colors.cream)
             HStack(spacing: 8) {
-                Button("Continue", action: onContinue)
-                    .font(Theme.Typography.buttonSmall)
-                    .foregroundStyle(Theme.Colors.cream)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 48)
-                    .background(Theme.Colors.terracotta, in: Capsule())
-                Button("Details", action: onDetails)
-                    .font(Theme.Typography.text(13, .semibold))
-                    .foregroundStyle(Theme.Colors.cream)
-                    .padding(.horizontal, 18)
-                    .frame(height: 48)
-                    .overlay(Capsule().stroke(Theme.Colors.cream.opacity(0.2), lineWidth: 1))
+                // The pill is the label: styled from outside, only the word itself took taps.
+                Button(action: onContinue) {
+                    Text("Continue")
+                        .font(Theme.Typography.buttonSmall)
+                        .foregroundStyle(Theme.Colors.cream)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(Theme.Colors.terracotta, in: Capsule())
+                }
+                .buttonStyle(.pressable)
+                .accessibilityIdentifier("currentQuest.continue")
+                Button(action: onDetails) {
+                    Text("Details")
+                        .font(Theme.Typography.text(13, .semibold))
+                        .foregroundStyle(Theme.Colors.cream)
+                        .padding(.horizontal, 18)
+                        .frame(height: 48)
+                        .overlay(Capsule().stroke(Theme.Colors.cream.opacity(0.2), lineWidth: 1))
+                }
+                .buttonStyle(.pressable)
+                .accessibilityIdentifier("currentQuest.details")
             }
             .padding(.top, 2)
         }

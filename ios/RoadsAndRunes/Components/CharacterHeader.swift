@@ -139,7 +139,7 @@ struct AbilityCard: View {
                 )
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .disabled(!state.canUnlock)
         .accessibilityLabel("\(state.ability.name). \(state.ability.description)")
     }

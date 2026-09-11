@@ -116,18 +116,18 @@ struct CharacterView: View {
 
             SectionHeader(title: "Bikes")
             ForEach(model.bikes) { bike in
-                Button { editingBike = bike } label: { bikeRow(bike) }.buttonStyle(.plain)
+                Button { editingBike = bike } label: { bikeRow(bike) }.buttonStyle(.pressable)
             }
             Button { addingBike = true } label: { Label("Add a bike", systemImage: "plus") }.buttonStyle(.surfacePill)
 
             SectionHeader(title: "More")
-            NavigationLink { FriendsView() } label: { moreRow("Friends", symbol: "person.2.fill") }.buttonStyle(.plain)
-            NavigationLink { IntegrationsView() } label: { moreRow("Health & Strava", symbol: "heart.fill") }.buttonStyle(.plain)
-            NavigationLink { SettingsView() } label: { moreRow("Settings", symbol: "gearshape.fill") }.buttonStyle(.plain)
+            NavigationLink { FriendsView() } label: { moreRow("Friends", symbol: "person.2.fill") }.buttonStyle(.pressable)
+            NavigationLink { IntegrationsView() } label: { moreRow("Health & Strava", symbol: "heart.fill") }.buttonStyle(.pressable)
+            NavigationLink { SettingsView() } label: { moreRow("Settings", symbol: "gearshape.fill") }.buttonStyle(.pressable)
         }
         .padding(.horizontal, 22)
         .padding(.top, 18)
-        .padding(.bottom, 24)
+        .padding(.bottom, Theme.Layout.tabBarClearance)
         .frame(maxWidth: .infinity, alignment: .leading)
         .sheetSurface()
         .offset(y: -26)

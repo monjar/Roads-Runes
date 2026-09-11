@@ -8,6 +8,8 @@ struct RouteCard: View {
     let selected: Bool
     let units: Units
     var bestMatch = false
+    /// Overrides "Best match", e.g. "Quest route" for the quest's fixed route.
+    var badge: String?
 
     private var formatter: UnitFormatter { UnitFormatter(units: units) }
 
@@ -18,8 +20,8 @@ struct RouteCard: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text(route.label).font(Theme.Typography.heading).foregroundStyle(Theme.Colors.ink)
                     Spacer()
-                    if bestMatch {
-                        Text("Best match")
+                    if let badge = badge ?? (bestMatch ? "Best match" : nil) {
+                        Text(badge)
                             .font(Theme.Typography.eyebrow)
                             .foregroundStyle(Theme.Colors.cream)
                             .padding(.horizontal, 9).padding(.vertical, 4)

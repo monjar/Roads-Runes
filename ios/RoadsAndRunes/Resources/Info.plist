@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>API_BASE_URL</key>
+	<string>$(API_BASE_URL)</string>
+	<key>APPLE_SIGN_IN_ENABLED</key>
+	<string>$(APPLE_SIGN_IN_ENABLED)</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>Roads &amp; Runes</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.roadsandrunes.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>roadsandrunes</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>strava</string>
+	</array>
+	<key>MAP_STYLE_ADVENTURE</key>
+	<string>https://tiles.openfreemap.org/styles/bright</string>
+	<key>MAP_STYLE_CYCLING</key>
+	<string>https://tiles.openfreemap.org/styles/liberty</string>
+	<key>MAP_STYLE_DETAILED</key>
+	<string>https://tiles.openfreemap.org/styles/liberty</string>
+	<key>MAP_STYLE_MINIMAL</key>
+	<string>https://tiles.openfreemap.org/styles/positron</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Photograph discoveries for your journal.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Read heart rate during rides to show it on your Watch and in your journal.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Save your rides as cycling workouts in Health.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Connects to the Roads &amp; Runes development server on your network.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>During a ride, Roads &amp; Runes records your route in the background so the map clears and objectives complete even when your phone is locked.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>During a ride, Roads &amp; Runes records your route in the background so the map clears and objectives complete even when your phone is locked.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Roads &amp; Runes shows your position on the world map and the quests around you.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Motion data improves distance accuracy when GPS is weak.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Attach photos to discoveries and adventures.</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Caprasimo-Regular.ttf</string>
+		<string>Figtree-Regular.ttf</string>
+		<string>Figtree-SemiBold.ttf</string>
+		<string>Figtree-Bold.ttf</string>
+	</array>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>processing</string>
+	</array>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+</dict>
+</plist>
