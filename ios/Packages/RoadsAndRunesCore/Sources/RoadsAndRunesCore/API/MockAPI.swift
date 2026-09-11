@@ -320,6 +320,20 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
 
     // MARK: Routes
 
+    public func questRoute(id: UUID) async throws -> RouteOption {
+        try await run {
+            var quest = try self.requireQuest(id)
+            if let routeId = quest.suggestedRouteId, let route = self.storedRoutes[routeId] { return route }
+            var route = SampleData.sampleRoute
+            route.id = UUID()
+            route.label = "Adventure"
+            self.storedRoutes[route.id] = route
+            quest.suggestedRouteId = route.id
+            self.storedQuests[id] = quest
+            return route
+        }
+    }
+
     public func generateRoutes(_ request: RouteGenerateRequest) async throws -> RouteGenerateResponse {
         try await run {
             let variants: [(String, Double, Double)] = [("Adventure", 1.0, 0.81), ("Direct", 0.85, 0.74), ("Scenic", 1.15, 0.78)]

@@ -81,12 +81,13 @@ async def complete(
     response_model=AdventureSummary,
     responses={202: {"description": "Still processing"}},
 )
-async def summary(ride_id: uuid.UUID, user: CurrentUser, db: DBDep, response: Response):
+async def summary(ride_id: uuid.UUID, user: CurrentUser, db: DBDep):
     ride = await service.get_ride(db, user, ride_id)
     result = await service.summary(db, user, ride)
     if result is None:
-        response.status_code = status.HTTP_202_ACCEPTED
-        return None
+        # A bare response: returning None through response_model=AdventureSummary failed
+        # validation and turned every "still processing" poll into a 500.
+        return Response(status_code=status.HTTP_202_ACCEPTED)
     return result
 
 

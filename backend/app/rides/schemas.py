@@ -27,6 +27,8 @@ class RideCreate(APIModel):
     questId: uuid.UUID | None = None
     bikeId: uuid.UUID | None = None
     routeId: uuid.UUID | None = None
+    # Custom adventures (no quest) name themselves; quest rides take the quest title.
+    title: str | None = Field(default=None, max_length=120)
 
 
 class RidePointsIn(APIModel):

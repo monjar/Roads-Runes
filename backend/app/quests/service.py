@@ -19,6 +19,7 @@ from app.core.llm import LLMClient
 from app.core.logging import EVENT_QUEST_GENERATION_FAILED, get_logger
 from app.core.schemas import Coordinate
 from app.core.security import utcnow
+from app.discoveries import osm_import
 from app.discoveries.service import nearby as discoveries_nearby
 from app.exploration.cells import cell_for
 from app.exploration.service import known_cells, reveal
@@ -36,12 +37,15 @@ NEARBY_RADIUS_M = 25_000.0
 
 
 def objective_out(o: QuestObjective) -> ObjectiveOut:
+    # A puzzle objective keeps its coordinates until it is done: the planned route
+    # still leads there, but the app cannot name the place or pin it on the map.
+    hidden = bool((o.extra or {}).get("hidden")) and o.status != "COMPLETED"
     return ObjectiveOut(
         id=o.id,
         objectiveType=o.objective_type,
         title=o.title,
-        latitude=o.latitude,
-        longitude=o.longitude,
+        latitude=None if hidden else o.latitude,
+        longitude=None if hidden else o.longitude,
         radiusMeters=o.radius_meters,
         targetMeters=o.target_meters,
         targetCells=o.target_cells,
@@ -155,6 +159,8 @@ async def build_context(
     visited = {h for h, s in cells.items() if s in ("VISITED", "EXPLORED")}
     abilities = ability_map(character)
     poi_bonus = catalog.effect_total(abilities, "QUEST_POI_VISIBILITY")
+    # Places come from OpenStreetMap the first time an area is used, so quests work anywhere.
+    await osm_import.ensure_pois(settings, latitude, longitude)
     pois = await discoveries_nearby(db, latitude, longitude, 30_000 * (1 + poi_bonus), limit=800)
     completed = [
         r

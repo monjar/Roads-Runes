@@ -7,7 +7,7 @@ extension MockAPI {
     public func createRide(_ request: RideCreate) async throws -> Ride {
         try await run {
             if let existing = self.storedRides.values.first(where: { $0.clientRideId == request.clientRideId }) { return existing }
-            let ride = Ride(id: UUID(), clientRideId: request.clientRideId, status: .recording, startedAt: request.startedAt,
+            let ride = Ride(id: UUID(), clientRideId: request.clientRideId, status: .recording, title: request.title, startedAt: request.startedAt,
                             distanceMeters: 0, durationSeconds: 0, movingSeconds: 0, elevationGainMeters: 0, questId: request.questId,
                             bikeId: request.bikeId, routeId: request.routeId, visibility: self.user.settings.defaultRideVisibility,
                             pointCount: 0, flags: [], createdAt: Date())

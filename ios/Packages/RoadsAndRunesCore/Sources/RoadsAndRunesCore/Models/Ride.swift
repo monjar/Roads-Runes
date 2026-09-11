@@ -83,13 +83,16 @@ public struct RideCreate: Codable, Hashable, Sendable {
     public var questId: UUID?
     public var bikeId: UUID?
     public var routeId: UUID?
+    /// Names a custom adventure (a ride without a quest); quest rides take the quest title.
+    public var title: String?
 
-    public init(clientRideId: UUID, startedAt: Date, questId: UUID? = nil, bikeId: UUID? = nil, routeId: UUID? = nil) {
+    public init(clientRideId: UUID, startedAt: Date, questId: UUID? = nil, bikeId: UUID? = nil, routeId: UUID? = nil, title: String? = nil) {
         self.clientRideId = clientRideId
         self.startedAt = startedAt
         self.questId = questId
         self.bikeId = bikeId
         self.routeId = routeId
+        self.title = title
     }
 }
 

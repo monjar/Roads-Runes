@@ -66,6 +66,7 @@ async def create_ride(db: AsyncSession, user: User, payload: RideCreate) -> Ride
         user_id=user.id,
         client_ride_id=payload.clientRideId,
         status="RECORDING",
+        title=(payload.title or "").strip() or None,
         started_at=payload.startedAt,
         quest_id=payload.questId,
         bike_id=payload.bikeId,

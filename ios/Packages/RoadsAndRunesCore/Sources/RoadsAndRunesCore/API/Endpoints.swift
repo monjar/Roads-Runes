@@ -113,6 +113,7 @@ public enum Endpoints {
     public static func generateRoutes(_ body: RouteGenerateRequest) throws -> Endpoint { try .json(.post, "/routes/generate", body: body) }
     public static func route(id: UUID) -> Endpoint { Endpoint(method: .get, path: "/routes/\(id.uuidString)") }
     public static func routePackage(id: UUID) -> Endpoint { Endpoint(method: .get, path: "/routes/\(id.uuidString)/package") }
+    public static func questRoute(id: UUID) -> Endpoint { Endpoint(method: .get, path: "/quests/\(id.uuidString)/route") }
 
     // MARK: Rides
     public static func createRide(_ body: RideCreate) throws -> Endpoint { try .json(.post, "/rides", body: body) }

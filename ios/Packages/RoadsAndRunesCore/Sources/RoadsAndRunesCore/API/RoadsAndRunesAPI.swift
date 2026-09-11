@@ -46,6 +46,8 @@ public protocol RoadsAndRunesAPI: Sendable {
     func generateRoutes(_ request: RouteGenerateRequest) async throws -> RouteGenerateResponse
     func route(id: UUID) async throws -> RouteOption
     func routePackage(id: UUID) async throws -> RoutePackage
+    /// The quest's fixed route: created on first request, then stable until the rider tweaks it.
+    func questRoute(id: UUID) async throws -> RouteOption
 
     // MARK: Rides
     func createRide(_ request: RideCreate) async throws -> Ride

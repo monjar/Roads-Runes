@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from app.characters.service import get_character
-from app.core.deps import CurrentUser, DBDep, SettingsDep, get_job_queue, get_llm
+from app.core.deps import CurrentUser, DBDep, SettingsDep, get_job_queue, get_llm, get_router_client
 from app.core.pagination import Page, clamp_limit
 from app.quests import service
 from app.quests.schemas import (
@@ -17,6 +17,8 @@ from app.quests.schemas import (
     QuestProgressRequest,
     QuestStartRequest,
 )
+from app.routing import service as routing
+from app.routing.schemas import RouteOptionOut
 
 router = APIRouter(prefix="/quests", tags=["quests"])
 
@@ -66,6 +68,20 @@ async def generate(
 @router.get("/{quest_id}", response_model=QuestOut)
 async def get(quest_id: uuid.UUID, user: CurrentUser, db: DBDep) -> QuestOut:
     return service.quest_out(await service.get_quest(db, user, quest_id))
+
+
+@router.get("/{quest_id}/route", response_model=RouteOptionOut)
+async def route(
+    quest_id: uuid.UUID,
+    user: CurrentUser,
+    db: DBDep,
+    settings: SettingsDep,
+    engine: Annotated[object, Depends(get_router_client)],
+    llm: Annotated[object, Depends(get_llm)],
+) -> RouteOptionOut:
+    """The quest's fixed route, generated on first request and stable afterwards."""
+    chosen, components = await routing.quest_route(db, settings, engine, llm, user, quest_id)  # type: ignore[arg-type]
+    return routing.route_out(chosen, components)
 
 
 @router.post("/{quest_id}/accept", response_model=QuestOut)

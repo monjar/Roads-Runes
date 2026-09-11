@@ -33,6 +33,28 @@ public enum APIError: Error, CustomStringConvertible {
     public var isNotFound: Bool { errorCode == APIErrorCode.notFound }
 }
 
+extension APIError: LocalizedError {
+    /// What a rider reads under a button that failed. Without this, SwiftUI
+    /// showed "The operation couldn't be completed. (RoadsAndRunesCore.APIError error 0.)".
+    public var errorDescription: String? {
+        switch self {
+        case .server(_, let message, let status):
+            return status >= 500 || message.isEmpty ? "Something went wrong on our side. Try again in a moment." : message
+        case .network(let error):
+            if (error as? URLError)?.code == .timedOut { return "The server took too long to answer. Try again." }
+            return "Can't reach Roads & Runes. Check your connection and try again."
+        case .decoding:
+            return "The app couldn't read the server's answer. It may need an update."
+        case .unauthenticated:
+            return "Your session has ended. Sign in again."
+        case .processing:
+            return "Still working on it. This takes a moment."
+        case .invalidURL:
+            return "The server address is not valid."
+        }
+    }
+}
+
 /// URLSession-backed implementation of `RoadsAndRunesAPI`.
 ///
 /// - Injects `Authorization: Bearer` from the `TokenStore`.
@@ -260,6 +282,7 @@ public actor APIClient: RoadsAndRunesAPI {
     public func generateRoutes(_ request: RouteGenerateRequest) async throws -> RouteGenerateResponse { try await self.request(try Endpoints.generateRoutes(request)) }
     public func route(id: UUID) async throws -> RouteOption { try await request(Endpoints.route(id: id)) }
     public func routePackage(id: UUID) async throws -> RoutePackage { try await request(Endpoints.routePackage(id: id)) }
+    public func questRoute(id: UUID) async throws -> RouteOption { try await request(Endpoints.questRoute(id: id)) }
 
     // MARK: Rides
 
