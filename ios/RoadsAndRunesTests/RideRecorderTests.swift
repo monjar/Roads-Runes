@@ -37,7 +37,14 @@ final class RideRecorderTests: XCTestCase {
         XCTAssertFalse(recorder.progress?.isOffRoute ?? true)
 
         // Visiting a location objective twice completes it client-side (provisional).
-        if let objective = quest.objectives.first(where: { $0.objectiveType == .visitLocation || $0.objectiveType == .visitPoi }), let target = objective.coordinate {
+        // Split out with an explicit type: the one-line `||` of implicit members timed out the type checker.
+        let locationObjective = quest.objectives.first { (objective: Objective) -> Bool in
+            switch objective.objectiveType {
+            case .visitLocation, .visitPOI: return true
+            default: return false
+            }
+        }
+        if let objective = locationObjective, let target = objective.coordinate {
             recorder.handle(fix: fix(target, at: 1000))
             recorder.handle(fix: fix(target, at: 1010))
             XCTAssertTrue(recorder.completedObjectiveIDs.contains(objective.id))

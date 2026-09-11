@@ -1,7 +1,8 @@
 COMPOSE := docker compose -f infra/docker-compose.yml
-REGION ?= europe/great-britain/england/greater-london
+DEVICE ?= 79CE2CE2-3471-5CBC-8DBD-B0E4673AD5F3   # xcrun devicectl list devices
+REGION ?= europe/united-kingdom/england/greater-london
 
-.PHONY: up down logs migrate api worker test lint format ios-generate osm routing
+.PHONY: up down logs migrate api worker seed test lint format ios-generate osm routing ios-ui-test
 
 up:            ## start db + redis
 	$(COMPOSE) up -d db redis
@@ -21,6 +22,9 @@ api:
 worker:
 	cd backend && python -m app.jobs.worker
 
+seed:          ## dev rider, curated discoveries and quests around Rotherhithe
+	cd backend && python scripts/seed_dev.py
+
 test:
 	cd backend && pytest -m "not integration" -q
 
@@ -32,6 +36,14 @@ format:
 
 ios-generate:
 	cd ios && xcodegen generate
+
+ios-ui-test:   ## main-flow UI tests on the iPhone simulator; needs `make api`
+	cd ios && xcodegen generate && xcodebuild test -project RoadsAndRunes.xcodeproj -scheme RoadsAndRunesUITests -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max'
+
+ios-device:    ## build, install and launch on a connected iPhone (paid team, hosted backend)
+	cd ios && xcodegen generate && xcodebuild -project RoadsAndRunes.xcodeproj -scheme RoadsAndRunes -configuration Debug -destination 'generic/platform=iOS' -allowProvisioningUpdates API_BASE_URL=https://roadsandrunes.fly.dev build
+	xcrun devicectl device install app --device $(DEVICE) $$(ls -d ~/Library/Developer/Xcode/DerivedData/RoadsAndRunes-*/Build/Products/Debug-iphoneos/RoadsAndRunes.app | head -1)
+	xcrun devicectl device process launch --device $(DEVICE) com.roadsandrunes.app
 
 osm:
 	infra/scripts/download-osm.sh $(REGION)

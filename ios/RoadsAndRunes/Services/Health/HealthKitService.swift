@@ -6,7 +6,7 @@ import RoadsAndRunesCore
 /// Health is unavailable or denied; the app never depends on it.
 @MainActor
 final class HealthKitService: ObservableObject {
-    @Published private(set) var isAvailable = HKHealthStore.isHealthDataAvailable()
+    @Published private(set) var isAvailable: Bool
     @Published private(set) var isAuthorized = false
 
     private let store = HKHealthStore()
@@ -17,6 +17,12 @@ final class HealthKitService: ObservableObject {
     private var lastEnergy: Double = 0
 
     var onHeartRate: ((Int) -> Void)?
+
+    /// `enabled: false` (in-memory containers: previews and unit tests) keeps every call a
+    /// no-op, so tests never block on the Health permission sheet.
+    init(enabled: Bool = true) {
+        isAvailable = enabled && HKHealthStore.isHealthDataAvailable()
+    }
 
     private var typesToShare: Set<HKSampleType> {
         [HKObjectType.workoutType(), HKSeriesType.workoutRoute(),

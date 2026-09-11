@@ -11,16 +11,18 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: "7WBQP62F6Z"   # paid Individual team; Xcode registers the App IDs and capabilities
     CODE_SIGN_STYLE: Automatic
     SWIFT_STRICT_CONCURRENCY: minimal
     ENABLE_USER_SCRIPT_SANDBOXING: YES
   configs:
     Debug:
       API_BASE_URL: "http://localhost:8000"
+      APPLE_SIGN_IN_ENABLED: YES
       SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
     Release:
-      API_BASE_URL: "https://api.roadsandrunes.app"
+      API_BASE_URL: "https://roadsandrunes.fly.dev"
+      APPLE_SIGN_IN_ENABLED: YES
 
 packages:
   RoadsAndRunesCore:
@@ -57,6 +59,13 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         API_BASE_URL: $(API_BASE_URL)
+        # NO for builds signed by a free Personal Team, which cannot carry the entitlement.
+        APPLE_SIGN_IN_ENABLED: $(APPLE_SIGN_IN_ENABLED)
+        # A physical device reaches the dev backend by LAN address over plain HTTP
+        # (API_BASE_URL=http://<mac-ip>:8000); this allows only local-network hosts.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription: Connects to the Roads & Runes development server on your network.
         MAP_STYLE_MINIMAL: https://tiles.openfreemap.org/styles/positron
         MAP_STYLE_CYCLING: https://tiles.openfreemap.org/styles/liberty
         MAP_STYLE_ADVENTURE: https://tiles.openfreemap.org/styles/bright
@@ -127,6 +136,19 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.roadsandrunes.app.tests
+        GENERATE_INFOPLIST_FILE: YES  # test bundles have no Info.plist of their own
+
+  RoadsAndRunesUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [RoadsAndRunesUITests]
+    dependencies:
+      - target: RoadsAndRunes
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.roadsandrunes.app.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: RoadsAndRunes
 
   RoadsAndRunesWatchTests:
     type: bundle.unit-test
@@ -138,6 +160,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.roadsandrunes.app.watchkitapp.tests
+        GENERATE_INFOPLIST_FILE: YES  # test bundles have no Info.plist of their own
 
 schemes:
   RoadsAndRunes:
@@ -160,3 +183,12 @@ schemes:
     test:
       config: Debug
       targets: [RoadsAndRunesWatchTests]
+  # Drives the main flows against the local API (make api, make ios-ui-test); CI does not run it.
+  RoadsAndRunesUITests:
+    build:
+      targets:
+        RoadsAndRunes: all
+        RoadsAndRunesUITests: [test]
+    test:
+      config: Debug
+      targets: [RoadsAndRunesUITests]

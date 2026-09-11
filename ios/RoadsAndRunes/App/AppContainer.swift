@@ -27,15 +27,20 @@ final class AppContainer {
     init(api: (any RoadsAndRunesAPI)? = nil, inMemory: Bool = false) {
         let analytics = OSLogAnalytics()
         let useMock = api == nil && (ProcessInfo.processInfo.environment["RR_MOCK_API"] == "1" || Self.isPreview)
-        let resolvedAPI: any RoadsAndRunesAPI = api ?? (useMock ? MockAPI() : APIClient(baseURL: Config.apiBaseURL, tokenStore: KeychainTokenStore()))
+        // UI tests (RR_UI_TEST=1) start every launch signed out, with nothing cached and no Health sheet.
+        let uiTesting = Self.isUITesting
+        let tokenStore = KeychainTokenStore()
+        if uiTesting { tokenStore.clear() }
+        let resolvedAPI: any RoadsAndRunesAPI = api ?? (useMock ? MockAPI() : APIClient(baseURL: Config.apiBaseURL, tokenStore: tokenStore))
         let directory = Self.storageDirectory()
-        let persistence = PersistenceService(inMemory: inMemory)
+        let persistence = PersistenceService(inMemory: inMemory || uiTesting)
         let location = LocationService(analytics: analytics)
-        let health = HealthKitService()
+        let health = HealthKitService(enabled: !inMemory && !uiTesting)
         let watch = WatchSessionService()
         let session = SessionStore(api: resolvedAPI)
         let routePackages = FileRoutePackageStore(directory: directory.appendingPathComponent("routes", isDirectory: true))
         let activeRideStore = FileActiveRideStore(directory: directory)
+        if uiTesting { try? activeRideStore.clear() }
         let sync = SyncService(api: resolvedAPI, persistence: persistence, session: session, analytics: analytics)
         let recorder = RideRecorder(
             api: resolvedAPI, location: location, health: health, watch: watch, sync: sync, persistence: persistence,
@@ -87,6 +92,10 @@ final class AppContainer {
 
     static var isPreview: Bool {
         ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+    }
+
+    static var isUITesting: Bool {
+        ProcessInfo.processInfo.environment["RR_UI_TEST"] == "1"
     }
 
     static func storageDirectory() -> URL {

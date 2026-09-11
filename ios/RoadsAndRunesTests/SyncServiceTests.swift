@@ -40,6 +40,8 @@ final class FlakyAPI: RoadsAndRunesAPI, @unchecked Sendable {
     func generateRoutes(_ request: RouteGenerateRequest) async throws -> RouteGenerateResponse { try await inner.generateRoutes(request) }
     func route(id: UUID) async throws -> RouteOption { try await inner.route(id: id) }
     func routePackage(id: UUID) async throws -> RoutePackage { try await inner.routePackage(id: id) }
+    func questRoute(id: UUID) async throws -> RouteOption { try await inner.questRoute(id: id) }
+    func rideExportURL(id: UUID, format: RideExportFormat) -> URL { inner.rideExportURL(id: id, format: format) }
     func createRide(_ request: RideCreate) async throws -> Ride { try await inner.createRide(request) }
     func rides(limit: Int?, cursor: String?) async throws -> Page<Ride> { try await inner.rides(limit: limit, cursor: cursor) }
     func ride(id: UUID) async throws -> Ride { try await inner.ride(id: id) }
@@ -107,11 +109,13 @@ final class SyncServiceTests: XCTestCase {
     }
 
     func testRideCompletionPollsSummary() async throws {
-        let container = AppContainer(api: MockAPI(), inMemory: true)
+        let api = MockAPI()
+        api.summaryPollsBeforeReady = 0  // ready on the first poll; the default imitates server processing
+        let container = AppContainer(api: api, inMemory: true)
         await container.session.bootstrap()
         let completion = RideComplete(endedAt: SampleData.referenceDate, distanceMeters: 1000, durationSeconds: 300)
         await container.sync.completeRide(rideId: SampleData.rideId, rideClientId: SampleData.clientRideId, completion: completion)
-        // The mock returns a summary immediately; polling runs in a task.
+        // Polling runs in a task; the first poll returns the summary.
         for _ in 0..<50 where container.sync.latestSummary == nil {
             try await Task.sleep(for: .milliseconds(50))
         }
