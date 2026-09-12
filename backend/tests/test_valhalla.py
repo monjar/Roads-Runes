@@ -170,7 +170,13 @@ def test_valhalla_costing_follows_the_rider_and_the_bike():
     quiet_gravel = valhalla_costing(
         RoutePreferences(trafficAversion=0.9, gravelPreference=0.8, hillTolerance=0.2), "GRAVEL", True, False
     )
-    assert quiet_gravel == {"bicycle_type": "Cross", "use_roads": 0.1, "use_hills": 0.2, "avoid_bad_surfaces": 0.12}
+    assert quiet_gravel == {"bicycle_type": "Cross", "use_roads": 0.1, "use_hills": 0.2, "avoid_bad_surfaces": 0.2}
+
+    # Both ends of the range are reachable, or "tarmac only" rides the same towpath
+    # as "gravel heavy": Valhalla only changes its mind above 0.6.
+    tarmac = valhalla_costing(RoutePreferences(gravelPreference=0.0), "HYBRID", True, False)
+    assert tarmac["avoid_bad_surfaces"] == 1.0
+    assert valhalla_costing(RoutePreferences(gravelPreference=1.0), "HYBRID", True, False)["avoid_bad_surfaces"] == 0.0
 
     road = valhalla_costing(
         RoutePreferences(trafficAversion=0.2, cyclewayPreference=0.2, gravelPreference=0.8), "ROAD", False, False

@@ -100,7 +100,11 @@ def valhalla_costing(prefs: RoutePreferences, bike_type: str, allow_gravel: bool
     avoid it strongly), and hill tolerance is `use_hills`.
     """
     quiet = max(prefs.trafficAversion, prefs.cyclewayPreference * 0.8)
-    avoid_rough = 0.6 - prefs.gravelPreference * 0.6 if allow_gravel else 0.9
+    # The whole range, not the bottom half of it: at 0.6 Valhalla still takes the
+    # gravel, so "tarmac only" used to come back on the same towpath as "gravel
+    # heavy". Verified against valhalla1.openstreetmap.de across Richmond Park,
+    # where 0.6 and 0.0 give the same 7.2 km and 1.0 gives a 7.9 km way round.
+    avoid_rough = 1.0 - prefs.gravelPreference if allow_gravel else 0.9
     if bike_type == "ROAD":
         avoid_rough = max(avoid_rough, 0.7)
     if allow_trails and bike_type == "MOUNTAIN":
