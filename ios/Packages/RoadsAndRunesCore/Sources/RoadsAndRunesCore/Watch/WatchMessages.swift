@@ -34,13 +34,44 @@ public struct WatchRouteSummary: Codable, Hashable, Sendable {
     public var instructions: [Instruction]
     public var objectives: [WatchObjective]
     public var totalDistanceMeters: Double
+    /// The route to draw on the Watch, thinned to what a 45 mm screen can show.
+    /// GeoJSON order (`[lon, lat]`), same as `RouteOption.coordinates`.
+    public var routeCoordinates: [[Double]]
+    /// Stops the rider asked for, so the Watch map can show what they are riding to.
+    public var stops: [WatchStop]
 
-    public init(questTitle: String?, instructions: [Instruction], objectives: [WatchObjective], totalDistanceMeters: Double) {
+    public init(
+        questTitle: String?, instructions: [Instruction], objectives: [WatchObjective], totalDistanceMeters: Double,
+        routeCoordinates: [[Double]] = [], stops: [WatchStop] = []
+    ) {
         self.questTitle = questTitle
         self.instructions = instructions
         self.objectives = objectives
         self.totalDistanceMeters = totalDistanceMeters
+        self.routeCoordinates = routeCoordinates
+        self.stops = stops
     }
+
+    public var path: [Coordinate] { routeCoordinates.compactMap { Coordinate(geoJSON: $0) } }
+}
+
+/// A stop on the Watch map: what it is called and where, nothing more.
+public struct WatchStop: Codable, Hashable, Sendable, Identifiable {
+    public var id: UUID
+    public var name: String
+    public var latitude: Double
+    public var longitude: Double
+    public var requested: Bool
+
+    public init(id: UUID, name: String, latitude: Double, longitude: Double, requested: Bool) {
+        self.id = id
+        self.name = name
+        self.latitude = latitude
+        self.longitude = longitude
+        self.requested = requested
+    }
+
+    public var coordinate: Coordinate { Coordinate(latitude: latitude, longitude: longitude) }
 }
 
 /// Sent on every throttled update (`sendMessage` when reachable, otherwise
@@ -57,13 +88,16 @@ public struct WatchNavigationUpdate: Codable, Hashable, Sendable {
     public var elevationGainMeters: Double
     public var heartRate: Int?
     public var speedMps: Double?
+    /// Where the rider is, so the Watch map can follow without its own GPS.
+    public var latitude: Double?
+    public var longitude: Double?
     public var timestamp: Date
 
     public init(
         state: NavigationState, instruction: Instruction? = nil, distanceToInstructionMeters: Double? = nil,
         nextInstructionText: String? = nil, objectiveTitle: String? = nil, objectiveDistanceMeters: Double? = nil,
         distanceMeters: Double, elapsedSeconds: Double, elevationGainMeters: Double, heartRate: Int? = nil,
-        speedMps: Double? = nil, timestamp: Date = Date()
+        speedMps: Double? = nil, latitude: Double? = nil, longitude: Double? = nil, timestamp: Date = Date()
     ) {
         self.state = state
         self.instruction = instruction
@@ -76,7 +110,14 @@ public struct WatchNavigationUpdate: Codable, Hashable, Sendable {
         self.elevationGainMeters = elevationGainMeters
         self.heartRate = heartRate
         self.speedMps = speedMps
+        self.latitude = latitude
+        self.longitude = longitude
         self.timestamp = timestamp
+    }
+
+    public var coordinate: Coordinate? {
+        guard let latitude, let longitude else { return nil }
+        return Coordinate(latitude: latitude, longitude: longitude)
     }
 }
 

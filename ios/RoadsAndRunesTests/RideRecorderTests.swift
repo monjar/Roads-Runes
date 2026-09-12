@@ -98,4 +98,60 @@ final class RideRecorderTests: XCTestCase {
         XCTAssertEqual(fresh.rideRecorder.clientRideId, saved.clientRideId)
         fresh.rideRecorder.discard()
     }
+
+    /// The Watch draws the route the phone sends it, and a WatchConnectivity payload
+    /// is not the place for four thousand points.
+    func testTheRouteSentToTheWatchIsThinnedButStillEndsWhereTheRideDoes() {
+        let dense: [[Double]] = (0..<4000).map { index in
+            let step = Double(index) * 0.0001
+            return [-0.03 + step, 51.49 + step]
+        }
+        let thinned = RideRecorder.thinned(dense)
+        XCTAssertLessThanOrEqual(thinned.count, 170)
+        XCTAssertGreaterThan(thinned.count, 100)
+        XCTAssertEqual(thinned.first, dense.first)
+        XCTAssertEqual(thinned.last, dense.last, "the line has to end where the route does")
+
+        // A short route is sent as it is.
+        let short = Array(dense.prefix(80))
+        XCTAssertEqual(RideRecorder.thinned(short), short)
+    }
+
+    /// A stop the rider asked for announces itself; the ones the route merely passes
+    /// do not, because nobody asked about them.
+    func testOnlyTheStopsTheRiderAskedForAnnounceThemselves() async throws {
+        let container = AppContainer(api: MockAPI(), inMemory: true)
+        let recorder = container.rideRecorder
+        let original: RoutePackage = try await container.api.routePackage(id: SampleData.routeId)
+        let here: Coordinate = try XCTUnwrap(original.route.path.first)
+        let stops: [RoutePOI] = [
+            poi(named: "The Watch House", at: here, requested: true),
+            poi(named: "A bench", at: here, requested: false),
+        ]
+        let package = RoutePackage(
+            route: original.route,
+            quest: nil,
+            pois: stops,
+            mapRegion: original.mapRegion,
+            generatedAt: Date()
+        )
+        await recorder.start(package: package, quest: nil, bikeId: nil)
+        recorder.handle(fix: fix(here, at: 0))
+        XCTAssertEqual(recorder.nearbyStop?.name, "The Watch House")
+
+        // A kilometre on, it is behind them and the card is gone.
+        let away = Coordinate(latitude: here.latitude + 0.02, longitude: here.longitude)
+        recorder.handle(fix: fix(away, at: 60))
+        XCTAssertNil(recorder.nearbyStop)
+        recorder.discard()
+    }
+
+    private func poi(named name: String, at coordinate: Coordinate, requested: Bool) -> RoutePOI {
+        RoutePOI(
+            discoveryId: UUID(), name: name, category: .cafe,
+            latitude: coordinate.latitude, longitude: coordinate.longitude,
+            routePositionMeters: 0, detourMeters: 10, detourSeconds: 30, estimatedArrivalSeconds: 60,
+            relevance: 1, requested: requested
+        )
+    }
 }

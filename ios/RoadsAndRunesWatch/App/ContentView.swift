@@ -24,7 +24,7 @@ struct ContentView: View {
     }
 }
 
-/// Vertical pages (design 7a + 16a): navigation, quest, ride, controls.
+/// Vertical pages (design 7a + 16a): navigation, the map, quest, ride, controls.
 struct RidePages: View {
     @Environment(\.isLuminanceReduced) private var isLuminanceReduced
 
@@ -36,6 +36,11 @@ struct RidePages: View {
                 } else {
                     NavigationScreen()
                 }
+            }
+            // Directions answer "what do I do next"; the map answers "where am I".
+            // Always-on keeps the directions, which cost nothing to redraw.
+            if !isLuminanceReduced {
+                MapScreen()
             }
             QuestScreen()
             StatsScreen()

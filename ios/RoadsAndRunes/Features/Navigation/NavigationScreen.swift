@@ -39,6 +39,14 @@ struct NavigationScreen: View {
                 } else {
                     ObjectiveBanner(objective: recorder.currentObjective, quest: recorder.quest, title: recorder.title, position: recorder.lastFix?.coordinate, formatter: formatter)
                 }
+                if let stop = recorder.nearbyStop {
+                    NearbyStopCard(
+                        poi: stop,
+                        distanceMeters: recorder.lastFix.map { GeoMath.distance($0.coordinate, stop.coordinate) },
+                        formatter: formatter
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
                 if let objective = recorder.currentObjective, objective.needsRider {
                     ScribeActions(objective: objective) { note in
                         Task { await recorder.complete(objective: objective, note: note) }
@@ -315,6 +323,45 @@ struct TurnArrowView: View {
         case .waypoint: return "Waypoint"
         case .unknown: return "Continue"
         }
+    }
+}
+
+/// A stop the rider asked for, close enough to turn into. Sage, because arriving
+/// where you meant to is good news, and the distance is big enough to read while
+/// moving. It goes away once they have been within sixty metres of it.
+struct NearbyStopCard: View {
+    let poi: RoutePOI
+    var distanceMeters: Double?
+    let formatter: UnitFormatter
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: DiscoveryIcon.symbol(for: poi.category))
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(Theme.Colors.sageDeep)
+                .frame(width: 34, height: 34)
+                .background(Theme.Colors.cream, in: Circle())
+            VStack(alignment: .leading, spacing: 1) {
+                Text(poi.name)
+                    .font(Theme.Typography.text(15, .bold))
+                    .foregroundStyle(Theme.Colors.cream)
+                    .lineLimit(1)
+                Text("the \(poi.category.rawValue.lowercased()) you asked for")
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.cream.opacity(0.85))
+            }
+            Spacer(minLength: 8)
+            if let distanceMeters {
+                Text(formatter.distance(meters: distanceMeters))
+                    .font(Theme.Typography.text(17, .bold).monospacedDigit())
+                    .foregroundStyle(Theme.Colors.cream)
+            }
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .background(Theme.Colors.sage, in: Capsule())
+        .shadow(color: Theme.Colors.ink.opacity(0.2), radius: 8, y: 4)
+        .accessibilityIdentifier("nearbyStop")
     }
 }
 

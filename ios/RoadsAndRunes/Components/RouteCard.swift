@@ -10,6 +10,8 @@ struct RouteCard: View {
     var bestMatch = false
     /// Overrides "Best match", e.g. "Quest route" for the quest's fixed route.
     var badge: String?
+    /// What this way costs over the plainest one on offer ("+4.2 km for your stop").
+    var tradeOff: String?
 
     private var formatter: UnitFormatter { UnitFormatter(units: units) }
 
@@ -39,6 +41,12 @@ struct RouteCard: View {
                 .foregroundStyle(Theme.Colors.ink)
                 SurfaceBar(surface: route.surface).frame(height: 7)
                 Text(whyThisRoute).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).lineLimit(2)
+                if let tradeOff {
+                    Label(tradeOff, systemImage: "arrow.triangle.swap")
+                        .font(Theme.Typography.captionStrong)
+                        .foregroundStyle(Theme.Colors.terracottaDeep)
+                        .lineLimit(1)
+                }
             }
         }
         .padding(.vertical, 14)

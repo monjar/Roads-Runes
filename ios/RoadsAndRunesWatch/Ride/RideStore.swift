@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 import Observation
 import RoadsAndRunesCore
@@ -20,6 +21,18 @@ final class RideStore {
     /// Incremented for every objective completion so identical titles re-trigger the overlay.
     private(set) var objectiveToken: Int = 0
     private(set) var units: Units = .metric
+
+    /// The route to draw on the map page, and the stops on it. Both come from the
+    /// phone's route summary and stay put until the next ride.
+    var routePath: [CLLocationCoordinate2D] {
+        (summary?.path ?? []).map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+    }
+
+    var stops: [WatchStop] { summary?.stops ?? [] }
+
+    /// Where the phone last said the rider was; the map follows it rather than
+    /// starting a second GPS on the wrist.
+    var riderCoordinate: Coordinate? { update?.coordinate }
 
     /// Last non-nil instruction; survives updates whose instruction is nil and phone drops.
     private(set) var currentInstruction: Instruction?

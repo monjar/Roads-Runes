@@ -25,6 +25,10 @@ final class RideRecorder {
     private(set) var offRouteSince: Date?
     private(set) var isRerouting = false
     private(set) var lastFix: LocationFix?
+    /// A stop the rider asked for that they are near right now, so the ride can say
+    /// "your café is 90 m away" rather than leaving them to spot it going past.
+    private(set) var nearbyStop: RoutePOI?
+    private var arrivedStops: Set<UUID> = []
     private(set) var newTerritoryMeters: Double = 0
     private(set) var localCellStates: [String: CellState] = [:]
     var recoverableRide: ActiveRideState?
@@ -181,6 +185,8 @@ final class RideRecorder {
         persistence.deleteActiveRide(clientRideId: clientRideId)
         isActive = false
         package = nil
+        nearbyStop = nil
+        arrivedStops = []
         quest = nil
         progress = nil
         currentObjective = nil
@@ -198,6 +204,7 @@ final class RideRecorder {
         var enriched = fix
         enriched.heartRate = lastHeartRate
         lastFix = enriched
+        updateNearbyStop(from: enriched.coordinate)
         let accepted = statistics.add(fix: enriched)
         stats = statistics.snapshot
         if accepted {
@@ -374,7 +381,31 @@ final class RideRecorder {
     private func sendWatchSummary() {
         guard let package else { return }
         let objectives = (quest?.sortedObjectives ?? []).map { WatchObjective(objective: $0) }
-        watch.send(summary: WatchRouteSummary(questTitle: quest?.title, instructions: package.route.instructions, objectives: objectives, totalDistanceMeters: package.route.distanceMeters), units: units)
+        let stops = package.pois.prefix(12).map {
+            WatchStop(id: $0.discoveryId, name: $0.name, latitude: $0.latitude, longitude: $0.longitude, requested: $0.requested == true)
+        }
+        watch.send(
+            summary: WatchRouteSummary(
+                questTitle: quest?.title,
+                instructions: package.route.instructions,
+                objectives: objectives,
+                totalDistanceMeters: package.route.distanceMeters,
+                routeCoordinates: Self.thinned(package.route.coordinates),
+                stops: Array(stops)
+            ),
+            units: units
+        )
+    }
+
+    /// A route can be thousands of points; a watch screen is 200 across and the
+    /// message has to fit in a WatchConnectivity payload. Keep every nth point, and
+    /// always the last one so the line ends where the ride does.
+    static func thinned(_ coordinates: [[Double]], limit: Int = 160) -> [[Double]] {
+        guard coordinates.count > limit else { return coordinates }
+        let stride = Int((Double(coordinates.count) / Double(limit)).rounded(.up))
+        var thinned = coordinates.enumerated().filter { $0.offset % stride == 0 }.map(\.element)
+        if let last = coordinates.last, thinned.last != last { thinned.append(last) }
+        return thinned
     }
 
     private func sendWatchUpdate(force: Bool = false) {
@@ -390,7 +421,8 @@ final class RideRecorder {
             state: state, instruction: progress?.nextInstruction, distanceToInstructionMeters: progress?.distanceToNextInstruction,
             nextInstructionText: nextText, objectiveTitle: currentObjective?.title, objectiveDistanceMeters: objectiveDistance,
             distanceMeters: stats.distanceMeters, elapsedSeconds: stats.elapsedSeconds, elevationGainMeters: stats.elevationGainMeters,
-            heartRate: stats.lastHeartRateBpm, speedMps: stats.currentSpeedMps
+            heartRate: stats.lastHeartRateBpm, speedMps: stats.currentSpeedMps,
+            latitude: lastFix?.coordinate.latitude, longitude: lastFix?.coordinate.longitude
         )
         watch.send(update: update, force: force)
     }
@@ -489,6 +521,31 @@ final class RideRecorder {
         } catch {
             AppLog.navigation.debug("illegal_transition \(self.state.rawValue, privacy: .public) -> \(target.rawValue, privacy: .public)")
             return false
+        }
+    }
+
+    /// Within this far, a stop is "here"; beyond it the card goes away again.
+    private static let stopInSight: Double = 250
+    private static let stopArrived: Double = 60
+
+    /// The nearest stop the rider asked for that is within sight and not yet visited.
+    /// Incidental places found along the route are not announced: they did not ask.
+    private func updateNearbyStop(from coordinate: Coordinate) {
+        let asked = (package?.pois ?? []).filter { $0.requested == true }
+        guard !asked.isEmpty else { return }
+        let closest = asked
+            .map { ($0, GeoMath.distance(coordinate, $0.coordinate)) }
+            .filter { $0.1 <= Self.stopInSight && !arrivedStops.contains($0.0.discoveryId) }
+            .min { $0.1 < $1.1 }
+        if let (poi, distance) = closest {
+            if nearbyStop?.discoveryId != poi.discoveryId {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                analytics.track(.discoveryFound, properties: ["discoveryId": poi.discoveryId.uuidString, "requested": "true"])
+            }
+            nearbyStop = poi
+            if distance <= Self.stopArrived { arrivedStops.insert(poi.discoveryId) }
+        } else {
+            nearbyStop = nil
         }
     }
 

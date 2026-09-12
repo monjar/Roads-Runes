@@ -49,6 +49,36 @@ final class RoutePlannerViewModel {
 
     var units: Units { container.session.units }
 
+    /// The plain way there, when the planner offered one: the yardstick for what the
+    /// other cards cost. The server labels it, and falls back to the shortest.
+    private var plainest: RouteOption? {
+        alternatives.first { $0.label == "Direct" }
+            ?? alternatives.min { $0.distanceMeters < $1.distanceMeters }
+    }
+
+    /// "+4.2 km · +14 min for a café and 38% more gravel" — the trade the rider is
+    /// making by taking this one, rather than leaving them to work it out.
+    func tradeOff(for route: RouteOption) -> String? {
+        guard let plainest, plainest.id != route.id else { return nil }
+        let extraMeters = route.distanceMeters - plainest.distanceMeters
+        let extraMinutes = (route.estimatedDurationSeconds - plainest.estimatedDurationSeconds) / 60
+        guard extraMeters >= 250 else { return nil }
+        var gains: [String] = []
+        let stops = route.pois.filter { $0.requested == true }.count
+        if stops > 0 { gains.append(stops == 1 ? "your stop" : "\(stops) stops") }
+        let gravel = Int(((route.surface.gravel + route.surface.trail) - (plainest.surface.gravel + plainest.surface.trail)) * 100)
+        if gravel >= 5 { gains.append("\(gravel)% more gravel") }
+        let cycleways = Int((route.cyclewayFraction - plainest.cyclewayFraction) * 100)
+        if gains.isEmpty && cycleways >= 8 { gains.append("\(cycleways)% more cycleway") }
+        if gains.isEmpty && route.elevationGainMeters > plainest.elevationGainMeters * 1.3 { gains.append("more climbing") }
+        guard !gains.isEmpty else { return nil }
+        let formatter = UnitFormatter(units: units)
+        let cost = extraMinutes >= 1
+            ? "+\(formatter.distance(meters: extraMeters)) · +\(extraMinutes) min"
+            : "+\(formatter.distance(meters: extraMeters))"
+        return "\(cost) for \(gains.joined(separator: " and "))"
+    }
+
     /// Highest-scoring alternative: the "Best match" badge.
     var bestMatchId: UUID? { alternatives.filter { $0.id != questRoute?.id }.max { $0.score < $1.score }?.id }
 
@@ -153,7 +183,14 @@ final class RoutePlannerViewModel {
                 distanceKm = asked.rounded()
             }
             let fresh = response.alternatives
-            choose(fresh.first { $0.label == "Adventure" } ?? fresh.max { $0.score < $1.score } ?? alternatives.first)
+            // The one that does what was asked comes first; without a request there is
+            // no such card and the best-scoring flavour opens as before.
+            choose(
+                fresh.first { $0.label == "As asked" }
+                    ?? fresh.first { $0.label == "Adventure" }
+                    ?? fresh.max { $0.score < $1.score }
+                    ?? alternatives.first
+            )
             error = nil
             container.analytics.track(.routeGenerated, properties: ["count": String(alternatives.count), "engine": response.engine ?? "unknown"])
         } catch {
@@ -298,7 +335,9 @@ struct RoutePlannerView: View {
                         Button { withAnimation(.snappy) { model.choose(route) } } label: {
                             RouteCard(
                                 route: route, selected: model.selected?.id == route.id, units: model.units,
-                                bestMatch: model.bestMatchId == route.id, badge: route.id == model.questRoute?.id ? "Quest route" : nil
+                                bestMatch: model.bestMatchId == route.id,
+                                badge: route.id == model.questRoute?.id ? "Quest route" : nil,
+                                tradeOff: model.tradeOff(for: route)
                             )
                         }
                         .buttonStyle(.pressable)
