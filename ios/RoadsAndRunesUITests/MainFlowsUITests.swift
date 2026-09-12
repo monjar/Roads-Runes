@@ -115,12 +115,11 @@ final class MainFlowsUITests: XCTestCase {
     /// and the same route came back unchanged.
     func testAskingForStopsOnTheWayToAPlace() throws {
         signInAsNewRider(at: Self.rotherhithe)
-        tapOffCentre(app.buttons["Search places"], dx: 0.6)
-        // Somewhere a few kilometres off: the results are sorted by distance from the
-        // rider, and stops on the way only mean something when there is a way.
-        waitFor(app.textFields["Search places"]).typeText("greenwich\n")
-        tapOffCentre(waitFor(app.buttons.matching(identifier: "placeRow").firstMatch, 30), dx: 0.62)
-        tapOffCentre(waitFor(app.buttons["Ride here"]), dx: 0.1)
+        // A dropped pin a kilometre or so up the map, rather than a search: the place
+        // search is covered above, and what matters here is a destination the planner
+        // has to keep listening around. MapKit's results are not ours to depend on.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).press(forDuration: 1.2)
+        tapOffCentre(waitFor(app.buttons["Ride here"], 30), dx: 0.1)
         XCTAssertTrue(app.buttons["planner.start"].waitForExistence(timeout: 90), "No route to the place")
 
         let placeholder = "About 30 km, mostly quiet roads, easy gravel and a pub halfway."
@@ -143,7 +142,19 @@ final class MainFlowsUITests: XCTestCase {
         scrollTo(stop)
         tapOffCentre(stop, dx: 0.3)
         let callout = app.descendants(matching: .any).matching(identifier: "stopCallout").firstMatch
-        XCTAssertTrue(callout.waitForExistence(timeout: 10), "A stop could not be opened on the map")
+        XCTAssertTrue(callout.waitForExistence(timeout: 10), "Picking a stop showed nothing on the map")
+
+        // And the markers themselves are tappable, which is the point of drawing them.
+        // A map annotation reports its frame inside the map rather than on screen, so
+        // XCUI calls it unhittable; its glyph carries the real position, so tap that.
+        let marker = app.buttons.matching(NSPredicate(format: "value == %@", "stop")).firstMatch
+        XCTAssertTrue(marker.waitForExistence(timeout: 10), "The stops are not on the map")
+        let name = marker.label
+        marker.images.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any).matching(identifier: "stopCallout").staticTexts[name].waitForExistence(timeout: 10),
+            "Tapping \(name) on the map did not open it"
+        )
         tapOffCentre(app.buttons["planner.close"], dx: 0.5)
     }
 

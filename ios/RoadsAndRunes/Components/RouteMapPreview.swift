@@ -32,6 +32,9 @@ struct RouteMapPreview: View {
         )
         .frame(height: height)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        // Named here rather than on the whole stack: an identifier on the outside is
+        // inherited by the overlays, which then all answer to "route.map".
+        .accessibilityIdentifier("route.map")
         .overlay(alignment: .bottom) {
             if let focused {
                 StopCallout(poi: focused, units: units, onClose: onClearFocus)
@@ -50,7 +53,6 @@ struct RouteMapPreview: View {
                     .padding(8)
             }
         }
-        .accessibilityIdentifier("route.map")
     }
 
     private var markers: [MapMarker] {
@@ -109,6 +111,9 @@ struct StopCallout: View {
         .padding(.vertical, 7)
         .background(Theme.Colors.cream, in: Capsule())
         .shadow(color: Theme.Colors.ink.opacity(0.2), radius: 8, y: 3)
+        // A plain container is not an element of its own, so name it as one: VoiceOver
+        // announces the stop as a group, and the tests can find it.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("stopCallout")
     }
 
