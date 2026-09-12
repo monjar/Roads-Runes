@@ -280,19 +280,22 @@ async def _pick_stops_between(
     along the line, one per stretch of the way, in the order they are reached.
     """
     direct = haversine_m(start.latitude, start.longitude, destination.latitude, destination.longitude)
-    corridor = max(600.0, direct * 0.2)
     pool = await _candidates(
         db,
         (start.latitude + destination.latitude) / 2,
         (start.longitude + destination.longitude) / 2,
-        max(1500.0, direct * 0.7),
+        max(2500.0, direct * 0.8),
         categories,
     )
-    along = []
-    for poi in pool:
-        offset, progress = _distance_to_leg(poi.latitude, poi.longitude, start, destination)
-        if offset <= corridor:
-            along.append((progress, offset, poi))
+    measured = [(*_distance_to_leg(poi.latitude, poi.longitude, start, destination), poi) for poi in pool]
+    # A short ride has a short corridor, and three cafés within 600 m of a 1.5 km line
+    # is asking a lot of one neighbourhood. Rather than answer "none", give ground:
+    # a café 1 km off the way is a minute's detour, and the card says what it costs.
+    along: list[tuple[float, float, Discovery]] = []
+    for corridor in (max(600.0, direct * 0.2), max(1200.0, direct * 0.35), 2500.0):
+        along = [(progress, offset, poi) for offset, progress, poi in measured if offset <= corridor]
+        if len(along) >= count:
+            break
     if not along:
         return []
     chosen: list[tuple[float, Discovery]] = []

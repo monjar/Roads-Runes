@@ -116,7 +116,9 @@ final class MainFlowsUITests: XCTestCase {
     func testAskingForStopsOnTheWayToAPlace() throws {
         signInAsNewRider(at: Self.rotherhithe)
         tapOffCentre(app.buttons["Search places"], dx: 0.6)
-        waitFor(app.textFields["Search places"]).typeText("richmond park\n")
+        // Somewhere a few kilometres off: the results are sorted by distance from the
+        // rider, and stops on the way only mean something when there is a way.
+        waitFor(app.textFields["Search places"]).typeText("greenwich\n")
         tapOffCentre(waitFor(app.buttons.matching(identifier: "placeRow").firstMatch, 30), dx: 0.62)
         tapOffCentre(waitFor(app.buttons["Ride here"]), dx: 0.1)
         XCTAssertTrue(app.buttons["planner.start"].waitForExistence(timeout: 90), "No route to the place")

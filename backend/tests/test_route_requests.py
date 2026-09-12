@@ -354,3 +354,40 @@ async def test_a_distance_in_the_request_beats_the_slider(explorer_client):
     assert r.json()["parsedRequest"]["distanceKm"]["target"] == 12
     for route in r.json()["alternatives"]:
         assert route["distanceMeters"] < 25_000, f"{route['label']} is {route['distanceMeters'] / 1000:.1f} km"
+
+
+@pytest.mark.anyio
+async def test_a_short_ride_widens_its_corridor_rather_than_finding_nothing(explorer_client):
+    """Three cafés within 600 m of a 1.2 km line is asking a lot of one neighbourhood;
+    a café a minute off the way beats answering "none found nearby"."""
+    near = destination_point(HOME[0], HOME[1], 45, 1200)
+    bearing = bearing_deg(HOME[0], HOME[1], near[0], near[1])
+    async with get_session_factory()() as db:
+        for index, along in enumerate((0.3, 0.7)):
+            lat = HOME[0] + (near[0] - HOME[0]) * along
+            lon = HOME[1] + (near[1] - HOME[1]) * along
+            lat, lon = destination_point(lat, lon, bearing + 90, 900)  # well outside 600 m
+            db.add(
+                Discovery(
+                    name=f"Sidestreet Coffee {index}",
+                    category="CAFE",
+                    latitude=lat,
+                    longitude=lon,
+                    source="OSM",
+                    osm_id=f"n{uuid.uuid4().int % 10**9}",
+                    tags={},
+                    moderation_status="APPROVED",
+                    cycling_accessible=True,
+                )
+            )
+        await db.commit()
+
+    async with get_session_factory()() as db:
+        stops = await service._pick_stops_between(
+            db,
+            Coordinate(latitude=HOME[0], longitude=HOME[1]),
+            Coordinate(latitude=near[0], longitude=near[1]),
+            ["CAFE"],
+            2,
+        )
+    assert [stop.name for stop in stops] == ["Sidestreet Coffee 0", "Sidestreet Coffee 1"]
