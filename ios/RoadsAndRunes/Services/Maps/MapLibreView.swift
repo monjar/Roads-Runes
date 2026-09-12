@@ -301,8 +301,10 @@ struct MapLibreView: UIViewRepresentable {
                 annotation.coordinate = CLLocationCoordinate2D(latitude: marker.coordinate.latitude, longitude: marker.coordinate.longitude)
                 annotation.title = marker.title
                 annotation.subtitle = marker.kind.rawValue
-                mapView.addAnnotation(annotation)
+                // Recorded before it is added: the map asks for the annotation's view
+                // inside `addAnnotation`, and an unknown marker gets a default red pin.
                 markers[id] = (marker, annotation)
+                mapView.addAnnotation(annotation)
             }
         }
 

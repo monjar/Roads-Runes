@@ -335,3 +335,22 @@ async def test_the_stops_are_shared_between_the_kinds_asked_for(explorer_client)
             2,
         )
     assert [stop.name for stop in stops] == ["Near Cafe", "Line Museum"]
+
+
+@pytest.mark.anyio
+async def test_a_distance_in_the_request_beats_the_slider(explorer_client):
+    """The planner always sends the slider's value, so a slider left at 40 km used to
+    answer "a 12 km loop" with a 22 km ride."""
+    r = await explorer_client.post(
+        "/routes/generate",
+        json={
+            "origin": {"latitude": HOME[0], "longitude": HOME[1]},
+            "loop": True,
+            "distanceTargetKm": 40,
+            "request": "a 12 km loop",
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["parsedRequest"]["distanceKm"]["target"] == 12
+    for route in r.json()["alternatives"]:
+        assert route["distanceMeters"] < 25_000, f"{route['label']} is {route['distanceMeters'] / 1000:.1f} km"

@@ -110,16 +110,9 @@ final class RoutePlannerViewModel {
         preview = route.map { MapCamera(fit: $0.path, padding: Self.previewPadding) }
     }
 
-    /// A stop tapped on the map is read where it is; one tapped in the list below is
-    /// brought into view first. Tapping it again closes it and refits the route.
-    func focus(_ poi: RoutePOI?, moveCamera: Bool = false) {
-        focusedStop = poi
-        if let poi {
-            if moveCamera { preview = MapCamera(center: poi.coordinate, zoom: 15.5) }
-        } else if let selected {
-            preview = MapCamera(fit: selected.path, padding: Self.previewPadding)
-        }
-    }
+    /// Opening a stop marks it on the map and in the list. The camera stays fitted
+    /// to the route — every stop is on it, so there is nothing to travel to.
+    func focus(_ poi: RoutePOI?) { focusedStop = poi }
 
     private static let previewPadding = UIEdgeInsets(top: 26, left: 22, bottom: 46, right: 22)
 
@@ -154,6 +147,11 @@ final class RoutePlannerViewModel {
             alternatives = (questRoute.map { [$0] } ?? []) + response.alternatives
             engine = response.engine
             understood = Self.understood(from: response.parsedRequest)
+            // "a 12 km loop" beats a slider sitting at 25; move it to what was used.
+            if let asked = response.parsedRequest?["distanceKm"]?.objectValue?["target"]?.doubleValue,
+               (5...150).contains(asked) {
+                distanceKm = asked.rounded()
+            }
             let fresh = response.alternatives
             choose(fresh.first { $0.label == "Adventure" } ?? fresh.max { $0.score < $1.score } ?? alternatives.first)
             error = nil
@@ -191,6 +189,9 @@ struct RoutePlannerView: View {
     @Environment(AppContainer.self) private var container
     @Environment(\.dismiss) private var dismiss
     @State private var model: RoutePlannerViewModel?
+    /// The request field is multi-line, so Return adds a line instead of dismissing
+    /// the keyboard — which then covers the routes it just asked for.
+    @FocusState private var writingRequest: Bool
     let quest: Quest?
     var destination: Place?
 
@@ -232,13 +233,17 @@ struct RoutePlannerView: View {
                             .font(Theme.Typography.text(17))
                             .foregroundStyle(Theme.Colors.ink)
                             .lineLimit(2...4)
+                            .focused($writingRequest)
                         HStack {
                             HStack(spacing: 6) {
                                 outlineChip("From here")
                                 outlineChip(model.destination.map { "To \($0.name)" } ?? "Loop")
                             }
                             Spacer()
-                            Button { Task { await model.generate() } } label: {
+                            Button {
+                                writingRequest = false
+                                Task { await model.generate() }
+                            } label: {
                                 Group {
                                     if model.isGenerating {
                                         ProgressView().tint(Theme.Colors.cream)
@@ -310,7 +315,7 @@ struct RoutePlannerView: View {
                             units: model.units,
                             camera: model.preview,
                             focused: model.focusedStop,
-                            onFocus: { poi, moveCamera in withAnimation(.snappy) { model.focus(poi, moveCamera: moveCamera) } },
+                            onFocus: { poi in withAnimation(.snappy) { model.focus(poi) } },
                             onClearStop: { withAnimation(.snappy) { model.focus(nil) } }
                         )
                     }
@@ -320,6 +325,7 @@ struct RoutePlannerView: View {
             .padding(.top, 12)
             .padding(.bottom, model.selected == nil ? 24 : 130)
         }
+        .scrollDismissesKeyboard(.interactively)
         if model.selected != nil {
             VStack(spacing: 8) {
                 Label("Map, directions, elevation and stops download when you start", systemImage: "arrow.down.circle")
@@ -365,9 +371,7 @@ struct RouteDetailPanel: View {
     let units: Units
     var camera: MapCamera?
     var focused: RoutePOI?
-    /// A stop, and whether the map should move to it (true from the list, false from
-    /// a marker the rider is already looking at).
-    var onFocus: (RoutePOI, Bool) -> Void = { _, _ in }
+    var onFocus: (RoutePOI) -> Void = { _ in }
     var onClearStop: () -> Void = {}
 
     private var formatter: UnitFormatter { UnitFormatter(units: units) }
@@ -379,7 +383,7 @@ struct RouteDetailPanel: View {
                 camera: camera,
                 focused: focused,
                 units: units,
-                onSelect: { onFocus($0, false) },
+                onSelect: onFocus,
                 onClearFocus: onClearStop
             )
             HStack(spacing: 8) {
@@ -421,7 +425,7 @@ struct RouteDetailPanel: View {
             }
             ForEach(route.pois.prefix(6)) { poi in
                 Button {
-                    if poi.id == focused?.id { onClearStop() } else { onFocus(poi, true) }
+                    if poi.id == focused?.id { onClearStop() } else { onFocus(poi) }
                 } label: {
                     RouteStopRow(poi: poi, units: units, selected: poi.id == focused?.id)
                 }

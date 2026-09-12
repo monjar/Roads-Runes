@@ -392,9 +392,11 @@ async def generate(
             if start is not payload.origin:
                 parsed_dict["startsAt"] = area.to_dict()
 
+    # What the rider wrote wins over the slider: the slider always has a value, while
+    # typing "a 12 km loop" is a deliberate act, and a 22 km answer to it is a lie.
     target_km = (
-        payload.distanceTargetKm
-        or (base_prefs.distanceKm or {}).get("target")
+        (base_prefs.distanceKm or {}).get("target")
+        or payload.distanceTargetKm
         or (quest.recommended_distance_km if quest else None)
         or profile.comfortable_distance_km
     )

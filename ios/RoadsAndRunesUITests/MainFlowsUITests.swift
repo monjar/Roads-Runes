@@ -133,17 +133,15 @@ final class MainFlowsUITests: XCTestCase {
         XCTAssertTrue(understood.waitForExistence(timeout: 120), "The planner never said what it understood")
         XCTAssertTrue(understood.label.contains("cafe"), "Understood '\(understood.label)' instead of cafés")
 
-        // Either the cafés are stops on the route, or the planner says it could not
-        // find them. Quietly ignoring the request is the bug this covers.
-        let couldNotFindThem = understood.label.contains("found nearby")
+        // The cafés are stops on the route, and each one opens on the map above the
+        // list. Parsing the request and then ignoring it is the bug this covers.
+        XCTAssertFalse(understood.label.contains("found nearby"), "No cafés were found on the way: '\(understood.label)'")
         let stop = app.buttons.matching(identifier: "routeStop").firstMatch
-        XCTAssertTrue(couldNotFindThem || stop.waitForExistence(timeout: 30), "The stops were neither on the route nor accounted for")
-        if !couldNotFindThem {
-            scrollTo(stop)
-            tapOffCentre(stop, dx: 0.3)
-            let callout = app.descendants(matching: .any).matching(identifier: "stopCallout").firstMatch
-            XCTAssertTrue(callout.waitForExistence(timeout: 10), "A stop could not be opened on the map")
-        }
+        XCTAssertTrue(stop.waitForExistence(timeout: 30), "The route came back with no stops to show")
+        scrollTo(stop)
+        tapOffCentre(stop, dx: 0.3)
+        let callout = app.descendants(matching: .any).matching(identifier: "stopCallout").firstMatch
+        XCTAssertTrue(callout.waitForExistence(timeout: 10), "A stop could not be opened on the map")
         tapOffCentre(app.buttons["planner.close"], dx: 0.5)
     }
 
