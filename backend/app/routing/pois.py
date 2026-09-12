@@ -22,6 +22,8 @@ class POIOnRoute:
     detour_s: int
     eta_s: int
     relevance: float
+    # Asked for by name ("with about 5 pubs"), rather than found along the way.
+    requested: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -35,6 +37,7 @@ class POIOnRoute:
             "detourSeconds": self.detour_s,
             "estimatedArrivalSeconds": self.eta_s,
             "relevance": round(self.relevance, 2),
+            "requested": self.requested,
         }
 
 
@@ -55,29 +58,38 @@ def attach_pois(
     preferred_position: float | None = None,
     max_pois: int = 8,
     stride: int = 3,
+    required_ids: set[str] | None = None,
 ) -> list[POIOnRoute]:
-    """`candidates` need .id .name .category .latitude .longitude attributes."""
+    """`candidates` need .id .name .category .latitude .longitude attributes.
+
+    `required_ids` are stops the rider asked for by name; they are kept whatever
+    their detour and listed first, because dropping one would break a promise.
+    """
     if len(coords) < 2:
         return []
     cumulative = cumulative_distances(coords)
     total = cumulative[-1] or 1.0
     results: list[POIOnRoute] = []
+    required = required_ids or set()
     for poi in candidates:
+        is_required = str(poi.id) in required
         best_d, best_i = float("inf"), 0
         for i in range(0, len(coords), stride):
             d = haversine_m(poi.latitude, poi.longitude, coords[i][1], coords[i][0])
             if d < best_d:
                 best_d, best_i = d, i
-        if best_d > corridor_m:
+        if best_d > corridor_m and not is_required:
             continue
         position = cumulative[best_i]
         detour = best_d * 2
-        relevance = 0.5
-        if preferred_category and poi.category == preferred_category:
+        relevance = 1.0 if is_required else 0.5
+        if not is_required and preferred_category and poi.category == preferred_category:
             relevance += 0.4
             if preferred_position is not None:
                 relevance += 0.3 * (1 - abs(position / total - preferred_position))
-        relevance -= best_d / corridor_m * 0.2
+        if not is_required:
+            # How far off the line it sits only matters for stops nobody asked for.
+            relevance -= best_d / corridor_m * 0.2
         results.append(
             POIOnRoute(
                 discovery_id=str(poi.id),
@@ -90,7 +102,13 @@ def attach_pois(
                 detour_s=int(detour / speed_mps),
                 eta_s=int(position / speed_mps),
                 relevance=max(0.0, min(1.0, relevance)),
+                requested=is_required,
             )
         )
     results.sort(key=lambda p: (-p.relevance, p.route_position_m))
+    if required:
+        # A stop the rider asked for is never crowded out by one they did not.
+        asked = [p for p in results if p.requested]
+        others = [p for p in results if not p.requested]
+        return asked + others[: max(0, max_pois - len(asked))]
     return results[:max_pois]

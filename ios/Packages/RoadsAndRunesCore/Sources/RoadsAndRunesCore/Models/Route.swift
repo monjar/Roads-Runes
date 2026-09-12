@@ -76,11 +76,14 @@ public struct RoutePOI: Codable, Hashable, Identifiable, Sendable {
     public var detourSeconds: Int
     public var estimatedArrivalSeconds: Int
     public var relevance: Double?
+    /// A stop the rider asked for ("with about 5 pubs"), routed through as a waypoint
+    /// rather than found along the way.
+    public var requested: Bool?
 
     public var id: UUID { discoveryId }
     public var coordinate: Coordinate { Coordinate(latitude: latitude, longitude: longitude) }
 
-    public init(discoveryId: UUID, name: String, category: DiscoveryCategory, latitude: Double, longitude: Double, routePositionMeters: Double, detourMeters: Double, detourSeconds: Int, estimatedArrivalSeconds: Int, relevance: Double? = nil) {
+    public init(discoveryId: UUID, name: String, category: DiscoveryCategory, latitude: Double, longitude: Double, routePositionMeters: Double, detourMeters: Double, detourSeconds: Int, estimatedArrivalSeconds: Int, relevance: Double? = nil, requested: Bool? = nil) {
         self.discoveryId = discoveryId
         self.name = name
         self.category = category
@@ -91,6 +94,7 @@ public struct RoutePOI: Codable, Hashable, Identifiable, Sendable {
         self.detourSeconds = detourSeconds
         self.estimatedArrivalSeconds = estimatedArrivalSeconds
         self.relevance = relevance
+        self.requested = requested
     }
 }
 

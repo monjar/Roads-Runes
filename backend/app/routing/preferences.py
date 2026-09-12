@@ -37,7 +37,10 @@ class RoutePreferences:
     scenicPreference: float = 0.6
     hillTolerance: float = 0.5
     distanceKm: dict[str, float] | None = None  # {"target": 30, "tolerance": 5}
-    poi: dict[str, Any] | None = None  # {"category": "PUB", "preferredPosition": 0.75}
+    poi: dict[str, Any] | None = None  # {"category": "PUB", "preferredPosition": 0.75, "count": 5}
+    # Where the rider asked to ride: {"query": "Notting Hill"} until resolved, then
+    # {"name", "latitude", "longitude"} as well (app/routing/geocode.py).
+    area: dict[str, Any] | None = None
     loop: bool | None = None
 
     def clamp(self) -> RoutePreferences:
@@ -60,6 +63,36 @@ class ParsedRequest:
     preferences: RoutePreferences
     source: str  # "llm" | "rules"
     matched: list[str] = field(default_factory=list)
+
+
+COUNT_WORDS = {"a couple": 2, "a couple of": 2, "a few": 3, "some": 3, "several": 4}
+# "in Notting Hill with 5 pubs" -> "notting hill". The phrase is a guess; the geocoder
+# decides whether it is a place, so this can afford to be generous.
+AREA_PATTERN = re.compile(
+    r"\b(?:in|around|near|through|via|round)\s+(?!the\s+(?:morning|afternoon|evening))"
+    r"([a-z0-9'\u2019\-\. ]{3,40}?)"
+    r"(?=\s+(?:with|and|for|that|about|including|taking|via|through)\b|[,.;]|$)"
+)
+NOT_A_PLACE = re.compile(r"^\s*(?:\d|an? |the )?\s*(?:hour|hr|min|km|mile|k\b|loop|circle|ride|bit|while)")
+
+
+def _area_phrase(lowered: str) -> str | None:
+    for match in AREA_PATTERN.finditer(lowered):
+        phrase = match.group(1).strip(" .,")
+        if len(phrase) < 3 or NOT_A_PLACE.match(phrase):
+            continue
+        return phrase
+    return None
+
+
+def _poi_count(lowered: str, word: str) -> int | None:
+    pattern = rf"\b(\d{{1,2}}|{'|'.join(COUNT_WORDS)})\s+(?:\w+\s+){{0,2}}?{re.escape(word)}s?\b"
+    match = re.search(pattern, lowered)
+    if not match:
+        return None
+    found = match.group(1)
+    count = int(found) if found.isdigit() else COUNT_WORDS.get(found, 2)
+    return max(1, min(8, count))  # more than a handful stops being a bike ride
 
 
 def parse_rules(text: str, base: RoutePreferences | None = None) -> ParsedRequest:
@@ -126,20 +159,30 @@ def parse_rules(text: str, base: RoutePreferences | None = None) -> ParsedReques
                 position = 0.5
             prefs.poi = {"category": category, "preferredPosition": position}
             matched.append(f"poi:{category}")
+            count = _poi_count(lowered, word)
+            if count:
+                prefs.poi["count"] = count
+                matched.append(f"count:{count}")
             break
+
+    phrase = _area_phrase(lowered)
+    if phrase:
+        prefs.area = {"query": phrase}
+        matched.append(f"area:{phrase}")
     return ParsedRequest(preferences=prefs.clamp(), source="rules", matched=matched)
 
 
 LLM_SYSTEM = (
     "Convert a cyclist's free-text route request into structured preferences. "
     "Output only fields you are confident about. Preference values are floats 0..1. "
-    "Never output coordinates or place names as destinations."
+    "`area` is the place the rider named to ride in, as written, never coordinates. "
+    "`poi.count` is how many such stops they asked for."
 )
 LLM_SCHEMA = (
     '{"distanceKm": {"target": number, "tolerance": number} | null, "trafficAversion": number, '
     '"cyclewayPreference": number, "gravelPreference": number, "scenicPreference": number, '
     '"hillTolerance": number, "poi": {"category": "PUB|CAFE|FOOD|VIEWPOINT|NATURE|HISTORICAL|LANDMARK|TRAIL", '
-    '"preferredPosition": number} | null, "loop": boolean | null}'
+    '"preferredPosition": number, "count": number | null} | null, "area": {"query": string} | null, "loop": boolean | null}'
 )
 
 
@@ -183,8 +226,18 @@ async def parse_request(text: str, llm: LLMClient, base: RoutePreferences | None
             "category": poi["category"],
             "preferredPosition": min(1.0, max(0.0, float(poi.get("preferredPosition", 0.5)))),
         }
+        count = poi.get("count")
+        if isinstance(count, int | float) and 1 <= count <= 8:
+            prefs.poi["count"] = int(count)
+        elif (rules.preferences.poi or {}).get("count"):
+            prefs.poi["count"] = rules.preferences.poi["count"]
     elif rules.preferences.poi:
         prefs.poi = rules.preferences.poi
+    area = result.get("area")
+    if isinstance(area, dict) and isinstance(area.get("query"), str) and area["query"].strip():
+        prefs.area = {"query": area["query"].strip()[:60]}
+    elif rules.preferences.area:
+        prefs.area = rules.preferences.area
     if isinstance(result.get("loop"), bool):
         prefs.loop = result["loop"]
     elif rules.preferences.loop is not None:

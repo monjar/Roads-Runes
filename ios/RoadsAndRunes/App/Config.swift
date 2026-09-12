@@ -10,9 +10,22 @@ enum Config {
         return URL(string: raw.isEmpty ? "http://localhost:8000" : raw) ?? URL(string: "http://localhost:8000")!
     }
 
-    /// Developer sign-in is only offered against non-HTTPS (local) backends.
+    /// Sign in with Apple needs the `com.apple.developer.applesignin` entitlement,
+    /// which a free Personal Team cannot sign; those builds pass APPLE_SIGN_IN_ENABLED=NO
+    /// so the button is not offered at all rather than failing when tapped.
+    static var allowsAppleSignIn: Bool {
+        (info["APPLE_SIGN_IN_ENABLED"] as? String)?.uppercased() != "NO"
+    }
+
+    /// Developer sign-in is offered by development builds — a free Personal Team
+    /// cannot sign "Sign in with Apple", and the hosted dev backend is HTTPS — and
+    /// against any local backend. A Release build against HTTPS offers Apple only.
     static var allowsDevSignIn: Bool {
-        apiBaseURL.scheme?.lowercased() == "http"
+        #if DEBUG
+        return true
+        #else
+        return apiBaseURL.scheme?.lowercased() == "http"
+        #endif
     }
 
     static func mapStyleURL(for style: MapStyleKey) -> URL {

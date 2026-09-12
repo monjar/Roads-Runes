@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -13,15 +14,19 @@ from app.characters.models import Bike, RiderProfile
 from app.characters.service import default_bike, get_rider_profile
 from app.core.config import Settings
 from app.core.errors import NotFound, RouteGenerationFailed
-from app.core.geo import encode_polyline
+from app.core.geo import bearing_deg, encode_polyline, haversine_m
 from app.core.llm import LLMClient
 from app.core.logging import EVENT_ROUTE_GENERATION_FAILED, get_logger
+from app.core.schemas import Coordinate
 from app.core.security import utcnow
+from app.discoveries import osm_import
+from app.discoveries.models import Discovery
 from app.discoveries.service import nearby as discoveries_nearby
 from app.exploration.cells import cell_for
 from app.exploration.service import known_cells
 from app.quests.models import QuestInstance
 from app.quests.service import quest_out
+from app.routing import geocode
 from app.routing.analysis import (
     analyse_elevation,
     bounding_box,
@@ -30,7 +35,7 @@ from app.routing.analysis import (
     surface_composition,
     traffic_exposure,
 )
-from app.routing.custom_models import build_custom_model, strip_internal
+from app.routing.custom_models import build_custom_model, strip_internal, valhalla_costing
 from app.routing.engine import PROFILE_FOR_BIKE, EngineRequest, RoutingEngine, RoutingUnavailable
 from app.routing.models import Route
 from app.routing.pois import attach_pois
@@ -125,6 +130,63 @@ def route_out(route: Route, components: dict[str, float] | None = None) -> Route
     )
 
 
+AREA_TAKEOVER_M = 2000.0
+NEIGHBOURHOOD_RIDE_KM = 14.0
+
+
+async def _pick_stops(
+    db: AsyncSession,
+    latitude: float,
+    longitude: float,
+    category: str,
+    count: int,
+    target_km: float,
+    max_ring_m: float | None = None,
+) -> list[Discovery]:
+    """`count` places of one kind around a centre, spread around the compass.
+
+    Picking the nearest few would send the rider up and down the same street; one
+    per sector of the circle gives a loop that actually goes somewhere. When the
+    rider named a neighbourhood, `max_ring_m` keeps the stops inside it — five pubs
+    "in Notting Hill" must not be spread across half of London.
+    """
+    ring = max(400.0, target_km * 1000 / (2 * math.pi) * 0.8)
+    if max_ring_m is not None:
+        ring = min(ring, max_ring_m)
+    candidates = await discoveries_nearby(db, latitude, longitude, ring * 2.5, category=category, limit=200)
+    if not candidates:
+        return []
+    spread = 360 / count * 0.6
+    chosen: list[Discovery] = []
+    for poi in sorted(candidates, key=lambda p: abs(haversine_m(latitude, longitude, p.latitude, p.longitude) - ring)):
+        bearing = bearing_deg(latitude, longitude, poi.latitude, poi.longitude)
+        if all(
+            _bearing_gap(bearing, bearing_deg(latitude, longitude, c.latitude, c.longitude)) >= spread for c in chosen
+        ):
+            chosen.append(poi)
+        if len(chosen) == count:
+            break
+    return _tour(latitude, longitude, chosen)
+
+
+def _tour(latitude: float, longitude: float, stops: list[Discovery]) -> list[Discovery]:
+    """Always head for the nearest stop not yet visited: a short loop instead of a zigzag."""
+    remaining = list(stops)
+    ordered: list[Discovery] = []
+    lat, lon = latitude, longitude
+    while remaining:
+        nearest = min(remaining, key=lambda p: haversine_m(lat, lon, p.latitude, p.longitude))
+        remaining.remove(nearest)
+        ordered.append(nearest)
+        lat, lon = nearest.latitude, nearest.longitude
+    return ordered
+
+
+def _bearing_gap(a: float, b: float) -> float:
+    gap = abs(a - b) % 360
+    return min(gap, 360 - gap)
+
+
 async def generate(
     db: AsyncSession,
     settings: Settings,
@@ -172,12 +234,37 @@ async def generate(
             "matched": parsed.matched,
         }
 
+    # A named place ("a ride in Notting Hill") moves the ride; the rider's own position
+    # still seeds the alternatives and counts new territory.
+    area = None
+    if (base_prefs.area or {}).get("query") and payload.destination is None:
+        area = await geocode.resolve(
+            settings, str(base_prefs.area["query"]), payload.origin.latitude, payload.origin.longitude
+        )
+    start = payload.origin
+    if area is not None:
+        base_prefs.area = {**(base_prefs.area or {}), **area.to_dict()}
+        if (
+            haversine_m(payload.origin.latitude, payload.origin.longitude, area.latitude, area.longitude)
+            > AREA_TAKEOVER_M
+        ):
+            start = Coordinate(latitude=area.latitude, longitude=area.longitude)
+        # The rider may never have been there, so its places may not be imported yet.
+        await osm_import.ensure_pois(settings, area.latitude, area.longitude)
+        if parsed_dict is not None:
+            parsed_dict["area"] = base_prefs.area
+            if start is not payload.origin:
+                parsed_dict["startsAt"] = area.to_dict()
+
     target_km = (
         payload.distanceTargetKm
         or (base_prefs.distanceKm or {}).get("target")
         or (quest.recommended_distance_km if quest else None)
         or profile.comfortable_distance_km
     )
+    if area is not None and payload.distanceTargetKm is None and not (base_prefs.distanceKm or {}).get("target"):
+        target_km = min(target_km, NEIGHBOURHOOD_RIDE_KM)
+
     loop = (
         payload.loop
         if payload.loop is not None
@@ -193,14 +280,42 @@ async def generate(
     if payload.destination is not None and "Direct" not in labels:
         labels[0] = "Direct"
 
+    # Stops along the route come from OpenStreetMap; start importing the area if it is new.
+    await osm_import.ensure_pois(settings, start.latitude, start.longitude, wait=False)
+
+    # "with about 5 pubs" is a promise: put them on the line rather than hoping the
+    # route happens to pass some.
+    requested_stops: list[Discovery] = []
+    wanted = int((base_prefs.poi or {}).get("count") or 0)
+    category = (base_prefs.poi or {}).get("category")
+    if wanted and category and payload.destination is None:
+        requested_stops = await _pick_stops(
+            db,
+            start.latitude,
+            start.longitude,
+            str(category),
+            wanted,
+            target_km,
+            # A named neighbourhood keeps its ride inside it.
+            max_ring_m=2500.0 if area is not None else None,
+        )
+        if parsed_dict is not None:
+            parsed_dict["stops"] = [
+                {"name": p.name, "latitude": p.latitude, "longitude": p.longitude} for p in requested_stops
+            ]
+
     known = await known_cells(db, user.id)
     poi_candidates = await discoveries_nearby(
         db,
-        payload.origin.latitude,
-        payload.origin.longitude,
+        start.latitude,
+        start.longitude,
         max(3000.0, target_km * 1000 * 0.6),
         limit=600,
     )
+    if requested_stops:
+        chosen_ids = {stop.id for stop in requested_stops}
+        poi_candidates = requested_stops + [p for p in poi_candidates if p.id not in chosen_ids]
+
     rider = RiderLimits(
         comfortable_distance_km=profile.comfortable_distance_km,
         comfortable_elevation_gain=profile.comfortable_elevation_gain,
@@ -211,13 +326,12 @@ async def generate(
         bike_allows_trails=allow_trails,
     )
     seed_base = int(
-        hashlib.sha256(f"{user.id}:{payload.origin.latitude:.4f}:{payload.origin.longitude:.4f}".encode()).hexdigest()[
-            :8
-        ],
+        hashlib.sha256(f"{user.id}:{start.latitude:.4f}:{start.longitude:.4f}".encode()).hexdigest()[:8],
         16,
     )
 
     results: list[tuple[Route, dict[str, float]]] = []
+    seen_paths: set[str] = set()
     for index, label in enumerate(labels):
         overlay = cfg["labels"][label]
         prefs = RoutePreferences(
@@ -230,9 +344,11 @@ async def generate(
         prefs.poi = base_prefs.poi
         distance_m = target_km * 1000 * overlay.get("distanceFactor", 1.0)
         custom_model = build_custom_model(prefs, bike_type, allow_gravel, allow_trails)
-        points = [(payload.origin.latitude, payload.origin.longitude)]
+        points = [(start.latitude, start.longitude)]
         for lat, lon, _ in targets.points:
             points.append((lat, lon))
+        for stop in requested_stops:
+            points.append((stop.latitude, stop.longitude))
         for wp in payload.waypoints:
             points.append((wp.latitude, wp.longitude))
         if payload.destination is not None:
@@ -257,6 +373,7 @@ async def generate(
             seed=seed_base + index * 17,
             custom_model=custom_model if engine.name == "synthetic" else strip_internal(custom_model),
             heading=heading,
+            costing=valhalla_costing(prefs, bike_type, allow_gravel, allow_trails),
         )
         try:
             engine_routes = await engine.route(request)
@@ -267,6 +384,11 @@ async def generate(
             continue
         er = engine_routes[0]
         coords = er.coordinates
+        polyline = encode_polyline((c[1], c[0]) for c in coords)
+        if polyline in seen_paths:
+            # Short A→B trips often give every label the same path; one card is enough.
+            continue
+        seen_paths.add(polyline)
         samples = elevation_samples_from_coordinates(coords)
         elev = analyse_elevation(samples)
         surface = surface_composition(coords, er.details.get("surface"))
@@ -281,6 +403,7 @@ async def generate(
             speed_mps=speed_mps,
             preferred_category=(prefs.poi or {}).get("category"),
             preferred_position=(prefs.poi or {}).get("preferredPosition"),
+            required_ids={str(stop.id) for stop in requested_stops},
         )
         metrics = RouteMetrics(
             distance_m=er.distance_m,
@@ -318,7 +441,7 @@ async def generate(
             quest_objective_coverage=coverage,
             score=score,
             coordinates=[[round(c[0], 6), round(c[1], 6), round(c[2], 1)] for c in coords],
-            encoded_polyline=encode_polyline((c[1], c[0]) for c in coords),
+            encoded_polyline=polyline,
             instructions=er.instructions,
             elevation_samples=samples,
             climbs=[c.to_dict() for c in elev.climbs],
@@ -351,6 +474,39 @@ async def get_route(db: AsyncSession, user: User, route_id: uuid.UUID) -> Route:
     if route is None or route.user_id != user.id:
         raise NotFound("Route not found")
     return route
+
+
+async def quest_route(
+    db: AsyncSession,
+    settings: Settings,
+    engine: RoutingEngine,
+    llm: LLMClient,
+    user: User,
+    quest_id: uuid.UUID,
+) -> tuple[Route, dict[str, float]]:
+    """The quest's fixed route (spec §20 "suggested route").
+
+    Generated once from the quest origin through its objectives with the rider's
+    default bike and profile, stored as `suggested_route_id`, and returned
+    unchanged from then on. Tweaking in the planner (POST /routes/generate with
+    the questId) adds alternatives without replacing it.
+    """
+    quest = await db.get(QuestInstance, quest_id)
+    if quest is None or quest.user_id != user.id:
+        raise NotFound("Quest not found")
+    if quest.suggested_route_id is not None:
+        route = await db.get(Route, quest.suggested_route_id)
+        if route is not None:
+            return route, (route.request or {}).get("scoreComponents", {})
+        quest.suggested_route_id = None
+    payload = RouteGenerateRequest(
+        origin=Coordinate(latitude=quest.latitude, longitude=quest.longitude),
+        questId=quest.id,
+        distanceTargetKm=quest.recommended_distance_km,
+        loop=True,
+    )
+    results, _ = await generate(db, settings, engine, llm, user, payload)
+    return results[0]
 
 
 async def package(db: AsyncSession, user: User, route_id: uuid.UUID) -> RoutePackageOut:

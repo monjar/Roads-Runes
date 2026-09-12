@@ -48,10 +48,29 @@ async def select_within_radius(
     latitude: float,
     longitude: float,
     radius_m: float,
+    *,
+    limit: int | None = None,
+    nearest_first: bool = False,
 ) -> Sequence[Any]:
-    """Execute `stmt` (selecting rows of `model`) restricted to a radius around a point."""
+    """Execute `stmt` (selecting rows of `model`) restricted to a radius around a point.
+
+    With `limit` and no ordering a dense city returns an arbitrary subset of what
+    matched, which is rarely what a caller wants; `nearest_first` sorts by distance
+    so the cap keeps the closest places.
+    """
     if dialect_name(session) == "postgresql":
-        result = await session.execute(stmt.where(st_dwithin(model, latitude, longitude, radius_m)))
-        return result.scalars().all()
+        query = stmt.where(st_dwithin(model, latitude, longitude, radius_m))
+        if nearest_first:
+            query = query.order_by(
+                text(
+                    f"{model.__tablename__}.geog <-> ST_SetSRID(ST_MakePoint(:olon, :olat), 4326)::geography"
+                ).bindparams(olon=longitude, olat=latitude)
+            )
+        if limit is not None:
+            query = query.limit(limit)
+        return (await session.execute(query)).scalars().all()
     rows = (await session.execute(bbox_filter(stmt, model, latitude, longitude, radius_m))).scalars().all()
-    return [r for r in rows if haversine_m(latitude, longitude, r.latitude, r.longitude) <= radius_m]
+    within = [r for r in rows if haversine_m(latitude, longitude, r.latitude, r.longitude) <= radius_m]
+    if nearest_first:
+        within.sort(key=lambda r: haversine_m(latitude, longitude, r.latitude, r.longitude))
+    return within[:limit] if limit is not None else within

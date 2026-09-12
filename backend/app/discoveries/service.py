@@ -34,8 +34,11 @@ async def nearby(
     stmt = select(Discovery).where(Discovery.moderation_status == "APPROVED", Discovery.cycling_accessible.is_(True))
     if category:
         stmt = stmt.where(Discovery.category == category)
-    rows = await select_within_radius(db, stmt.limit(limit * 4), Discovery, latitude, longitude, radius_m)
-    return list(rows)[:limit]
+    # Nearest first: capping an unordered query hands back an arbitrary slice of a city.
+    rows = await select_within_radius(
+        db, stmt, Discovery, latitude, longitude, radius_m, limit=limit, nearest_first=True
+    )
+    return list(rows)
 
 
 async def user_found(

@@ -263,7 +263,16 @@ Cell states: `UNSEEN` (omitted), `DISCOVERED`, `VISITED`, `EXPLORED`.
 }
 ```
 
-Objective types: `VISIT_LOCATION, VISIT_REGION, EXPLORE_DISTANCE, EXPLORE_NEW_ROADS, REACH_ELEVATION, COMPLETE_DISTANCE, COMPLETE_CLIMB, VISIT_POI, PHOTO_LOCATION, WRITE_NOTE, VISIT_MULTIPLE_LOCATIONS, RETURN_TO_START, COMPLETE_WITH_FRIEND, COMPLETE_ROUTE`.
+Objective types: `VISIT_LOCATION, VISIT_REGION, EXPLORE_DISTANCE, EXPLORE_NEW_ROADS, REACH_ELEVATION, COMPLETE_DISTANCE, COMPLETE_CLIMB, VISIT_POI, PHOTO_LOCATION, WRITE_NOTE, VISIT_MULTIPLE_LOCATIONS, RETURN_TO_START, COMPLETE_WITH_FRIEND, COMPLETE_ROUTE, RIDE_DURATION, SUSTAIN_SPEED`.
+
+`RIDE_DURATION` counts minutes and `SUSTAIN_SPEED` the ride's average km/h (with a floor
+in `extra.minDistanceMeters`, so a fast two kilometres does not pass); both are judged
+server-side when the ride is processed. `PHOTO_LOCATION` and `WRITE_NOTE` need the rider
+to act and complete through `POST /quests/{id}/progress`.
+
+A puzzle objective (Wizard quests) omits `latitude`/`longitude` until it is completed —
+the route generated for the quest still passes the place, but the app cannot name or pin
+it. The app renders such an objective as "hidden".
 
 - `GET /quests?latitude&longitude&status=AVAILABLE&limit` → paginated. If the
   user has fewer than 3 `AVAILABLE` quests near the point the server
@@ -284,6 +293,7 @@ post-processing re-validates.
 - `POST /quests/{id}/complete` `{"rideId": "uuid"}` → `QuestCompletion`
   (ACTIVE→COMPLETED only; otherwise 409 `QUEST_INVALID_TRANSITION`).
 - `POST /quests/{id}/abandon` → `Quest`
+- `GET /quests/{id}/route` → `RouteOption`: the quest's fixed route (spec §20 "suggested route"). Generated on the first request from the quest origin through its objectives with the rider's default bike and profile, stored as the quest's `suggestedRouteId`, and returned unchanged afterwards. `POST /routes/generate` with the `questId` (the planner's "Tweak the route") adds alternatives without replacing it.
 
 `QuestCompletion`:
 
@@ -321,6 +331,22 @@ post-processing re-validates.
   "request": "around 30 km, quiet roads, some gravel and a pub near the end"
 }
 ```
+
+`request` is free text. It is parsed (rules first, an LLM only if `llm_narrative`-style
+configuration enables one) into preferences, and two of those change where the ride goes:
+
+* **a place** — "a ride **in Notting Hill** with 5 pubs". The phrase is resolved by
+  `app/routing/geocode.py` (Photon, then Nominatim, both biased to within 60 km of
+  `origin`, answers cached). If the place is more than 2 km away the ride is planned
+  *there*, and the response carries `parsedRequest.startsAt` so the app can say where the
+  ride begins. A phrase that resolves to nothing is ignored — the geocoder is what decides
+  whether a phrase was a place.
+* **how many stops** — "about **5 pubs**". That many places of the category are chosen
+  around the centre, one per sector of the circle so the ride threads them rather than
+  doubling back, and they are passed to the routing engine as waypoints. They come back in
+  `parsedRequest.stops` as `[{"name", "latitude", "longitude"}]` and appear in the route's
+  `pois` like any other stop.
+
 
 Response `{"alternatives": [RouteOption], "parsedRequest": RoutePreferences|null}`.
 
@@ -362,8 +388,12 @@ Response `{"alternatives": [RouteOption], "parsedRequest": RoutePreferences|null
 
 ```json
 {"discoveryId": "uuid", "name": "The Crown", "category": "PUB", "latitude": 51.5, "longitude": -0.03,
- "routePositionMeters": 24600, "detourMeters": 600, "detourSeconds": 180, "estimatedArrivalSeconds": 5400}
+ "routePositionMeters": 24600, "detourMeters": 600, "detourSeconds": 180, "estimatedArrivalSeconds": 5400,
+ "relevance": 0.9, "requested": true}
 ```
+
+`requested` marks a stop the rider asked for ("with about 5 pubs"): it was routed through as a
+waypoint and is always listed, whatever its detour. The rest are places the route happens to pass.
 
 - `GET /routes/{id}` → `RouteOption`
 - `GET /routes/{id}/package` → `RoutePackage` (everything needed offline):
@@ -394,7 +424,7 @@ Response `{"alternatives": [RouteOption], "parsedRequest": RoutePreferences|null
 }
 ```
 
-- `POST /rides` `{"clientRideId": "uuid", "startedAt": "...", "questId": null, "bikeId": null, "routeId": null}` → `Ride`. Duplicate `clientRideId` returns the existing ride (idempotent).
+- `POST /rides` `{"clientRideId": "uuid", "startedAt": "...", "questId": null, "bikeId": null, "routeId": null, "title": null}` → `Ride`. Duplicate `clientRideId` returns the existing ride (idempotent). `title` (≤120 chars) names a custom adventure — a ride planned from a free-text request rather than a quest; quest rides are named by the quest.
 - `POST /rides/{id}/points` — batched during the ride when network allows (optional; the complete call may carry everything):
 
 ```json

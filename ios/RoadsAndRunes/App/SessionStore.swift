@@ -19,6 +19,9 @@ final class SessionStore {
     private(set) var character: Character?
     private(set) var config: AppConfig?
     var lastError: String?
+    /// From creating a character until the rider has set up a bike and answered
+    /// the location prompt (spec §96 steps 4–5); the tabs wait until then.
+    private(set) var isOnboarding = false
 
     private let api: any RoadsAndRunesAPI
 
@@ -72,7 +75,7 @@ final class SessionStore {
     func signInWithApple(result: Result<ASAuthorization, Error>) async {
         switch result {
         case .failure(let error):
-            lastError = error.localizedDescription
+            lastError = Self.appleSignInMessage(for: error)
         case .success(let authorization):
             guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
                   let tokenData = credential.identityToken,
@@ -83,6 +86,18 @@ final class SessionStore {
             let code = credential.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }
             let name = AppleFullName(givenName: credential.fullName?.givenName, familyName: credential.fullName?.familyName)
             await complete(sign: { try await self.api.signInWithApple(AppleSignInRequest(identityToken: token, authorizationCode: code, fullName: name)) })
+        }
+    }
+
+    /// ASAuthorizationError reads as "The operation couldn't be completed. (…error 1000.)";
+    /// say what actually happened instead.
+    private static func appleSignInMessage(for error: Error) -> String? {
+        guard let authError = error as? ASAuthorizationError else { return error.localizedDescription }
+        switch authError.code {
+        case .canceled: return nil
+        case .notHandled, .unknown, .failed:
+            return "Sign in with Apple is unavailable in this build. Use Developer sign in, or install a build signed by a paid Apple developer account."
+        default: return error.localizedDescription
         }
     }
 
@@ -105,12 +120,17 @@ final class SessionStore {
         do {
             character = try await api.createCharacter(CharacterCreate(name: name, characterClass: characterClass))
             user = try? await api.me()
+            isOnboarding = true
             state = .ready
             return true
         } catch {
             lastError = error.localizedDescription
             return false
         }
+    }
+
+    func finishOnboarding() {
+        isOnboarding = false
     }
 
     func update(settings: UserSettings) async {
@@ -129,6 +149,7 @@ final class SessionStore {
         try? await api.logout()
         user = nil
         character = nil
+        isOnboarding = false
         state = .signedOut
     }
 }

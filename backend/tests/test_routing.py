@@ -64,3 +64,55 @@ def test_synthetic_router_loop_returns_home():
     assert route.coordinates[0][:2] == route.coordinates[-1][:2]
     assert 15000 < route.distance_m < 30000
     assert route.instructions[-1]["sign"] == "FINISH"
+
+
+def test_synthetic_router_chain_elevation_is_plausible():
+    # Regression: the chain path once added the raw seed (~1e9) to every elevation.
+    router = SyntheticRouter()
+    request = EngineRequest(
+        points=[(51.49, -0.04), (51.46, -0.02), (51.49, -0.04)], profile="gravel", seed=2_950_368_196
+    )
+    route = asyncio.run(router.route(request))[0]
+    elevations = [c[2] for c in route.coordinates]
+    assert max(elevations) < 100 and min(elevations) >= 0
+
+
+def test_query_overlay_never_lowers_distance_influence():
+    # GraphHopper rejects a query-time distance_influence below the profile base (road 90);
+    # traffic-averse riders must keep the base rather than send 70.
+    from app.routing.custom_models import build_custom_model
+
+    averse = build_custom_model(RoutePreferences(trafficAversion=0.9), "ROAD", True, False)
+    direct = build_custom_model(RoutePreferences(trafficAversion=0.3), "ROAD", True, False)
+    assert "distance_influence" not in averse
+    assert direct["distance_influence"] >= 90
+
+
+def test_stops_the_rider_asked_for_survive_a_crowd_of_better_placed_ones():
+    """The Notting Hill case: a pub asked for by name sits 900 m off the line while
+    eight other pubs sit right on it. The rider still gets the pub they named."""
+    from app.routing.pois import attach_pois
+
+    class Candidate:
+        def __init__(self, ident: str, lat: float, lon: float) -> None:
+            self.id, self.name, self.category = ident, ident, "PUB"
+            self.latitude, self.longitude = lat, lon
+
+    # A straight line east along 51.50.
+    coords = [[-0.20 + i * 0.002, 51.50, 10.0] for i in range(60)]
+    on_the_line = [Candidate(f"near-{i}", 51.50, -0.19 + i * 0.004) for i in range(8)]
+    asked_for = Candidate("asked", 51.508, -0.19)  # ~900 m north of the route
+
+    stops = attach_pois(
+        coords,
+        [*on_the_line, asked_for],
+        preferred_category="PUB",
+        preferred_position=0.5,
+        required_ids={"asked"},
+    )
+
+    names = [s.name for s in stops]
+    assert "asked" in names, names
+    assert stops[0].name == "asked"  # listed first, whatever its detour
+    assert stops[0].requested is True
+    assert sum(1 for s in stops if not s.requested) <= 7
