@@ -30,6 +30,11 @@ CACHE_TTL_SECONDS = 24 * 3600
 SEARCH_RADIUS_KM = 60.0
 TIMEOUT_SECONDS = 8.0
 
+# Only answers that are somewhere to ride: a neighbourhood, a park, a village.
+# Without this, a loose phrase like "quiet" matches a shop or a street name.
+PLACE_KEYS = {"place", "boundary", "leisure", "natural", "landuse", "tourism"}
+NOMINATIM_PLACE_CATEGORIES = PLACE_KEYS | {"amenity"}
+
 _cache: dict[str, tuple[float, Area | None]] = {}
 
 
@@ -81,6 +86,8 @@ async def _photon(client: httpx.AsyncClient, settings: Settings, phrase: str, la
         return None
     for feature in response.json().get("features", []):
         properties = feature.get("properties", {})
+        if properties.get("osm_key") not in PLACE_KEYS:
+            continue
         longitude, latitude = feature["geometry"]["coordinates"][:2]
         if _within_reach(lat, lon, latitude, longitude):
             return Area(str(properties.get("name") or phrase), float(latitude), float(longitude))
@@ -106,6 +113,8 @@ async def _nominatim(client: httpx.AsyncClient, settings: Settings, phrase: str,
     if not isinstance(rows, list):  # an error envelope, not results
         return None
     for row in rows:
+        if row.get("category") and row["category"] not in NOMINATIM_PLACE_CATEGORIES:
+            continue
         latitude, longitude = float(row["lat"]), float(row["lon"])
         if _within_reach(lat, lon, latitude, longitude):
             name = str(row.get("name") or row.get("display_name", phrase)).split(",")[0]

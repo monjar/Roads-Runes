@@ -27,6 +27,44 @@ def test_a_request_names_a_place_and_how_many_stops():
     assert prefs.poi == {"category": "PUB", "preferredPosition": 0.5, "count": 5}
 
 
+def test_a_place_on_its_own_is_still_a_place():
+    """ "Richmond bike ride" has no preposition to hang a place on, and used to plan
+    a ride wherever the rider was standing."""
+    assert parse_rules("Richmond bike ride").preferences.area == {"query": "richmond"}
+    assert parse_rules("hampstead heath").preferences.area == {"query": "hampstead heath"}
+    assert parse_rules("pub ride in shoreditch").preferences.area == {"query": "shoreditch"}
+
+
+def test_describing_the_riding_is_not_naming_a_place():
+    for request in ("a quiet 30 km loop", "something hilly and fast", "pub ride", "a scenic gravel ride"):
+        assert parse_rules(request).preferences.area is None, request
+
+
+async def test_the_geocoder_ignores_answers_that_are_not_places(settings, monkeypatch):
+    """A loose phrase must not turn into a shop or a street."""
+    monkeypatch.setattr(settings, "geocoding_enabled", True)
+    geocode.clear_cache()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "photon" in str(request.url):
+            return httpx.Response(
+                200,
+                json={
+                    "features": [
+                        {
+                            "properties": {"name": "Quiet Street Cafe", "osm_key": "amenity", "osm_value": "cafe"},
+                            "geometry": {"coordinates": [-0.02, 51.49]},
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(
+            200, json=[{"lat": "51.49", "lon": "-0.02", "name": "Quiet Street", "category": "highway"}]
+        )
+
+    assert await geocode.resolve(settings, "quiet", *HOME, transport=httpx.MockTransport(handler)) is None
+
+
 def test_times_and_distances_are_not_places():
     assert parse_rules("a 30 km loop in 2 hours").preferences.area is None
     assert parse_rules("something quick in the morning").preferences.area is None
@@ -46,8 +84,14 @@ async def test_the_place_is_the_one_near_the_rider(settings, monkeypatch):
             200,
             json={
                 "features": [
-                    {"properties": {"name": "Notting Hill"}, "geometry": {"coordinates": [145.13, -37.90]}},
-                    {"properties": {"name": "Notting Hill"}, "geometry": {"coordinates": [-0.2055, 51.5109]}},
+                    {
+                        "properties": {"name": "Notting Hill", "osm_key": "place", "osm_value": "suburb"},
+                        "geometry": {"coordinates": [145.13, -37.90]},
+                    },
+                    {
+                        "properties": {"name": "Notting Hill", "osm_key": "place", "osm_value": "suburb"},
+                        "geometry": {"coordinates": [-0.2055, 51.5109]},
+                    },
                 ]
             },
         )
