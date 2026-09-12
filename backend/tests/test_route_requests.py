@@ -11,7 +11,7 @@ import uuid
 import httpx
 import pytest
 
-from app.core.geo import destination_point
+from app.core.geo import destination_point, haversine_m
 from app.db.session import get_session_factory
 from app.discoveries.models import Discovery
 from app.routing import geocode
@@ -210,3 +210,86 @@ async def test_a_request_without_a_place_still_starts_where_the_rider_is(explore
     assert r.json()["parsedRequest"].get("startsAt") is None
     longitude, latitude = r.json()["alternatives"][0]["coordinates"][0][:2]
     assert abs(latitude - HOME[0]) < 0.02
+
+
+TOWER_BRIDGE = (51.5055, -0.0754)  # ~3.5 km from HOME
+
+
+async def seed_cafes_on_the_way(start: tuple[float, float], end: tuple[float, float], count: int = 6) -> None:
+    """Cafés strung along the line from A to B, a little off it on alternate sides."""
+    async with get_session_factory()() as db:
+        for i in range(count):
+            along = (i + 0.5) / count
+            lat = start[0] + (end[0] - start[0]) * along
+            lon = start[1] + (end[1] - start[1]) * along
+            lat, lon = destination_point(lat, lon, 90 if i % 2 else 270, 150)
+            db.add(
+                Discovery(
+                    name=f"Test Coffee {i}",
+                    category="CAFE",
+                    latitude=lat,
+                    longitude=lon,
+                    source="OSM",
+                    osm_id=f"n{uuid.uuid4().int % 10**9}",
+                    tags={"amenity": "cafe"},
+                    moderation_status="APPROVED",
+                    cycling_accessible=True,
+                )
+            )
+        await db.commit()
+
+
+def test_asking_for_kinds_of_stop_is_not_naming_a_place():
+    """The rider's own words. "through" introduces a place as often as a shopping
+    list, and "3 top cafes" used to be geocoded as if it were a neighbourhood."""
+    prefs = parse_rules("I want the ride to be through 3 top cafes or cultural").preferences
+    assert prefs.area is None
+    assert prefs.poi["count"] == 3
+    assert prefs.poi["categories"] == ["CAFE", "CULTURAL"]
+
+
+def test_counts_written_as_words():
+    assert parse_rules("three cafes and a museum").preferences.poi["count"] == 3
+    assert parse_rules("a ride through two pubs").preferences.poi["count"] == 2
+    assert parse_rules("three cafes and a museum").preferences.area is None
+
+
+@pytest.mark.anyio
+async def test_a_ride_to_a_place_still_goes_through_the_stops_asked_for(explorer_client):
+    """The rider searched for a place, then asked for cafés on the way there.
+
+    A destination used to cancel the stops outright, so the typed request changed
+    nothing and the same route came back.
+    """
+    await seed_cafes_on_the_way(HOME, TOWER_BRIDGE)
+
+    r = await explorer_client.post(
+        "/routes/generate",
+        json={
+            "origin": {"latitude": HOME[0], "longitude": HOME[1]},
+            "destination": {"latitude": TOWER_BRIDGE[0], "longitude": TOWER_BRIDGE[1]},
+            "request": "I want the ride to be through 3 top cafes or cultural",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    parsed = body["parsedRequest"]
+    assert parsed["poi"]["count"] == 3
+    assert parsed.get("area") is None
+    assert len(parsed["stops"]) == 3
+
+    # The stops are in the order they will be reached, not scattered back and forth.
+    distances = [haversine_m(HOME[0], HOME[1], stop["latitude"], stop["longitude"]) for stop in parsed["stops"]]
+    assert distances == sorted(distances)
+
+    for route in body["alternatives"]:
+        requested = [poi for poi in route["pois"] if poi.get("requested")]
+        assert {poi["name"] for poi in requested} == {stop["name"] for stop in parsed["stops"]}
+        for stop in parsed["stops"]:
+            assert any(
+                abs(c[1] - stop["latitude"]) < 0.005 and abs(c[0] - stop["longitude"]) < 0.005
+                for c in route["coordinates"]
+            ), f"{stop['name']} is not on the {route['label']} route"
+        # It is still a ride to the place the rider picked.
+        longitude, latitude = route["coordinates"][-1][:2]
+        assert abs(latitude - TOWER_BRIDGE[0]) < 0.01 and abs(longitude - TOWER_BRIDGE[1]) < 0.01

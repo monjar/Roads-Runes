@@ -8,9 +8,16 @@ from typing import Any
 
 from app.core.llm import LLMClient
 
+# Words a rider uses for a kind of stop. The categories must be ones
+# `app/discoveries/osm_import.py:category_for` actually produces, or the stop
+# search finds nothing: CAFE, PUB, NATURE, HISTORICAL, CULTURAL, LANDMARK,
+# VIEWPOINT, CYCLING. FOOD and TRAIL are understood but never imported, so they
+# read as a request the route can only honour incidentally.
 POI_WORDS = {
     "pub": "PUB",
     "beer": "PUB",
+    "pint": "PUB",
+    "bar": "PUB",
     "cafe": "CAFE",
     "café": "CAFE",
     "coffee": "CAFE",
@@ -19,12 +26,27 @@ POI_WORDS = {
     "restaurant": "FOOD",
     "view": "VIEWPOINT",
     "viewpoint": "VIEWPOINT",
+    "peak": "VIEWPOINT",
+    "summit": "VIEWPOINT",
     "park": "NATURE",
     "forest": "NATURE",
     "wood": "NATURE",
+    "garden": "NATURE",
+    "nature": "NATURE",
     "castle": "HISTORICAL",
     "church": "HISTORICAL",
+    "monument": "HISTORICAL",
+    "historic": "HISTORICAL",
+    "historical": "HISTORICAL",
+    "ruin": "HISTORICAL",
+    "museum": "CULTURAL",
+    "gallery": "CULTURAL",
+    "art": "CULTURAL",
+    "cultural": "CULTURAL",
+    "culture": "CULTURAL",
     "landmark": "LANDMARK",
+    "attraction": "LANDMARK",
+    "sight": "LANDMARK",
     "trail": "TRAIL",
 }
 
@@ -65,7 +87,23 @@ class ParsedRequest:
     matched: list[str] = field(default_factory=list)
 
 
-COUNT_WORDS = {"a couple": 2, "a couple of": 2, "a few": 3, "some": 3, "several": 4}
+COUNT_WORDS = {
+    "a couple": 2,
+    "a couple of": 2,
+    "a few": 3,
+    "some": 3,
+    "several": 4,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+}
 # "in Notting Hill with 5 pubs" -> "notting hill". The phrase is a guess; the geocoder
 # decides whether it is a place, so this can afford to be generous.
 AREA_PATTERN = re.compile(
@@ -211,13 +249,60 @@ RIDE_WORDS = {
     "day",
     "night",
     "weather",
+    # How a rider qualifies the stops they want: "3 top cafes", "the best pubs".
+    "top",
+    "favourite",
+    "favorite",
+    "popular",
+    "local",
+    "famous",
+    "cool",
+    "must",
+    "see",
+    "including",
+    "include",
+    "includes",
+    "visit",
+    "visiting",
+    "pass",
+    "passing",
+    "stopping",
+    "then",
+    "plus",
+    "or",
+    "also",
+    "maybe",
+    "either",
+    # Prepositions AREA_PATTERN uses; on their own they name nothing.
+    "through",
+    "via",
+    "along",
+    "across",
+    "past",
+    "between",
 }
+
+
+def _names_a_place(phrase: str) -> bool:
+    """ "richmond park" is a place; "3 top cafes or cultural" is a shopping list.
+
+    `through`/`via` introduce both ("a ride through Richmond", "a ride through 3
+    cafes"), so a phrase that counts things, or says nothing but what kind of
+    stop is wanted, is not handed to the geocoder.
+    """
+    words = re.findall(r"[a-z0-9'\u2019\-]+", phrase)
+    if not words or any(word.isdigit() for word in words):
+        return False
+    return not all(
+        word in RIDE_WORDS or word in POI_WORDS or word.rstrip("s") in POI_WORDS or word in COUNT_WORDS
+        for word in words
+    )
 
 
 def _area_phrase(lowered: str) -> str | None:
     for match in AREA_PATTERN.finditer(lowered):
         phrase = match.group(1).strip(" .,")
-        if len(phrase) < 3 or NOT_A_PLACE.match(phrase):
+        if len(phrase) < 3 or NOT_A_PLACE.match(phrase) or not _names_a_place(phrase):
             continue
         return phrase
     # No preposition ("richmond bike ride"): whatever is left once the riding words,
@@ -226,7 +311,11 @@ def _area_phrase(lowered: str) -> str | None:
     leftover = [
         word
         for word in re.findall(r"[a-z0-9'\u2019\-]+", lowered)
-        if word not in RIDE_WORDS and word not in POI_WORDS and word.rstrip("s") not in POI_WORDS and not word.isdigit()
+        if word not in RIDE_WORDS
+        and word not in POI_WORDS
+        and word.rstrip("s") not in POI_WORDS
+        and word not in COUNT_WORDS
+        and not word.isdigit()
     ]
     if 1 <= len(leftover) <= 3 and all(len(w) > 2 for w in leftover):
         return " ".join(leftover)
@@ -296,22 +385,37 @@ def parse_rules(text: str, base: RoutePreferences | None = None) -> ParsedReques
         prefs.loop = False
         matched.append("one-way")
 
-    for word, category in POI_WORDS.items():
-        if re.search(rf"\b{re.escape(word)}s?\b", lowered):
+    # "3 cafes or somewhere cultural" asks for two kinds of stop. They are kept in
+    # the order the rider wrote them: the first is the one scoring prefers, and any
+    # of them can fill the count.
+    asked = sorted(
+        (match.start(), word, category)
+        for word, category in POI_WORDS.items()
+        if (match := re.search(rf"\b{re.escape(word)}s?\b", lowered))
+    )
+    if asked:
+        position = 0.5
+        if any(w in lowered for w in ("end", "towards the end", "finish", "near the end", "last")):
+            position = 0.8
+        elif any(w in lowered for w in ("start", "beginning", "first")):
+            position = 0.2
+        elif any(w in lowered for w in ("halfway", "middle", "midway")):
             position = 0.5
-            if any(w in lowered for w in ("end", "towards the end", "finish", "near the end", "last")):
-                position = 0.8
-            elif any(w in lowered for w in ("start", "beginning", "first")):
-                position = 0.2
-            elif any(w in lowered for w in ("halfway", "middle", "midway")):
-                position = 0.5
-            prefs.poi = {"category": category, "preferredPosition": position}
-            matched.append(f"poi:{category}")
+        categories: list[str] = []
+        for _, _, category in asked:
+            if category not in categories:
+                categories.append(category)
+        categories = categories[:3]
+        prefs.poi = {"category": categories[0], "preferredPosition": position}
+        if len(categories) > 1:
+            prefs.poi["categories"] = categories
+        matched.append(f"poi:{'+'.join(categories)}")
+        for _, word, _ in asked:
             count = _poi_count(lowered, word)
             if count:
                 prefs.poi["count"] = count
                 matched.append(f"count:{count}")
-            break
+                break
 
     phrase = _area_phrase(lowered)
     if phrase:
@@ -379,6 +483,11 @@ async def parse_request(text: str, llm: LLMClient, base: RoutePreferences | None
             prefs.poi["count"] = int(count)
         elif (rules.preferences.poi or {}).get("count"):
             prefs.poi["count"] = rules.preferences.poi["count"]
+        # The schema has room for one category; the rules parser sees "cafes or
+        # museums", so keep its list when it agrees about the main one.
+        also = (rules.preferences.poi or {}).get("categories") or []
+        if prefs.poi["category"] in also:
+            prefs.poi["categories"] = list(also)
     elif rules.preferences.poi:
         prefs.poi = rules.preferences.poi
     area = result.get("area")

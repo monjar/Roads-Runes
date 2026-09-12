@@ -134,16 +134,41 @@ AREA_TAKEOVER_M = 2000.0
 NEIGHBOURHOOD_RIDE_KM = 14.0
 
 
+def _stop_categories(poi: dict[str, Any] | None) -> list[str]:
+    """The kinds of stop asked for, best first ("3 cafés or somewhere cultural")."""
+    if not poi:
+        return []
+    categories = [str(c) for c in (poi.get("categories") or []) if c]
+    first = poi.get("category")
+    if first and str(first) not in categories:
+        categories.insert(0, str(first))
+    return categories[:3]
+
+
+async def _candidates(
+    db: AsyncSession, latitude: float, longitude: float, radius_m: float, categories: list[str]
+) -> list[Discovery]:
+    """Places of any of the asked-for kinds, nearest first, each one once."""
+    pool: list[Discovery] = []
+    seen: set[Any] = set()
+    for category in categories:
+        for poi in await discoveries_nearby(db, latitude, longitude, radius_m, category=category, limit=200):
+            if poi.id not in seen:
+                seen.add(poi.id)
+                pool.append(poi)
+    return pool
+
+
 async def _pick_stops(
     db: AsyncSession,
     latitude: float,
     longitude: float,
-    category: str,
+    categories: list[str],
     count: int,
     target_km: float,
     max_ring_m: float | None = None,
 ) -> list[Discovery]:
-    """`count` places of one kind around a centre, spread around the compass.
+    """`count` places around a centre, spread around the compass.
 
     Picking the nearest few would send the rider up and down the same street; one
     per sector of the circle gives a loop that actually goes somewhere. When the
@@ -153,7 +178,7 @@ async def _pick_stops(
     ring = max(400.0, target_km * 1000 / (2 * math.pi) * 0.8)
     if max_ring_m is not None:
         ring = min(ring, max_ring_m)
-    candidates = await discoveries_nearby(db, latitude, longitude, ring * 2.5, category=category, limit=200)
+    candidates = await _candidates(db, latitude, longitude, ring * 2.5, categories)
     if not candidates:
         return []
     spread = 360 / count * 0.6
@@ -185,6 +210,72 @@ def _tour(latitude: float, longitude: float, stops: list[Discovery]) -> list[Dis
 def _bearing_gap(a: float, b: float) -> float:
     gap = abs(a - b) % 360
     return min(gap, 360 - gap)
+
+
+def _distance_to_leg(latitude: float, longitude: float, start: Coordinate, end: Coordinate) -> tuple[float, float]:
+    """Metres from the point to the start→end line, and how far along it falls (0..1).
+
+    Flat-earth projection around the leg's middle: over the length of a bike ride
+    the error is a few metres, which a 600 m corridor does not care about.
+    """
+    lon_scale = math.cos(math.radians((start.latitude + end.latitude) / 2)) * 111_320.0
+    px = (longitude - start.longitude) * lon_scale
+    py = (latitude - start.latitude) * 110_540.0
+    bx = (end.longitude - start.longitude) * lon_scale
+    by = (end.latitude - start.latitude) * 110_540.0
+    length_sq = bx * bx + by * by
+    if length_sq == 0:
+        return math.hypot(px, py), 0.0
+    along = max(0.0, min(1.0, (px * bx + py * by) / length_sq))
+    return math.hypot(px - bx * along, py - by * along), along
+
+
+async def _pick_stops_between(
+    db: AsyncSession,
+    start: Coordinate,
+    destination: Coordinate,
+    categories: list[str],
+    count: int,
+) -> list[Discovery]:
+    """`count` stops strung along the way from the rider to a place.
+
+    A ride to somewhere is not a loop, so spreading the stops around the compass
+    (`_pick_stops`) would send the rider backwards. These come out of a corridor
+    along the line, one per stretch of the way, in the order they are reached.
+    """
+    direct = haversine_m(start.latitude, start.longitude, destination.latitude, destination.longitude)
+    corridor = max(600.0, direct * 0.2)
+    pool = await _candidates(
+        db,
+        (start.latitude + destination.latitude) / 2,
+        (start.longitude + destination.longitude) / 2,
+        max(1500.0, direct * 0.7),
+        categories,
+    )
+    along = []
+    for poi in pool:
+        offset, progress = _distance_to_leg(poi.latitude, poi.longitude, start, destination)
+        if offset <= corridor:
+            along.append((progress, offset, poi))
+    if not along:
+        return []
+    chosen: list[tuple[float, Discovery]] = []
+    used: set[Any] = set()
+    for band in range(count):
+        low, high = band / count, (band + 1) / count
+        in_band = [c for c in along if low <= c[0] < high and c[2].id not in used]
+        if in_band:
+            progress, _, poi = min(in_band, key=lambda c: c[1])
+            used.add(poi.id)
+            chosen.append((progress, poi))
+    # Few cafés along a short way leaves bands empty; fill up from what is closest to the line.
+    for progress, _, poi in sorted(along, key=lambda c: c[1]):
+        if len(chosen) >= count:
+            break
+        if poi.id not in used:
+            used.add(poi.id)
+            chosen.append((progress, poi))
+    return [poi for _, poi in sorted(chosen, key=lambda c: c[0])]
 
 
 async def generate(
@@ -287,18 +378,30 @@ async def generate(
     # route happens to pass some.
     requested_stops: list[Discovery] = []
     wanted = int((base_prefs.poi or {}).get("count") or 0)
-    category = (base_prefs.poi or {}).get("category")
-    if wanted and category and payload.destination is None:
-        requested_stops = await _pick_stops(
-            db,
-            start.latitude,
-            start.longitude,
-            str(category),
-            wanted,
-            target_km,
-            # A named neighbourhood keeps its ride inside it.
-            max_ring_m=2500.0 if area is not None else None,
-        )
+    categories = _stop_categories(base_prefs.poi)
+    if wanted and categories:
+        if payload.destination is not None:
+            # "Ride here, through three cafés" — a destination does not cancel the stops.
+            requested_stops = await _pick_stops_between(db, start, payload.destination, categories, wanted)
+            if not requested_stops:
+                # Nothing imported along this way yet; fetch its middle and look again.
+                await osm_import.ensure_pois(
+                    settings,
+                    (start.latitude + payload.destination.latitude) / 2,
+                    (start.longitude + payload.destination.longitude) / 2,
+                )
+                requested_stops = await _pick_stops_between(db, start, payload.destination, categories, wanted)
+        else:
+            requested_stops = await _pick_stops(
+                db,
+                start.latitude,
+                start.longitude,
+                categories,
+                wanted,
+                target_km,
+                # A named neighbourhood keeps its ride inside it.
+                max_ring_m=2500.0 if area is not None else None,
+            )
         if parsed_dict is not None:
             parsed_dict["stops"] = [
                 {"name": p.name, "latitude": p.latitude, "longitude": p.longitude} for p in requested_stops
