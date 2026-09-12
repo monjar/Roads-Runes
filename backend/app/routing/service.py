@@ -207,8 +207,8 @@ def _variants(
     # card offered no choice at all next to the one that asked for gravel.
     direct.gravelPreference = 0.0
     variants = [
-        Variant(DIRECT_LABEL, direct, [], cfg["labels"][DIRECT_LABEL].get("distanceFactor", 1.0)),
         Variant(ASKED_LABEL, _overlay(base, {}), stops, 1.0),
+        Variant(DIRECT_LABEL, direct, [], cfg["labels"][DIRECT_LABEL].get("distanceFactor", 1.0)),
     ]
 
     more = _overlay(base, {})
@@ -245,6 +245,23 @@ CLAIMS: dict[str, Any] = {
     "More cycleways": lambda route, asked: route.cycleway_fraction > asked.cycleway_fraction + 0.03,
     "Fewer cycleways": lambda route, asked: route.cycleway_fraction < asked.cycleway_fraction - 0.03,
 }
+
+
+def _shortfalls(prefs: RoutePreferences, stops: list[Discovery], wanted: int, routes: list[Route]) -> list[str]:
+    """What the rider asked for that the ground could not give.
+
+    Asking for a gravel-heavy ride in a city and getting tarmac is not a bug, but
+    saying nothing about it looks like one.
+    """
+    notes: list[str] = []
+    if wanted and len(stops) < wanted:
+        found = len(stops)
+        notes.append("no stops like that nearby" if not found else f"only {found} of those nearby")
+    if prefs.gravelPreference >= 0.7 and max(_unpaved(route) for route in routes) < 0.1:
+        notes.append("hardly any gravel around here")
+    if prefs.hillTolerance >= 0.8 and max(route.elevation_gain_meters for route in routes) < 150:
+        notes.append("not much to climb around here")
+    return notes
 
 
 def _keep_labels_honest(results: list[tuple[Route, dict[str, float]]]) -> None:
@@ -820,6 +837,8 @@ async def generate(
         results.append((route, components))
     if not results:
         raise RouteGenerationFailed("No route could be generated for this request")
+    if parsed_dict is not None:
+        parsed_dict["notes"] = _shortfalls(base_prefs, requested_stops, wanted, [route for route, _ in results])
     await db.flush()
     _keep_labels_honest(results)
     results.sort(key=lambda r: -r[0].score)

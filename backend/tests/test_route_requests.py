@@ -17,7 +17,7 @@ from app.db.session import get_session_factory
 from app.discoveries.models import Discovery
 from app.routing import geocode, service
 from app.routing.models import Route
-from app.routing.preferences import parse_rules
+from app.routing.preferences import RoutePreferences, parse_rules
 
 NOTTING_HILL = (51.5109, -0.2055)
 HOME = (51.4906, -0.0316)  # Rotherhithe, ~11 km away
@@ -463,3 +463,46 @@ async def test_a_card_only_claims_what_the_roads_delivered():
 
     assert kept.label == "More gravel"
     assert broken.label == "The long way"
+
+
+@pytest.mark.anyio
+async def test_the_planner_says_when_the_ground_cannot_give_what_was_asked(explorer_client):
+    """Asking for gravel in Rotherhithe is not a bug; saying nothing about it is."""
+    r = await explorer_client.post(
+        "/routes/generate",
+        json={
+            "origin": {"latitude": HOME[0], "longitude": HOME[1]},
+            "loop": True,
+            "request": "a gravel heavy 10 km loop with 3 pubs",
+        },
+    )
+    assert r.status_code == 200, r.text
+    # There are no pubs in the test database, and the rider is told so rather than
+    # being handed a publess "pub ride" without comment.
+    assert "no stops like that nearby" in r.json()["parsedRequest"]["notes"]
+
+
+def test_a_paved_answer_to_a_gravel_request_says_so():
+    paved = Route(
+        label="As asked",
+        surface={"paved": 0.97, "gravel": 0.03, "trail": 0.0, "unknown": 0.0},
+        distance_meters=10_000,
+        elevation_gain_meters=40.0,
+        traffic_exposure=0.3,
+        cycleway_fraction=0.5,
+    )
+    asked = RoutePreferences(gravelPreference=0.9, hillTolerance=0.9)
+    assert service._shortfalls(asked, [], 0, [paved]) == [
+        "hardly any gravel around here",
+        "not much to climb around here",
+    ]
+
+    gravelly = Route(
+        label="As asked",
+        surface={"paved": 0.5, "gravel": 0.4, "trail": 0.1, "unknown": 0.0},
+        distance_meters=10_000,
+        elevation_gain_meters=400.0,
+        traffic_exposure=0.3,
+        cycleway_fraction=0.5,
+    )
+    assert service._shortfalls(asked, [], 0, [gravelly]) == []

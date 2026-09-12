@@ -115,12 +115,9 @@ final class RoutePlannerViewModel {
             parts.append("\(Int(distance)) km")
         }
         if parsed["loop"]?.boolValue == true { parts.append("loop") }
-        // Five cafés asked for and two in the area: say so, rather than leaving the
-        // rider to count the pins and wonder what went wrong.
-        if let asked = parsed["poi"]?.objectValue?["count"]?.intValue,
-           let found = parsed["stops"]?.arrayValue?.count, found < asked {
-            parts.append(found == 0 ? "none found nearby" : "only \(found) found nearby")
-        }
+        // What the ground could not give — no gravel here, nothing to climb, fewer
+        // cafés than asked for. Better said than left for the rider to notice.
+        parts += (parsed["notes"]?.arrayValue ?? []).compactMap { $0.stringValue }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
