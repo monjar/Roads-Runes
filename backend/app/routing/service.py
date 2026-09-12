@@ -145,6 +145,16 @@ def _stop_categories(poi: dict[str, Any] | None) -> list[str]:
     return categories[:3]
 
 
+# What the rider named second is worth a detour of this much less: "cafés or
+# museums" should fill up with cafés, unless a museum is plainly more convenient.
+CATEGORY_PREFERENCE_M = 150.0
+
+
+def _preference(categories: list[str], poi: Discovery) -> float:
+    rank = categories.index(poi.category) if poi.category in categories else len(categories)
+    return rank * CATEGORY_PREFERENCE_M
+
+
 async def _candidates(
     db: AsyncSession, latitude: float, longitude: float, radius_m: float, categories: list[str]
 ) -> list[Discovery]:
@@ -183,7 +193,12 @@ async def _pick_stops(
         return []
     spread = 360 / count * 0.6
     chosen: list[Discovery] = []
-    for poi in sorted(candidates, key=lambda p: abs(haversine_m(latitude, longitude, p.latitude, p.longitude) - ring)):
+    for poi in sorted(
+        candidates,
+        key=lambda p: (
+            abs(haversine_m(latitude, longitude, p.latitude, p.longitude) - ring) + _preference(categories, p)
+        ),
+    ):
         bearing = bearing_deg(latitude, longitude, poi.latitude, poi.longitude)
         if all(
             _bearing_gap(bearing, bearing_deg(latitude, longitude, c.latitude, c.longitude)) >= spread for c in chosen
@@ -265,11 +280,11 @@ async def _pick_stops_between(
         low, high = band / count, (band + 1) / count
         in_band = [c for c in along if low <= c[0] < high and c[2].id not in used]
         if in_band:
-            progress, _, poi = min(in_band, key=lambda c: c[1])
+            progress, _, poi = min(in_band, key=lambda c: c[1] + _preference(categories, c[2]))
             used.add(poi.id)
             chosen.append((progress, poi))
     # Few cafés along a short way leaves bands empty; fill up from what is closest to the line.
-    for progress, _, poi in sorted(along, key=lambda c: c[1]):
+    for progress, _, poi in sorted(along, key=lambda c: c[1] + _preference(categories, c[2])):
         if len(chosen) >= count:
             break
         if poi.id not in used:

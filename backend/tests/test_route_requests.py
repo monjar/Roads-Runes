@@ -11,10 +11,11 @@ import uuid
 import httpx
 import pytest
 
-from app.core.geo import destination_point, haversine_m
+from app.core.geo import bearing_deg, destination_point, haversine_m
+from app.core.schemas import Coordinate
 from app.db.session import get_session_factory
 from app.discoveries.models import Discovery
-from app.routing import geocode
+from app.routing import geocode, service
 from app.routing.preferences import parse_rules
 
 NOTTING_HILL = (51.5109, -0.2055)
@@ -293,3 +294,44 @@ async def test_a_ride_to_a_place_still_goes_through_the_stops_asked_for(explorer
         # It is still a ride to the place the rider picked.
         longitude, latitude = route["coordinates"][-1][:2]
         assert abs(latitude - TOWER_BRIDGE[0]) < 0.01 and abs(longitude - TOWER_BRIDGE[1]) < 0.01
+
+
+@pytest.mark.anyio
+async def test_the_first_kind_of_stop_asked_for_is_preferred(explorer_client):
+    """ "3 cafés or museums" fills up with cafés while they are roughly as convenient;
+    something of the second kind sitting right on the line can still win."""
+    bearing = bearing_deg(HOME[0], HOME[1], TOWER_BRIDGE[0], TOWER_BRIDGE[1])
+    async with get_session_factory()() as db:
+        for name, category, along, offset in (
+            ("Near Cafe", "CAFE", 0.25, 120),
+            ("Near Museum", "CULTURAL", 0.25, 50),
+            ("Far Cafe", "CAFE", 0.75, 400),
+            ("Line Museum", "CULTURAL", 0.75, 20),
+        ):
+            lat = HOME[0] + (TOWER_BRIDGE[0] - HOME[0]) * along
+            lon = HOME[1] + (TOWER_BRIDGE[1] - HOME[1]) * along
+            lat, lon = destination_point(lat, lon, bearing + 90, offset)
+            db.add(
+                Discovery(
+                    name=name,
+                    category=category,
+                    latitude=lat,
+                    longitude=lon,
+                    source="OSM",
+                    osm_id=f"n{uuid.uuid4().int % 10**9}",
+                    tags={},
+                    moderation_status="APPROVED",
+                    cycling_accessible=True,
+                )
+            )
+        await db.commit()
+
+    async with get_session_factory()() as db:
+        stops = await service._pick_stops_between(
+            db,
+            Coordinate(latitude=HOME[0], longitude=HOME[1]),
+            Coordinate(latitude=TOWER_BRIDGE[0], longitude=TOWER_BRIDGE[1]),
+            ["CAFE", "CULTURAL"],
+            2,
+        )
+    assert [stop.name for stop in stops] == ["Near Cafe", "Line Museum"]
