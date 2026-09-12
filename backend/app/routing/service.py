@@ -202,6 +202,10 @@ def _variants(
         ]
 
     direct = _overlay(usual, cfg["labels"][DIRECT_LABEL])
+    # "Direct" is the plain way there: paved, whatever the rider usually rides. At
+    # 0.1 the preference still mapped to a costing that took the park path, so the
+    # card offered no choice at all next to the one that asked for gravel.
+    direct.gravelPreference = 0.0
     variants = [
         Variant(DIRECT_LABEL, direct, [], cfg["labels"][DIRECT_LABEL].get("distanceFactor", 1.0)),
         Variant(ASKED_LABEL, _overlay(base, {}), stops, 1.0),
@@ -211,13 +215,16 @@ def _variants(
     for field, difference in stated.items():
         value = getattr(more, field)
         setattr(more, field, min(1.0, value + MORE_OF_IT) if difference > 0 else max(0.0, value - MORE_OF_IT))
-    if stated:
-        field = max(stated, key=lambda f: abs(stated[f]))
-        label = LOUDER[field][0 if stated[field] > 0 else 1]
+    if not stated:
+        variants.append(Variant("Scenic", _overlay(base, cfg["labels"]["Scenic"]).clamp(), stops, 1.0))
+        return variants
+    field = max(stated, key=lambda f: abs(stated[f]))
+    if more.to_dict() == base.to_dict():
+        # They already asked for all of it; there is no more to give, so the third
+        # card offers the other thing a rider might want: the same ride, longer.
+        variants.append(Variant("The long way", _overlay(base, {}), stops, 1.25))
     else:
-        label = "Scenic"
-        more = _overlay(base, cfg["labels"]["Scenic"])
-    variants.append(Variant(label, more.clamp(), stops, 1.0))
+        variants.append(Variant(LOUDER[field][0 if stated[field] > 0 else 1], more.clamp(), stops, 1.0))
     return variants
 
 
