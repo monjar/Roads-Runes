@@ -83,7 +83,10 @@ class Settings(BaseSettings):
 
     llm_provider: Literal["none", "anthropic"] = "none"
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-opus-5"
+    # Reading a ride request is small structured extraction: Haiku scores the same as
+    # Sonnet on backend/scripts/eval_requests.py (26/26 on the hard set) and answers
+    # faster. Swap in claude-sonnet-5 with ANTHROPIC_MODEL if that ever stops holding.
+    anthropic_model: str = "claude-haiku-4-5-20251001"
 
     strava_client_id: str = ""
     strava_client_secret: str = ""

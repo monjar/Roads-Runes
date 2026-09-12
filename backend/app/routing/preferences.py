@@ -90,6 +90,8 @@ class ParsedRequest:
 COUNT_WORDS = {
     "a couple": 2,
     "a couple of": 2,
+    "a": 1,
+    "an": 1,
     "a few": 3,
     "some": 3,
     "several": 4,
@@ -280,6 +282,15 @@ RIDE_WORDS = {
     "across",
     "past",
     "between",
+    # How much of a thing: "gravel heavy", "mostly quiet", "loads of climbing".
+    "heavy",
+    "mostly",
+    "mainly",
+    "packed",
+    "full",
+    "loads",
+    "lot",
+    "little",
 }
 
 
@@ -322,6 +333,27 @@ def _area_phrase(lowered: str) -> str | None:
     return None
 
 
+HOURS_PATTERN = re.compile(
+    r"\b(\d+(?:\.\d)?|an|a|one|two|three|four|five|six|a couple of|a couple|a few)\s*"
+    r"(?:hours?|hrs?|h)\b(\s+and\s+a\s+half)?"
+)
+HOUR_WORDS = {"an": 1.0, "a": 1.0, "one": 1.0, "two": 2.0, "three": 3.0, "four": 4.0, "five": 5.0, "six": 6.0}
+HOUR_WORDS.update({"a couple of": 2.0, "a couple": 2.0, "a few": 3.0})
+
+
+def _hours(lowered: str) -> float | None:
+    """ "an hour and a half", "a couple of hours", "90 minutes" — riders say time as
+    often as distance, and only ever gave us a number before."""
+    match = HOURS_PATTERN.search(lowered)
+    if match:
+        word = match.group(1)
+        hours = float(word) if word.replace(".", "", 1).isdigit() else HOUR_WORDS.get(word)
+        if hours:
+            return hours + (0.5 if match.group(2) else 0.0)
+    minutes = re.search(r"\b(\d{2,3})\s*(?:minutes|mins|min)\b", lowered)
+    return int(minutes.group(1)) / 60 if minutes else None
+
+
 def _poi_count(lowered: str, word: str) -> int | None:
     pattern = rf"\b(\d{{1,2}}|{'|'.join(COUNT_WORDS)})\s+(?:\w+\s+){{0,2}}?{re.escape(word)}s?\b"
     match = re.search(pattern, lowered)
@@ -350,9 +382,9 @@ def parse_rules(text: str, base: RoutePreferences | None = None) -> ParsedReques
         km = float(m.group(1)) * 1.609
         prefs.distanceKm = {"target": round(km, 1), "tolerance": max(3.0, km * 0.15)}
         matched.append("distance")
-    m = re.search(r"(\d(?:\.\d)?)\s*(hours?|hrs?|h)\b", lowered)
-    if m and not prefs.distanceKm:
-        km = float(m.group(1)) * 16
+    hours = _hours(lowered)
+    if hours and not prefs.distanceKm:
+        km = hours * 16
         prefs.distanceKm = {"target": round(km, 1), "tolerance": max(4.0, km * 0.2)}
         matched.append("duration")
 
@@ -369,10 +401,16 @@ def parse_rules(text: str, base: RoutePreferences | None = None) -> ParsedReques
     if any(w in lowered for w in ("no gravel", "paved", "tarmac", "road bike")):
         prefs.gravelPreference = 0.0
         matched.append("paved")
-    if any(w in lowered for w in ("flat", "easy", "no hills", "gentle")):
+    # "nothing steep" and "no big hills" are about hills, and mean the opposite of
+    # "hilly": look for the refusal first and let it stand.
+    gentle = any(
+        w in lowered
+        for w in ("flat", "easy", "gentle", "no hills", "nothing steep", "not steep", "nothing hilly", "not hilly")
+    )
+    if gentle:
         prefs.hillTolerance = 0.15
         matched.append("flat")
-    if any(w in lowered for w in ("hilly", "climb", "hills", "hard", "tough")):
+    elif any(w in lowered for w in ("hilly", "climb", "hills", "hard", "tough", "steep")):
         prefs.hillTolerance = 0.9
         matched.append("hilly")
     if any(w in lowered for w in ("scenic", "pretty", "beautiful", "views", "nature")):
@@ -385,6 +423,8 @@ def parse_rules(text: str, base: RoutePreferences | None = None) -> ParsedReques
         prefs.loop = False
         matched.append("one-way")
 
+    phrase = _area_phrase(lowered)
+
     # "3 cafes or somewhere cultural" asks for two kinds of stop. They are kept in
     # the order the rider wrote them: the first is the one scoring prefers, and any
     # of them can fill the count.
@@ -393,6 +433,11 @@ def parse_rules(text: str, base: RoutePreferences | None = None) -> ParsedReques
         for word, category in POI_WORDS.items()
         if (match := re.search(rf"\b{re.escape(word)}s?\b", lowered))
     )
+    # "a loop around richmond park with a coffee stop" wants coffee; the park is part
+    # of where, not what. A word inside the place name is not a kind of stop.
+    if phrase:
+        elsewhere = [entry for entry in asked if entry[1] not in phrase]
+        asked = elsewhere or asked
     if asked:
         position = 0.5
         if any(w in lowered for w in ("end", "towards the end", "finish", "near the end", "last")):
@@ -417,7 +462,6 @@ def parse_rules(text: str, base: RoutePreferences | None = None) -> ParsedReques
                 matched.append(f"count:{count}")
                 break
 
-    phrase = _area_phrase(lowered)
     if phrase:
         prefs.area = {"query": phrase}
         matched.append(f"area:{phrase}")
@@ -427,8 +471,15 @@ def parse_rules(text: str, base: RoutePreferences | None = None) -> ParsedReques
 LLM_SYSTEM = (
     "Convert a cyclist's free-text route request into structured preferences. "
     "Output only fields you are confident about. Preference values are floats 0..1. "
-    "`area` is the place the rider named to ride in, as written, never coordinates. "
-    "`poi.count` is how many such stops they asked for."
+    "`area` is a place the rider named — a town, a neighbourhood, a park — as written, "
+    "never coordinates and never a description of the riding or of the stops. "
+    "`poi` is the kind of stop they want on the way: cafés and coffee are CAFE, pubs and "
+    "bars PUB, restaurants and lunch FOOD, museums, galleries and anything cultural "
+    "CULTURAL, parks, woods and gardens NATURE, castles, churches and monuments "
+    "HISTORICAL, attractions and sights LANDMARK, viewpoints, peaks and summits "
+    "VIEWPOINT, trails TRAIL. `poi.count` is how many of them they asked for, and "
+    "`poi.preferredPosition` where along the ride they want it (0 start, 1 finish). "
+    "`distanceKm.target` may come from a time they gave: assume 16 km per hour."
 )
 LLM_SCHEMA = (
     '{"distanceKm": {"target": number, "tolerance": number} | null, "trafficAversion": number, '
@@ -474,9 +525,12 @@ async def parse_request(text: str, llm: LLMClient, base: RoutePreferences | None
         "LANDMARK",
         "TRAIL",
     }:
+        # A model that has no opinion sends `"preferredPosition": null`, and float(None)
+        # would take the whole request down with it.
+        position = poi.get("preferredPosition")
         prefs.poi = {
             "category": poi["category"],
-            "preferredPosition": min(1.0, max(0.0, float(poi.get("preferredPosition", 0.5)))),
+            "preferredPosition": min(1.0, max(0.0, float(position))) if isinstance(position, int | float) else 0.5,
         }
         count = poi.get("count")
         if isinstance(count, int | float) and 1 <= count <= 8:
@@ -488,6 +542,10 @@ async def parse_request(text: str, llm: LLMClient, base: RoutePreferences | None
         also = (rules.preferences.poi or {}).get("categories") or []
         if prefs.poi["category"] in also:
             prefs.poi["categories"] = list(also)
+    elif "poi" in result and poi is None:
+        # "no cafes, just riding": the model read the sentence, while the rules parser
+        # only saw the word "cafes". An explicit null is a decision, not a gap.
+        prefs.poi = None
     elif rules.preferences.poi:
         prefs.poi = rules.preferences.poi
     area = result.get("area")

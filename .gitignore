@@ -36,3 +36,5 @@ elevation-cache/
 
 # OS
 .DS_Store
+
+secrets/

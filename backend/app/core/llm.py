@@ -40,6 +40,9 @@ class AnthropicLLM:
         self._api_key = api_key
         self._model = model
         self._client = None
+        # Reasoning effort is an Opus/Sonnet 5 control; Haiku rejects the parameter.
+        # Rather than keep a list of which model has it, ask once and remember.
+        self._effort: str | None = "low"
 
     def _get_client(self):
         if self._client is None:
@@ -49,25 +52,34 @@ class AnthropicLLM:
         return self._client
 
     async def complete_json(self, system: str, user: str, schema_hint: str) -> dict[str, Any] | None:
-        try:
-            client = self._get_client()
-            response = await client.messages.create(
-                model=self._model,
-                max_tokens=2048,
-                system=system + "\n\nRespond with a single JSON object only. Schema: " + schema_hint,
-                messages=[{"role": "user", "content": user}],
-                output_config={"effort": "low"},
-            )
-            if getattr(response, "stop_reason", None) == "refusal":
+        for _ in range(2):
+            try:
+                client = self._get_client()
+                response = await client.messages.create(
+                    model=self._model,
+                    max_tokens=2048,
+                    system=system + "\n\nRespond with a single JSON object only. Schema: " + schema_hint,
+                    messages=[{"role": "user", "content": user}],
+                    **({"output_config": {"effort": self._effort}} if self._effort else {}),
+                )
+            except Exception as exc:  # noqa: BLE001 - LLM is optional; never break the request path
+                if self._effort and "effort" in str(exc):
+                    self._effort = None
+                    continue
+                log.warning("llm_call_failed", model=self._model, error=str(exc))
                 return None
-            text = "".join(block.text for block in response.content if getattr(block, "type", "") == "text")
-            start, end = text.find("{"), text.rfind("}")
-            if start == -1 or end == -1:
+            try:
+                if getattr(response, "stop_reason", None) == "refusal":
+                    return None
+                text = "".join(block.text for block in response.content if getattr(block, "type", "") == "text")
+                start, end = text.find("{"), text.rfind("}")
+                if start == -1 or end == -1:
+                    return None
+                return json.loads(text[start : end + 1])
+            except Exception as exc:  # noqa: BLE001
+                log.warning("llm_reply_unreadable", model=self._model, error=str(exc))
                 return None
-            return json.loads(text[start : end + 1])
-        except Exception as exc:  # noqa: BLE001 - LLM is optional; never break the request path
-            log.warning("llm_call_failed", error=str(exc))
-            return None
+        return None
 
 
 def build_llm(settings: Settings) -> LLMClient:

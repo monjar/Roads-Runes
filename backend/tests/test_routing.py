@@ -22,7 +22,8 @@ def test_nl_parse_rules():
     assert p.distanceKm["target"] == 30
     assert p.trafficAversion >= 0.9
     assert 0.5 <= p.gravelPreference <= 0.7
-    assert p.poi == {"category": "PUB", "preferredPosition": 0.8}
+    # "a pub" is one pub: the planner threads exactly one rather than as many as fit.
+    assert p.poi == {"category": "PUB", "preferredPosition": 0.8, "count": 1}
 
 
 def test_elevation_analysis_finds_climb():
