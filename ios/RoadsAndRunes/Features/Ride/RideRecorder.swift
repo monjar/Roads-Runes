@@ -224,7 +224,14 @@ final class RideRecorder {
             handleOffRoute(update.isOffRoute, at: enriched.timestamp)
         }
         if var tracker = objectiveTracker {
-            let events = tracker.update(position: enriched.coordinate, distanceMeters: stats.distanceMeters, elevationGainMeters: stats.elevationGainMeters, newTerritoryMeters: newTerritoryMeters, elapsedSeconds: stats.elapsedSeconds, timestamp: enriched.timestamp)
+            let events = tracker.update(
+                position: enriched.coordinate,
+                distanceMeters: stats.distanceMeters,
+                elevationGainMeters: stats.elevationGainMeters,
+                newTerritoryMeters: newTerritoryMeters,
+                elapsedSeconds: stats.elapsedSeconds,
+                timestamp: enriched.timestamp
+            )
             objectiveTracker = tracker
             if !events.isEmpty { handle(objectiveEvents: events) }
             currentObjective = tracker.pendingObjectives.first
