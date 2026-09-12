@@ -297,9 +297,9 @@ async def test_a_ride_to_a_place_still_goes_through_the_stops_asked_for(explorer
 
 
 @pytest.mark.anyio
-async def test_the_first_kind_of_stop_asked_for_is_preferred(explorer_client):
-    """ "3 cafés or museums" fills up with cafés while they are roughly as convenient;
-    something of the second kind sitting right on the line can still win."""
+async def test_the_stops_are_shared_between_the_kinds_asked_for(explorer_client):
+    """ "2 cafés or museums" is one of each, not two of whichever happens to sit
+    nearest the line — the sculptures on a riverside path win that every time."""
     bearing = bearing_deg(HOME[0], HOME[1], TOWER_BRIDGE[0], TOWER_BRIDGE[1])
     async with get_session_factory()() as db:
         for name, category, along, offset in (

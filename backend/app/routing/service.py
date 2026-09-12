@@ -145,14 +145,16 @@ def _stop_categories(poi: dict[str, Any] | None) -> list[str]:
     return categories[:3]
 
 
-# What the rider named second is worth a detour of this much less: "cafés or
-# museums" should fill up with cafés, unless a museum is plainly more convenient.
-CATEGORY_PREFERENCE_M = 150.0
+def _quotas(count: int, kinds: int) -> list[int]:
+    """How many stops each kind gets: three stops over two kinds is two, then one.
 
-
-def _preference(categories: list[str], poi: Discovery) -> float:
-    rank = categories.index(poi.category) if poi.category in categories else len(categories)
-    return rank * CATEGORY_PREFERENCE_M
+    Ranking by distance alone answered "3 cafés or somewhere cultural" with three
+    sculptures and no café, because the sculptures sit on the riverside path and the
+    cafés are a street inland. The kind named first gets the larger share; a kind
+    with nothing nearby gives its share back.
+    """
+    base, extra = divmod(count, max(1, kinds))
+    return [base + (1 if index < extra else 0) for index in range(max(1, kinds))]
 
 
 async def _candidates(
@@ -193,20 +195,39 @@ async def _pick_stops(
         return []
     spread = 360 / count * 0.6
     chosen: list[Discovery] = []
-    for poi in sorted(
-        candidates,
-        key=lambda p: (
-            abs(haversine_m(latitude, longitude, p.latitude, p.longitude) - ring) + _preference(categories, p)
-        ),
-    ):
+    for category, quota in zip(categories, _quotas(count, len(categories)), strict=False):
+        _take_around(
+            latitude, longitude, [p for p in candidates if p.category == category], quota, ring, spread, chosen
+        )
+    if len(chosen) < count:
+        _take_around(latitude, longitude, candidates, count - len(chosen), ring, spread, chosen)
+    return _tour(latitude, longitude, chosen)
+
+
+def _take_around(
+    latitude: float,
+    longitude: float,
+    candidates: list[Discovery],
+    count: int,
+    ring: float,
+    spread: float,
+    chosen: list[Discovery],
+) -> None:
+    """Appends up to `count` places near the ring, each in a direction of its own."""
+    taken = {poi.id for poi in chosen}
+    added = 0
+    for poi in sorted(candidates, key=lambda p: abs(haversine_m(latitude, longitude, p.latitude, p.longitude) - ring)):
+        if added == count:
+            return
+        if poi.id in taken:
+            continue
         bearing = bearing_deg(latitude, longitude, poi.latitude, poi.longitude)
         if all(
             _bearing_gap(bearing, bearing_deg(latitude, longitude, c.latitude, c.longitude)) >= spread for c in chosen
         ):
             chosen.append(poi)
-        if len(chosen) == count:
-            break
-    return _tour(latitude, longitude, chosen)
+            taken.add(poi.id)
+            added += 1
 
 
 def _tour(latitude: float, longitude: float, stops: list[Discovery]) -> list[Discovery]:
@@ -275,22 +296,31 @@ async def _pick_stops_between(
     if not along:
         return []
     chosen: list[tuple[float, Discovery]] = []
-    used: set[Any] = set()
+    for category, quota in zip(categories, _quotas(count, len(categories)), strict=False):
+        _take_along([c for c in along if c[2].category == category], quota, chosen)
+    if len(chosen) < count:
+        _take_along(along, count - len(chosen), chosen)
+    return [poi for _, poi in sorted(chosen, key=lambda c: c[0])]
+
+
+def _take_along(along: list[tuple[float, float, Discovery]], count: int, chosen: list[tuple[float, Discovery]]) -> None:
+    """Appends up to `count` of these, one per stretch of the way, each the closest
+    to the line in its stretch; what is left over comes from nearest the line."""
+    taken = {poi.id for _, poi in chosen}
+    start = len(chosen)
     for band in range(count):
         low, high = band / count, (band + 1) / count
-        in_band = [c for c in along if low <= c[0] < high and c[2].id not in used]
+        in_band = [c for c in along if low <= c[0] < high and c[2].id not in taken]
         if in_band:
-            progress, _, poi = min(in_band, key=lambda c: c[1] + _preference(categories, c[2]))
-            used.add(poi.id)
+            progress, _, poi = min(in_band, key=lambda c: c[1])
+            taken.add(poi.id)
             chosen.append((progress, poi))
-    # Few cafés along a short way leaves bands empty; fill up from what is closest to the line.
-    for progress, _, poi in sorted(along, key=lambda c: c[1] + _preference(categories, c[2])):
-        if len(chosen) >= count:
-            break
-        if poi.id not in used:
-            used.add(poi.id)
+    for progress, _, poi in sorted(along, key=lambda c: c[1]):
+        if len(chosen) - start >= count:
+            return
+        if poi.id not in taken:
+            taken.add(poi.id)
             chosen.append((progress, poi))
-    return [poi for _, poi in sorted(chosen, key=lambda c: c[0])]
 
 
 async def generate(
