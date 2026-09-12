@@ -16,6 +16,7 @@ from app.core.schemas import Coordinate
 from app.db.session import get_session_factory
 from app.discoveries.models import Discovery
 from app.routing import geocode, service
+from app.routing.models import Route
 from app.routing.preferences import parse_rules
 
 NOTTING_HILL = (51.5109, -0.2055)
@@ -437,3 +438,28 @@ def test_a_chain_by_the_road_loses_to_somewhere_worth_stopping():
         tags={"website": "https://example.com", "opening_hours": "Mo-Fr 07:00-17:00", "outdoor_seating": "yes"},
     )
     assert service._appeal_m(nicer) - service._appeal_m(nearest) >= 600
+
+
+@pytest.mark.anyio
+async def test_a_card_only_claims_what_the_roads_delivered():
+    """Routing is not monotonic: asking for more gravel can hand back a longer way
+    round with less of it, and the label has to stop saying "More gravel" then."""
+
+    def route(label: str, gravel: float, distance_m: float) -> Route:
+        return Route(
+            label=label,
+            surface={"paved": 1 - gravel, "gravel": gravel, "trail": 0.0, "unknown": 0.0},
+            distance_meters=distance_m,
+            elevation_gain_meters=100.0,
+            traffic_exposure=0.3,
+            cycleway_fraction=0.4,
+        )
+
+    asked = route(service.ASKED_LABEL, 0.40, 14_000)
+    kept = route("More gravel", 0.55, 15_000)
+    broken = route("More gravel", 0.20, 18_000)
+    results = [(asked, {}), (kept, {}), (broken, {})]
+    service._keep_labels_honest(results)
+
+    assert kept.label == "More gravel"
+    assert broken.label == "The long way"

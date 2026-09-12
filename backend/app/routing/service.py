@@ -217,8 +217,39 @@ def _variants(
     else:
         label = "Scenic"
         more = _overlay(base, cfg["labels"]["Scenic"])
-    variants.append(Variant(label, more.clamp(), stops, 1.1))
+    variants.append(Variant(label, more.clamp(), stops, 1.0))
     return variants
+
+
+def _unpaved(route: Route) -> float:
+    return float(route.surface.get("gravel", 0.0)) + float(route.surface.get("trail", 0.0))
+
+
+# What each label promises, checked against the route that came back. Riders read
+# the label, not the surface bar, and routing is not monotonic: asking for more
+# gravel can hand back a longer way round with less of it.
+CLAIMS: dict[str, Any] = {
+    "More gravel": lambda route, asked: _unpaved(route) > _unpaved(asked) + 0.02,
+    "Less gravel": lambda route, asked: _unpaved(route) < _unpaved(asked) - 0.02,
+    "Hillier": lambda route, asked: route.elevation_gain_meters > asked.elevation_gain_meters * 1.1,
+    "Flatter": lambda route, asked: route.elevation_gain_meters < asked.elevation_gain_meters * 0.9,
+    "Quieter": lambda route, asked: route.traffic_exposure < asked.traffic_exposure - 0.03,
+    "Faster roads": lambda route, asked: route.traffic_exposure > asked.traffic_exposure + 0.03,
+    "More cycleways": lambda route, asked: route.cycleway_fraction > asked.cycleway_fraction + 0.03,
+    "Fewer cycleways": lambda route, asked: route.cycleway_fraction < asked.cycleway_fraction - 0.03,
+}
+
+
+def _keep_labels_honest(results: list[tuple[Route, dict[str, float]]]) -> None:
+    """Renames a card whose promise the roads did not keep."""
+    asked = next((route for route, _ in results if route.label == ASKED_LABEL), None)
+    if asked is None:
+        return
+    for route, _ in results:
+        claim = CLAIMS.get(route.label)
+        if claim is None or claim(route, asked):
+            continue
+        route.label = "The long way" if route.distance_meters > asked.distance_meters * 1.05 else "Another way"
 
 
 AREA_TAKEOVER_M = 2000.0
@@ -783,6 +814,7 @@ async def generate(
     if not results:
         raise RouteGenerationFailed("No route could be generated for this request")
     await db.flush()
+    _keep_labels_honest(results)
     results.sort(key=lambda r: -r[0].score)
     if quest is not None and quest.suggested_route_id is None:
         quest.suggested_route_id = results[0][0].id
