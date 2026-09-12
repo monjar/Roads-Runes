@@ -72,6 +72,31 @@ final class MainFlowsUITests: XCTestCase {
         tapOffCentre(app.buttons["planner.close"], dx: 0.5)
     }
 
+    /// "Richmond bike ride" used to plan a ride wherever the rider stood, because the
+    /// parser only saw a place after "in"/"near". Drive it through the planner itself.
+    func testAskingForARideInAPlacePlansItThere() throws {
+        signInAsNewRider(at: Self.rotherhithe)
+        tapTab("Quests")
+        tapOffCentre(waitFor(app.buttons["customAdventure"], 30), dx: 0.7)
+
+        let placeholder = "About 30 km, mostly quiet roads, easy gravel and a pub halfway."
+        let field = app.textFields[placeholder].exists ? app.textFields[placeholder] : app.textViews[placeholder]
+        waitFor(field, 30)
+        field.tap()
+        field.typeText("Richmond bike ride")
+        // The request field is multi-line, so return adds a line rather than dismissing
+        // the keyboard: scroll until the button is genuinely hittable before tapping it.
+        let generate = app.buttons["Generate routes"]
+        scrollTo(generate)
+        tapOffCentre(generate, dx: 0.5)
+
+        let understood = app.descendants(matching: .any).matching(identifier: "planner.understood").firstMatch
+        XCTAssertTrue(understood.waitForExistence(timeout: 120), "The planner never said what it understood")
+        XCTAssertTrue(understood.label.contains("Richmond"), "Understood '\(understood.label)' instead of Richmond")
+        XCTAssertTrue(app.buttons["planner.start"].waitForExistence(timeout: 60), "No route came back")
+        tapOffCentre(app.buttons["planner.close"], dx: 0.5)
+    }
+
     // MARK: - World
 
     func testSearchAPlaceAndPlanARideThere() throws {
