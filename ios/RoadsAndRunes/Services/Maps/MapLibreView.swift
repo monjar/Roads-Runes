@@ -4,11 +4,18 @@ import RoadsAndRunesCore
 import SwiftUI
 
 struct MapMarker: Identifiable, Hashable {
-    enum Kind: String { case quest, questActive, objective, objectiveDone, discovery, poi, place, result }
+    enum Kind: String {
+        case quest, questActive, objective, objectiveDone, discovery, poi, place, result
+        /// A stop on the route — a café, a pub, a landmark — and the one being read.
+        case stop, stopActive
+    }
+
     let id: String
     let coordinate: Coordinate
     let kind: Kind
     let title: String
+    /// SF Symbol drawn inside the marker, so a stop looks like what it is.
+    var symbol: String?
 }
 
 /// A one-shot camera move. A new value (new `id`) moves the map once; the rider
@@ -45,6 +52,9 @@ struct MapLibreView: UIViewRepresentable {
     var markers: [MapMarker] = []
     var followsUser = false
     var navigationMode = false
+    /// False for a route preview inside a scroll view: markers stay tappable, but
+    /// the map does not steal the drag that scrolls the page.
+    var interactive = true
     var onRegionChanged: ((Coordinate, Double) -> Void)?
     var onMarkerTap: ((MapMarker) -> Void)?
     var camera: MapCamera?
@@ -61,7 +71,11 @@ struct MapLibreView: UIViewRepresentable {
         view.logoView.isHidden = true
         view.attributionButton.alpha = 0.5
         view.showsUserLocation = true
+        // Asks the location manager for heading, so the rider's marker can point
+        // somewhere while they are stopped (MLNUserLocation.heading is nil without it).
+        view.showsUserHeadingIndicator = true
         view.compassView.isHidden = navigationMode
+        view.applyInteraction(interactive)
         view.backgroundColor = UIColor(hex: 0xEBDDC5)
         if let center {
             view.setCenter(CLLocationCoordinate2D(latitude: center.latitude, longitude: center.longitude), zoomLevel: zoom, animated: false)
@@ -83,6 +97,7 @@ struct MapLibreView: UIViewRepresentable {
 
     func updateUIView(_ view: MLNMapView, context: Context) {
         context.coordinator.parent = self
+        view.applyInteraction(interactive)
         if view.styleURL != styleURL {
             view.styleURL = styleURL
         }
@@ -104,9 +119,10 @@ struct MapLibreView: UIViewRepresentable {
         private var lastCameraId: UUID?
         private var poiLayerIds: Set<String> = []
         private var styleLoaded = false
-        private var annotations: [String: MLNPointAnnotation] = [:]
+        private var markers: [String: (marker: MapMarker, annotation: MLNPointAnnotation)] = [:]
         private var lastCellsHash = 0
-        private var lastRouteCount = -1
+        private var lastRouteHash: Int?
+        private var appliedFollowZoom = false
 
         init(_ parent: MapLibreView) { self.parent = parent }
 
@@ -117,7 +133,7 @@ struct MapLibreView: UIViewRepresentable {
                 return symbols.identifier
             })
             lastCellsHash = 0
-            lastRouteCount = -1
+            lastRouteHash = nil
             apply(to: mapView)
             reportVisibleRegion(mapView)
         }
@@ -140,6 +156,7 @@ struct MapLibreView: UIViewRepresentable {
             applyRoute(style)
             applyMarkers(mapView)
             applyCamera(mapView)
+            applyFollowZoom(mapView)
         }
 
         // MARK: Camera
@@ -156,6 +173,19 @@ struct MapLibreView: UIViewRepresentable {
                 let target = CLLocationCoordinate2D(latitude: center.latitude, longitude: center.longitude)
                 mapView.setCenter(target, zoomLevel: camera.zoom ?? max(mapView.zoomLevel, 15), animated: true)
             }
+        }
+
+        /// A ride that starts before the first fix arrives opens on a map of the whole
+        /// world: user tracking keeps the rider centred but never zooms in, so the
+        /// requested zoom is applied as soon as there is a location to apply it to.
+        private func applyFollowZoom(_ mapView: MLNMapView) {
+            guard parent.followsUser else {
+                appliedFollowZoom = false
+                return
+            }
+            guard !appliedFollowZoom, !mapView.bounds.isEmpty, mapView.userLocation?.location != nil else { return }
+            appliedFollowZoom = true
+            if abs(mapView.zoomLevel - parent.zoom) > 0.25 { mapView.setZoomLevel(parent.zoom, animated: true) }
         }
 
         // MARK: Fog of war (spec §14)
@@ -201,8 +231,9 @@ struct MapLibreView: UIViewRepresentable {
         // MARK: Route line
 
         private func applyRoute(_ style: MLNStyle) {
-            guard parent.route.count != lastRouteCount else { return }
-            lastRouteCount = parent.route.count
+            let hash = routeHash()
+            guard hash != lastRouteHash else { return }
+            lastRouteHash = hash
             let source = ensureSource(style, id: "rr-route")
             if parent.route.count >= 2 {
                 var coords = parent.route.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
@@ -232,6 +263,21 @@ struct MapLibreView: UIViewRepresentable {
             }
         }
 
+        /// Two alternatives often have the same number of points, and comparing counts
+        /// left the previous route drawn under the one the rider had just picked.
+        private func routeHash() -> Int {
+            var hasher = Hasher()
+            hasher.combine(parent.route.count)
+            hasher.combine(parent.route.first)
+            hasher.combine(parent.route.last)
+            if parent.route.count > 8 {
+                for index in stride(from: 0, to: parent.route.count, by: parent.route.count / 8) {
+                    hasher.combine(parent.route[index])
+                }
+            }
+            return hasher.finalize()
+        }
+
         private func ensureSource(_ style: MLNStyle, id: String) -> MLNShapeSource {
             if let existing = style.source(withIdentifier: id) as? MLNShapeSource { return existing }
             let source = MLNShapeSource(identifier: id, shape: nil, options: nil)
@@ -244,17 +290,19 @@ struct MapLibreView: UIViewRepresentable {
         private func applyMarkers(_ mapView: MLNMapView) {
             // Keep the first of any duplicate ids rather than trapping on them.
             let wanted = Dictionary(parent.markers.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            for (id, annotation) in annotations where wanted[id] == nil {
-                mapView.removeAnnotation(annotation)
-                annotations[id] = nil
+            // Comparing the whole marker, not just its id: a stop that becomes the
+            // selected one changes how it is drawn under the same id.
+            for (id, entry) in markers where wanted[id] != entry.marker {
+                mapView.removeAnnotation(entry.annotation)
+                markers[id] = nil
             }
-            for marker in parent.markers where annotations[marker.id] == nil {
+            for (id, marker) in wanted where markers[id] == nil {
                 let annotation = MLNPointAnnotation()
                 annotation.coordinate = CLLocationCoordinate2D(latitude: marker.coordinate.latitude, longitude: marker.coordinate.longitude)
                 annotation.title = marker.title
                 annotation.subtitle = marker.kind.rawValue
                 mapView.addAnnotation(annotation)
-                annotations[marker.id] = annotation
+                markers[id] = (marker, annotation)
             }
         }
 
@@ -262,18 +310,21 @@ struct MapLibreView: UIViewRepresentable {
             if annotation is MLNUserLocation {
                 return RiderLocationView()
             }
-            guard let point = annotation as? MLNPointAnnotation, let kindRaw = point.subtitle, let kind = MapMarker.Kind(rawValue: kindRaw) else { return nil }
-            let identifier = "marker-\(kindRaw)"
-            let view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) ?? MarkerAnnotationView(reuseIdentifier: identifier, kind: kind)
-            return view
+            guard let marker = marker(for: annotation) else { return nil }
+            let identifier = "marker-\(marker.kind.rawValue)-\(marker.symbol ?? "plain")"
+            return mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
+                ?? MarkerAnnotationView(reuseIdentifier: identifier, kind: marker.kind, symbol: marker.symbol)
+        }
+
+        private func marker(for annotation: MLNAnnotation) -> MapMarker? {
+            guard let point = annotation as? MLNPointAnnotation else { return nil }
+            return markers.values.first { $0.annotation === point }?.marker
         }
 
         func mapView(_ mapView: MLNMapView, annotationCanShowCallout annotation: MLNAnnotation) -> Bool { false }
 
         func mapView(_ mapView: MLNMapView, didSelect annotation: MLNAnnotation) {
-            guard let point = annotation as? MLNPointAnnotation,
-                  let entry = annotations.first(where: { $0.value === point }),
-                  let marker = parent.markers.first(where: { $0.id == entry.key }) else { return }
+            guard let marker = marker(for: annotation) else { return }
             parent.onMarkerTap?(marker)
             mapView.deselectAnnotation(annotation, animated: false)
         }
@@ -286,9 +337,9 @@ struct MapLibreView: UIViewRepresentable {
             guard gesture.state == .ended, let mapView = gesture.view as? MLNMapView, let onMapTap = parent.onMapTap else { return }
             let point = gesture.location(in: mapView)
             // A tap on a marker is handled by didSelect; don't also treat it as a map tap.
-            for annotation in annotations.values {
-                let marker = mapView.convert(annotation.coordinate, toPointTo: mapView)
-                if hypot(marker.x - point.x, marker.y - point.y) < 22 { return }
+            for entry in markers.values {
+                let at = mapView.convert(entry.annotation.coordinate, toPointTo: mapView)
+                if hypot(at.x - point.x, at.y - point.y) < 22 { return }
             }
             let coordinate = mapView.convert(point, toCoordinateFrom: mapView)
             onMapTap(Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude), poi(at: point, in: mapView))
@@ -325,9 +376,28 @@ struct MapLibreView: UIViewRepresentable {
 /// Shape carries meaning before colour: quests and objectives are diamonds,
 /// mysteries are dashed "?" circles, stops are small ink dots.
 final class MarkerAnnotationView: MLNAnnotationView {
-    init(reuseIdentifier: String, kind: MapMarker.Kind) {
+    init(reuseIdentifier: String, kind: MapMarker.Kind, symbol: String? = nil) {
         super.init(reuseIdentifier: reuseIdentifier)
         switch kind {
+        case .stop, .stopActive:
+            // A stop on the route reads as what it is — a cup, a mug, a column —
+            // and grows while the rider has it open.
+            let size: CGFloat = kind == .stopActive ? 40 : 30
+            frame = CGRect(x: 0, y: 0, width: size, height: size)
+            layer.cornerRadius = size / 2
+            layer.borderWidth = kind == .stopActive ? 3.5 : 2.5
+            layer.borderColor = UIColor.white.cgColor
+            backgroundColor = Self.color(for: kind)
+            if let symbol,
+               let glyph = UIImage(
+                   systemName: symbol,
+                   withConfiguration: UIImage.SymbolConfiguration(pointSize: size * 0.44, weight: .bold)
+               ) {
+                let image = UIImageView(image: glyph.withTintColor(.white, renderingMode: .alwaysOriginal))
+                image.frame = bounds
+                image.contentMode = .center
+                addSubview(image)
+            }
         case .quest, .questActive, .objective, .objectiveDone:
             let size: CGFloat = 30
             frame = CGRect(x: 0, y: 0, width: size, height: size)
@@ -411,22 +481,36 @@ final class MarkerAnnotationView: MLNAnnotationView {
         case .objectiveDone: return UIColor(hex: 0x56633F)
         case .discovery: return UIColor(hex: 0x82796A)
         case .poi: return UIColor(hex: 0x201E1D)
+        case .stop: return UIColor(hex: 0xC67139)
+        case .stopActive: return UIColor(hex: 0x8C491A)
         case .place, .result: return UIColor(hex: 0xC67139)
         }
     }
 }
 
-/// "You are here": a sage circle with a white ring and a soft halo.
+/// "You are here": a sage circle with a white ring and a soft halo, with a beak
+/// pointing the way the rider is facing — their course while they are moving, the
+/// compass while they are stopped, and nothing at all when neither is known.
 final class RiderLocationView: MLNUserLocationAnnotationView {
     private let halo = CALayer()
     private let dot = CALayer()
+    private let beak = CAShapeLayer()
 
     init() {
-        super.init(frame: CGRect(x: 0, y: 0, width: 44, height: 44))
-        halo.frame = bounds
+        super.init(frame: CGRect(x: 0, y: 0, width: 52, height: 52))
+        halo.frame = bounds.insetBy(dx: 4, dy: 4)
         halo.cornerRadius = 22
         halo.backgroundColor = UIColor(hex: 0x7A8A5E, alpha: 0.25).cgColor
-        dot.frame = CGRect(x: 11, y: 11, width: 22, height: 22)
+        // Added before the dot so the dot covers its base; rotated about the centre,
+        // which is the coordinate itself.
+        beak.frame = bounds
+        beak.path = Self.beak(in: bounds)
+        beak.fillColor = UIColor(hex: 0x7A8A5E).cgColor
+        beak.strokeColor = UIColor.white.cgColor
+        beak.lineWidth = 2
+        beak.lineJoin = .round
+        beak.isHidden = true
+        dot.frame = CGRect(x: 15, y: 15, width: 22, height: 22)
         dot.cornerRadius = 11
         dot.backgroundColor = UIColor(hex: 0x7A8A5E).cgColor
         dot.borderColor = UIColor.white.cgColor
@@ -436,12 +520,57 @@ final class RiderLocationView: MLNUserLocationAnnotationView {
         dot.shadowOffset = CGSize(width: 0, height: 3)
         dot.shadowRadius = 5
         layer.addSublayer(halo)
+        layer.addSublayer(beak)
         layer.addSublayer(dot)
     }
 
     required init?(coder: NSCoder) { nil }
 
+    private static func beak(in bounds: CGRect) -> CGPath {
+        let path = UIBezierPath()
+        path.move(to: CGPoint(x: bounds.midX, y: 1))
+        path.addLine(to: CGPoint(x: bounds.midX + 9, y: 17))
+        path.addLine(to: CGPoint(x: bounds.midX - 9, y: 17))
+        path.close()
+        return path.cgPath
+    }
+
     override func update() {
-        // Static rendering; the map moves under the rider.
+        guard let bearing = travelDirection else {
+            beak.isHidden = true
+            return
+        }
+        beak.isHidden = false
+        // Relative to the map's own rotation: in navigation the map turns with the
+        // rider, and the beak must keep pointing up rather than turning twice.
+        let radians = (bearing - (mapView?.direction ?? 0)) * .pi / 180
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)  // no spinning the long way round
+        beak.setAffineTransform(CGAffineTransform(rotationAngle: CGFloat(radians)))
+        CATransaction.commit()
+    }
+
+    /// A course needs movement to mean anything; a heading needs the compass. A rider
+    /// standing still with neither gets a plain dot instead of a confident lie.
+    private var travelDirection: CLLocationDirection? {
+        if let location = userLocation?.location, location.course >= 0, location.speed > 0.7 {
+            return location.course
+        }
+        if let heading = userLocation?.heading?.trueHeading, heading >= 0 {
+            return heading
+        }
+        return nil
+    }
+}
+
+extension MLNMapView {
+    /// A preview map inside a scroll view: taps still select markers, but pans,
+    /// pinches and rotations belong to the page, not the map.
+    func applyInteraction(_ enabled: Bool) {
+        guard isScrollEnabled != enabled else { return }
+        isScrollEnabled = enabled
+        isZoomEnabled = enabled
+        isRotateEnabled = enabled
+        isPitchEnabled = enabled
     }
 }

@@ -63,6 +63,8 @@ final class QuestDetailModel {
     /// The quest's fixed route (spec §20), drawn on the detail map; tweakable in the planner.
     private(set) var route: RouteOption?
     private(set) var routeCamera: MapCamera?
+    /// A stop on the quest route that the rider tapped on the map.
+    private(set) var focusedStop: RoutePOI?
     private let container: AppContainer
 
     init(quest: Quest, container: AppContainer) {
@@ -83,6 +85,8 @@ final class QuestDetailModel {
         route = fixed
         routeCamera = MapCamera(fit: fixed.path, padding: UIEdgeInsets(top: 110, left: 36, bottom: 64, right: 36))
     }
+
+    func focus(_ poi: RoutePOI?) { focusedStop = poi }
 
     func accept() async {
         await perform { try await self.container.api.acceptQuest(id: self.quest.id) }

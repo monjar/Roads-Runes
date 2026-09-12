@@ -8,6 +8,8 @@ import SwiftUI
 struct NavigationScreen: View {
     @Environment(AppContainer.self) private var container
     @State private var confirmingEnd = false
+    /// A stop tapped on the map, read without leaving the ride.
+    @State private var readingStop: RoutePOI?
 
     private var recorder: RideRecorder { container.rideRecorder }
     private var formatter: UnitFormatter { UnitFormatter(units: container.session.units) }
@@ -17,12 +19,17 @@ struct NavigationScreen: View {
             MapLibreView(
                 styleURL: Config.mapStyleURL(for: .minimal),
                 center: recorder.lastFix?.coordinate ?? recorder.package?.route.path.first,
-                zoom: 15.5,
+                // Riding is read at arm's length: close enough to see the next turning.
+                zoom: 16.5,
                 cells: [],
                 route: recorder.package?.route.path ?? [],
                 markers: markers,
                 followsUser: true,
-                navigationMode: true
+                navigationMode: true,
+                onMarkerTap: { marker in
+                    guard let poi = recorder.package?.pois.first(where: { "stop-\($0.discoveryId.uuidString)" == marker.id }) else { return }
+                    withAnimation(.snappy) { readingStop = poi }
+                }
             )
             .ignoresSafeArea()
             VStack(spacing: 8) {
@@ -52,6 +59,12 @@ struct NavigationScreen: View {
                 }
                 .padding(.horizontal, 2)
                 Spacer(minLength: 0)
+                if let readingStop {
+                    StopCallout(poi: readingStop, units: container.session.units) {
+                        withAnimation(.snappy) { self.readingStop = nil }
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
                 if recorder.state == .paused {
                     pausedPill
                 } else {
@@ -167,8 +180,16 @@ struct NavigationScreen: View {
                 }
             }
         }
-        for poi in recorder.package?.pois.prefix(6) ?? [] {
-            out.append(MapMarker(id: poi.discoveryId.uuidString, coordinate: poi.coordinate, kind: .poi, title: poi.name))
+        // The cafés, pubs and landmarks on the route, as what they are rather than as
+        // anonymous dots, and tappable for their name and detour.
+        for poi in recorder.package?.pois.prefix(12) ?? [] {
+            out.append(MapMarker(
+                id: "stop-\(poi.discoveryId.uuidString)",
+                coordinate: poi.coordinate,
+                kind: poi.discoveryId == readingStop?.discoveryId ? .stopActive : .stop,
+                title: poi.name,
+                symbol: DiscoveryIcon.symbol(for: poi.category)
+            ))
         }
         return out
     }

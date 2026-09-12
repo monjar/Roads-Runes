@@ -185,27 +185,45 @@ struct ElevationSparkline: View {
 }
 
 /// Stop on the route (design 3a): "The Crown · pub · 26.0 km in · +600 m, +3 min".
+/// Tapping it shows it on the map above, so the selected one is outlined.
 struct RouteStopRow: View {
     let poi: RoutePOI
     let units: Units
+    var selected = false
 
     var body: some View {
-        let f = UnitFormatter(units: units)
         HStack(spacing: 12) {
             ZStack {
-                Circle().fill(Theme.Colors.terracotta)
+                Circle().fill(DiscoveryIcon.color(for: poi.category))
                 Image(systemName: DiscoveryIcon.symbol(for: poi.category)).font(.system(size: 16, weight: .bold)).foregroundStyle(Theme.Colors.cream)
             }
             .frame(width: 40, height: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(poi.name) · \(poi.category.rawValue.lowercased())").font(Theme.Typography.text(14, .semibold)).foregroundStyle(Theme.Colors.ink).lineLimit(1)
-                Text("\(f.distance(meters: poi.routePositionMeters)) in · +\(f.distance(meters: poi.detourMeters)), +\(max(1, poi.detourSeconds / 60)) min")
-                    .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).lineLimit(1)
+                Text(detail).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).lineLimit(1)
             }
             Spacer(minLength: 0)
+            Image(systemName: selected ? "mappin.circle.fill" : "mappin.circle")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(selected ? Theme.Colors.terracotta : Theme.Colors.mutedLight)
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 14)
         .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                .stroke(selected ? Theme.Colors.terracotta : .clear, lineWidth: 2)
+        )
+    }
+
+    /// A stop the rider asked for says so: it is on the route because they named it,
+    /// not because the route happened to pass it.
+    private var detail: String {
+        let f = UnitFormatter(units: units)
+        var parts: [String] = []
+        if poi.requested == true { parts.append("you asked for this") }
+        parts.append("\(f.distance(meters: poi.routePositionMeters)) in")
+        parts.append("+\(f.distance(meters: poi.detourMeters)), +\(max(1, poi.detourSeconds / 60)) min")
+        return parts.joined(separator: " · ")
     }
 }

@@ -135,10 +135,22 @@ struct QuestDetailView: View {
                             zoom: 12.5,
                             cells: [],
                             route: model.route?.path ?? [],
-                            markers: markers(for: quest),
+                            markers: markers(for: quest, route: model.route, focused: model.focusedStop),
+                            onMarkerTap: { marker in
+                                guard let poi = model.route?.pois.first(where: { "stop-\($0.id.uuidString)" == marker.id }) else { return }
+                                withAnimation(.snappy) { model.focus(poi) }
+                            },
                             camera: model.routeCamera
                         )
                         .frame(height: 360)
+                        .overlay(alignment: .bottom) {
+                            if let stop = model.focusedStop {
+                                StopCallout(poi: stop, units: model.units) { withAnimation(.snappy) { model.focus(nil) } }
+                                    .padding(.horizontal, 16)
+                                    .padding(.bottom, 44)
+                                    .transition(.opacity)
+                            }
+                        }
                         HStack {
                             IconCircleButton(symbol: "chevron.left") { dismiss() }.accessibilityLabel("Back").accessibilityIdentifier("quest.back")
                             Spacer()
@@ -218,11 +230,22 @@ struct QuestDetailView: View {
         return parts.joined(separator: " · ")
     }
 
-    private func markers(for quest: Quest) -> [MapMarker] {
-        quest.sortedObjectives.compactMap { objective in
+    private func markers(for quest: Quest, route: RouteOption?, focused: RoutePOI?) -> [MapMarker] {
+        var out: [MapMarker] = quest.sortedObjectives.compactMap { objective in
             guard let coordinate = objective.coordinate else { return nil }
             return MapMarker(id: objective.id.uuidString, coordinate: coordinate, kind: objective.status == .completed ? .objectiveDone : .objective, title: objective.title)
         }
+        // What the route passes on the way, so the rider can see where the coffee is.
+        for poi in route?.pois.prefix(10) ?? [] {
+            out.append(MapMarker(
+                id: "stop-\(poi.id.uuidString)",
+                coordinate: poi.coordinate,
+                kind: poi.id == focused?.id ? .stopActive : .stop,
+                title: poi.name,
+                symbol: DiscoveryIcon.symbol(for: poi.category)
+            ))
+        }
+        return out
     }
 
     @ViewBuilder

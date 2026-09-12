@@ -110,6 +110,43 @@ final class MainFlowsUITests: XCTestCase {
         tapOffCentre(app.buttons["planner.close"], dx: 0.5)
     }
 
+    /// The planner has to keep listening once a route is on screen. A destination used
+    /// to cancel the stops outright, so "through 3 cafes" was parsed and thrown away
+    /// and the same route came back unchanged.
+    func testAskingForStopsOnTheWayToAPlace() throws {
+        signInAsNewRider(at: Self.rotherhithe)
+        tapOffCentre(app.buttons["Search places"], dx: 0.6)
+        waitFor(app.textFields["Search places"]).typeText("richmond park\n")
+        tapOffCentre(waitFor(app.buttons.matching(identifier: "placeRow").firstMatch, 30), dx: 0.62)
+        tapOffCentre(waitFor(app.buttons["Ride here"]), dx: 0.1)
+        XCTAssertTrue(app.buttons["planner.start"].waitForExistence(timeout: 90), "No route to the place")
+
+        let placeholder = "About 30 km, mostly quiet roads, easy gravel and a pub halfway."
+        let request = app.textFields[placeholder].exists ? app.textFields[placeholder] : app.textViews[placeholder]
+        waitFor(request, 30).tap()
+        request.typeText("through 3 cafes")
+        let generate = app.buttons["Generate routes"]
+        scrollTo(generate)
+        tapOffCentre(generate, dx: 0.5)
+
+        let understood = app.descendants(matching: .any).matching(identifier: "planner.understood").firstMatch
+        XCTAssertTrue(understood.waitForExistence(timeout: 120), "The planner never said what it understood")
+        XCTAssertTrue(understood.label.contains("cafe"), "Understood '\(understood.label)' instead of cafés")
+
+        // Either the cafés are stops on the route, or the planner says it could not
+        // find them. Quietly ignoring the request is the bug this covers.
+        let couldNotFindThem = understood.label.contains("found nearby")
+        let stop = app.buttons.matching(identifier: "routeStop").firstMatch
+        XCTAssertTrue(couldNotFindThem || stop.waitForExistence(timeout: 30), "The stops were neither on the route nor accounted for")
+        if !couldNotFindThem {
+            scrollTo(stop)
+            tapOffCentre(stop, dx: 0.3)
+            let callout = app.descendants(matching: .any).matching(identifier: "stopCallout").firstMatch
+            XCTAssertTrue(callout.waitForExistence(timeout: 10), "A stop could not be opened on the map")
+        }
+        tapOffCentre(app.buttons["planner.close"], dx: 0.5)
+    }
+
     // MARK: - Outside London
 
     func testQuestsAndRoutesOutsideTheLondonGraph() throws {

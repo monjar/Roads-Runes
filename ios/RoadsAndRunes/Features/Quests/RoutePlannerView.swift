@@ -9,7 +9,11 @@ final class RoutePlannerViewModel {
     var selectedBike: Bike?
     private(set) var bikes: [Bike] = []
     private(set) var alternatives: [RouteOption] = []
-    var selected: RouteOption?
+    private(set) var selected: RouteOption?
+    /// One camera per decision, so the preview map moves when the rider picks a
+    /// route or a stop and stays put while the rest of the sheet redraws.
+    private(set) var preview: MapCamera?
+    private(set) var focusedStop: RoutePOI?
     private(set) var isGenerating = false
     private(set) var isStarting = false
     private(set) var engine: String?
@@ -65,15 +69,28 @@ final class RoutePlannerViewModel {
         if let area = parsed["area"]?.objectValue, let name = (area["name"] ?? area["query"])?.stringValue {
             parts.append(name)
         }
-        if let poi = parsed["poi"]?.objectValue, let category = poi["category"]?.stringValue {
+        if let poi = parsed["poi"]?.objectValue {
+            // "3 cafes or something cultural" parses to two kinds of stop.
+            let listed = poi["categories"]?.arrayValue?.compactMap { $0.stringValue } ?? []
+            let kinds = (listed.isEmpty ? [poi["category"]?.stringValue].compactMap { $0 } : listed).map { $0.lowercased() }
             let stops = poi["count"]?.intValue
-            let name = category.lowercased()
-            parts.append(stops.map { "\($0) \(name)\($0 == 1 ? "" : "s")" } ?? name)
+            if kinds.count > 1 {
+                parts.append(stops.map { "\($0) stops" } ?? "stops")
+                parts.append(kinds.joined(separator: " or "))
+            } else if let kind = kinds.first {
+                parts.append(stops.map { "\($0) \(kind)\($0 == 1 ? "" : "s")" } ?? kind)
+            }
         }
         if let distance = parsed["distanceKm"]?.objectValue?["target"]?.doubleValue {
             parts.append("\(Int(distance)) km")
         }
         if parsed["loop"]?.boolValue == true { parts.append("loop") }
+        // Five cafés asked for and two in the area: say so, rather than leaving the
+        // rider to count the pins and wonder what went wrong.
+        if let asked = parsed["poi"]?.objectValue?["count"]?.intValue,
+           let found = parsed["stops"]?.arrayValue?.count, found < asked {
+            parts.append(found == 0 ? "none found nearby" : "only \(found) found nearby")
+        }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
@@ -86,6 +103,26 @@ final class RoutePlannerViewModel {
         request = request.isEmpty ? preset : "\(request), \(preset.lowercased())"
     }
 
+    /// Picking a route fits the preview map to it and closes whatever stop was open.
+    func choose(_ route: RouteOption?) {
+        selected = route
+        focusedStop = nil
+        preview = route.map { MapCamera(fit: $0.path, padding: Self.previewPadding) }
+    }
+
+    /// A stop tapped on the map is read where it is; one tapped in the list below is
+    /// brought into view first. Tapping it again closes it and refits the route.
+    func focus(_ poi: RoutePOI?, moveCamera: Bool = false) {
+        focusedStop = poi
+        if let poi {
+            if moveCamera { preview = MapCamera(center: poi.coordinate, zoom: 15.5) }
+        } else if let selected {
+            preview = MapCamera(fit: selected.path, padding: Self.previewPadding)
+        }
+    }
+
+    private static let previewPadding = UIEdgeInsets(top: 26, left: 22, bottom: 46, right: 22)
+
     /// Quest rides start from the quest's fixed route; everything else plans fresh.
     func prepare() async {
         guard let quest else { return await generate() }
@@ -93,7 +130,7 @@ final class RoutePlannerViewModel {
             let route = try await container.api.questRoute(id: quest.id)
             questRoute = route
             alternatives = [route]
-            selected = route
+            choose(route)
             engine = route.engine
             error = nil
         } catch {
@@ -118,7 +155,7 @@ final class RoutePlannerViewModel {
             engine = response.engine
             understood = Self.understood(from: response.parsedRequest)
             let fresh = response.alternatives
-            selected = fresh.first { $0.label == "Adventure" } ?? fresh.max { $0.score < $1.score } ?? alternatives.first
+            choose(fresh.first { $0.label == "Adventure" } ?? fresh.max { $0.score < $1.score } ?? alternatives.first)
             error = nil
             container.analytics.track(.routeGenerated, properties: ["count": String(alternatives.count), "engine": response.engine ?? "unknown"])
         } catch {
@@ -253,7 +290,7 @@ struct RoutePlannerView: View {
                             .accessibilityIdentifier("planner.understood")
                     }
                     ForEach(model.alternatives) { route in
-                        Button { withAnimation(.snappy) { model.selected = route } } label: {
+                        Button { withAnimation(.snappy) { model.choose(route) } } label: {
                             RouteCard(
                                 route: route, selected: model.selected?.id == route.id, units: model.units,
                                 bestMatch: model.bestMatchId == route.id, badge: route.id == model.questRoute?.id ? "Quest route" : nil
@@ -268,7 +305,14 @@ struct RoutePlannerView: View {
                         .buttonStyle(.secondaryWide)
                     }
                     if let selected = model.selected {
-                        RouteDetailPanel(route: selected, units: model.units)
+                        RouteDetailPanel(
+                            route: selected,
+                            units: model.units,
+                            camera: model.preview,
+                            focused: model.focusedStop,
+                            onFocus: { poi, moveCamera in withAnimation(.snappy) { model.focus(poi, moveCamera: moveCamera) } },
+                            onClearStop: { withAnimation(.snappy) { model.focus(nil) } }
+                        )
                     }
                 }
             }
@@ -319,11 +363,25 @@ struct RoutePlannerView: View {
 struct RouteDetailPanel: View {
     let route: RouteOption
     let units: Units
+    var camera: MapCamera?
+    var focused: RoutePOI?
+    /// A stop, and whether the map should move to it (true from the list, false from
+    /// a marker the rider is already looking at).
+    var onFocus: (RoutePOI, Bool) -> Void = { _, _ in }
+    var onClearStop: () -> Void = {}
 
     private var formatter: UnitFormatter { UnitFormatter(units: units) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            RouteMapPreview(
+                route: route,
+                camera: camera,
+                focused: focused,
+                units: units,
+                onSelect: { onFocus($0, false) },
+                onClearFocus: onClearStop
+            )
             HStack(spacing: 8) {
                 FactTile(value: formatter.distance(meters: route.distanceMeters), label: "Distance")
                 FactTile(value: formatter.duration(seconds: Double(route.estimatedDurationSeconds)), label: "At your pace")
@@ -355,8 +413,20 @@ struct RouteDetailPanel: View {
                 }
                 .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
             }
-            ForEach(route.pois.prefix(3)) { poi in
-                RouteStopRow(poi: poi, units: units)
+            if !route.pois.isEmpty {
+                Text("Stops on the way")
+                    .font(Theme.Typography.text(13, .semibold))
+                    .foregroundStyle(Theme.Colors.ink)
+                    .padding(.top, 2)
+            }
+            ForEach(route.pois.prefix(6)) { poi in
+                Button {
+                    if poi.id == focused?.id { onClearStop() } else { onFocus(poi, true) }
+                } label: {
+                    RouteStopRow(poi: poi, units: units, selected: poi.id == focused?.id)
+                }
+                .buttonStyle(.pressable)
+                .accessibilityIdentifier("routeStop")
             }
         }
     }
