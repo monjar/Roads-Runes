@@ -59,7 +59,9 @@ class RoutePreferences:
     scenicPreference: float = 0.6
     hillTolerance: float = 0.5
     distanceKm: dict[str, float] | None = None  # {"target": 30, "tolerance": 5}
-    poi: dict[str, Any] | None = None  # {"category": "PUB", "preferredPosition": 0.75, "count": 5}
+    # {"category": "PUB", "preferredPosition": 0.75, "count": 5, "categories": [...],
+    # "quality": True when they asked for a *good* one rather than any}
+    poi: dict[str, Any] | None = None
     # Where the rider asked to ride: {"query": "Notting Hill"} until resolved, then
     # {"name", "latitude", "longitude"} as well (app/routing/geocode.py).
     area: dict[str, Any] | None = None
@@ -86,6 +88,23 @@ class ParsedRequest:
     source: str  # "llm" | "rules"
     matched: list[str] = field(default_factory=list)
 
+
+# Asking for a good one, not just any one.
+QUALITY_WORDS = (
+    "nice",
+    "best",
+    "good",
+    "great",
+    "top",
+    "proper",
+    "decent",
+    "lovely",
+    "favourite",
+    "favorite",
+    "independent",
+    "special",
+    "famous",
+)
 
 COUNT_WORDS = {
     "a couple": 2,
@@ -454,6 +473,10 @@ def parse_rules(text: str, base: RoutePreferences | None = None) -> ParsedReques
         prefs.poi = {"category": categories[0], "preferredPosition": position}
         if len(categories) > 1:
             prefs.poi["categories"] = categories
+        # "a nice cafe", "the best pub": worth a detour past the nearest one.
+        if any(w in lowered for w in QUALITY_WORDS):
+            prefs.poi["quality"] = True
+            matched.append("quality")
         matched.append(f"poi:{'+'.join(categories)}")
         for _, word, _ in asked:
             count = _poi_count(lowered, word)
@@ -479,13 +502,16 @@ LLM_SYSTEM = (
     "HISTORICAL, attractions and sights LANDMARK, viewpoints, peaks and summits "
     "VIEWPOINT, trails TRAIL. `poi.count` is how many of them they asked for, and "
     "`poi.preferredPosition` where along the ride they want it (0 start, 1 finish). "
-    "`distanceKm.target` may come from a time they gave: assume 16 km per hour."
+    "`distanceKm.target` may come from a time they gave: assume 16 km per hour. "
+    '`poi.quality` is true when they want a *good* one — "a nice cafe", "the best pub" '
+    "— rather than whichever is nearest."
 )
 LLM_SCHEMA = (
     '{"distanceKm": {"target": number, "tolerance": number} | null, "trafficAversion": number, '
     '"cyclewayPreference": number, "gravelPreference": number, "scenicPreference": number, '
-    '"hillTolerance": number, "poi": {"category": "PUB|CAFE|FOOD|VIEWPOINT|NATURE|HISTORICAL|LANDMARK|TRAIL", '
-    '"preferredPosition": number, "count": number | null} | null, "area": {"query": string} | null, "loop": boolean | null}'
+    '"hillTolerance": number, "poi": {"category": "PUB|CAFE|FOOD|VIEWPOINT|NATURE|HISTORICAL|CULTURAL|LANDMARK|TRAIL", '
+    '"preferredPosition": number, "count": number | null, "quality": boolean} | null, '
+    '"area": {"query": string} | null, "loop": boolean | null}'
 )
 
 
@@ -537,6 +563,8 @@ async def parse_request(text: str, llm: LLMClient, base: RoutePreferences | None
             prefs.poi["count"] = int(count)
         elif (rules.preferences.poi or {}).get("count"):
             prefs.poi["count"] = rules.preferences.poi["count"]
+        if poi.get("quality") is True or (rules.preferences.poi or {}).get("quality"):
+            prefs.poi["quality"] = True
         # The schema has room for one category; the rules parser sees "cafes or
         # museums", so keep its list when it agrees about the main one.
         also = (rules.preferences.poi or {}).get("categories") or []

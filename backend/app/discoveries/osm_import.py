@@ -35,7 +35,27 @@ RETRY_AFTER = timedelta(minutes=15)
 # Quest generation waits this long for the tile the rider is in; the import carries on after.
 FIRST_TILE_WAIT_SECONDS = 15.0
 USER_AGENT = "RoadsAndRunes-backend/0.1"
-KEEP_TAGS = ("tourism", "historic", "leisure", "natural", "amenity", "shop", "water", "waterway", "wikidata")
+# What kind of place it is, and what little OpenStreetMap says about how good it
+# is: a café with a website, opening hours and no brand is somebody's café, and a
+# `wikidata` entry means the world considers it worth an article.
+KEEP_TAGS = (
+    "tourism",
+    "historic",
+    "leisure",
+    "natural",
+    "amenity",
+    "shop",
+    "water",
+    "waterway",
+    "wikidata",
+    "wikipedia",
+    "website",
+    "opening_hours",
+    "brand",
+    "cuisine",
+    "outdoor_seating",
+    "stars",
+)
 
 BBox = tuple[float, float, float, float]  # (south, west, north, east)
 Fetcher = Callable[[BBox], Awaitable[list[dict[str, Any]]]]

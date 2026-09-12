@@ -130,8 +130,144 @@ def route_out(route: Route, components: dict[str, float] | None = None) -> Route
     )
 
 
+ASKED_LABEL = "As asked"
+# The rider is told what each way costs, so one of them has to be the cheap one.
+DIRECT_LABEL = "Direct"
+# How far a stated preference is pushed on the "more of it" card.
+MORE_OF_IT = 0.25
+# Naming the card after the thing the rider asked for reads better than "Adventure".
+LOUDER = {
+    "gravelPreference": ("More gravel", "Less gravel"),
+    "hillTolerance": ("Hillier", "Flatter"),
+    "trafficAversion": ("Quieter", "Faster roads"),
+    "scenicPreference": ("More scenic", "Plainer"),
+    "cyclewayPreference": ("More cycleways", "Fewer cycleways"),
+}
+
+
+@dataclass
+class Variant:
+    """One alternative: the preferences it rides on and the stops it carries."""
+
+    label: str
+    prefs: RoutePreferences
+    stops: list[Discovery]
+    distance_factor: float
+
+
+def _overlay(base: RoutePreferences, overlay: dict[str, Any]) -> RoutePreferences:
+    prefs = RoutePreferences(
+        **{
+            **base.to_dict(),
+            **{k: v for k, v in overlay.items() if k in RoutePreferences.__dataclass_fields__},
+        }
+    ).clamp()
+    prefs.distanceKm, prefs.poi, prefs.area = base.distanceKm, base.poi, base.area
+    return prefs
+
+
+def _stated(asked: RoutePreferences, usual: RoutePreferences) -> dict[str, float]:
+    """Which preferences the rider actually expressed, and by how much.
+
+    Everything has a value whether they said anything or not, so "stated" means
+    "far enough from what this rider always gets to have been a choice".
+    """
+    return {
+        field: getattr(asked, field) - getattr(usual, field)
+        for field in LOUDER
+        if abs(getattr(asked, field) - getattr(usual, field)) >= 0.15
+    }
+
+
+def _variants(
+    base: RoutePreferences,
+    usual: RoutePreferences,
+    stops: list[Discovery],
+    labels: list[str],
+    cfg: dict[str, Any],
+) -> list[Variant]:
+    """Three ways to answer, and what separates them.
+
+    With nothing asked for, the three are the bike's usual flavours. Once the rider
+    has asked for something — gravel, quiet, a café — the labels stop being flavours
+    and start being a trade-off: straight there, what you asked for, and more of it.
+    Presets used to overwrite the request outright, so "gravel heavy" came back on
+    two cards with the gravel taken out.
+    """
+    stated = _stated(base, usual)
+    if not stated and not stops:
+        return [
+            Variant(label, _overlay(base, cfg["labels"][label]), stops, cfg["labels"][label].get("distanceFactor", 1.0))
+            for label in labels
+        ]
+
+    direct = _overlay(usual, cfg["labels"][DIRECT_LABEL])
+    variants = [
+        Variant(DIRECT_LABEL, direct, [], cfg["labels"][DIRECT_LABEL].get("distanceFactor", 1.0)),
+        Variant(ASKED_LABEL, _overlay(base, {}), stops, 1.0),
+    ]
+
+    more = _overlay(base, {})
+    for field, difference in stated.items():
+        value = getattr(more, field)
+        setattr(more, field, min(1.0, value + MORE_OF_IT) if difference > 0 else max(0.0, value - MORE_OF_IT))
+    if stated:
+        field = max(stated, key=lambda f: abs(stated[f]))
+        label = LOUDER[field][0 if stated[field] > 0 else 1]
+    else:
+        label = "Scenic"
+        more = _overlay(base, cfg["labels"]["Scenic"])
+    variants.append(Variant(label, more.clamp(), stops, 1.1))
+    return variants
+
+
 AREA_TAKEOVER_M = 2000.0
 NEIGHBOURHOOD_RIDE_KM = 14.0
+
+
+# Names that mean "the one by the roundabout" rather than "the nice one".
+CHAINS = (
+    "costa",
+    "starbucks",
+    "pret a manger",
+    "greggs",
+    "caffe nero",
+    "caffè nero",
+    "mcdonald",
+    "burger king",
+    "kfc",
+    "subway",
+    "wetherspoon",
+    "harvester",
+    "toby carvery",
+    "gail's",
+    "leon",
+    "itsu",
+    "pizza express",
+    "coffee republic",
+)
+
+
+def _appeal_m(poi: Discovery) -> float:
+    """How far a rider would sensibly go out of their way for this place, in metres.
+
+    OpenStreetMap has no ratings. What it has is how much somebody bothered to
+    record: an article, a website, opening hours and no brand is somebody's café;
+    a brand and nothing else is the one in the petrol station.
+    """
+    tags = poi.tags or {}
+    appeal = 0.0
+    if tags.get("wikidata") or tags.get("wikipedia"):
+        appeal += 500
+    if tags.get("website"):
+        appeal += 200
+    if tags.get("opening_hours"):
+        appeal += 150
+    if tags.get("outdoor_seating") == "yes":
+        appeal += 100
+    if tags.get("brand") or any(chain in (poi.name or "").lower() for chain in CHAINS):
+        appeal -= 600
+    return appeal
 
 
 def _stop_categories(poi: dict[str, Any] | None) -> list[str]:
@@ -179,6 +315,7 @@ async def _pick_stops(
     count: int,
     target_km: float,
     max_ring_m: float | None = None,
+    appeal_weight: float = 0.25,
 ) -> list[Discovery]:
     """`count` places around a centre, spread around the compass.
 
@@ -197,10 +334,17 @@ async def _pick_stops(
     chosen: list[Discovery] = []
     for category, quota in zip(categories, _quotas(count, len(categories)), strict=False):
         _take_around(
-            latitude, longitude, [p for p in candidates if p.category == category], quota, ring, spread, chosen
+            latitude,
+            longitude,
+            [p for p in candidates if p.category == category],
+            quota,
+            ring,
+            spread,
+            chosen,
+            appeal_weight,
         )
     if len(chosen) < count:
-        _take_around(latitude, longitude, candidates, count - len(chosen), ring, spread, chosen)
+        _take_around(latitude, longitude, candidates, count - len(chosen), ring, spread, chosen, appeal_weight)
     return _tour(latitude, longitude, chosen)
 
 
@@ -212,11 +356,18 @@ def _take_around(
     ring: float,
     spread: float,
     chosen: list[Discovery],
+    appeal_weight: float = 0.25,
 ) -> None:
-    """Appends up to `count` places near the ring, each in a direction of its own."""
+    """Appends up to `count` places near the ring, each in a direction of its own,
+    weighing what OpenStreetMap knows about a place against the detour to it."""
     taken = {poi.id for poi in chosen}
     added = 0
-    for poi in sorted(candidates, key=lambda p: abs(haversine_m(latitude, longitude, p.latitude, p.longitude) - ring)):
+    for poi in sorted(
+        candidates,
+        key=lambda p: (
+            abs(haversine_m(latitude, longitude, p.latitude, p.longitude) - ring) - appeal_weight * _appeal_m(p)
+        ),
+    ):
         if added == count:
             return
         if poi.id in taken:
@@ -272,6 +423,7 @@ async def _pick_stops_between(
     destination: Coordinate,
     categories: list[str],
     count: int,
+    appeal_weight: float = 0.25,
 ) -> list[Discovery]:
     """`count` stops strung along the way from the rider to a place.
 
@@ -300,25 +452,38 @@ async def _pick_stops_between(
         return []
     chosen: list[tuple[float, Discovery]] = []
     for category, quota in zip(categories, _quotas(count, len(categories)), strict=False):
-        _take_along([c for c in along if c[2].category == category], quota, chosen)
+        _take_along([c for c in along if c[2].category == category], quota, chosen, appeal_weight)
     if len(chosen) < count:
-        _take_along(along, count - len(chosen), chosen)
+        _take_along(along, count - len(chosen), chosen, appeal_weight)
     return [poi for _, poi in sorted(chosen, key=lambda c: c[0])]
 
 
-def _take_along(along: list[tuple[float, float, Discovery]], count: int, chosen: list[tuple[float, Discovery]]) -> None:
-    """Appends up to `count` of these, one per stretch of the way, each the closest
-    to the line in its stretch; what is left over comes from nearest the line."""
+def _take_along(
+    along: list[tuple[float, float, Discovery]],
+    count: int,
+    chosen: list[tuple[float, Discovery]],
+    appeal_weight: float = 0.25,
+) -> None:
+    """Appends up to `count` of these, one per stretch of the way, each the best of
+    its stretch; what is left over comes from nearest the line.
+
+    "Best" sets the detour a stop costs against what OpenStreetMap knows about it,
+    so "a nice cafe" can walk past the chain on the corner.
+    """
     taken = {poi.id for _, poi in chosen}
     start = len(chosen)
+
+    def cost(entry: tuple[float, float, Discovery]) -> float:
+        return entry[1] - appeal_weight * _appeal_m(entry[2])
+
     for band in range(count):
         low, high = band / count, (band + 1) / count
         in_band = [c for c in along if low <= c[0] < high and c[2].id not in taken]
         if in_band:
-            progress, _, poi = min(in_band, key=lambda c: c[1])
+            progress, _, poi = min(in_band, key=cost)
             taken.add(poi.id)
             chosen.append((progress, poi))
-    for progress, _, poi in sorted(along, key=lambda c: c[1]):
+    for progress, _, poi in sorted(along, key=cost):
         if len(chosen) - start >= count:
             return
         if poi.id not in taken:
@@ -360,6 +525,9 @@ async def generate(
         scenicPreference=0.6,
         hillTolerance=min(1.0, profile.max_preferred_gradient / 12),
     )
+    # What this rider gets when they say nothing — the baseline the request is read
+    # against, so the planner knows which preferences were a choice.
+    usual_prefs = RoutePreferences(**base_prefs.to_dict())
     if payload.preferences:
         for k, v in payload.preferences.model_dump().items():
             setattr(base_prefs, k, v)
@@ -429,10 +597,14 @@ async def generate(
     requested_stops: list[Discovery] = []
     wanted = int((base_prefs.poi or {}).get("count") or 0)
     categories = _stop_categories(base_prefs.poi)
+    # "a nice cafe" is worth a detour past the nearest one; a plain "a cafe" is not.
+    appeal_weight = 1.0 if (base_prefs.poi or {}).get("quality") else 0.25
     if wanted and categories:
         if payload.destination is not None:
             # "Ride here, through three cafés" — a destination does not cancel the stops.
-            requested_stops = await _pick_stops_between(db, start, payload.destination, categories, wanted)
+            requested_stops = await _pick_stops_between(
+                db, start, payload.destination, categories, wanted, appeal_weight
+            )
             if not requested_stops:
                 # Nothing imported along this way yet; fetch its middle and look again.
                 await osm_import.ensure_pois(
@@ -440,7 +612,9 @@ async def generate(
                     (start.latitude + payload.destination.latitude) / 2,
                     (start.longitude + payload.destination.longitude) / 2,
                 )
-                requested_stops = await _pick_stops_between(db, start, payload.destination, categories, wanted)
+                requested_stops = await _pick_stops_between(
+                    db, start, payload.destination, categories, wanted, appeal_weight
+                )
         else:
             requested_stops = await _pick_stops(
                 db,
@@ -451,6 +625,7 @@ async def generate(
                 target_km,
                 # A named neighbourhood keeps its ride inside it.
                 max_ring_m=2500.0 if area is not None else None,
+                appeal_weight=appeal_weight,
             )
         if parsed_dict is not None:
             parsed_dict["stops"] = [
@@ -485,22 +660,14 @@ async def generate(
 
     results: list[tuple[Route, dict[str, float]]] = []
     seen_paths: set[str] = set()
-    for index, label in enumerate(labels):
-        overlay = cfg["labels"][label]
-        prefs = RoutePreferences(
-            **{
-                **base_prefs.to_dict(),
-                **{k: v for k, v in overlay.items() if k in RoutePreferences.__dataclass_fields__},
-            }
-        ).clamp()
-        prefs.distanceKm = base_prefs.distanceKm
-        prefs.poi = base_prefs.poi
-        distance_m = target_km * 1000 * overlay.get("distanceFactor", 1.0)
+    for index, variant in enumerate(_variants(base_prefs, usual_prefs, requested_stops, labels, cfg)):
+        label, prefs = variant.label, variant.prefs
+        distance_m = target_km * 1000 * variant.distance_factor
         custom_model = build_custom_model(prefs, bike_type, allow_gravel, allow_trails)
         points = [(start.latitude, start.longitude)]
         for lat, lon, _ in targets.points:
             points.append((lat, lon))
-        for stop in requested_stops:
+        for stop in variant.stops:
             points.append((stop.latitude, stop.longitude))
         for wp in payload.waypoints:
             points.append((wp.latitude, wp.longitude))
@@ -556,7 +723,7 @@ async def generate(
             speed_mps=speed_mps,
             preferred_category=(prefs.poi or {}).get("category"),
             preferred_position=(prefs.poi or {}).get("preferredPosition"),
-            required_ids={str(stop.id) for stop in requested_stops},
+            required_ids={str(stop.id) for stop in variant.stops},
         )
         metrics = RouteMetrics(
             distance_m=er.distance_m,

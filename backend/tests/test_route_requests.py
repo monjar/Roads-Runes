@@ -181,13 +181,16 @@ async def test_a_ride_in_a_named_place_goes_there_with_the_stops_asked_for(explo
     assert len(parsed["stops"]) == 5
     assert parsed["poi"]["count"] == 5
 
-    # Every pub the rider asked for is on the route's stop list, not just near the line.
-    for route in body["alternatives"]:
+    # One card is the honest cheap one: straight there, none of the stops. The rest
+    # carry every pub the rider asked for, on the line rather than near it.
+    carrying = [r for r in body["alternatives"] if any(poi.get("requested") for poi in r["pois"])]
+    assert carrying, "no alternative honoured the request"
+    for route in carrying:
         requested = [poi for poi in route["pois"] if poi.get("requested")]
         assert {poi["name"] for poi in requested} == {stop["name"] for stop in parsed["stops"]}
 
     # The ride is in Notting Hill, not at the rider's door.
-    for route in body["alternatives"]:
+    for route in carrying:
         longitude, latitude = route["coordinates"][0][:2]
         assert abs(latitude - NOTTING_HILL[0]) < 0.05
         assert abs(longitude - NOTTING_HILL[1]) < 0.05
@@ -283,7 +286,9 @@ async def test_a_ride_to_a_place_still_goes_through_the_stops_asked_for(explorer
     distances = [haversine_m(HOME[0], HOME[1], stop["latitude"], stop["longitude"]) for stop in parsed["stops"]]
     assert distances == sorted(distances)
 
-    for route in body["alternatives"]:
+    carrying = [r for r in body["alternatives"] if any(poi.get("requested") for poi in r["pois"])]
+    assert carrying, "no alternative honoured the request"
+    for route in carrying:
         requested = [poi for poi in route["pois"] if poi.get("requested")]
         assert {poi["name"] for poi in requested} == {stop["name"] for stop in parsed["stops"]}
         for stop in parsed["stops"]:
@@ -291,7 +296,8 @@ async def test_a_ride_to_a_place_still_goes_through_the_stops_asked_for(explorer
                 abs(c[1] - stop["latitude"]) < 0.005 and abs(c[0] - stop["longitude"]) < 0.005
                 for c in route["coordinates"]
             ), f"{stop['name']} is not on the {route['label']} route"
-        # It is still a ride to the place the rider picked.
+    # Every card, stops or not, still ends at the place the rider picked.
+    for route in body["alternatives"]:
         longitude, latitude = route["coordinates"][-1][:2]
         assert abs(latitude - TOWER_BRIDGE[0]) < 0.01 and abs(longitude - TOWER_BRIDGE[1]) < 0.01
 
@@ -391,3 +397,43 @@ async def test_a_short_ride_widens_its_corridor_rather_than_finding_nothing(expl
             2,
         )
     assert [stop.name for stop in stops] == ["Sidestreet Coffee 0", "Sidestreet Coffee 1"]
+
+
+@pytest.mark.anyio
+async def test_the_alternatives_are_a_trade_off_once_something_is_asked_for(explorer_client):
+    """ "A gravel heavy ride with 1 nice cafe stop" should offer the ask, more of it,
+    and the plain way there — not three presets with the gravel taken out."""
+    await seed_cafes_on_the_way(HOME, TOWER_BRIDGE)
+    r = await explorer_client.post(
+        "/routes/generate",
+        json={
+            "origin": {"latitude": HOME[0], "longitude": HOME[1]},
+            "destination": {"latitude": TOWER_BRIDGE[0], "longitude": TOWER_BRIDGE[1]},
+            "request": "A gravel heavy ride with 1 nice cafe stop",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    labels = {route["label"] for route in body["alternatives"]}
+    assert "As asked" in labels
+    assert "Direct" in labels
+
+    asked = next(route for route in body["alternatives"] if route["label"] == "As asked")
+    direct = next(route for route in body["alternatives"] if route["label"] == "Direct")
+    assert [poi for poi in asked["pois"] if poi.get("requested")], "the café was not threaded on"
+    assert not [poi for poi in direct["pois"] if poi.get("requested")], "the direct way should carry nothing"
+    # The gravel the rider asked for survives into the route it is asked of.
+    assert asked["scoreComponents"] and body["parsedRequest"]["gravelPreference"] >= 0.7
+
+
+def test_a_chain_by_the_road_loses_to_somewhere_worth_stopping():
+    """OpenStreetMap has no ratings; how much of a place is recorded stands in."""
+    nearest = Discovery(name="Costa Coffee", category="CAFE", latitude=0, longitude=0, tags={"brand": "Costa"})
+    nicer = Discovery(
+        name="The Watch House",
+        category="CAFE",
+        latitude=0,
+        longitude=0,
+        tags={"website": "https://example.com", "opening_hours": "Mo-Fr 07:00-17:00", "outdoor_seating": "yes"},
+    )
+    assert service._appeal_m(nicer) - service._appeal_m(nearest) >= 600
