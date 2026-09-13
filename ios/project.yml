@@ -13,6 +13,9 @@ settings:
     SWIFT_VERSION: "5.9"
     DEVELOPMENT_TEAM: "7WBQP62F6Z"   # paid Individual team; Xcode registers the App IDs and capabilities
     CODE_SIGN_STYLE: Automatic
+    # One build number for the app and its watch app, overridable per upload:
+    # TestFlight refuses a build number it has seen before.
+    CURRENT_PROJECT_VERSION: "1"
     SWIFT_STRICT_CONCURRENCY: minimal
     ENABLE_USER_SCRIPT_SANDBOXING: YES
   configs:
@@ -52,12 +55,15 @@ targets:
       properties:
         CFBundleDisplayName: Roads & Runes
         CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "1"
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UIAppFonts: [Caprasimo-Regular.ttf, Figtree-Regular.ttf, Figtree-SemiBold.ttf, Figtree-Bold.ttf]
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
+        # The app talks HTTPS and nothing else, which is exempt: saying so here saves
+        # answering the export-compliance question by hand on every TestFlight build.
+        ITSAppUsesNonExemptEncryption: false
         API_BASE_URL: $(API_BASE_URL)
         # NO for builds signed by a free Personal Team, which cannot carry the entitlement.
         APPLE_SIGN_IN_ENABLED: $(APPLE_SIGN_IN_ENABLED)
@@ -88,7 +94,6 @@ targets:
       properties:
         com.apple.developer.applesignin: [Default]
         com.apple.developer.healthkit: true
-        com.apple.developer.healthkit.access: []
         com.apple.security.application-groups: [group.com.roadsandrunes.app]
     settings:
       base:
@@ -108,7 +113,7 @@ targets:
       properties:
         CFBundleDisplayName: Roads & Runes
         CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "1"
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         WKCompanionAppBundleIdentifier: com.roadsandrunes.app
         WKApplication: true
         WKRunsIndependentlyOfCompanionApp: false
