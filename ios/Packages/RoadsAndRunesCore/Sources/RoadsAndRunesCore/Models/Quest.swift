@@ -123,6 +123,8 @@ public struct Quest: Codable, Hashable, Identifiable, Sendable {
     public var startedAt: Date?
     public var completedAt: Date?
     public var createdAt: Date?
+    /// How the quest is meant to be done; nil from a server that predates activities.
+    public var activity: Activity?
 
     public init(
         id: UUID, questType: String, characterClass: CharacterClass, templateId: String, title: String, description: String,
@@ -130,8 +132,9 @@ public struct Quest: Codable, Hashable, Identifiable, Sendable {
         estimatedDurationMinutes: Int, baseXP: Int, status: QuestStatus, expiresAt: Date? = nil, storyQuestId: UUID? = nil,
         partyId: UUID? = nil, origin: Coordinate, objectives: [Objective], rewards: QuestRewards = QuestRewards(),
         suggestedRouteId: UUID? = nil, rideId: UUID? = nil, acceptedAt: Date? = nil, startedAt: Date? = nil,
-        completedAt: Date? = nil, createdAt: Date? = nil
+        completedAt: Date? = nil, createdAt: Date? = nil, activity: Activity? = nil
     ) {
+        self.activity = activity
         self.id = id
         self.questType = questType
         self.characterClass = characterClass
@@ -213,12 +216,15 @@ public struct QuestGenerateRequest: Codable, Hashable, Sendable {
     public var longitude: Double
     public var count: Int
     public var request: String?
+    /// nil: however this player usually moves.
+    public var activity: Activity?
 
-    public init(latitude: Double, longitude: Double, count: Int = 3, request: String? = nil) {
+    public init(latitude: Double, longitude: Double, count: Int = 3, request: String? = nil, activity: Activity? = nil) {
         self.latitude = latitude
         self.longitude = longitude
         self.count = count
         self.request = request
+        self.activity = activity
     }
 }
 

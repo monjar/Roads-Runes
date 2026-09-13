@@ -20,14 +20,17 @@ public struct ActiveRideState: Codable, Hashable, Sendable {
     public var lastSegmentIndex: Int
     /// Custom adventure name; nil for quest rides.
     public var title: String?
+    /// RIDE | RUN | WALK; nil in snapshots from before activities (a ride).
+    public var activity: String?
 
     public init(
         rideId: UUID? = nil, clientRideId: UUID, questId: UUID? = nil, routeId: UUID? = nil, bikeId: UUID? = nil,
         navigationState: NavigationState, startedAt: Date, updatedAt: Date, stats: RideSnapshot,
         pendingCells: [String] = [], visitedCells: [String] = [], completedObjectiveIDs: [UUID] = [],
         pendingObjectiveEvents: [ObjectiveEvent] = [], lastFix: LocationFix? = nil, lastSegmentIndex: Int = 0,
-        title: String? = nil
+        title: String? = nil, activity: String? = nil
     ) {
+        self.activity = activity
         self.rideId = rideId
         self.clientRideId = clientRideId
         self.questId = questId

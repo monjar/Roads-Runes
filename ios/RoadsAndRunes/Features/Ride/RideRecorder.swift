@@ -20,6 +20,8 @@ final class RideRecorder {
     /// Custom adventure name (spec §31); quest rides are named by the quest.
     private(set) var title: String?
     private(set) var currentObjective: Objective?
+    /// How this outing is being done; sets the workout, the ride record and the words on screen.
+    private(set) var activity: Activity = .ride
     private(set) var completedObjectiveIDs: Set<UUID> = []
     private(set) var recentObjectiveCompletion: Objective?
     private(set) var offRouteSince: Date?
@@ -92,8 +94,9 @@ final class RideRecorder {
 
     // MARK: - Lifecycle
 
-    func start(package: RoutePackage, quest: Quest?, bikeId: UUID?, title: String? = nil) async {
+    func start(package: RoutePackage, quest: Quest?, bikeId: UUID?, title: String? = nil, activity: Activity = .ride) async {
         guard !isActive else { return }
+        self.activity = activity == .unknown ? .ride : activity
         try? routePackages.save(package)
         self.package = package
         self.quest = quest ?? package.quest
@@ -116,13 +119,14 @@ final class RideRecorder {
 
         if location.authorization != .always { location.requestAlways() }
         await health.requestAuthorization()
-        health.beginWorkout(startDate: startedAt)
+        health.beginWorkout(startDate: startedAt, activity: self.activity)
         location.startTracking(mode: batteryMode)
         watch.configure(batteryMode: batteryMode)
 
         persistence.upsertActiveRide(clientRideId: clientRideId, serverRideId: nil, questId: self.quest?.id, routeId: package.route.id, bikeId: bikeId, startedAt: startedAt, state: .active)
         ride = try? await api.createRide(RideCreate(
-            clientRideId: clientRideId, startedAt: startedAt, questId: self.quest?.id, bikeId: bikeId, routeId: package.route.id, title: self.title
+            clientRideId: clientRideId, startedAt: startedAt, questId: self.quest?.id, bikeId: bikeId, routeId: package.route.id, title: self.title,
+            activity: self.activity
         ))
         if let ride { persistence.upsertActiveRide(clientRideId: clientRideId, serverRideId: ride.id, questId: self.quest?.id, routeId: package.route.id, bikeId: bikeId, startedAt: startedAt, state: .active) }
 
@@ -348,7 +352,8 @@ final class RideRecorder {
     private func ensureServerRide() async {
         guard ride == nil else { return }
         ride = try? await api.createRide(RideCreate(
-            clientRideId: clientRideId, startedAt: startedAt, questId: quest?.id, bikeId: bikeId, routeId: package?.route.id, title: title
+            clientRideId: clientRideId, startedAt: startedAt, questId: quest?.id, bikeId: bikeId, routeId: package?.route.id, title: title,
+            activity: activity
         ))
         if let ride { persistence.upsertActiveRide(clientRideId: clientRideId, serverRideId: ride.id, questId: quest?.id, routeId: package?.route.id, bikeId: bikeId, startedAt: startedAt, state: state) }
     }
@@ -391,7 +396,8 @@ final class RideRecorder {
                 objectives: objectives,
                 totalDistanceMeters: package.route.distanceMeters,
                 routeCoordinates: Self.thinned(package.route.coordinates),
-                stops: Array(stops)
+                stops: Array(stops),
+                activity: activity.rawValue
             ),
             units: units
         )
@@ -438,7 +444,7 @@ final class RideRecorder {
             navigationState: state, startedAt: startedAt, updatedAt: now, stats: stats,
             pendingCells: exploration?.pendingUpload ?? [], visitedCells: Array(exploration?.visitedCells ?? []),
             completedObjectiveIDs: Array(completedObjectiveIDs), pendingObjectiveEvents: pendingObjectiveEvents,
-            lastFix: lastFix, lastSegmentIndex: progress?.nearestSegmentIndex ?? 0, title: title
+            lastFix: lastFix, lastSegmentIndex: progress?.nearestSegmentIndex ?? 0, title: title, activity: activity.rawValue
         )
         try? activeRideStore.save(snapshot)
         persistence.save()
@@ -457,6 +463,7 @@ final class RideRecorder {
         startedAt = saved.startedAt
         bikeId = saved.bikeId
         title = saved.title
+        activity = saved.activity.flatMap(Activity.init(rawValue:)) ?? .ride
         statistics = RideStatistics(resuming: saved.stats)
         stats = statistics.snapshot
         completedObjectiveIDs = Set(saved.completedObjectiveIDs)
@@ -486,6 +493,7 @@ final class RideRecorder {
         startedAt = saved.startedAt
         bikeId = saved.bikeId
         title = saved.title
+        activity = saved.activity.flatMap(Activity.init(rawValue:)) ?? .ride
         ride = nil
         if let rideId = saved.rideId { ride = try? await api.ride(id: rideId) }
         statistics = RideStatistics(resuming: saved.stats)

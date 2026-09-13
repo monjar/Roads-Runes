@@ -17,6 +17,9 @@ final class SessionStore {
     private(set) var state: State = .loading
     private(set) var user: User?
     private(set) var character: Character?
+    /// The riding profile, kept for its default activity: the World and the planner
+    /// need to know how this player moves before they have asked for anything.
+    private(set) var riderProfile: RiderProfile?
     private(set) var config: AppConfig?
     var lastError: String?
     /// From creating a character until the rider has set up a bike and answered
@@ -34,6 +37,26 @@ final class SessionStore {
     var featureFlags: [String: Bool] { config?.featureFlags ?? [:] }
 
     func isEnabled(_ flag: String) -> Bool { featureFlags[flag] ?? false }
+
+    /// How this player usually moves; a ride until they say otherwise.
+    var defaultActivity: Activity {
+        let activity = riderProfile?.defaultActivity ?? .ride
+        return activity == .unknown ? .ride : activity
+    }
+
+    func setDefaultActivity(_ activity: Activity) async {
+        var profile = (try? await api.riderProfile()) ?? riderProfile ?? RiderProfile()
+        profile.defaultActivity = activity
+        do {
+            riderProfile = try await api.updateRiderProfile(profile)
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func update(riderProfile: RiderProfile) {
+        self.riderProfile = riderProfile
+    }
 
     func bootstrap() async {
         do {
@@ -56,6 +79,7 @@ final class SessionStore {
     func refreshCharacter() async {
         do {
             character = try await api.character()
+            riderProfile = try? await api.riderProfile()
             state = .ready
         } catch let error as APIError {
             if case .server(let code, _, _) = error, code == "NO_CHARACTER" || code == "NOT_FOUND" {

@@ -97,7 +97,7 @@ struct IntegrationsView: View {
                 if !container.health.isAuthorized && container.health.isAvailable {
                     Button("Connect Health") { Task { await container.health.requestAuthorization() } }
                 }
-                Text("Rides are saved as cycling workouts with route and heart rate. The app works fully without Health.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
+                Text("Outings are saved as cycling, running or walking workouts with route and heart rate. The app works fully without Health.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
             }
             Section("Strava") {
                 if let strava {

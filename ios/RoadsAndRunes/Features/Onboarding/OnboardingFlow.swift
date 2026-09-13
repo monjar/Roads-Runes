@@ -2,12 +2,13 @@ import AuthenticationServices
 import RoadsAndRunesCore
 import SwiftUI
 
-/// Welcome → Sign in → Character → Bike → Location permission (spec §96 steps 1–5).
+/// Welcome → Sign in → Character → How you move → Bike (riders only) → Location
+/// permission (spec §96 steps 1–5, with a step for feet).
 struct OnboardingFlow: View {
     @Environment(AppContainer.self) private var container
     @State private var step: Step = .welcome
 
-    enum Step { case welcome, character, bike, location }
+    enum Step { case welcome, character, activity, bike, location }
 
     var body: some View {
         NavigationStack {
@@ -16,14 +17,16 @@ struct OnboardingFlow: View {
                 case .signedOut:
                     WelcomeView()
                 case .needsCharacter:
-                    CharacterCreationView(onDone: { step = .bike })
+                    CharacterCreationView(onDone: { step = .activity })
                 default:
-                    // A new character: bike, then location, then the world.
+                    // A new character: how you move, a bike if you ride, then location, then the world.
                     switch step {
                     case .location:
                         LocationPermissionView(onDone: { container.session.finishOnboarding() })
-                    default:
+                    case .bike:
                         BikeSetupView(onDone: { step = .location })
+                    default:
+                        ActivitySetupView(onDone: { chosen in step = chosen == .ride ? .bike : .location })
                     }
                 }
             }
@@ -48,7 +51,7 @@ struct WelcomeView: View {
             }
             .padding(.bottom, 8)
             Text("Roads & Runes").font(Theme.Typography.voice(40, relativeTo: .largeTitle)).foregroundStyle(Theme.Colors.ink)
-            Text("An RPG where the real world is the map\nand your bicycle is how you explore it.")
+            Text("An RPG where the real world is the map\nand every ride, run and walk explores it.")
                 .font(Theme.Typography.text(15))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(Theme.Colors.muted)
@@ -228,7 +231,12 @@ struct BikeSetupView: View {
                 .buttonStyle(.primary)
                 .disabled(saving)
                 .padding(.horizontal, 20)
+                .padding(.bottom, 2)
+            Button("Skip for now") { onDone() }
+                .font(Theme.Typography.captionStrong)
+                .foregroundStyle(Theme.Colors.terracottaDeep)
                 .padding(.bottom, 8)
+                .accessibilityIdentifier("onboarding.bike.skip")
         }
     }
 }

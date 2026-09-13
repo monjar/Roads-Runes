@@ -248,11 +248,20 @@ public struct RiderProfile: Codable, Hashable, Sendable {
     public var gravelComfort: Double
     public var technicalTrailComfort: Double
     public var cyclewayPreference: Double
+    /// How this player usually moves, and how far is comfortable on foot. Optional
+    /// so a server that predates them still decodes; the server fills defaults.
+    public var defaultActivity: Activity?
+    public var runDistanceKm: Double?
+    public var walkDistanceKm: Double?
 
     public init(
         comfortableDistanceKm: Double = 25, comfortableElevationGain: Double = 300, maxPreferredGradient: Double = 8,
-        trafficTolerance: Double = 0.3, gravelComfort: Double = 0.5, technicalTrailComfort: Double = 0.2, cyclewayPreference: Double = 0.8
+        trafficTolerance: Double = 0.3, gravelComfort: Double = 0.5, technicalTrailComfort: Double = 0.2, cyclewayPreference: Double = 0.8,
+        defaultActivity: Activity? = nil, runDistanceKm: Double? = nil, walkDistanceKm: Double? = nil
     ) {
+        self.defaultActivity = defaultActivity
+        self.runDistanceKm = runDistanceKm
+        self.walkDistanceKm = walkDistanceKm
         self.comfortableDistanceKm = comfortableDistanceKm
         self.comfortableElevationGain = comfortableElevationGain
         self.maxPreferredGradient = maxPreferredGradient

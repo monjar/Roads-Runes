@@ -75,6 +75,7 @@ struct PlaceShortcutChips: View {
 
 /// The selected place: what it is, how far, and one action — ride there.
 struct PlaceCard: View {
+    @Environment(AppContainer.self) private var container
     let place: Place
     var distanceMeters: Double?
     let units: Units
@@ -99,9 +100,10 @@ struct PlaceCard: View {
                     .accessibilityLabel("Close")
             }
             Button(action: onDirections) {
+                let activity = container.session.defaultActivity
                 HStack(spacing: 10) {
-                    Image(systemName: "bicycle")
-                    Text("Ride here")
+                    Image(systemName: activity.symbol)
+                    Text("\(activity.verb) here")
                 }
             }
             .buttonStyle(.primary)

@@ -8,6 +8,33 @@ public enum CharacterClass: String, SafeEnum {
     case unknown = "UNKNOWN"
 }
 
+/// How the player moves. The code keeps its cycling names (`Ride`, `RideRecorder`);
+/// this is what changes the numbers, the workout and the words on screen.
+public enum Activity: String, SafeEnum {
+    case ride = "RIDE"
+    case run = "RUN"
+    case walk = "WALK"
+    case unknown = "UNKNOWN"
+
+    public var verb: String {
+        switch self {
+        case .run: return "Run"
+        case .walk: return "Walk"
+        default: return "Ride"
+        }
+    }
+
+    public var noun: String { verb.lowercased() }
+
+    public var symbol: String {
+        switch self {
+        case .run: return "figure.run"
+        case .walk: return "figure.walk"
+        default: return "bicycle"
+        }
+    }
+}
+
 public enum QuestStatus: String, SafeEnum {
     case available = "AVAILABLE"
     case accepted = "ACCEPTED"

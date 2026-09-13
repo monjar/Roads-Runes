@@ -59,9 +59,9 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Photograph discoveries for your journal.</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Read heart rate during rides to show it on your Watch and in your journal.</string>
+	<string>Read heart rate during your rides, runs and walks to show it on your Watch and in your journal.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>Save your rides as cycling workouts in Health.</string>
+	<string>Save your rides, runs and walks as workouts in Health.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connects to the Roads &amp; Runes development server on your network.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

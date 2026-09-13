@@ -179,6 +179,36 @@ final class MainFlowsUITests: XCTestCase {
         tapOffCentre(app.buttons["planner.close"], dx: 0.5)
     }
 
+    // MARK: - On foot
+
+    /// A runner has no bike to set up; onboarding goes from how you move to location.
+    func testOnboardingAsARunnerSkipsTheBike() throws {
+        #if targetEnvironment(simulator)
+        XCUIDevice.shared.location = XCUILocation(location: Self.rotherhithe)
+        #endif
+        app.launch()
+        replaceText(in: waitFor(app.textFields["Developer subject"]), with: "ui-\(UUID().uuidString.prefix(8).lowercased())")
+        tapOffCentre(app.buttons["Developer sign in"], dx: 0.5)
+        replaceText(in: waitFor(app.textFields["Your name"], 30), with: "Wren")
+        tapOffCentre(waitFor(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Ride as")).firstMatch), dx: 0.1)
+
+        tapOffCentre(waitFor(app.buttons["onboarding.activity.run"], 30), dx: 0.2)
+        tapOffCentre(app.buttons["onboarding.activity.continue"], dx: 0.1)
+        XCTAssertTrue(app.buttons["Allow location"].waitForExistence(timeout: 20), "A runner was asked for a bike")
+        XCTAssertFalse(app.textFields["Bike name"].exists)
+        tapOffCentre(app.buttons["Allow location"], dx: 0.1)
+        allowSystemAlertIfShown()
+        waitFor(app.buttons["Search places"], 30)
+
+        // The world offers what this player does.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).press(forDuration: 1.2)
+        XCTAssertTrue(app.buttons["Run here"].waitForExistence(timeout: 30), "The place card still says Ride here")
+        tapOffCentre(app.buttons["Run here"], dx: 0.1)
+        XCTAssertTrue(app.buttons["planner.start"].waitForExistence(timeout: 120), "No run to the place")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Run to")).firstMatch.exists)
+        tapOffCentre(app.buttons["planner.close"], dx: 0.5)
+    }
+
     // MARK: - Outside London
 
     func testQuestsAndRoutesOutsideTheLondonGraph() throws {
@@ -217,6 +247,9 @@ final class MainFlowsUITests: XCTestCase {
 
         replaceText(in: waitFor(app.textFields["Your name"], 30), with: "Wren")
         tapOffCentre(waitFor(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Ride as")).firstMatch), dx: 0.1)
+
+        // How you move: Ride is chosen already; a rider goes on to a bike.
+        tapOffCentre(waitFor(app.buttons["onboarding.activity.continue"], 30), dx: 0.1)
 
         replaceText(in: waitFor(app.textFields["Bike name"], 30), with: "UI test gravel")
         app.buttons["Gravel"].tap()

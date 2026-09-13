@@ -15,6 +15,8 @@ final class HealthKitService: ObservableObject {
     private var heartRateQuery: HKAnchoredObjectQuery?
     private var lastDistance: Double = 0
     private var lastEnergy: Double = 0
+    /// Cycling distance for rides, walking/running distance for the rest.
+    private var distanceType = HKQuantityType(.distanceCycling)
 
     var onHeartRate: ((Int) -> Void)?
 
@@ -26,11 +28,12 @@ final class HealthKitService: ObservableObject {
 
     private var typesToShare: Set<HKSampleType> {
         [HKObjectType.workoutType(), HKSeriesType.workoutRoute(),
-         HKQuantityType(.distanceCycling), HKQuantityType(.activeEnergyBurned)]
+         HKQuantityType(.distanceCycling), HKQuantityType(.distanceWalkingRunning), HKQuantityType(.activeEnergyBurned)]
     }
 
     private var typesToRead: Set<HKObjectType> {
-        [HKQuantityType(.heartRate), HKQuantityType(.distanceCycling), HKQuantityType(.activeEnergyBurned)]
+        [HKQuantityType(.heartRate), HKQuantityType(.distanceCycling), HKQuantityType(.distanceWalkingRunning),
+         HKQuantityType(.activeEnergyBurned)]
     }
 
     func requestAuthorization() async {
@@ -43,11 +46,12 @@ final class HealthKitService: ObservableObject {
         }
     }
 
-    func beginWorkout(startDate: Date) {
+    func beginWorkout(startDate: Date, activity: Activity = .ride) {
         guard isAvailable, isAuthorized else { return }
         let configuration = HKWorkoutConfiguration()
-        configuration.activityType = .cycling
+        configuration.activityType = activity.workoutType
         configuration.locationType = .outdoor
+        distanceType = activity == .ride ? HKQuantityType(.distanceCycling) : HKQuantityType(.distanceWalkingRunning)
         let builder = HKWorkoutBuilder(healthStore: store, configuration: configuration, device: .local())
         self.builder = builder
         routeBuilder = HKWorkoutRouteBuilder(healthStore: store, device: .local())
@@ -68,7 +72,7 @@ final class HealthKitService: ObservableObject {
         var samples: [HKSample] = []
         if distanceMeters > lastDistance {
             let quantity = HKQuantity(unit: .meter(), doubleValue: distanceMeters - lastDistance)
-            samples.append(HKQuantitySample(type: HKQuantityType(.distanceCycling), quantity: quantity, start: date.addingTimeInterval(-1), end: date))
+            samples.append(HKQuantitySample(type: distanceType, quantity: quantity, start: date.addingTimeInterval(-1), end: date))
             lastDistance = distanceMeters
         }
         if let activeCalories, activeCalories > lastEnergy {
@@ -126,6 +130,16 @@ final class HealthKitService: ObservableObject {
     private func stopHeartRateQuery() {
         if let heartRateQuery { store.stop(heartRateQuery) }
         heartRateQuery = nil
+    }
+}
+
+extension Activity {
+    var workoutType: HKWorkoutActivityType {
+        switch self {
+        case .run: return .running
+        case .walk: return .walking
+        default: return .cycling
+        }
     }
 }
 

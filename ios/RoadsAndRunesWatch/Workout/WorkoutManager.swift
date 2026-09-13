@@ -2,8 +2,9 @@ import Foundation
 import HealthKit
 import Observation
 
-/// Runs the cycling workout session on the Watch so heart rate streams and
-/// the workout continues while the phone is locked or disconnected.
+/// Runs the workout session on the Watch — cycling, running or walking, as the
+/// phone says — so heart rate streams and the workout continues while the
+/// phone is locked or disconnected.
 @MainActor
 @Observable
 final class WorkoutManager: NSObject {
@@ -19,8 +20,14 @@ final class WorkoutManager: NSObject {
 
     func requestAuthorization() async {
         guard HKHealthStore.isHealthDataAvailable() else { return }
-        let share: Set<HKSampleType> = [HKObjectType.workoutType(), HKQuantityType(.activeEnergyBurned), HKQuantityType(.distanceCycling)]
-        let read: Set<HKObjectType> = [HKQuantityType(.heartRate), HKQuantityType(.activeEnergyBurned), HKQuantityType(.distanceCycling)]
+        let share: Set<HKSampleType> = [
+            HKObjectType.workoutType(), HKQuantityType(.activeEnergyBurned), HKQuantityType(.distanceCycling),
+            HKQuantityType(.distanceWalkingRunning),
+        ]
+        let read: Set<HKObjectType> = [
+            HKQuantityType(.heartRate), HKQuantityType(.activeEnergyBurned), HKQuantityType(.distanceCycling),
+            HKQuantityType(.distanceWalkingRunning),
+        ]
         do {
             try await store.requestAuthorization(toShare: share, read: read)
             isAuthorized = true
@@ -29,10 +36,14 @@ final class WorkoutManager: NSObject {
         }
     }
 
-    func startIfNeeded() {
+    func startIfNeeded(activity: String? = nil) {
         guard session == nil, HKHealthStore.isHealthDataAvailable() else { return }
         let configuration = HKWorkoutConfiguration()
-        configuration.activityType = .cycling
+        switch activity {
+        case "RUN": configuration.activityType = .running
+        case "WALK": configuration.activityType = .walking
+        default: configuration.activityType = .cycling
+        }
         configuration.locationType = .outdoor
         do {
             let session = try HKWorkoutSession(healthStore: store, configuration: configuration)

@@ -6,6 +6,8 @@ import SwiftUI
 final class RoutePlannerViewModel {
     var request = ""
     var distanceKm: Double
+    /// Ride, run or walk this one; starts as the player's usual.
+    var activity: Activity
     var selectedBike: Bike?
     private(set) var bikes: [Bike] = []
     private(set) var alternatives: [RouteOption] = []
@@ -36,6 +38,7 @@ final class RoutePlannerViewModel {
         self.quest = quest
         self.destination = destination
         self.container = container
+        activity = quest?.activity.flatMap { $0 == .unknown ? nil : $0 } ?? container.session.defaultActivity
         if let destination, let here = container.location.lastFix?.coordinate {
             distanceKm = max(2, (GeoMath.distance(here, destination.coordinate) / 1000 * 1.3).rounded())
         } else {
@@ -46,8 +49,8 @@ final class RoutePlannerViewModel {
     var showsControls: Bool { quest == nil || isTweaking }
 
     var routesHeading: String {
-        if quest != nil { return alternatives.count > 1 ? "Ways to ride it" : "The route" }
-        return destination == nil ? "Three ways to ride it" : "Ways to get there"
+        if quest != nil { return alternatives.count > 1 ? "Ways to \(activity.noun) it" : "The route" }
+        return destination == nil ? "Three ways to \(activity.noun) it" : "Ways to get there"
     }
 
     var units: Units { container.session.units }
@@ -89,7 +92,7 @@ final class RoutePlannerViewModel {
     /// chosen route's label; quest rides carry the quest title instead.
     var adventureTitle: String? {
         guard quest == nil, let selected else { return nil }
-        if let destination { return "Ride to \(destination.name)" }
+        if let destination { return "\(activity.verb) to \(destination.name)" }
         let asked = request.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !asked.isEmpty else { return "\(selected.label) ride" }
         return String((asked.prefix(1).uppercased() + asked.dropFirst()).prefix(120))
@@ -183,8 +186,9 @@ final class RoutePlannerViewModel {
         }
         do {
             let response = try await container.api.generateRoutes(RouteGenerateRequest(
-                origin: origin, destination: destination?.coordinate, bikeId: selectedBike?.id, questId: quest?.id,
-                distanceTargetKm: distanceKm, loop: destination == nil, request: request.isEmpty ? nil : request
+                origin: origin, destination: destination?.coordinate, bikeId: activity == .ride ? selectedBike?.id : nil, questId: quest?.id,
+                distanceTargetKm: distanceKm, loop: destination == nil, request: request.isEmpty ? nil : request,
+                activity: activity
             ))
             // The quest's own route stays first so the rider can always go back to it.
             alternatives = (questRoute.map { [$0] } ?? []) + response.alternatives
@@ -237,7 +241,7 @@ final class RoutePlannerViewModel {
             let package = try await container.api.routePackage(id: selected.id)
             container.analytics.track(.routeSelected, properties: ["routeId": selected.id.uuidString, "label": selected.label])
             if let quest { container.analytics.track(.questStarted, properties: ["questId": quest.id.uuidString]) }
-            await container.rideRecorder.start(package: package, quest: quest ?? package.quest, bikeId: selectedBike?.id, title: adventureTitle)
+            await container.rideRecorder.start(package: package, quest: quest ?? package.quest, bikeId: activity == .ride ? selectedBike?.id : nil, title: adventureTitle, activity: activity)
             return true
         } catch {
             self.error = error.localizedDescription
@@ -291,8 +295,15 @@ struct RoutePlannerView: View {
                     .foregroundStyle(Theme.Colors.ink)
 
                 if model.showsControls {
+                    Picker("Activity", selection: $model.activity) {
+                        ForEach([Activity.ride, .run, .walk], id: \.self) { activity in
+                            Text(activity.verb).tag(activity)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("planner.activity")
                     VStack(spacing: 14) {
-                        TextField("About 30 km, mostly quiet roads, easy gravel and a pub halfway.", text: $model.request, axis: .vertical)
+                        TextField(model.activity == .ride ? "About 30 km, mostly quiet roads, easy gravel and a pub halfway." : "About 5 km, through a park, with a café at the end.", text: $model.request, axis: .vertical)
                             .font(Theme.Typography.text(17))
                             .foregroundStyle(Theme.Colors.ink)
                             .lineLimit(2...4)
@@ -360,7 +371,7 @@ struct RoutePlannerView: View {
                         } else {
                             Spacer()
                         }
-                        if !model.bikes.isEmpty {
+                        if !model.bikes.isEmpty, model.activity == .ride {
                             Picker("Bike", selection: $model.selectedBike) {
                                 ForEach(model.bikes) { bike in Text(bike.name).tag(Optional(bike)) }
                             }
@@ -422,7 +433,7 @@ struct RoutePlannerView: View {
                 } label: {
                     HStack(spacing: 10) {
                         if model.isStarting { ProgressView().tint(Theme.Colors.cream) } else { Image(systemName: "play.fill") }
-                        Text(model.isStarting ? "Downloading route…" : "Start ride")
+                        Text(model.isStarting ? "Downloading route…" : "Start \(model.activity.noun)")
                     }
                 }
                 .buttonStyle(.primary)
@@ -438,8 +449,8 @@ struct RoutePlannerView: View {
 
     private func title(_ model: RoutePlannerViewModel) -> String {
         if model.quest != nil { return model.isTweaking ? "How do you want\nto ride it?" : "Your quest\nroute" }
-        if let destination = model.destination { return "Ride to\n\(destination.name)" }
-        return "What kind of ride\ntoday?"
+        if let destination = model.destination { return "\(model.activity.verb) to\n\(destination.name)" }
+        return "What kind of \(model.activity.noun)\ntoday?"
     }
 
     private func outlineChip(_ text: String) -> some View {

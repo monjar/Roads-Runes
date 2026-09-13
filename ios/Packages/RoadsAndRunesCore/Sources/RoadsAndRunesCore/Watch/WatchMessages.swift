@@ -39,11 +39,15 @@ public struct WatchRouteSummary: Codable, Hashable, Sendable {
     public var routeCoordinates: [[Double]]
     /// Stops the rider asked for, so the Watch map can show what they are riding to.
     public var stops: [WatchStop]
+    /// RIDE | RUN | WALK, so the Watch starts the right kind of workout. Optional:
+    /// a Watch build from before activities still decodes the summary.
+    public var activity: String?
 
     public init(
         questTitle: String?, instructions: [Instruction], objectives: [WatchObjective], totalDistanceMeters: Double,
-        routeCoordinates: [[Double]] = [], stops: [WatchStop] = []
+        routeCoordinates: [[Double]] = [], stops: [WatchStop] = [], activity: String? = nil
     ) {
+        self.activity = activity
         self.questTitle = questTitle
         self.instructions = instructions
         self.objectives = objectives

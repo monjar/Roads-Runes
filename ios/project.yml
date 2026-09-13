@@ -82,8 +82,8 @@ targets:
         NSLocationWhenInUseUsageDescription: Roads & Runes shows your position on the world map and the quests around you.
         NSLocationAlwaysAndWhenInUseUsageDescription: During a ride, Roads & Runes records your route in the background so the map clears and objectives complete even when your phone is locked.
         NSLocationAlwaysUsageDescription: During a ride, Roads & Runes records your route in the background so the map clears and objectives complete even when your phone is locked.
-        NSHealthShareUsageDescription: Read heart rate during rides to show it on your Watch and in your journal.
-        NSHealthUpdateUsageDescription: Save your rides as cycling workouts in Health.
+        NSHealthShareUsageDescription: Read heart rate during your rides, runs and walks to show it on your Watch and in your journal.
+        NSHealthUpdateUsageDescription: Save your rides, runs and walks as workouts in Health.
         NSMotionUsageDescription: Motion data improves distance accuracy when GPS is weak.
         NSCameraUsageDescription: Photograph discoveries for your journal.
         NSPhotoLibraryUsageDescription: Attach photos to discoveries and adventures.
@@ -125,8 +125,8 @@ targets:
         WKCompanionAppBundleIdentifier: com.roadsandrunes.app
         WKApplication: true
         WKRunsIndependentlyOfCompanionApp: false
-        NSHealthShareUsageDescription: Read heart rate during rides.
-        NSHealthUpdateUsageDescription: Save rides as cycling workouts.
+        NSHealthShareUsageDescription: Read heart rate during rides, runs and walks.
+        NSHealthUpdateUsageDescription: Save rides, runs and walks as workouts.
         NSLocationWhenInUseUsageDescription: Show your position on the ride map.
         WKBackgroundModes: [workout-processing]
     entitlements:

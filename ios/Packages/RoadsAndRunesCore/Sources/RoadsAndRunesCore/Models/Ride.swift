@@ -22,14 +22,17 @@ public struct Ride: Codable, Hashable, Identifiable, Sendable {
     public var pointCount: Int
     public var flags: [String]?
     public var createdAt: Date
+    /// How it was done; nil from a server that predates activities (a ride).
+    public var activity: Activity?
 
     public init(
         id: UUID, clientRideId: UUID, status: RideStatus, title: String? = nil, startedAt: Date, endedAt: Date? = nil,
         distanceMeters: Double, durationSeconds: Int, movingSeconds: Int, elevationGainMeters: Double,
         activeCalories: Double? = nil, averageSpeedMps: Double? = nil, maxSpeedMps: Double? = nil, questId: UUID? = nil,
         bikeId: UUID? = nil, routeId: UUID? = nil, visibility: Visibility, healthKitWorkoutId: String? = nil,
-        pointCount: Int, flags: [String]? = nil, createdAt: Date
+        pointCount: Int, flags: [String]? = nil, createdAt: Date, activity: Activity? = nil
     ) {
+        self.activity = activity
         self.id = id
         self.clientRideId = clientRideId
         self.status = status
@@ -85,14 +88,17 @@ public struct RideCreate: Codable, Hashable, Sendable {
     public var routeId: UUID?
     /// Names a custom adventure (a ride without a quest); quest rides take the quest title.
     public var title: String?
+    /// Ride, run or walk; nil lets the server assume a ride.
+    public var activity: Activity?
 
-    public init(clientRideId: UUID, startedAt: Date, questId: UUID? = nil, bikeId: UUID? = nil, routeId: UUID? = nil, title: String? = nil) {
+    public init(clientRideId: UUID, startedAt: Date, questId: UUID? = nil, bikeId: UUID? = nil, routeId: UUID? = nil, title: String? = nil, activity: Activity? = nil) {
         self.clientRideId = clientRideId
         self.startedAt = startedAt
         self.questId = questId
         self.bikeId = bikeId
         self.routeId = routeId
         self.title = title
+        self.activity = activity
     }
 }
 

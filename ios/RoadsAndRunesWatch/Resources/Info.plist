@@ -23,9 +23,9 @@
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Read heart rate during rides.</string>
+	<string>Read heart rate during rides, runs and walks.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>Save rides as cycling workouts.</string>
+	<string>Save rides, runs and walks as workouts.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Show your position on the ride map.</string>
 	<key>WKApplication</key>

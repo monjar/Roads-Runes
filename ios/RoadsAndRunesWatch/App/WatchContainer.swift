@@ -25,12 +25,12 @@ final class WatchContainer {
                 phone?.send(heartRate: bpm)
             }
         }
-        store.onRideStateChanged = { [weak workout] state in
+        store.onRideStateChanged = { [weak workout, weak store] state in
             Task { @MainActor in
                 guard let workout else { return }
                 switch state {
                 case .active, .offRoute, .rerouting:
-                    workout.startIfNeeded()
+                    workout.startIfNeeded(activity: store?.summary?.activity)
                     workout.resume()
                 case .paused:
                     workout.pause()

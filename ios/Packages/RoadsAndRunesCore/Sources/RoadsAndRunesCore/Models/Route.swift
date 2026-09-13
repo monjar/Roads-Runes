@@ -196,8 +196,11 @@ public struct RouteGenerateRequest: Codable, Hashable, Sendable {
     public var loop: Bool?
     public var preferences: RoutePreferences?
     public var request: String?
+    /// nil: however this player usually moves.
+    public var activity: Activity?
 
-    public init(origin: Coordinate, destination: Coordinate? = nil, waypoints: [Coordinate] = [], bikeId: UUID? = nil, questId: UUID? = nil, distanceTargetKm: Double? = nil, loop: Bool? = nil, preferences: RoutePreferences? = nil, request: String? = nil) {
+    public init(origin: Coordinate, destination: Coordinate? = nil, waypoints: [Coordinate] = [], bikeId: UUID? = nil, questId: UUID? = nil, distanceTargetKm: Double? = nil, loop: Bool? = nil, preferences: RoutePreferences? = nil, request: String? = nil, activity: Activity? = nil) {
+        self.activity = activity
         self.origin = origin
         self.destination = destination
         self.waypoints = waypoints
