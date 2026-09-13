@@ -21,6 +21,8 @@ from app.core.logging import EVENT_EXPLORATION_VALIDATION_FAILED, get_logger
 from app.core.security import utcnow
 from app.discoveries.models import Discovery
 from app.discoveries.service import discoveries_along, mark_found
+from app.economy import service as economy
+from app.economy.rules import compute_ride_ac
 from app.exploration.cells import cell_for, traverse
 from app.exploration.service import ExplorationOutcome, record_traversal
 from app.progression.engine import RideRewardInput, compute_ride_xp
@@ -335,6 +337,23 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             discoveries,
         )
 
+    # Coins are the other purse: spent on the character where XP is kept. Same
+    # gate as XP, so a suspicious ride earns neither.
+    coins: dict[str, Any] = {"acAwarded": 0, "acBreakdown": [], "walletBalance": None}
+    if character is not None and not validation.suspicious:
+        coins = await economy.credit_lines(
+            db,
+            ride.user_id,
+            compute_ride_ac(
+                distance_meters=ride.distance_meters,
+                new_cells=len(exploration.new_cells),
+                quest_completed=quest_completed,
+                quest_difficulty=quest.difficulty if quest else None,
+            ),
+            ride_id=ride.id,
+            quest_id=quest.id if quest_completed and quest else None,
+        )
+
     if quest_completed and quest is not None:
         await publish(
             db,
@@ -360,6 +379,9 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         "levelUps": reward["levelUps"],
         "abilitiesUnlocked": reward["abilitiesUnlocked"],
         "titlesUnlocked": reward["titlesUnlocked"],
+        "acAwarded": coins["acAwarded"],
+        "acBreakdown": coins["acBreakdown"],
+        "walletBalance": coins["walletBalance"],
         "newCells": len(exploration.new_cells),
         "upgradedCells": len(exploration.upgraded_cells),
         "newTerritoryMeters": round(exploration.new_territory_m, 1),

@@ -200,7 +200,8 @@ public enum SampleData {
         ride: sampleRide, quest: sampleQuest, questCompletion: nil, xpAwarded: 420,
         xpBreakdown: [XPBreakdownEntry(source: "QUEST_COMPLETED", xp: 350), XPBreakdownEntry(source: "CLASS_BONUS", xp: 70)],
         newCells: 34, newTerritoryMeters: 12600, newRoadsMeters: 9800, discoveries: sampleDiscoveries,
-        levelUps: [LevelUp(kind: .overall, from: 7, to: 8)], abilitiesUnlocked: [], titlesUnlocked: ["Wanderer"], flags: []
+        levelUps: [LevelUp(kind: .overall, from: 7, to: 8)], abilitiesUnlocked: [], titlesUnlocked: ["Wanderer"], flags: [],
+        acAwarded: 58, acBreakdown: [ACBreakdownEntry(kind: "RIDE_DISTANCE", ac: 24), ACBreakdownEntry(kind: "NEW_CELLS", ac: 34)], walletBalance: 178
     )
 
     public static let sampleStats = ExplorationStats(

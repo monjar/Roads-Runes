@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.characters import catalog
@@ -16,12 +17,21 @@ from app.characters.schemas import (
     CharacterCreate,
     CharacterOut,
     ClassInfo,
+    ClassProgressOut,
     RiderProfileIO,
 )
 from app.core.config import Settings
 from app.core.errors import Conflict, FeatureDisabled, NotFound
 from app.core.feature_flags import class_enabled
+from app.core.security import utcnow
+from app.discoveries.models import UserDiscovery
+from app.economy import service as economy
+from app.economy.models import Wallet, WalletTransaction
+from app.economy.rules import class_change_terms
+from app.exploration.models import UserExplorationCell
 from app.progression.engine import level_bounds
+from app.progression.models import RewardEvent, XPEvent
+from app.quests.models import QuestInstance, QuestObjective, QuestProgressEvent
 from app.users.models import User
 
 BIKE_DEFAULTS = {
@@ -63,9 +73,31 @@ def ability_states(character: Character) -> list[AbilityState]:
     return states
 
 
-def to_character_out(character: Character) -> CharacterOut:
+def class_change_offer(character: Character) -> tuple[int, datetime | None]:
+    """What the next class change costs, and when it is allowed (None: now).
+
+    The first change is free: a class picked at onboarding, before a single ride,
+    is a guess. After that a change costs coins and waits a day, so a class is a
+    choice rather than a toggle.
+    """
+    terms = class_change_terms()
+    cost = 0 if terms["firstFree"] and character.class_changes == 0 else int(terms["costAC"])
+    next_at = None
+    if character.class_changed_at is not None:
+        next_at = character.class_changed_at + timedelta(hours=float(terms["cooldownHours"]))
+        if next_at <= utcnow():
+            next_at = None
+    return cost, next_at
+
+
+async def character_out(db: AsyncSession, character: Character) -> CharacterOut:
+    return to_character_out(character, active_coins=await economy.balance(db, character.user_id))
+
+
+def to_character_out(character: Character, *, active_coins: int = 0) -> CharacterOut:
     o_floor, o_next = level_bounds(character.overall_level, "overall")
     c_floor, c_next = level_bounds(character.class_level, "class")
+    cost, next_at = class_change_offer(character)
     return CharacterOut(
         id=character.id,
         name=character.name,
@@ -82,6 +114,14 @@ def to_character_out(character: Character) -> CharacterOut:
         abilities=ability_states(character),
         unspentAbilityPoints=character.ability_points,
         createdAt=character.created_at,
+        activeCoins=active_coins,
+        classChanges=character.class_changes,
+        nextClassChangeAt=next_at,
+        classChangeCostAC=cost,
+        classProgress={
+            cid: ClassProgressOut(classXp=int(p.get("classXp", 0)), classLevel=int(p.get("classLevel", 1)))
+            for cid, p in (character.class_progress or {}).items()
+        },
     )
 
 
@@ -118,6 +158,74 @@ async def create_character(db: AsyncSession, settings: Settings, user: User, pay
     await db.flush()
     await db.refresh(character)
     return character
+
+
+async def change_class(db: AsyncSession, settings: Settings, character: Character, new_class: str) -> Character:
+    """Switches class, keeping everything but the class itself.
+
+    Overall level and XP, coins, discoveries and the ability points already
+    earned all stay. Class XP and level are put away under the old class and the
+    new class's own are taken back out (a class never played starts at 1), so
+    switching back costs nothing but the fee. Quests still on offer for the old
+    class are withdrawn; accepted and active ones are the rider's to finish.
+    """
+    if new_class not in catalog.classes():
+        raise NotFound("Unknown class")
+    if not class_enabled(settings, new_class):
+        raise FeatureDisabled(f"Class {new_class} is not available yet")
+    old_class = character.character_class
+    if new_class == old_class:
+        raise Conflict(f"Already a {catalog.classes()[new_class]['name']}", code="SAME_CLASS")
+    cost, next_at = class_change_offer(character)
+    if next_at is not None:
+        raise Conflict(
+            "You changed class recently; try again tomorrow",
+            code="CLASS_CHANGE_COOLDOWN",
+            details={"retryAt": next_at.isoformat()},
+        )
+    if cost:
+        await economy.debit(db, character.user_id, cost, "CLASS_CHANGE", payload={"from": old_class, "to": new_class})
+    progress = dict(character.class_progress or {})
+    progress[old_class] = {"classXp": character.class_xp, "classLevel": character.class_level}
+    restored = progress.get(new_class) or {}
+    character.class_xp = int(restored.get("classXp", 0))
+    character.class_level = int(restored.get("classLevel", 1))
+    character.class_progress = progress
+    character.character_class = new_class
+    character.class_changes += 1
+    character.class_changed_at = utcnow()
+    await db.execute(
+        update(QuestInstance)
+        .where(
+            QuestInstance.user_id == character.user_id,
+            QuestInstance.status == "AVAILABLE",
+            QuestInstance.character_class == old_class,
+        )
+        .values(status="EXPIRED")
+    )
+    await db.flush()
+    await db.refresh(character)
+    return character
+
+
+async def reset_character(db: AsyncSession, user: User) -> None:
+    """Starts the character over: the RPG side goes, the rides stay.
+
+    Gone: the character and its abilities, every quest, the XP and coin ledgers,
+    the explored cells and the places found. Kept: rides and their journal
+    entries (they happened), bikes, the riding profile, friends and connections.
+    """
+    character = await maybe_character(db, user.id)
+    if character is None:
+        raise NotFound("Create a character first", code="NO_CHARACTER")
+    quest_ids = select(QuestInstance.id).where(QuestInstance.user_id == user.id)
+    await db.execute(delete(QuestProgressEvent).where(QuestProgressEvent.quest_id.in_(quest_ids)))
+    await db.execute(delete(QuestObjective).where(QuestObjective.quest_id.in_(quest_ids)))
+    await db.execute(delete(QuestInstance).where(QuestInstance.user_id == user.id))
+    for model in (XPEvent, RewardEvent, WalletTransaction, Wallet, UserExplorationCell, UserDiscovery):
+        await db.execute(delete(model).where(model.user_id == user.id))
+    await db.delete(character)
+    await db.flush()
 
 
 async def unlock_ability(db: AsyncSession, character: Character, ability_id: str) -> Character:

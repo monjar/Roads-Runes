@@ -10,6 +10,7 @@ from app.characters.schemas import (
     BikeIn,
     BikeOut,
     BikePatch,
+    CharacterClassChange,
     CharacterCreate,
     CharacterOut,
     ClassInfo,
@@ -27,12 +28,25 @@ async def classes(settings: SettingsDep) -> list[ClassInfo]:
 
 @router.post("", response_model=CharacterOut, status_code=status.HTTP_201_CREATED)
 async def create(payload: CharacterCreate, user: CurrentUser, db: DBDep, settings: SettingsDep) -> CharacterOut:
-    return service.to_character_out(await service.create_character(db, settings, user, payload))
+    return await service.character_out(db, await service.create_character(db, settings, user, payload))
 
 
 @router.get("", response_model=CharacterOut)
 async def get(user: CurrentUser, db: DBDep) -> CharacterOut:
-    return service.to_character_out(await service.get_character(db, user))
+    return await service.character_out(db, await service.get_character(db, user))
+
+
+@router.patch("", response_model=CharacterOut)
+async def change_class(
+    payload: CharacterClassChange, user: CurrentUser, db: DBDep, settings: SettingsDep
+) -> CharacterOut:
+    character = await service.get_character(db, user)
+    return await service.character_out(db, await service.change_class(db, settings, character, payload.characterClass))
+
+
+@router.delete("", status_code=status.HTTP_204_NO_CONTENT)
+async def reset(user: CurrentUser, db: DBDep) -> None:
+    await service.reset_character(db, user)
 
 
 @router.get("/abilities", response_model=list[AbilityState])
@@ -43,7 +57,7 @@ async def abilities(user: CurrentUser, db: DBDep) -> list[AbilityState]:
 @router.post("/abilities/{ability_id}/unlock", response_model=CharacterOut)
 async def unlock(ability_id: str, user: CurrentUser, db: DBDep) -> CharacterOut:
     character = await service.get_character(db, user)
-    return service.to_character_out(await service.unlock_ability(db, character, ability_id))
+    return await service.character_out(db, await service.unlock_ability(db, character, ability_id))
 
 
 @router.get("/bikes", response_model=list[BikeOut])

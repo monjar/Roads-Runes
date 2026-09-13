@@ -199,8 +199,12 @@ public struct AdventureSummary: Codable, Hashable, Sendable {
     public var abilitiesUnlocked: [Ability]
     public var titlesUnlocked: [String]?
     public var flags: [String]
+    /// Active Coins the ride earned, and the purse after; nil from an older server.
+    public var acAwarded: Int?
+    public var acBreakdown: [ACBreakdownEntry]?
+    public var walletBalance: Int?
 
-    public init(ride: Ride, quest: Quest? = nil, questCompletion: QuestCompletion? = nil, xpAwarded: Int, xpBreakdown: [XPBreakdownEntry], newCells: Int, newTerritoryMeters: Double, newRoadsMeters: Double, discoveries: [DiscoverySummary], levelUps: [LevelUp], abilitiesUnlocked: [Ability], titlesUnlocked: [String]? = nil, flags: [String]) {
+    public init(ride: Ride, quest: Quest? = nil, questCompletion: QuestCompletion? = nil, xpAwarded: Int, xpBreakdown: [XPBreakdownEntry], newCells: Int, newTerritoryMeters: Double, newRoadsMeters: Double, discoveries: [DiscoverySummary], levelUps: [LevelUp], abilitiesUnlocked: [Ability], titlesUnlocked: [String]? = nil, flags: [String], acAwarded: Int? = nil, acBreakdown: [ACBreakdownEntry]? = nil, walletBalance: Int? = nil) {
         self.ride = ride
         self.quest = quest
         self.questCompletion = questCompletion
@@ -214,6 +218,9 @@ public struct AdventureSummary: Codable, Hashable, Sendable {
         self.abilitiesUnlocked = abilitiesUnlocked
         self.titlesUnlocked = titlesUnlocked
         self.flags = flags
+        self.acAwarded = acAwarded
+        self.acBreakdown = acBreakdown
+        self.walletBalance = walletBalance
     }
 }
 

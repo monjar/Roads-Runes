@@ -24,6 +24,7 @@ import h3
 
 from app.core.geo import destination_point, haversine_m
 from app.core.logging import get_logger
+from app.economy.rules import quest_ac
 from app.exploration.cells import cell_center, cell_for, frontier_cells
 from app.quests.templates import DIFFICULTIES, templates_for
 
@@ -373,7 +374,7 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
         seed=f"{template['id']}:{salt}",
         latitude=ctx.latitude,
         longitude=ctx.longitude,
-        rewards={"xp": base_xp, "items": [], "titles": []},
+        rewards={"xp": base_xp, "ac": quest_ac(difficulty), "items": [], "titles": []},
         variables=variables,
     )
 

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
+from typing import Any
 
 from sqlalchemy import Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.base import Base, JSONType, TimestampMixin, TZDateTime, UUIDPrimaryKeyMixin
 
 
 class Character(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -20,6 +22,11 @@ class Character(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     class_level: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     ability_points: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     title: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    # Class XP and level of the classes this character has been, keyed by class id,
+    # so switching back restores them: {"WIZARD": {"classXp": 1200, "classLevel": 4}}.
+    class_progress: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict, nullable=False)
+    class_changes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    class_changed_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
 
     abilities: Mapped[list[CharacterAbility]] = relationship(
         back_populates="character", cascade="all, delete-orphan", lazy="selectin"

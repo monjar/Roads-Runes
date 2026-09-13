@@ -145,6 +145,36 @@ final class SessionStore {
         self.character = character
     }
 
+    /// Switches class, keeping level, XP, coins and discoveries. Returns the server's
+    /// reason when it refuses (a cooldown, an empty purse), nil on success.
+    func changeClass(to characterClass: CharacterClass) async -> String? {
+        do {
+            character = try await api.changeClass(CharacterClassChange(characterClass: characterClass))
+            return nil
+        } catch let error as APIError {
+            if case .server(_, let message, _) = error { return message }
+            return error.localizedDescription
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// Starts the character over. The rides stay; the character, quests, XP and
+    /// coins go, and onboarding asks for a class again.
+    func resetCharacter() async -> Bool {
+        do {
+            try await api.resetCharacter()
+            character = nil
+            user = try? await api.me()
+            isOnboarding = false
+            state = .needsCharacter
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
+    }
+
     func signOut() async {
         try? await api.logout()
         user = nil

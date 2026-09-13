@@ -85,11 +85,21 @@ public struct Character: Codable, Hashable, Identifiable, Sendable {
     public var abilities: [AbilityState]
     public var unspentAbilityPoints: Int
     public var createdAt: Date
+    /// Active Coins in the purse; nil from a server that predates them.
+    public var activeCoins: Int?
+    public var classChanges: Int?
+    /// When the next class change is allowed (nil: now) and what it costs (0: free).
+    public var nextClassChangeAt: Date?
+    public var classChangeCostAC: Int?
+    /// Class level and XP of the classes this character has been, keyed by class id.
+    public var classProgress: [String: ClassProgress]?
 
     public init(
         id: UUID, name: String, characterClass: CharacterClass, overallLevel: Int, overallXP: Int,
         nextOverallLevelXP: Int?, overallLevelFloorXP: Int, classLevel: Int, classXP: Int, nextClassLevelXP: Int?,
-        classLevelFloorXP: Int, title: String?, abilities: [AbilityState], unspentAbilityPoints: Int, createdAt: Date
+        classLevelFloorXP: Int, title: String?, abilities: [AbilityState], unspentAbilityPoints: Int, createdAt: Date,
+        activeCoins: Int? = nil, classChanges: Int? = nil, nextClassChangeAt: Date? = nil, classChangeCostAC: Int? = nil,
+        classProgress: [String: ClassProgress]? = nil
     ) {
         self.id = id
         self.name = name
@@ -106,6 +116,11 @@ public struct Character: Codable, Hashable, Identifiable, Sendable {
         self.abilities = abilities
         self.unspentAbilityPoints = unspentAbilityPoints
         self.createdAt = createdAt
+        self.activeCoins = activeCoins
+        self.classChanges = classChanges
+        self.nextClassChangeAt = nextClassChangeAt
+        self.classChangeCostAC = classChangeCostAC
+        self.classProgress = classProgress
     }
 
     /// Progress (0…1) through the current overall level; 1 at max level.
@@ -122,6 +137,25 @@ public struct Character: Codable, Hashable, Identifiable, Sendable {
         guard let next = next, next > floor else { return 1 }
         let fraction = Double(xp - floor) / Double(next - floor)
         return min(1, max(0, fraction))
+    }
+}
+
+public struct ClassProgress: Codable, Hashable, Sendable {
+    public var classXp: Int
+    public var classLevel: Int
+
+    public init(classXp: Int, classLevel: Int) {
+        self.classXp = classXp
+        self.classLevel = classLevel
+    }
+}
+
+/// `PATCH /character`: switch class, keeping the rider.
+public struct CharacterClassChange: Codable, Hashable, Sendable {
+    public var characterClass: CharacterClass
+
+    public init(characterClass: CharacterClass) {
+        self.characterClass = characterClass
     }
 }
 

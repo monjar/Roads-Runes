@@ -18,6 +18,10 @@ final class FlakyAPI: RoadsAndRunesAPI, @unchecked Sendable {
     func classes() async throws -> [ClassInfo] { try await inner.classes() }
     func createCharacter(_ request: CharacterCreate) async throws -> Character { try await inner.createCharacter(request) }
     func character() async throws -> Character { try await inner.character() }
+    func changeClass(_ request: CharacterClassChange) async throws -> Character { try await inner.changeClass(request) }
+    func resetCharacter() async throws { try await inner.resetCharacter() }
+    func wallet() async throws -> Wallet { try await inner.wallet() }
+    func walletTransactions(limit: Int?, cursor: String?) async throws -> Page<WalletTransaction> { try await inner.walletTransactions(limit: limit, cursor: cursor) }
     func abilities() async throws -> [AbilityState] { try await inner.abilities() }
     func unlockAbility(id: String) async throws -> Character { try await inner.unlockAbility(id: id) }
     func bikes() async throws -> [Bike] { try await inner.bikes() }

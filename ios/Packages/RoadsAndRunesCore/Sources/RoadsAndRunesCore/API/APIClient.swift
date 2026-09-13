@@ -246,6 +246,10 @@ public actor APIClient: RoadsAndRunesAPI {
     public func classes() async throws -> [ClassInfo] { try await request(Endpoints.classes()) }
     public func createCharacter(_ request: CharacterCreate) async throws -> Character { try await self.request(try Endpoints.createCharacter(request)) }
     public func character() async throws -> Character { try await request(Endpoints.character()) }
+    public func changeClass(_ request: CharacterClassChange) async throws -> Character { try await self.request(try Endpoints.changeClass(request)) }
+    public func resetCharacter() async throws { try await requestNoContent(Endpoints.resetCharacter()) }
+    public func wallet() async throws -> Wallet { try await request(Endpoints.wallet()) }
+    public func walletTransactions(limit: Int?, cursor: String?) async throws -> Page<WalletTransaction> { try await request(Endpoints.walletTransactions(limit: limit, cursor: cursor)) }
     public func abilities() async throws -> [AbilityState] { try await request(Endpoints.abilities()) }
     public func unlockAbility(id: String) async throws -> Character { try await request(Endpoints.unlockAbility(id: id)) }
     public func bikes() async throws -> [Bike] { try await request(Endpoints.bikes()) }

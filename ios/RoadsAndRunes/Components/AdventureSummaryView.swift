@@ -53,6 +53,14 @@ struct AdventureSummaryView: View {
                         }
                         .foregroundStyle(Theme.Colors.sageDeep)
                     }
+                    if let coins = summary.acAwarded, coins > 0 {
+                        HStack(spacing: 8) {
+                            CoinPill(coins: coins, foreground: Theme.Colors.terracottaDeep)
+                            Text(summary.walletBalance.map { "earned · \($0.formatted()) in your purse" } ?? "earned")
+                                .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                        }
+                        .accessibilityIdentifier("summary.coins")
+                    }
                     HStack(spacing: 8) {
                         FactTile(value: "\(summary.discoveries.count)", label: summary.discoveries.count == 1 ? "New place" : "New places")
                         FactTile(value: formatter.distance(meters: summary.newTerritoryMeters), label: "New territory")

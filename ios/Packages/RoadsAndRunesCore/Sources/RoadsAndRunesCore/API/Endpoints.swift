@@ -68,6 +68,15 @@ public enum Endpoints {
     public static func classes() -> Endpoint { Endpoint(method: .get, path: "/character/classes") }
     public static func createCharacter(_ body: CharacterCreate) throws -> Endpoint { try .json(.post, "/character", body: body) }
     public static func character() -> Endpoint { Endpoint(method: .get, path: "/character") }
+    public static func changeClass(_ body: CharacterClassChange) throws -> Endpoint { try .json(.patch, "/character", body: body) }
+    public static func resetCharacter() -> Endpoint { Endpoint(method: .delete, path: "/character") }
+    public static func wallet() -> Endpoint { Endpoint(method: .get, path: "/wallet") }
+    public static func walletTransactions(limit: Int?, cursor: String?) -> Endpoint {
+        var query: [QueryItem] = []
+        if let limit { query.append(QueryItem("limit", String(limit))) }
+        if let cursor { query.append(QueryItem("cursor", cursor)) }
+        return Endpoint(method: .get, path: "/wallet/transactions", query: query)
+    }
     public static func abilities() -> Endpoint { Endpoint(method: .get, path: "/character/abilities") }
     public static func unlockAbility(id: String) -> Endpoint { Endpoint(method: .post, path: "/character/abilities/\(id)/unlock") }
     public static func bikes() -> Endpoint { Endpoint(method: .get, path: "/character/bikes") }

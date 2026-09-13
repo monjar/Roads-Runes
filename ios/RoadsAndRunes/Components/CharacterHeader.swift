@@ -47,6 +47,11 @@ struct CharacterHeader: View {
                     if let title = character.title {
                         Text("“\(title)”").font(Theme.Typography.caption).opacity(0.85)
                     }
+                    if let coins = character.activeCoins {
+                        CoinPill(coins: coins, foreground: Theme.Colors.cream)
+                            .padding(.top, 2)
+                            .accessibilityIdentifier("character.coins")
+                    }
                 }
             }
             XPBar(
@@ -142,5 +147,23 @@ struct AbilityCard: View {
         .buttonStyle(.pressable)
         .disabled(!state.canUnlock)
         .accessibilityLabel("\(state.ability.name). \(state.ability.description)")
+    }
+}
+
+
+/// "◎ 120 AC": the purse, wherever the character is shown.
+struct CoinPill: View {
+    let coins: Int
+    var foreground: Color = Theme.Colors.ink
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "circlebadge.2.fill").font(.system(size: 11, weight: .bold))
+            Text("\(coins.formatted()) AC").font(Theme.Typography.text(12, .semibold))
+        }
+        .foregroundStyle(foreground)
+        .padding(.horizontal, 10).padding(.vertical, 5)
+        .overlay(Capsule().stroke(foreground.opacity(0.35), lineWidth: 1))
+        .accessibilityLabel("\(coins) Active Coins")
     }
 }

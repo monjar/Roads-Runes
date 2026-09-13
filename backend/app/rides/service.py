@@ -195,6 +195,9 @@ async def summary(db: AsyncSession, user: User, ride: Ride) -> AdventureSummary 
         abilitiesUnlocked=result.get("abilitiesUnlocked", []),
         titlesUnlocked=result.get("titlesUnlocked", []),
         flags=list(ride.flags or []),
+        acAwarded=int(result.get("acAwarded", 0)),
+        acBreakdown=result.get("acBreakdown", []),
+        walletBalance=result.get("walletBalance"),
     )
 
 

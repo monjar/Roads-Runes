@@ -1,0 +1,15 @@
+{
+  "_comment": "All Active Coin tuning lives here. AC is never XP: it is spent, XP is kept.",
+  "perKm": {"RIDE": 2, "RUN": 5, "WALK": 4},
+  "newCell": 1,
+  "questCompleted": {"EASY": 20, "MODERATE": 40, "HARD": 70, "EPIC": 120},
+  "chest": {"1": 25, "2": 60, "3": 150},
+  "monster": {"1": 60, "2": 150, "3": 400},
+  "bountyMultiplier": 2,
+  "collectable": 10,
+  "collectableSetBonus": 50,
+  "streak": {"perDay": 5, "maxPerRide": 50, "milestones": {"7": 100, "30": 500}, "minDistanceMeters": 1000},
+  "classChange": {"firstFree": true, "costAC": 150, "cooldownHours": 24},
+  "lure": {"costAC": 50},
+  "caps": {"perRideTotal": 800}
+}

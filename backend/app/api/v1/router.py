@@ -7,6 +7,7 @@ from app.auth.router import router as auth_router
 from app.characters.router import router as character_router
 from app.core.deps import SettingsDep
 from app.discoveries.router import router as discoveries_router
+from app.economy.router import router as wallet_router
 from app.exploration.router import router as world_router
 from app.integrations.router import router as integrations_router
 from app.notifications.router import router as devices_router
@@ -51,5 +52,6 @@ for r in (
     parties_router,
     integrations_router,
     devices_router,
+    wallet_router,
 ):
     api_router.include_router(r)

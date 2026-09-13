@@ -5,6 +5,9 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppContainer.self) private var container
     @State private var settings = UserSettings()
+    @State private var changingClass = false
+    @State private var confirmingReset = false
+    @State private var resetting = false
 
     var body: some View {
         Form {
@@ -32,6 +35,27 @@ struct SettingsView: View {
                     Text("Never").tag(StravaUploadMode.never); Text("Ask every time").tag(StravaUploadMode.ask); Text("Automatically").tag(StravaUploadMode.auto)
                 }
             }
+            Section("Character") {
+                Button {
+                    changingClass = true
+                } label: {
+                    HStack {
+                        Text("Change class")
+                        Spacer()
+                        if let character = container.session.character {
+                            Text(ClassStyle.name(character.characterClass)).foregroundStyle(Theme.Colors.textSecondary)
+                        }
+                    }
+                }
+                .accessibilityIdentifier("settings.changeClass")
+                Text("Your level, XP, coins and discoveries stay. The first change is free; after that it costs Active Coins and waits a day.")
+                    .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
+                Button("Start over", role: .destructive) { confirmingReset = true }
+                    .disabled(resetting)
+                    .accessibilityIdentifier("settings.startOver")
+                Text("Deletes your character, quests, XP and coins and picks a class again. Your rides stay in the journal.")
+                    .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
+            }
             Section {
                 Button("Save") { Task { await container.session.update(settings: settings); container.mapPreferences.apply(settings: settings) } }
                 Button("Sign out", role: .destructive) { Task { await container.session.signOut() } }
@@ -39,6 +63,19 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .onAppear { settings = container.session.settings }
+        .sheet(isPresented: $changingClass) { ClassChangeSheet() }
+        .confirmationDialog("Start over?", isPresented: $confirmingReset, titleVisibility: .visible) {
+            Button("Delete my character and start over", role: .destructive) {
+                resetting = true
+                Task {
+                    _ = await container.session.resetCharacter()
+                    resetting = false
+                }
+            }
+            Button("Keep it", role: .cancel) {}
+        } message: {
+            Text("Your character, quests, XP and Active Coins are deleted. Your rides stay in the journal.")
+        }
     }
 }
 

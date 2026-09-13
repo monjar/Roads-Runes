@@ -85,11 +85,14 @@ public struct QuestNarrative: Codable, Hashable, Sendable {
 
 public struct QuestRewards: Codable, Hashable, Sendable {
     public var xp: Int?
+    /// Active Coins on completion; nil from a server that predates them.
+    public var ac: Int?
     public var items: [JSONValue]?
     public var titles: [String]?
 
-    public init(xp: Int? = nil, items: [JSONValue]? = nil, titles: [String]? = nil) {
+    public init(xp: Int? = nil, ac: Int? = nil, items: [JSONValue]? = nil, titles: [String]? = nil) {
         self.xp = xp
+        self.ac = ac
         self.items = items
         self.titles = titles
     }

@@ -18,6 +18,10 @@ public protocol RoadsAndRunesAPI: Sendable {
     func classes() async throws -> [ClassInfo]
     func createCharacter(_ request: CharacterCreate) async throws -> Character
     func character() async throws -> Character
+    func changeClass(_ request: CharacterClassChange) async throws -> Character
+    func resetCharacter() async throws
+    func wallet() async throws -> Wallet
+    func walletTransactions(limit: Int?, cursor: String?) async throws -> Page<WalletTransaction>
     func abilities() async throws -> [AbilityState]
     func unlockAbility(id: String) async throws -> Character
     func bikes() async throws -> [Bike]

@@ -15,6 +15,8 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     let lock = NSLock()
     var user: User
     var storedCharacter: Character?
+    var storedCoins = 0
+    var storedTransactions: [WalletTransaction] = []
     var storedBikes: [Bike]
     var storedRiderProfile: RiderProfile
     var storedQuests: [UUID: Quest]
@@ -158,6 +160,50 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
         }
     }
     public func character() async throws -> Character { try await run { try self.requireCharacter() } }
+    public func changeClass(_ request: CharacterClassChange) async throws -> Character {
+        try await run {
+            var character = try self.requireCharacter()
+            if character.characterClass == request.characterClass {
+                throw APIError.server(code: "SAME_CLASS", message: "Already that class", status: 409)
+            }
+            let cost = character.classChangeCostAC ?? 0
+            if cost > self.storedCoins {
+                throw APIError.server(code: "INSUFFICIENT_AC", message: "That costs \(cost) Active Coins and you have \(self.storedCoins)", status: 409)
+            }
+            var progress = character.classProgress ?? [:]
+            progress[character.characterClass.rawValue] = ClassProgress(classXp: character.classXP, classLevel: character.classLevel)
+            let restored = progress[request.characterClass.rawValue]
+            character.classXP = restored?.classXp ?? 0
+            character.classLevel = restored?.classLevel ?? 1
+            character.classProgress = progress
+            character.characterClass = request.characterClass
+            character.classChanges = (character.classChanges ?? 0) + 1
+            character.classChangeCostAC = 150
+            character.nextClassChangeAt = Date().addingTimeInterval(24 * 3600)
+            if cost > 0 {
+                self.storedCoins -= cost
+                self.storedTransactions.insert(WalletTransaction(id: UUID(), amount: -cost, kind: .classChange, createdAt: Date()), at: 0)
+            }
+            character.activeCoins = self.storedCoins
+            self.storedCharacter = character
+            return character
+        }
+    }
+    public func resetCharacter() async throws {
+        try await run {
+            _ = try self.requireCharacter()
+            self.storedCharacter = nil
+            self.storedCoins = 0
+            self.storedTransactions = []
+            self.user.hasCharacter = false
+        }
+    }
+    public func wallet() async throws -> Wallet {
+        try await run { Wallet(balance: self.storedCoins, lifetimeEarned: self.storedTransactions.filter { $0.amount > 0 }.reduce(0) { $0 + $1.amount }) }
+    }
+    public func walletTransactions(limit: Int?, cursor: String?) async throws -> Page<WalletTransaction> {
+        try await run { Page(items: Array(self.storedTransactions.prefix(limit ?? 25)), nextCursor: nil) }
+    }
     public func abilities() async throws -> [AbilityState] { try await run { try self.requireCharacter().abilities } }
     public func unlockAbility(id: String) async throws -> Character {
         try await run {

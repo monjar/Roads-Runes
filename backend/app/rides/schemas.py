@@ -109,6 +109,9 @@ class AdventureSummary(APIModel):
     abilitiesUnlocked: list[dict[str, Any]]
     titlesUnlocked: list[str]
     flags: list[str]
+    acAwarded: int = 0
+    acBreakdown: list[dict[str, Any]] = []
+    walletBalance: int | None = None
 
 
 class RideGeometry(APIModel):

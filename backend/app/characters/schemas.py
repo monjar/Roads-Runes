@@ -34,6 +34,15 @@ class CharacterCreate(APIModel):
     characterClass: CharacterClass = "EXPLORER"
 
 
+class CharacterClassChange(APIModel):
+    characterClass: CharacterClass
+
+
+class ClassProgressOut(APIModel):
+    classXp: int
+    classLevel: int
+
+
 class CharacterOut(APIModel):
     id: uuid.UUID
     name: str
@@ -50,6 +59,12 @@ class CharacterOut(APIModel):
     abilities: list[AbilityState]
     unspentAbilityPoints: int
     createdAt: datetime
+    activeCoins: int = 0
+    classChanges: int = 0
+    # When the next change is allowed (None: now) and what it costs (0: free).
+    nextClassChangeAt: datetime | None = None
+    classChangeCostAC: int = 0
+    classProgress: dict[str, ClassProgressOut] = {}
 
 
 class ClassInfo(APIModel):
