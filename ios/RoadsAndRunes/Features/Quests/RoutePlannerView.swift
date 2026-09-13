@@ -15,6 +15,9 @@ final class RoutePlannerViewModel {
     private(set) var preview: MapCamera?
     private(set) var focusedStop: RoutePOI?
     private(set) var isGenerating = false
+    /// What the planner is doing while the rider waits. A cold server plus a fresh
+    /// area can take half a minute, and a silent spinner reads as "stuck".
+    private(set) var planningStep: String?
     private(set) var isStarting = false
     private(set) var engine: String?
     /// What the planner made of the request ("Notting Hill · 5 pubs · loop"), so a
@@ -95,6 +98,17 @@ final class RoutePlannerViewModel {
     /// Reads the server's loosely-typed parse back into one line a rider can check.
     static func understood(from parsed: [String: JSONValue]?) -> String? {
         guard let parsed else { return nil }
+        // The server says what it made of the request; older servers left it to us,
+        // and we came up empty for "quiet roads", which names no place and no stop.
+        var parts = (parsed["understood"]?.arrayValue ?? []).compactMap(\.stringValue)
+        if parts.isEmpty { parts = legacyParts(of: parsed) }
+        // What the ground could not give — no gravel here, nothing to climb, fewer
+        // cafés than asked for. Better said than left for the rider to notice.
+        parts += (parsed["notes"]?.arrayValue ?? []).compactMap { $0.stringValue }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private static func legacyParts(of parsed: [String: JSONValue]) -> [String] {
         var parts: [String] = []
         if let area = parsed["area"]?.objectValue, let name = (area["name"] ?? area["query"])?.stringValue {
             parts.append(name)
@@ -115,10 +129,7 @@ final class RoutePlannerViewModel {
             parts.append("\(Int(distance)) km")
         }
         if parsed["loop"]?.boolValue == true { parts.append("loop") }
-        // What the ground could not give — no gravel here, nothing to climb, fewer
-        // cafés than asked for. Better said than left for the rider to notice.
-        parts += (parsed["notes"]?.arrayValue ?? []).compactMap { $0.stringValue }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return parts
     }
 
     func loadBikes() async {
@@ -164,7 +175,12 @@ final class RoutePlannerViewModel {
             return
         }
         isGenerating = true
-        defer { isGenerating = false }
+        let narrator = Task { await narratePlanning() }
+        defer {
+            isGenerating = false
+            narrator.cancel()
+            planningStep = nil
+        }
         do {
             let response = try await container.api.generateRoutes(RouteGenerateRequest(
                 origin: origin, destination: destination?.coordinate, bikeId: selectedBike?.id, questId: quest?.id,
@@ -173,7 +189,10 @@ final class RoutePlannerViewModel {
             // The quest's own route stays first so the rider can always go back to it.
             alternatives = (questRoute.map { [$0] } ?? []) + response.alternatives
             engine = response.engine
+            // A typed request always gets an answer on screen, even from a server that
+            // said nothing about it: silence looked like the request being ignored.
             understood = Self.understood(from: response.parsedRequest)
+                ?? (request.isEmpty ? nil : "Planned as usual — couldn't read the request")
             // "a 12 km loop" beats a slider sitting at 25; move it to what was used.
             if let asked = response.parsedRequest?["distanceKm"]?.objectValue?["target"]?.doubleValue,
                (5...150).contains(asked) {
@@ -193,6 +212,16 @@ final class RoutePlannerViewModel {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    private func narratePlanning() async {
+        planningStep = request.isEmpty ? "Drawing routes…" : "Reading your request…"
+        try? await Task.sleep(for: .seconds(2))
+        guard !Task.isCancelled else { return }
+        planningStep = request.isEmpty ? "Drawing routes…" : "Finding stops on the way…"
+        try? await Task.sleep(for: .seconds(6))
+        guard !Task.isCancelled else { return }
+        planningStep = "Drawing routes…"
     }
 
     /// Accepts the quest if needed, downloads the package and starts the ride (spec §96 steps 12–13).
@@ -268,6 +297,15 @@ struct RoutePlannerView: View {
                             .foregroundStyle(Theme.Colors.ink)
                             .lineLimit(2...4)
                             .focused($writingRequest)
+                            .submitLabel(.go)
+                            .onChange(of: model.request) { _, text in
+                                // Multi-line, so Return types a newline rather than submitting;
+                                // a newline at the end is the rider pressing Go.
+                                guard text.hasSuffix("\n") else { return }
+                                model.request = String(text.dropLast())
+                                writingRequest = false
+                                Task { await model.generate() }
+                            }
                         HStack {
                             HStack(spacing: 6) {
                                 outlineChip("From here")
@@ -278,19 +316,32 @@ struct RoutePlannerView: View {
                                 writingRequest = false
                                 Task { await model.generate() }
                             } label: {
-                                Group {
+                                // A word on the button: an arrow in a circle was not read as
+                                // "plan this", so the request sat there unplanned.
+                                HStack(spacing: 8) {
                                     if model.isGenerating {
                                         ProgressView().tint(Theme.Colors.cream)
                                     } else {
-                                        Image(systemName: "arrow.right").font(.system(size: 18, weight: .bold)).foregroundStyle(Theme.Colors.cream)
+                                        Image(systemName: "arrow.right").font(.system(size: 16, weight: .bold))
                                     }
+                                    Text(model.isGenerating ? "Planning…" : "Plan")
+                                        .font(Theme.Typography.text(15, .semibold))
                                 }
-                                .frame(width: 48, height: 48)
-                                .background(Theme.Colors.terracotta, in: Circle())
+                                .foregroundStyle(Theme.Colors.cream)
+                                .padding(.horizontal, 18)
+                                .frame(height: 48)
+                                .background(Theme.Colors.terracotta, in: Capsule())
                             }
                             .buttonStyle(.pressable)
                             .disabled(model.isGenerating)
                             .accessibilityLabel("Generate routes")
+                        }
+                        if model.isGenerating, let step = model.planningStep {
+                            Label(step, systemImage: "hourglass")
+                                .font(Theme.Typography.caption)
+                                .foregroundStyle(Theme.Colors.muted)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .accessibilityIdentifier("planner.step")
                         }
                     }
                     .padding(18)
@@ -467,6 +518,7 @@ struct RouteDetailPanel: View {
                 }
                 .buttonStyle(.pressable)
                 .accessibilityIdentifier("routeStop")
+                .accessibilityValue(poi.category.rawValue.lowercased())
             }
         }
     }

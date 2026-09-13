@@ -148,6 +148,7 @@ public actor APIClient: RoadsAndRunesAPI {
         guard let url = components.url else { throw APIError.invalidURL }
         var request = URLRequest(url: url)
         request.httpMethod = endpoint.method.rawValue
+        if let timeout = endpoint.timeout { request.timeoutInterval = timeout }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let body = endpoint.body {
             request.httpBody = body

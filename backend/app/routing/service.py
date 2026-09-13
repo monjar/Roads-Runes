@@ -6,6 +6,7 @@ import hashlib
 import math
 import uuid
 from dataclasses import dataclass
+from time import monotonic
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +17,7 @@ from app.core.config import Settings
 from app.core.errors import NotFound, RouteGenerationFailed
 from app.core.geo import bearing_deg, encode_polyline, haversine_m
 from app.core.llm import LLMClient
-from app.core.logging import EVENT_ROUTE_GENERATION_FAILED, get_logger
+from app.core.logging import EVENT_ROUTE_GENERATED, EVENT_ROUTE_GENERATION_FAILED, get_logger
 from app.core.schemas import Coordinate
 from app.core.security import utcnow
 from app.discoveries import osm_import
@@ -185,6 +186,7 @@ def _variants(
     stops: list[Discovery],
     labels: list[str],
     cfg: dict[str, Any],
+    asked: bool = False,
 ) -> list[Variant]:
     """Three ways to answer, and what separates them.
 
@@ -193,9 +195,13 @@ def _variants(
     and start being a trade-off: straight there, what you asked for, and more of it.
     Presets used to overwrite the request outright, so "gravel heavy" came back on
     two cards with the gravel taken out.
+
+    `asked` is true when the request was understood at all. "Through 3 cafés" in a
+    town with no cafés imported yet used to come back as the three usual flavours,
+    which is exactly what the rider saw before typing anything.
     """
     stated = _stated(base, usual)
-    if not stated and not stops:
+    if not stated and not stops and not asked:
         return [
             Variant(label, _overlay(base, cfg["labels"][label]), stops, cfg["labels"][label].get("distanceFactor", 1.0))
             for label in labels
@@ -226,6 +232,59 @@ def _variants(
     else:
         variants.append(Variant(LOUDER[field][0 if stated[field] > 0 else 1], more.clamp(), stops, 1.0))
     return variants
+
+
+# How a kind of stop reads in the "understood" line. Plain ASCII on purpose: the
+# line is what the rider checks the plan against, and "3 cafes" is easy to scan.
+STOP_WORDS = {
+    "CAFE": "cafe",
+    "PUB": "pub",
+    "FOOD": "food stop",
+    "CULTURAL": "cultural stop",
+    "HISTORICAL": "historic stop",
+    "NATURE": "green stop",
+    "VIEWPOINT": "viewpoint",
+    "LANDMARK": "landmark",
+    "TRAIL": "trail",
+    "CYCLING": "bike shop",
+}
+
+
+def _plural(word: str, count: int) -> str:
+    return word if count == 1 else f"{word}s"
+
+
+def _understood(prefs: RoutePreferences, usual: RoutePreferences, wanted: int, categories: list[str]) -> list[str]:
+    """What the planner made of the request, so a misread is visible on the card.
+
+    The app used to reconstruct this from the parsed preferences and came up empty
+    for "quiet roads", which changes the routes without naming a place or a stop.
+    """
+    parts: list[str] = []
+    area = prefs.area or {}
+    if area.get("name") or area.get("query"):
+        parts.append(str(area.get("name") or area.get("query")))
+    kinds = [STOP_WORDS.get(c, c.lower()) for c in categories]
+    if len(kinds) == 1:
+        parts.append(f"{wanted} {_plural(kinds[0], wanted)}" if wanted else _plural(kinds[0], 2))
+    elif kinds:
+        parts.append((f"{wanted} stops: " if wanted else "stops: ") + " or ".join(_plural(k, 2) for k in kinds))
+    for field, difference in _stated(prefs, usual).items():
+        parts.append(LOUDER[field][0 if difference > 0 else 1].lower())
+    target = (prefs.distanceKm or {}).get("target")
+    if target:
+        parts.append(f"{int(round(float(target)))} km")
+    if prefs.loop is True:
+        parts.append("loop")
+    elif prefs.loop is False:
+        parts.append("one way")
+    return parts
+
+
+CANNOT_READ = "couldn't read that — try 'through 2 cafes' or 'mostly gravel'"
+# The corridor import runs only when stops were asked for and none were found, and
+# only for tiles never fetched, so a known area costs nothing.
+CORRIDOR_IMPORT_BUDGET_S = 25.0
 
 
 def _unpaved(route: Route) -> float:
@@ -587,6 +646,7 @@ async def generate(
         for k, v in payload.preferences.model_dump().items():
             setattr(base_prefs, k, v)
     parsed_dict: dict[str, Any] | None = None
+    started = monotonic()
     if payload.request and settings.flags.get("nl_route_requests", True):
         parsed = await parse_request(payload.request, llm, base_prefs)
         base_prefs = parsed.preferences
@@ -595,14 +655,25 @@ async def generate(
             "source": parsed.source,
             "matched": parsed.matched,
         }
+    ms_parse = int((monotonic() - started) * 1000)
 
     # A named place ("a ride in Notting Hill") moves the ride; the rider's own position
     # still seeds the alternatives and counts new territory.
     area = None
+    unresolved_place: str | None = None
     if (base_prefs.area or {}).get("query") and payload.destination is None:
         area = await geocode.resolve(
             settings, str(base_prefs.area["query"]), payload.origin.latitude, payload.origin.longitude
         )
+        if area is None and settings.geocoding_enabled:
+            unresolved_place = str(base_prefs.area["query"])
+    if area is None:
+        # The rules parser guesses a place from whatever is left of the sentence;
+        # the geocoder is the judge. A guess it threw out was never understood.
+        base_prefs.area = None
+        if parsed_dict is not None:
+            parsed_dict["area"] = None
+            parsed_dict["matched"] = [m for m in parsed_dict["matched"] if not str(m).startswith("area:")]
     start = payload.origin
     if area is not None:
         base_prefs.area = {**(base_prefs.area or {}), **area.to_dict()}
@@ -644,9 +715,6 @@ async def generate(
     if payload.destination is not None and "Direct" not in labels:
         labels[0] = "Direct"
 
-    # Stops along the route come from OpenStreetMap; start importing the area if it is new.
-    await osm_import.ensure_pois(settings, start.latitude, start.longitude, wait=False)
-
     # "with about 5 pubs" is a promise: put them on the line rather than hoping the
     # route happens to pass some.
     requested_stops: list[Discovery] = []
@@ -654,18 +722,29 @@ async def generate(
     categories = _stop_categories(base_prefs.poi)
     # "a nice cafe" is worth a detour past the nearest one; a plain "a cafe" is not.
     appeal_weight = 1.0 if (base_prefs.poi or {}).get("quality") else 0.25
+
+    # Stops along the route come from OpenStreetMap; start importing the area if it is
+    # new. A request that names stops waits for the rider's own tile, because the
+    # first plan in a fresh town used to find nothing and the second, a minute later,
+    # found everything — which looked like the planner ignoring the request.
+    importing = monotonic()
+    await osm_import.ensure_pois(settings, start.latitude, start.longitude, wait=bool(wanted and categories))
     if wanted and categories:
         if payload.destination is not None:
             # "Ride here, through three cafés" — a destination does not cancel the stops.
             requested_stops = await _pick_stops_between(
                 db, start, payload.destination, categories, wanted, appeal_weight
             )
-            if not requested_stops:
-                # Nothing imported along this way yet; fetch its middle and look again.
-                await osm_import.ensure_pois(
+            if len(requested_stops) < wanted:
+                # Not enough imported along this way yet; fetch the tiles the leg
+                # crosses (a 20 km ride crosses several) and look again.
+                await osm_import.ensure_pois_along(
                     settings,
-                    (start.latitude + payload.destination.latitude) / 2,
-                    (start.longitude + payload.destination.longitude) / 2,
+                    start.latitude,
+                    start.longitude,
+                    payload.destination.latitude,
+                    payload.destination.longitude,
+                    budget_s=CORRIDOR_IMPORT_BUDGET_S,
                 )
                 requested_stops = await _pick_stops_between(
                     db, start, payload.destination, categories, wanted, appeal_weight
@@ -686,6 +765,20 @@ async def generate(
             parsed_dict["stops"] = [
                 {"name": p.name, "latitude": p.latitude, "longitude": p.longitude} for p in requested_stops
             ]
+    ms_import = int((monotonic() - importing) * 1000)
+
+    # Understood at all? Then the cards are a trade-off around the request, even
+    # when the ground could not give what was asked for.
+    asked = bool(
+        parsed_dict is not None
+        and (
+            parsed_dict["matched"]
+            or categories
+            or base_prefs.area
+            or (base_prefs.distanceKm or {}).get("target")
+            or base_prefs.loop is not None
+        )
+    )
 
     known = await known_cells(db, user.id)
     poi_candidates = await discoveries_nearby(
@@ -714,8 +807,10 @@ async def generate(
     )
 
     results: list[tuple[Route, dict[str, float]]] = []
-    seen_paths: set[str] = set()
-    for index, variant in enumerate(_variants(base_prefs, usual_prefs, requested_stops, labels, cfg)):
+    seen_paths: dict[str, str] = {}
+    same_road: list[str] = []
+    routing = monotonic()
+    for index, variant in enumerate(_variants(base_prefs, usual_prefs, requested_stops, labels, cfg, asked)):
         label, prefs = variant.label, variant.prefs
         distance_m = target_km * 1000 * variant.distance_factor
         custom_model = build_custom_model(prefs, bike_type, allow_gravel, allow_trails)
@@ -761,9 +856,11 @@ async def generate(
         coords = er.coordinates
         polyline = encode_polyline((c[1], c[0]) for c in coords)
         if polyline in seen_paths:
-            # Short A→B trips often give every label the same path; one card is enough.
+            # Short A→B trips often give every label the same path; one card is
+            # enough, but two cards becoming one deserves a word.
+            same_road.append(f"{label} and {seen_paths[polyline]} are the same road here")
             continue
-        seen_paths.add(polyline)
+        seen_paths[polyline] = label
         samples = elevation_samples_from_coordinates(coords)
         elev = analyse_elevation(samples)
         surface = surface_composition(coords, er.details.get("surface"))
@@ -835,15 +932,40 @@ async def generate(
         )
         db.add(route)
         results.append((route, components))
+    ms_engine = int((monotonic() - routing) * 1000)
     if not results:
         raise RouteGenerationFailed("No route could be generated for this request")
     if parsed_dict is not None:
-        parsed_dict["notes"] = _shortfalls(base_prefs, requested_stops, wanted, [route for route, _ in results])
+        parsed_dict["understood"] = _understood(base_prefs, usual_prefs, wanted, categories)
+        notes = _shortfalls(base_prefs, requested_stops, wanted, [route for route, _ in results])
+        if unresolved_place:
+            notes.append(f"couldn't find a place called '{unresolved_place}'")
+        if not parsed_dict["understood"] and not parsed_dict["matched"]:
+            notes.append(CANNOT_READ)
+        parsed_dict["notes"] = notes + same_road
     await db.flush()
     _keep_labels_honest(results)
     results.sort(key=lambda r: -r[0].score)
     if quest is not None and quest.suggested_route_id is None:
         quest.suggested_route_id = results[0][0].id
+    # One line per plan, so "it didn't work" can be answered from the logs.
+    log.info(
+        EVENT_ROUTE_GENERATED,
+        user=str(user.id),
+        request=(payload.request or "")[:120] or None,
+        source=parsed_dict.get("source") if parsed_dict else None,
+        matched=parsed_dict.get("matched") if parsed_dict else None,
+        understood=parsed_dict.get("understood") if parsed_dict else None,
+        wanted=wanted,
+        stops_found=len(requested_stops),
+        destination=payload.destination is not None,
+        labels=[route.label for route, _ in results],
+        notes=parsed_dict.get("notes") if parsed_dict else None,
+        engine=results[0][0].engine,
+        ms_parse=ms_parse,
+        ms_import=ms_import,
+        ms_engine=ms_engine,
+    )
     return results, parsed_dict
 
 

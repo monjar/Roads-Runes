@@ -38,7 +38,15 @@ def test_a_place_on_its_own_is_still_a_place():
 
 
 def test_describing_the_riding_is_not_naming_a_place():
-    for request in ("a quiet 30 km loop", "something hilly and fast", "pub ride", "a scenic gravel ride"):
+    for request in (
+        "a quiet 30 km loop",
+        "something hilly and fast",
+        "pub ride",
+        "a scenic gravel ride",
+        # The plural of a riding word is a riding word: this planned a ride in Roads Wood.
+        "quiet roads",
+        "gravel trails and hills",
+    ):
         assert parse_rules(request).preferences.area is None, request
 
 
@@ -506,3 +514,64 @@ def test_a_paved_answer_to_a_gravel_request_says_so():
         cycleway_fraction=0.5,
     )
     assert service._shortfalls(asked, [], 0, [gravelly]) == []
+
+
+async def test_asking_for_stops_that_are_not_there_still_answers_as_asked(explorer_client):
+    """Nothing imported yet and no cafés in the database: the request used to vanish.
+
+    The three usual flavours came back, no "As asked" card, no line saying what was
+    understood — byte for byte the screen from before the rider typed anything.
+    """
+    r = await explorer_client.post(
+        "/routes/generate",
+        json={
+            "origin": {"latitude": HOME[0], "longitude": HOME[1]},
+            "destination": {"latitude": TOWER_BRIDGE[0], "longitude": TOWER_BRIDGE[1]},
+            "request": "through 3 cafes",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "As asked" in [route["label"] for route in body["alternatives"]]
+    parsed = body["parsedRequest"]
+    assert parsed["understood"] == ["3 cafes"]
+    assert "no stops like that nearby" in parsed["notes"]
+
+
+async def test_a_preference_on_its_own_is_still_said_back(explorer_client):
+    """ "Quiet roads" names no place and no stop; the app used to show nothing for it."""
+    r = await explorer_client.post(
+        "/routes/generate",
+        json={"origin": {"latitude": HOME[0], "longitude": HOME[1]}, "loop": True, "request": "quiet roads"},
+    )
+    assert r.status_code == 200, r.text
+    parsed = r.json()["parsedRequest"]
+    assert parsed["understood"] == ["quieter"]
+    assert service.CANNOT_READ not in parsed["notes"]
+
+
+async def test_a_request_nobody_could_read_says_so(explorer_client):
+    r = await explorer_client.post(
+        "/routes/generate",
+        json={"origin": {"latitude": HOME[0], "longitude": HOME[1]}, "loop": True, "request": "zxq blorp"},
+    )
+    assert r.status_code == 200, r.text
+    parsed = r.json()["parsedRequest"]
+    assert parsed["understood"] == []
+    assert service.CANNOT_READ in parsed["notes"]
+
+
+def test_the_understood_line_reads_like_the_request():
+    usual = RoutePreferences()
+    asked = RoutePreferences(gravelPreference=0.9, hillTolerance=0.1, distanceKm={"target": 20.0}, loop=True)
+    asked.area = {"query": "richmond park", "name": "Richmond Park"}
+    assert service._understood(asked, usual, 2, ["CAFE", "CULTURAL"]) == [
+        "Richmond Park",
+        "2 stops: cafes or cultural stops",
+        "more gravel",
+        "flatter",
+        "20 km",
+        "loop",
+    ]
+    assert service._understood(RoutePreferences(), usual, 1, ["PUB"]) == ["1 pub"]
+    assert service._understood(RoutePreferences(), usual, 0, ["VIEWPOINT"]) == ["viewpoints"]

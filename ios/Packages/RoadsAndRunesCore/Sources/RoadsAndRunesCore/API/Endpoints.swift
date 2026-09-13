@@ -25,18 +25,23 @@ public struct Endpoint: Sendable {
     public var query: [QueryItem]
     public var body: Data?
     public var requiresAuth: Bool
+    /// Seconds before the call is given up on; nil takes the session's default (60).
+    /// Planning a route can mean importing a fresh area and three routing calls on a
+    /// server that was asleep, which the default cut off with "took too long".
+    public var timeout: TimeInterval?
 
-    public init(method: HTTPMethod, path: String, query: [QueryItem] = [], body: Data? = nil, requiresAuth: Bool = true) {
+    public init(method: HTTPMethod, path: String, query: [QueryItem] = [], body: Data? = nil, requiresAuth: Bool = true, timeout: TimeInterval? = nil) {
         self.method = method
         self.path = path
         self.query = query
         self.body = body
         self.requiresAuth = requiresAuth
+        self.timeout = timeout
     }
 
     /// Convenience for JSON bodies encoded with the shared encoder.
-    public static func json<Body: Encodable>(_ method: HTTPMethod, _ path: String, body: Body, query: [QueryItem] = [], requiresAuth: Bool = true) throws -> Endpoint {
-        Endpoint(method: method, path: path, query: query, body: try JSONCoding.encode(body), requiresAuth: requiresAuth)
+    public static func json<Body: Encodable>(_ method: HTTPMethod, _ path: String, body: Body, query: [QueryItem] = [], requiresAuth: Bool = true, timeout: TimeInterval? = nil) throws -> Endpoint {
+        Endpoint(method: method, path: path, query: query, body: try JSONCoding.encode(body), requiresAuth: requiresAuth, timeout: timeout)
     }
 }
 
@@ -95,7 +100,7 @@ public enum Endpoints {
         query.append(contentsOf: pagination(limit: limit, cursor: cursor))
         return Endpoint(method: .get, path: "/quests", query: query)
     }
-    public static func generateQuests(_ body: QuestGenerateRequest) throws -> Endpoint { try .json(.post, "/quests/generate", body: body) }
+    public static func generateQuests(_ body: QuestGenerateRequest) throws -> Endpoint { try .json(.post, "/quests/generate", body: body, timeout: 120) }
     public static func quest(id: UUID) -> Endpoint { Endpoint(method: .get, path: "/quests/\(id.uuidString)") }
     public static func acceptQuest(id: UUID) -> Endpoint { Endpoint(method: .post, path: "/quests/\(id.uuidString)/accept") }
     public static func startQuest(id: UUID, rideId: UUID?) throws -> Endpoint {
@@ -110,7 +115,7 @@ public enum Endpoints {
     public static func abandonQuest(id: UUID) -> Endpoint { Endpoint(method: .post, path: "/quests/\(id.uuidString)/abandon") }
 
     // MARK: Routes
-    public static func generateRoutes(_ body: RouteGenerateRequest) throws -> Endpoint { try .json(.post, "/routes/generate", body: body) }
+    public static func generateRoutes(_ body: RouteGenerateRequest) throws -> Endpoint { try .json(.post, "/routes/generate", body: body, timeout: 150) }
     public static func route(id: UUID) -> Endpoint { Endpoint(method: .get, path: "/routes/\(id.uuidString)") }
     public static func routePackage(id: UUID) -> Endpoint { Endpoint(method: .get, path: "/routes/\(id.uuidString)/package") }
     public static func questRoute(id: UUID) -> Endpoint { Endpoint(method: .get, path: "/quests/\(id.uuidString)/route") }

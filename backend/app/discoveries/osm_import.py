@@ -22,6 +22,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
+from app.core.geo import haversine_m
 from app.core.logging import get_logger
 from app.core.security import utcnow
 from app.db.session import get_session_factory
@@ -31,9 +32,15 @@ from app.exploration.cells import cell_for
 log = get_logger(__name__)
 
 TILES_PER_DEGREE = 10
+# Part of every tile key. Bump it when the query learns a new kind of place, and
+# tiles imported under the old query are read again on the next visit; `store`
+# skips what is already known, so the second pass only adds the new kinds.
+TILE_VERSION = "v2"
 RETRY_AFTER = timedelta(minutes=15)
 # Quest generation waits this long for the tile the rider is in; the import carries on after.
 FIRST_TILE_WAIT_SECONDS = 15.0
+# A ride to a place crosses tiles the rider has never stood in; sample the leg this often.
+CORRIDOR_SAMPLE_M = 8000.0
 USER_AGENT = "RoadsAndRunes-backend/0.1"
 # What kind of place it is, and what little OpenStreetMap says about how good it
 # is: a café with a website, opening hours and no brand is somebody's café, and a
@@ -55,6 +62,7 @@ KEEP_TAGS = (
     "cuisine",
     "outdoor_seating",
     "stars",
+    "route",
 )
 
 BBox = tuple[float, float, float, float]  # (south, west, north, east)
@@ -65,11 +73,11 @@ _background: set[asyncio.Task[None]] = set()
 
 
 def tile_key(lat: float, lon: float) -> str:
-    return f"{math.floor(lat * TILES_PER_DEGREE)}:{math.floor(lon * TILES_PER_DEGREE)}"
+    return f"{TILE_VERSION}:{math.floor(lat * TILES_PER_DEGREE)}:{math.floor(lon * TILES_PER_DEGREE)}"
 
 
 def tile_bbox(key: str) -> BBox:
-    row, col = (int(part) for part in key.split(":"))
+    row, col = (int(part) for part in key.split(":")[-2:])
     step = 1 / TILES_PER_DEGREE
     return (
         max(-90.0, round(row * step, 6)),
@@ -83,7 +91,19 @@ def tiles_around(lat: float, lon: float) -> list[str]:
     """The tile under the point first, then its eight neighbours."""
     row, col = math.floor(lat * TILES_PER_DEGREE), math.floor(lon * TILES_PER_DEGREE)
     ring = [(dr, dc) for dr in (-1, 0, 1) for dc in (-1, 0, 1) if (dr, dc) != (0, 0)]
-    return [f"{row}:{col}", *(f"{row + dr}:{col + dc}" for dr, dc in ring)]
+    return [f"{TILE_VERSION}:{row}:{col}", *(f"{TILE_VERSION}:{row + dr}:{col + dc}" for dr, dc in ring)]
+
+
+def tiles_along(lat1: float, lon1: float, lat2: float, lon2: float, *, every_m: float = CORRIDOR_SAMPLE_M) -> list[str]:
+    """The tiles a straight leg crosses: both ends and a sample every `every_m`, in order."""
+    steps = max(1, math.ceil(haversine_m(lat1, lon1, lat2, lon2) / every_m))
+    keys: list[str] = []
+    for i in range(steps + 1):
+        fraction = i / steps
+        key = tile_key(lat1 + (lat2 - lat1) * fraction, lon1 + (lon2 - lon1) * fraction)
+        if key not in keys:
+            keys.append(key)
+    return keys
 
 
 def overpass_query(bbox: BBox) -> str:
@@ -106,7 +126,17 @@ def overpass_query(bbox: BBox) -> str:
   node[amenity~"^(cafe|pub|biergarten)$"][name];
   node[shop=bicycle][name];
 )->.stops;
-.stops out center tags 120;"""
+.stops out center tags 120;
+(
+  node[amenity~"^(restaurant|fast_food|food_court|ice_cream)$"][name];
+  node[shop~"^(bakery|deli)$"][name];
+)->.food;
+.food out center tags 120;
+(
+  way[highway~"^(path|track|bridleway)$"][name];
+  relation[route~"^(bicycle|mtb|hiking|foot)$"][name];
+)->.trails;
+.trails out center tags 120;"""
 
 
 def category_for(tags: dict[str, str]) -> str | None:
@@ -125,20 +155,34 @@ def category_for(tags: dict[str, str]) -> str | None:
         return "CAFE"
     if amenity in ("pub", "biergarten"):
         return "PUB"
+    if amenity in ("restaurant", "fast_food", "food_court", "ice_cream") or tags.get("shop") in ("bakery", "deli"):
+        return "FOOD"
     if tags.get("shop") == "bicycle":
         return "CYCLING"
+    if tags.get("route") in ("bicycle", "mtb", "hiking", "foot") or tags.get("highway") in (
+        "path",
+        "track",
+        "bridleway",
+    ):
+        return "TRAIL"
     return None
 
 
 def parse_elements(elements: list[dict[str, Any]], resolution: int) -> list[dict[str, Any]]:
     """Overpass elements as Discovery fields; unnamed or unsupported places are dropped."""
     places = []
+    trails_seen: set[str] = set()
     for element in elements:
         tags = element.get("tags") or {}
         name = str(tags.get("name", "")).strip()
         category = category_for(tags)
         if not name or category is None:
             continue
+        if category == "TRAIL":
+            # A named path is dozens of OSM ways; the rider wants the path once.
+            if name.lower() in trails_seen:
+                continue
+            trails_seen.add(name.lower())
         if "lat" in element:
             lat, lon = float(element["lat"]), float(element["lon"])
         elif "center" in element:
@@ -248,6 +292,47 @@ async def ensure_pois(
             await asyncio.wait_for(asyncio.shield(first), FIRST_TILE_WAIT_SECONDS)
         except TimeoutError:
             log.info("poi_import_still_running", tile=keys[0])
+
+
+async def ensure_pois_along(
+    settings: Settings,
+    lat1: float,
+    lon1: float,
+    lat2: float,
+    lon2: float,
+    *,
+    budget_s: float = 25.0,
+    fetch: Fetcher | None = None,
+    session_factory: async_sessionmaker[AsyncSession] | None = None,
+) -> None:
+    """Imports the tiles a leg crosses, one after another, for up to `budget_s`.
+
+    Called when a ride to a place asked for stops and too few were found: the
+    middle of a 20 km ride is usually somewhere the rider has never planned from.
+    Tiles already imported cost nothing; whatever the budget does not cover carries
+    on in the background for the next plan.
+    """
+    if not settings.poi_import_enabled:
+        return
+    factory = session_factory or get_session_factory()
+    fetch = fetch or overpass_fetcher(settings)
+    keys = tiles_along(lat1, lon1, lat2, lon2)
+    async with factory() as db:
+        due = await due_tiles(db, keys)
+    deadline = asyncio.get_running_loop().time() + budget_s
+    for index, key in enumerate(due):
+        task = _start(key, factory, fetch, settings.h3_resolution)
+        remaining = deadline - asyncio.get_running_loop().time()
+        try:
+            if remaining <= 0:
+                raise TimeoutError
+            await asyncio.wait_for(asyncio.shield(task), remaining)
+        except TimeoutError:
+            log.info("poi_corridor_import_timeout", tile=key, remaining=len(due) - index - 1)
+            rest = due[index + 1 :]
+            if rest:
+                _in_background(_import_in_turn(rest, task, factory, fetch, settings.h3_resolution))
+            return
 
 
 async def drain() -> None:

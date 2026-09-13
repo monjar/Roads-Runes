@@ -53,8 +53,13 @@ final class WorldViewModel {
     }
 
     /// Merges the server's cells with what the current ride has uncovered so the fog clears live.
+    /// With the fog switched off on the server, a ride must not paint hexes either:
+    /// they were a readout nobody could act on, so the map is plain until they are a game.
     func rebuildCells() {
-        guard let snapshot else { return }
+        guard let snapshot, snapshot.isEnabled(FeatureFlag.fogOfWar) else {
+            cells = []
+            return
+        }
         cells = fogGrid.render(serverCells: snapshot.cells, localStates: container.rideRecorder.localCellStates)
     }
 

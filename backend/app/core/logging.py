@@ -31,6 +31,7 @@ def get_logger(name: str) -> structlog.stdlib.BoundLogger:
 
 
 # Canonical backend event names (spec §78)
+EVENT_ROUTE_GENERATED = "route_generated"
 EVENT_ROUTE_GENERATION_FAILED = "route_generation_failed"
 EVENT_QUEST_GENERATION_FAILED = "quest_generation_failed"
 EVENT_RIDE_UPLOAD_FAILED = "ride_upload_failed"

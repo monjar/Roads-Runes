@@ -218,7 +218,7 @@ public enum SampleData {
         ],
         discoveries: sampleDiscoveries,
         questMarkers: [QuestMarker(questId: questId, title: sampleQuest.title, latitude: 51.5, longitude: -0.02, difficulty: .moderate, questType: "EXPLORE_REGION", status: .available)],
-        featureFlags: ["fog_of_war": true, "story_quests": false]
+        featureFlags: ["fog_of_war": false, "story_quests": false]
     )
 
     // MARK: Social & meta
@@ -235,7 +235,7 @@ public enum SampleData {
     )
 
     public static let sampleConfig = AppConfig(
-        featureFlags: ["fog_of_war": true, "story_quests": false, "party_quests": false, "strava": false,
+        featureFlags: ["fog_of_war": false, "story_quests": false, "party_quests": false, "strava": false,
                        "wizard_class": false, "warrior_class": false, "scribe_class": false],
         h3Resolution: 9, levels: LevelLimits(max: 50, maxClass: 30), environment: "preview"
     )

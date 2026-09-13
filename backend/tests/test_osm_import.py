@@ -21,6 +21,13 @@ ELEMENTS = [
     {"type": "node", "id": 5, "lat": 48.8580, "lon": 2.3488,
      "tags": {"name": "Tour Saint-Jacques", "historic": "monument", "tourism": "attraction"}},
     {"type": "node", "id": 6, "lat": 48.8550, "lon": 2.3500, "tags": {"name": "Boulangerie", "shop": "bakery"}},
+    {"type": "node", "id": 7, "lat": 48.8551, "lon": 2.3501, "tags": {"name": "Le Bistro", "amenity": "restaurant"}},
+    {"type": "way", "id": 8, "center": {"lat": 48.8600, "lon": 2.3600},
+     "tags": {"name": "Promenade Plantée", "highway": "path"}},
+    {"type": "way", "id": 9, "center": {"lat": 48.8610, "lon": 2.3650},
+     "tags": {"name": "Promenade Plantée", "highway": "path"}},
+    {"type": "relation", "id": 10, "center": {"lat": 48.8700, "lon": 2.3700},
+     "tags": {"name": "Véloroute de la Seine", "route": "bicycle"}},
 ]  # fmt: skip
 
 
@@ -31,6 +38,12 @@ def test_places_are_categorised_from_their_osm_tags():
         "Parc des Buttes-Chaumont": "NATURE",
         "Café de Flore": "CAFE",
         "Tour Saint-Jacques": "HISTORICAL",
+        # Lunch and trails were parseable for months and never imported.
+        "Boulangerie": "FOOD",
+        "Le Bistro": "FOOD",
+        # A named path is dozens of OSM ways; the rider wants the path once.
+        "Promenade Plantée": "TRAIL",
+        "Véloroute de la Seine": "TRAIL",
     }
     park = next(p for p in places if p["osm_id"] == "w2")
     assert (park["latitude"], park["longitude"]) == (48.8809, 2.3828)
@@ -38,12 +51,39 @@ def test_places_are_categorised_from_their_osm_tags():
 
 
 def test_tiles_cover_the_point_then_its_neighbours():
-    assert osm_import.tile_key(48.8566, 2.3522) == "488:23"
-    assert osm_import.tile_key(51.0, -0.03) == "510:-1"
-    assert osm_import.tile_bbox("488:23") == (48.8, 2.3, 48.9, 2.4)
+    assert osm_import.tile_key(48.8566, 2.3522) == "v2:488:23"
+    assert osm_import.tile_key(51.0, -0.03) == "v2:510:-1"
+    assert osm_import.tile_bbox("v2:488:23") == (48.8, 2.3, 48.9, 2.4)
+    assert osm_import.tile_bbox("488:23") == (48.8, 2.3, 48.9, 2.4), "keys from before the version prefix still parse"
     around = osm_import.tiles_around(48.8566, 2.3522)
-    assert around[0] == "488:23"
+    assert around[0] == "v2:488:23"
     assert len(set(around)) == 9
+
+
+def test_a_leg_is_covered_by_the_tiles_it_crosses():
+    """Rotherhithe to a point 12 km east crosses two tiles; a 200 m hop crosses one."""
+    keys = osm_import.tiles_along(51.4906, -0.0316, 51.4906, 0.1414)
+    assert keys[0] == "v2:514:-1"
+    assert keys[-1] == "v2:514:1"
+    assert len(keys) <= 3
+    assert osm_import.tiles_along(51.4906, -0.0316, 51.4920, -0.0300) == ["v2:514:-1"]
+
+
+async def test_the_corridor_import_stops_waiting_when_its_budget_is_spent(engine, settings, monkeypatch):
+    """The plan cannot wait forever for Overpass; what is left carries on behind it."""
+    monkeypatch.setattr(settings, "poi_import_enabled", True)
+    started: list = []
+
+    async def slow_fetch(bbox):
+        started.append(bbox)
+        await osm_import.asyncio.sleep(0.3)
+        return ELEMENTS
+
+    before = osm_import.asyncio.get_running_loop().time()
+    await osm_import.ensure_pois_along(settings, 51.4906, -0.0316, 51.4906, 0.1414, budget_s=0.1, fetch=slow_fetch)
+    assert osm_import.asyncio.get_running_loop().time() - before < 0.25, "the budget was not honoured"
+    await osm_import.drain()
+    assert len(started) == len(osm_import.tiles_along(51.4906, -0.0316, 51.4906, 0.1414)), "the rest never imported"
 
 
 async def test_an_area_is_imported_once(engine, settings, monkeypatch):
@@ -61,7 +101,16 @@ async def test_an_area_is_imported_once(engine, settings, monkeypatch):
     async with get_session_factory()() as db:
         names = set((await db.execute(select(Discovery.name))).scalars())
         areas = (await db.execute(select(PoiImportArea))).scalars().all()
-    assert names == {"Belvédère de Belleville", "Parc des Buttes-Chaumont", "Café de Flore", "Tour Saint-Jacques"}
+    assert names == {
+        "Belvédère de Belleville",
+        "Parc des Buttes-Chaumont",
+        "Café de Flore",
+        "Tour Saint-Jacques",
+        "Boulangerie",
+        "Le Bistro",
+        "Promenade Plantée",
+        "Véloroute de la Seine",
+    }
     assert len(areas) == 9
     assert {a.status for a in areas} == {"OK"}
 

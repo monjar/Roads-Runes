@@ -20,6 +20,7 @@ os.environ.setdefault("JOB_QUEUE", "inline")
 os.environ.setdefault("JWT_SECRET", "test-secret")
 os.environ.setdefault("LLM_PROVIDER", "none")
 os.environ.setdefault("POI_IMPORT_ENABLED", "false")  # tests opt in with a fake fetcher
+os.environ.setdefault("GEOCODING_ENABLED", "false")  # tests opt in with a mock transport
 
 from app.core.config import get_settings  # noqa: E402
 from app.db.models import Base  # noqa: E402

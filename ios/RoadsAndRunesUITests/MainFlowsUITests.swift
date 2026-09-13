@@ -136,9 +136,10 @@ final class MainFlowsUITests: XCTestCase {
 
         // The cafés are stops on the route, and each one opens on the map above the
         // list. Parsing the request and then ignoring it is the bug this covers.
-        XCTAssertFalse(understood.label.contains("found nearby"), "No cafés were found on the way: '\(understood.label)'")
-        let stop = app.buttons.matching(identifier: "routeStop").firstMatch
-        XCTAssertTrue(stop.waitForExistence(timeout: 30), "The route came back with no stops to show")
+        XCTAssertTrue(understood.label.contains("3 cafes"), "The planner read '\(understood.label)', not three cafés")
+        XCTAssertFalse(understood.label.contains("no stops like that"), "No cafés were found on the way: '\(understood.label)'")
+        let stop = app.buttons.matching(identifier: "routeStop").matching(NSPredicate(format: "value == %@", "cafe")).firstMatch
+        XCTAssertTrue(stop.waitForExistence(timeout: 30), "The route came back with no café to show")
         scrollTo(stop)
         tapOffCentre(stop, dx: 0.3)
         let callout = app.descendants(matching: .any).matching(identifier: "stopCallout").firstMatch
@@ -155,6 +156,26 @@ final class MainFlowsUITests: XCTestCase {
             app.descendants(matching: .any).matching(identifier: "stopCallout").staticTexts[name].waitForExistence(timeout: 10),
             "Tapping \(name) on the map did not open it"
         )
+        tapOffCentre(app.buttons["planner.close"], dx: 0.5)
+    }
+
+    /// Return on the keyboard plans the request. The field is multi-line, so Return
+    /// used to add a line and nothing else, and a rider who typed and pressed Return
+    /// saw the same routes as before.
+    func testReturnPlansTheRequest() throws {
+        signInAsNewRider(at: Self.rotherhithe)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).press(forDuration: 1.2)
+        tapOffCentre(waitFor(app.buttons["Ride here"], 30), dx: 0.1)
+        XCTAssertTrue(app.buttons["planner.start"].waitForExistence(timeout: 90), "No route to the place")
+
+        let placeholder = "About 30 km, mostly quiet roads, easy gravel and a pub halfway."
+        let request = app.textFields[placeholder].exists ? app.textFields[placeholder] : app.textViews[placeholder]
+        waitFor(request, 30).tap()
+        request.typeText("quiet roads\n")
+
+        let understood = app.descendants(matching: .any).matching(identifier: "planner.understood").firstMatch
+        XCTAssertTrue(understood.waitForExistence(timeout: 120), "Return did not plan the request")
+        XCTAssertTrue(understood.label.contains("quieter"), "The planner read '\(understood.label)', not quiet roads")
         tapOffCentre(app.buttons["planner.close"], dx: 0.5)
     }
 

@@ -324,7 +324,11 @@ def _names_a_place(phrase: str) -> bool:
     if not words or any(word.isdigit() for word in words):
         return False
     return not all(
-        word in RIDE_WORDS or word in POI_WORDS or word.rstrip("s") in POI_WORDS or word in COUNT_WORDS
+        word in RIDE_WORDS
+        or word.rstrip("s") in RIDE_WORDS
+        or word in POI_WORDS
+        or word.rstrip("s") in POI_WORDS
+        or word in COUNT_WORDS
         for word in words
     )
 
@@ -342,6 +346,8 @@ def _area_phrase(lowered: str) -> str | None:
         word
         for word in re.findall(r"[a-z0-9'\u2019\-]+", lowered)
         if word not in RIDE_WORDS
+        # "quiet roads" is not a ride in Roads Wood: the plural of a riding word is one too.
+        and word.rstrip("s") not in RIDE_WORDS
         and word not in POI_WORDS
         and word.rstrip("s") not in POI_WORDS
         and word not in COUNT_WORDS
