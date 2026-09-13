@@ -22,6 +22,7 @@ from typing import Any
 
 import h3
 
+from app.core.activity import ASSUMED_SPEED_KMH, DISTANCE_SCALE, noun, verb
 from app.core.geo import destination_point, haversine_m
 from app.core.logging import get_logger
 from app.economy.rules import quest_ac
@@ -66,6 +67,7 @@ class GenerationContext:
     seed: str | None = None
     requested_distance_km: float | None = None
     poi_visibility_bonus: float = 0.0
+    activity: str = "RIDE"  # RIDE | RUN | WALK (core/activity.py)
 
 
 @dataclass
@@ -117,6 +119,7 @@ class GeneratedQuest:
     longitude: float
     rewards: dict[str, Any]
     variables: dict[str, Any]
+    activity: str = "RIDE"
 
 
 def _rng(ctx: GenerationContext, template_id: str, salt: int) -> random.Random:
@@ -132,8 +135,34 @@ def _scale_range(rng: random.Random, rng_range: list[float], scale: float) -> fl
 
 
 def _distance_scale(ctx: GenerationContext) -> float:
+    # The comfortable distance is already the activity's own (run or walk), so it
+    # is measured against that activity's idea of a middling outing, not a ride's.
     base = ctx.requested_distance_km or ctx.comfortable_distance_km
-    return max(0.5, min(2.0, base / 25.0))
+    middling = 25.0 * DISTANCE_SCALE.get(ctx.activity, 1.0)
+    return max(0.5, min(2.0, base / middling))
+
+
+# Rules that are distances: written for bikes, scaled for feet.
+DISTANCE_RULES = ("distanceKm", "newTerritoryKm", "regionDistanceKm", "poiDistanceKm")
+
+
+def _rules_for(rules: dict[str, Any], activity: str) -> dict[str, Any]:
+    """A template's rules for this activity.
+
+    A rule may be one value (written for bikes; feet get distances scaled) or a
+    dict keyed by activity, for numbers that do not scale, like a tempo.
+    """
+    scale = DISTANCE_SCALE.get(activity, 1.0)
+    out: dict[str, Any] = {}
+    for key, value in rules.items():
+        if isinstance(value, dict) and any(k in value for k in DISTANCE_SCALE):
+            value = value.get(activity, value.get("RIDE"))
+            if value is None:
+                continue
+        elif key in DISTANCE_RULES and scale != 1.0:
+            value = [v * scale for v in value] if isinstance(value, list) else value * scale
+        out[key] = value
+    return out
 
 
 def _unexplored_cell_at(
@@ -164,7 +193,8 @@ def _frontier_cell(ctx: GenerationContext, rng: random.Random, exclude: set[str]
 
 
 def _poi_candidates(ctx: GenerationContext, rules: dict[str, Any]) -> list[POICandidate]:
-    lo, hi = rules.get("poiDistanceKm", [3, 15])
+    default_reach = DISTANCE_SCALE.get(ctx.activity, 1.0)
+    lo, hi = rules.get("poiDistanceKm", [3 * default_reach, 15 * default_reach])
     lo_m, hi_m = lo * 1000, hi * 1000 * (1 + ctx.poi_visibility_bonus)
     category = rules.get("poiCategory")
     tag_any = rules.get("poiTagAny")
@@ -217,13 +247,15 @@ def _base_xp(difficulty: str, template: dict[str, Any]) -> int:
 
 def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0) -> GeneratedQuest | None:
     rng = _rng(ctx, template["id"], salt)
-    rules = template.get("objectiveRules", {})
+    rules = _rules_for(template.get("objectiveRules", {}), ctx.activity)
     scale = _distance_scale(ctx)
     variables: dict[str, Any] = {}
     used_cells: set[str] = set()
     objectives: list[GeneratedObjective] = []
     farthest_m = 0.0
 
+    variables["activityVerb"] = verb(ctx.activity)
+    variables["activityNoun"] = noun(ctx.activity)
     if "distanceKm" in rules:
         variables["distanceKm"] = _scale_range(rng, rules["distanceKm"], scale)
     if "newTerritoryKm" in rules:
@@ -253,7 +285,9 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
     region_cells: list[str] = []
     if "regionCount" in rules:
         count = int(rules["regionCount"])
-        dist_range = rules.get("regionDistanceKm", [3, 12])
+        dist_range = rules.get(
+            "regionDistanceKm", [3 * DISTANCE_SCALE.get(ctx.activity, 1.0), 12 * DISTANCE_SCALE.get(ctx.activity, 1.0)]
+        )
         dist_range = [dist_range[0] * scale, dist_range[1] * scale]
         for _ in range(count):
             cell = (
@@ -354,7 +388,7 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
         distance_km = round(max(8.0, (farthest_m * 2.2) / 1000), 1)
     difficulty = _difficulty(distance_km, ctx, float(variables.get("elevationMeters", 0)))
     base_xp = _base_xp(difficulty, template)
-    speed_kmh = 15.0
+    speed_kmh = ASSUMED_SPEED_KMH.get(ctx.activity, 15.0)
     duration = int(distance_km / speed_kmh * 60 + 10)
     narrative = rng.choice(template["narrative"])
     title = narrative["title"].format(**variables)
@@ -376,6 +410,7 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
         longitude=ctx.longitude,
         rewards={"xp": base_xp, "ac": quest_ac(difficulty), "items": [], "titles": []},
         variables=variables,
+        activity=ctx.activity,
     )
 
 
@@ -401,7 +436,9 @@ def generate(
     completed least recently and weighting by template weight."""
     exclude = set(exclude_template_ids or ())
     candidates = [
-        t for t in templates_for(ctx.character_class, ctx.class_level, ctx.unlocked_templates) if t["id"] not in exclude
+        t
+        for t in templates_for(ctx.character_class, ctx.class_level, ctx.unlocked_templates, activity=ctx.activity)
+        if t["id"] not in exclude
     ]
     if not candidates:
         return []

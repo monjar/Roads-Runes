@@ -20,6 +20,8 @@ class Ride(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     client_ride_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     status: Mapped[str] = mapped_column(String(12), nullable=False, default="RECORDING")
+    # RIDE | RUN | WALK (core/activity.py). The table keeps its name; a run is a "ride" here.
+    activity: Mapped[str] = mapped_column(String(8), nullable=False, default="RIDE", server_default="RIDE")
     title: Mapped[str | None] = mapped_column(String(120), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(4000), nullable=True)
     started_at: Mapped[datetime] = mapped_column(TZDateTime, nullable=False)

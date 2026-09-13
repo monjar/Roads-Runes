@@ -5,9 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from app.core.activity import SPEED_CAP_MPS, normalise
 from app.core.geo import haversine_m
 
-MAX_PLAUSIBLE_SPEED_MPS = 25.0  # 90 km/h sustained is not cycling
+MAX_PLAUSIBLE_SPEED_MPS = 25.0  # 90 km/h sustained is not cycling; runs and walks cap lower (core/activity.py)
 MAX_ACCURACY_M = 100.0
 TELEPORT_DISTANCE_M = 500.0
 TELEPORT_WINDOW_S = 10.0
@@ -40,8 +41,11 @@ class ValidationResult:
         return any(f.startswith("IMPOSSIBLE") or f == "TELEPORT" for f in self.flags)
 
 
-def validate_points(raw: list[dict], *, client_distance_m: float | None = None) -> ValidationResult:
+def validate_points(
+    raw: list[dict], *, client_distance_m: float | None = None, activity: str = "RIDE"
+) -> ValidationResult:
     result = ValidationResult()
+    speed_cap = SPEED_CAP_MPS.get(normalise(activity), MAX_PLAUSIBLE_SPEED_MPS)
     cleaned: list[CleanPoint] = []
     for p in raw:
         try:
@@ -79,7 +83,7 @@ def validate_points(raw: list[dict], *, client_distance_m: float | None = None) 
             if "TELEPORT" not in result.flags:
                 result.flags.append("TELEPORT")
             continue
-        if speed > MAX_PLAUSIBLE_SPEED_MPS:
+        if speed > speed_cap:
             speeding += 1
             continue
         result.computed_distance_m += d

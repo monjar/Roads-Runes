@@ -205,7 +205,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         }
         for p in points_rows
     ]
-    validation = validate_points(raw, client_distance_m=ride.distance_meters)
+    validation = validate_points(raw, client_distance_m=ride.distance_meters, activity=ride.activity)
     flags = list(validation.flags)
     points = validation.points
 

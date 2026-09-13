@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.activity import normalise
 from app.core.errors import NotFound, RideInvalidState
 from app.core.pagination import decode_cursor, encode_cursor
 from app.core.security import utcnow
@@ -29,6 +30,7 @@ def ride_out(ride: Ride) -> RideOut:
         id=ride.id,
         clientRideId=ride.client_ride_id,
         status=ride.status,
+        activity=normalise(ride.activity),
         title=ride.title,
         startedAt=ride.started_at,
         endedAt=ride.ended_at,
@@ -66,6 +68,7 @@ async def create_ride(db: AsyncSession, user: User, payload: RideCreate) -> Ride
         user_id=user.id,
         client_ride_id=payload.clientRideId,
         status="RECORDING",
+        activity=normalise(payload.activity),
         title=(payload.title or "").strip() or None,
         started_at=payload.startedAt,
         quest_id=payload.questId,

@@ -20,7 +20,7 @@
       "objectives": [
         {
           "type": "EXPLORE_NEW_ROADS",
-          "title": "Ride {newTerritoryKm} km of roads you have never ridden",
+          "title": "{activityVerb} {newTerritoryKm} km of roads you have never travelled",
           "required": true
         },
         {
@@ -36,8 +36,13 @@
         },
         {
           "title": "Into the Unknown",
-          "description": "Every road you have never ridden is a line waiting to be drawn. Draw {newTerritoryKm} km today."
+          "description": "Every road you have never travelled is a line waiting to be drawn. Draw {newTerritoryKm} km today."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -68,12 +73,17 @@
       "narrative": [
         {
           "title": "Three Shadows on the Map",
-          "description": "Three patches of fog lie within reach. Ride into each and let the light in."
+          "description": "Three patches of fog lie within reach. {activityVerb} into each and let the light in."
         },
         {
           "title": "The Triad",
           "description": "Three regions, three first visits. Connect them any way you like."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -107,6 +117,11 @@
           "title": "A Quiet Place",
           "description": "Somewhere beyond your explored roads is {poiName}. Find your own way there."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -125,7 +140,7 @@
       "objectives": [
         {
           "type": "COMPLETE_DISTANCE",
-          "title": "Ride a loop of at least {distanceKm} km",
+          "title": "{activityVerb} a loop of at least {distanceKm} km",
           "required": true
         },
         {
@@ -145,6 +160,11 @@
           "title": "The Long Way Round",
           "description": "Leave home, and make sure most of the way back is new."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -174,6 +194,11 @@
           "title": "The Unseen Marker",
           "description": "{poiName} has stood there longer than your map. Add it to yours."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -212,6 +237,11 @@
           "title": "The Missing Link",
           "description": "Two places you know, joined by roads you don't. Close the gap."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -254,6 +284,11 @@
           "title": "There and Back, Differently",
           "description": "Go somewhere new. Then refuse to come home the same way."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -291,6 +326,11 @@
           "title": "A Higher Vantage",
           "description": "From {poiName} you can see where you have been. Earn the view."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -325,6 +365,9 @@
           "title": "Off the Tarmac",
           "description": "{poiName} is not a road. That is the point."
         }
+      ],
+      "activities": [
+        "RIDE"
       ]
     },
     {
@@ -352,7 +395,7 @@
         },
         {
           "type": "COMPLETE_DISTANCE",
-          "title": "Ride at least {distanceKm} km",
+          "title": "{activityVerb} at least {distanceKm} km",
           "required": true
         }
       ],
@@ -361,6 +404,11 @@
           "title": "Far Wanderer",
           "description": "Somewhere past the edge of the known, a region waits for the first wheel."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -393,7 +441,7 @@
         },
         {
           "type": "EXPLORE_NEW_ROADS",
-          "title": "Ride 3 km of new roads on the way",
+          "title": "{activityVerb} 3 km of new roads on the way",
           "required": false
         }
       ],
@@ -406,6 +454,11 @@
           "title": "Beyond the River",
           "description": "Cross to {poiName} and see what the far bank holds."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -441,6 +494,11 @@
           "title": "Coffee at the Frontier",
           "description": "There is a café in the fog. Go and drink there."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -468,8 +526,13 @@
       "narrative": [
         {
           "title": "Walking the Edge",
-          "description": "Your map has an edge. Ride along it and push it outwards in four places."
+          "description": "Your map has an edge. {activityVerb} along it and push it outwards in four places."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -491,12 +554,12 @@
       "objectives": [
         {
           "type": "EXPLORE_NEW_ROADS",
-          "title": "Ride {newTerritoryKm} km of unknown roads",
+          "title": "{activityVerb} {newTerritoryKm} km of unknown roads",
           "required": true
         },
         {
           "type": "COMPLETE_DISTANCE",
-          "title": "Ride at least {distanceKm} km",
+          "title": "{activityVerb} at least {distanceKm} km",
           "required": true
         }
       ],
@@ -505,6 +568,11 @@
           "title": "The Great Unknown",
           "description": "A whole day of roads you have never seen."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -533,6 +601,11 @@
           "title": "The Old Stones",
           "description": "{poiName} remembers more than the maps admit."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -568,6 +641,9 @@
           "title": "The Long Climb",
           "description": "Height is earned one pedal stroke at a time."
         }
+      ],
+      "activities": [
+        "RIDE"
       ]
     },
     {
@@ -606,6 +682,11 @@
           "title": "For the Record",
           "description": "Someone has to write these places down."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -640,6 +721,11 @@
           "title": "The Watcher's Seat",
           "description": "Somewhere above you there is a seat that watches the whole city. The map will not name it until you are standing there."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -676,6 +762,11 @@
           "title": "What the Water Keeps",
           "description": "Water remembers every route that crossed it. Find this one and it will tell you its name."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -709,6 +800,11 @@
           "title": "A Curious Object",
           "description": "{poiName} is stranger than it looks. {poiFact}"
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -739,8 +835,13 @@
       "narrative": [
         {
           "title": "The Ley Line",
-          "description": "Three points, one straight idea. Ride them in any order; the line does not care."
+          "description": "Three points, one straight idea. {activityVerb} them in any order; the line does not care."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -771,7 +872,7 @@
         },
         {
           "type": "EXPLORE_NEW_ROADS",
-          "title": "Take {newTerritoryKm} km of roads you have never ridden",
+          "title": "Take {newTerritoryKm} km of roads you have never travelled",
           "required": false
         }
       ],
@@ -780,6 +881,11 @@
           "title": "Older Than the Road",
           "description": "The road is new. What it passes is not. {poiFact}"
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -801,7 +907,7 @@
       "objectives": [
         {
           "type": "COMPLETE_DISTANCE",
-          "title": "Ride {distanceKm} km",
+          "title": "{activityVerb} {distanceKm} km",
           "required": true
         },
         {
@@ -815,6 +921,11 @@
           "title": "The Long Haul",
           "description": "No hills to hide behind, no shortcuts. Just the distance and how you meet it."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -828,15 +939,25 @@
           15,
           35
         ],
-        "speedKmh": [
-          19,
-          26
-        ]
+        "speedKmh": {
+          "RIDE": [
+            19,
+            26
+          ],
+          "RUN": [
+            9.0,
+            12.0
+          ],
+          "WALK": [
+            5.0,
+            6.5
+          ]
+        }
       },
       "objectives": [
         {
           "type": "SUSTAIN_SPEED",
-          "title": "Average {speedKmh} km/h over the ride",
+          "title": "Average {speedKmh} km/h over the {activityNoun}",
           "required": true
         },
         {
@@ -850,6 +971,11 @@
           "title": "Tempo",
           "description": "Not a race against anyone else: a pace you choose and keep. Stops count against the average, so pick your moment to rest."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -885,6 +1011,9 @@
           "title": "The Iron Hour",
           "description": "Time on the bike is the whole test. Anything that keeps you moving counts."
         }
+      ],
+      "activities": [
+        "RIDE"
       ]
     },
     {
@@ -922,8 +1051,13 @@
       "narrative": [
         {
           "title": "The Hill Toll",
-          "description": "Every road out of here asks for height. Pay it all in one ride."
+          "description": "Every road out of here asks for height. Pay it all in one {activityNoun}."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -962,6 +1096,11 @@
           "title": "Two Kinds of Record",
           "description": "A picture and a sentence hold different things. {poiName} deserves both. {poiFact}"
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -1007,6 +1146,11 @@
           "title": "Waterside Record",
           "description": "Rivers change faster than maps do. Put down what {poiName} looks like today."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -1043,8 +1187,13 @@
       "narrative": [
         {
           "title": "The Café Log",
-          "description": "Every good ride has a stop in it. This one goes in the book."
+          "description": "Every good {activityNoun} has a stop in it. This one goes in the book."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -1076,7 +1225,7 @@
         },
         {
           "type": "WRITE_NOTE",
-          "title": "Say whether it is worth riding again",
+          "title": "Say whether it is worth doing again",
           "required": false
         }
       ],
@@ -1085,6 +1234,11 @@
           "title": "The Survey",
           "description": "Nobody has written these roads down. That is the job."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     },
     {
@@ -1122,6 +1276,11 @@
           "title": "Three Corners",
           "description": "Three places nobody has described. Give each of them a minute, then write one down."
         }
+      ],
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
       ]
     }
   ]

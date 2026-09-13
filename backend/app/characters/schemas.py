@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
+from app.core.activity import Activity
 from app.core.schemas import APIModel
 
 CharacterClass = Literal["EXPLORER", "WIZARD", "WARRIOR", "SCRIBE"]
@@ -111,3 +112,6 @@ class RiderProfileIO(APIModel):
     gravelComfort: float = Field(default=0.5, ge=0, le=1)
     technicalTrailComfort: float = Field(default=0.2, ge=0, le=1)
     cyclewayPreference: float = Field(default=0.8, ge=0, le=1)
+    defaultActivity: Activity = "RIDE"
+    runDistanceKm: float = Field(default=8.0, ge=1, le=100)
+    walkDistanceKm: float = Field(default=5.0, ge=0.5, le=60)

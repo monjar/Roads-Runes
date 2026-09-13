@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import Field
 
+from app.core.activity import Activity
 from app.core.schemas import APIModel, Coordinate
 
 
@@ -40,6 +41,7 @@ class QuestOut(APIModel):
     id: uuid.UUID
     questType: str
     characterClass: str
+    activity: str = "RIDE"
     templateId: str
     title: str
     description: str
@@ -68,6 +70,8 @@ class QuestGenerateRequest(APIModel):
     longitude: float = Field(ge=-180, le=180)
     count: int = Field(default=3, ge=1, le=6)
     request: str | None = Field(default=None, max_length=300)
+    # None: however this player usually moves (the rider profile).
+    activity: Activity | None = None
 
 
 class QuestStartRequest(APIModel):

@@ -21,6 +21,7 @@ class Route(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     bike_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("bikes.id", ondelete="SET NULL"), nullable=True)
     label: Mapped[str] = mapped_column(String(20), nullable=False)
     profile: Mapped[str] = mapped_column(String(20), nullable=False)
+    activity: Mapped[str] = mapped_column(String(8), nullable=False, default="RIDE", server_default="RIDE")
     engine: Mapped[str] = mapped_column(String(20), nullable=False, default="graphhopper")
     distance_meters: Mapped[float] = mapped_column(Float, nullable=False)
     estimated_duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)

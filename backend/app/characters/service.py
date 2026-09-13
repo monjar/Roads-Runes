@@ -20,6 +20,7 @@ from app.characters.schemas import (
     ClassProgressOut,
     RiderProfileIO,
 )
+from app.core.activity import normalise
 from app.core.config import Settings
 from app.core.errors import Conflict, FeatureDisabled, NotFound
 from app.core.feature_flags import class_enabled
@@ -349,6 +350,9 @@ def rider_profile_out(profile: RiderProfile) -> RiderProfileIO:
         gravelComfort=profile.gravel_comfort,
         technicalTrailComfort=profile.technical_trail_comfort,
         cyclewayPreference=profile.cycleway_preference,
+        defaultActivity=normalise(profile.default_activity),
+        runDistanceKm=profile.run_distance_km,
+        walkDistanceKm=profile.walk_distance_km,
     )
 
 
@@ -361,5 +365,8 @@ async def put_rider_profile(db: AsyncSession, user: User, payload: RiderProfileI
     profile.gravel_comfort = payload.gravelComfort
     profile.technical_trail_comfort = payload.technicalTrailComfort
     profile.cycleway_preference = payload.cyclewayPreference
+    profile.default_activity = normalise(payload.defaultActivity)
+    profile.run_distance_km = payload.runDistanceKm
+    profile.walk_distance_km = payload.walkDistanceKm
     await db.flush()
     return profile

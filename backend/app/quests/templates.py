@@ -46,11 +46,16 @@ def template_by_id() -> dict[str, dict[str, Any]]:
     return {t["id"]: t for t in all_templates()}
 
 
-def templates_for(character_class: str, class_level: int, unlocked: set[str] | None = None) -> list[dict[str, Any]]:
+def templates_for(
+    character_class: str, class_level: int, unlocked: set[str] | None = None, activity: str = "RIDE"
+) -> list[dict[str, Any]]:
     unlocked = unlocked or set()
     out = []
     for t in all_templates():
         if t["characterClass"] != character_class.upper():
+            continue
+        # A template written for bikes stays a bike quest unless it says otherwise.
+        if activity.upper() not in t.get("activities", ["RIDE"]):
             continue
         if t["minLevel"] > class_level and t["id"] not in unlocked:
             continue

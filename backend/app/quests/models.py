@@ -20,6 +20,8 @@ class QuestInstance(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     template_id: Mapped[str] = mapped_column(String(64), nullable=False)
     quest_type: Mapped[str] = mapped_column(String(40), nullable=False)
     character_class: Mapped[str] = mapped_column(String(20), nullable=False)
+    # How the quest is meant to be done: RIDE | RUN | WALK (core/activity.py).
+    activity: Mapped[str] = mapped_column(String(8), nullable=False, default="RIDE", server_default="RIDE")
     title: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str] = mapped_column(String(2000), nullable=False)
     narrative: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict, nullable=False)

@@ -62,7 +62,8 @@ class EngineRequest:
     custom_model: dict[str, Any] | None = None
     alternatives: int = 1
     heading: float | None = None
-    costing: dict[str, Any] | None = None  # Valhalla bicycle costing for the same preferences
+    costing: dict[str, Any] | None = None  # Valhalla costing options for the same preferences
+    activity: str = "RIDE"  # RIDE | RUN | WALK; on foot the costing is pedestrian
 
 
 @dataclass
@@ -348,6 +349,8 @@ class RegionalRouter:
         return await self.local.healthy() or await self.fallback.healthy()
 
     def covers(self, request: EngineRequest) -> bool:
+        if request.activity != "RIDE":
+            return False  # the local graph carries bike profiles only; feet go to the fallback
         min_lon, min_lat, max_lon, max_lat = self.bbox
         reach_m = (request.round_trip_distance_m or 0.0) / math.pi
         for lat, lon in request.points:

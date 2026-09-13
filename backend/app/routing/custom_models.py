@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.activity import WALKING_SPEED_KMH, is_foot, normalise
 from app.routing.preferences import RoutePreferences
 
 
@@ -92,14 +93,26 @@ VALHALLA_BICYCLE_TYPE = {
 }
 
 
-def valhalla_costing(prefs: RoutePreferences, bike_type: str, allow_gravel: bool, allow_trails: bool) -> dict[str, Any]:
-    """The same preferences as Valhalla bicycle costing, for rides outside GraphHopper's graph.
+def valhalla_costing(
+    prefs: RoutePreferences, bike_type: str, allow_gravel: bool, allow_trails: bool, activity: str = "RIDE"
+) -> dict[str, Any]:
+    """The same preferences as Valhalla costing, for rides outside GraphHopper's graph.
 
     Valhalla has fewer knobs: quiet roads and cycleways both lower `use_roads`,
     gravel appetite lowers `avoid_bad_surfaces` (bikes that cannot take gravel
-    avoid it strongly), and hill tolerance is `use_hills`.
+    avoid it strongly), and hill tolerance is `use_hills`. On foot the costing is
+    pedestrian: quiet means footways and pavements, gravel means tracks.
     """
     quiet = max(prefs.trafficAversion, prefs.cyclewayPreference * 0.8)
+    if is_foot(activity):
+        return {
+            "walking_speed": WALKING_SPEED_KMH.get(normalise(activity), 5.0),
+            "walkway_factor": _unit(1.0 - 0.6 * quiet) or 0.1,
+            "sidewalk_factor": _unit(1.0 - 0.5 * quiet) or 0.1,
+            "use_hills": _unit(prefs.hillTolerance),
+            "use_tracks": _unit(prefs.gravelPreference),
+            "use_ferry": 0,
+        }
     # The whole range, not the bottom half of it: at 0.6 Valhalla still takes the
     # gravel, so "tarmac only" used to come back on the same towpath as "gravel
     # heavy". Verified against valhalla1.openstreetmap.de across Richmond Park,

@@ -70,3 +70,7 @@ class RiderProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     gravel_comfort: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
     technical_trail_comfort: Mapped[float] = mapped_column(Float, default=0.2, nullable=False)
     cycleway_preference: Mapped[float] = mapped_column(Float, default=0.8, nullable=False)
+    # How this player usually moves, and how far is comfortable on foot.
+    default_activity: Mapped[str] = mapped_column(String(8), default="RIDE", server_default="RIDE", nullable=False)
+    run_distance_km: Mapped[float] = mapped_column(Float, default=8.0, server_default="8", nullable=False)
+    walk_distance_km: Mapped[float] = mapped_column(Float, default=5.0, server_default="5", nullable=False)

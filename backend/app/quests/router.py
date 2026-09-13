@@ -33,11 +33,12 @@ async def list_quests(
     longitude: float | None = Query(default=None, ge=-180, le=180),
     status: str | None = None,
     limit: int | None = None,
+    activity: str | None = None,
 ) -> Page[QuestOut]:
     size = clamp_limit(limit)
     if latitude is not None and longitude is not None and status in (None, "AVAILABLE"):
         character = await get_character(db, user)
-        await service.ensure_available(db, settings, llm, user, character, latitude, longitude)  # type: ignore[arg-type]
+        await service.ensure_available(db, settings, llm, user, character, latitude, longitude, activity=activity)  # type: ignore[arg-type]
     rows = await service.list_quests(db, user, status, latitude, longitude, size)
     return Page(items=[service.quest_out(q) for q in rows], nextCursor=None)
 
@@ -61,6 +62,7 @@ async def generate(
         payload.longitude,
         payload.count,
         payload.request,
+        activity=payload.activity,
     )  # type: ignore[arg-type]
     return Page(items=[service.quest_out(q) for q in quests], nextCursor=None)
 

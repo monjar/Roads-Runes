@@ -10,6 +10,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.activity import STRAVA_TYPE, normalise
 from app.core.config import Settings
 from app.core.errors import FeatureDisabled, NotFound
 from app.core.feature_flags import require_flag
@@ -116,7 +117,7 @@ async def upload_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID) 
             data={
                 "data_type": "gpx",
                 "name": ride.title or "Roads & Runes adventure",
-                "activity_type": "ride",
+                "activity_type": STRAVA_TYPE.get(normalise(ride.activity), "ride"),
                 "external_id": str(ride.id),
             },
             files={"file": (f"{ride.id}.gpx", gpx.encode(), "application/gpx+xml")},

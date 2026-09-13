@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
+from app.core.activity import Activity
 from app.core.schemas import APIModel
 
 RideStatus = Literal["RECORDING", "UPLOADED", "PROCESSING", "PROCESSED", "FLAGGED", "DISCARDED"]
@@ -24,6 +25,7 @@ class RidePointIn(APIModel):
 class RideCreate(APIModel):
     clientRideId: uuid.UUID
     startedAt: datetime
+    activity: Activity = "RIDE"
     questId: uuid.UUID | None = None
     bikeId: uuid.UUID | None = None
     routeId: uuid.UUID | None = None
@@ -70,6 +72,7 @@ class RideOut(APIModel):
     id: uuid.UUID
     clientRideId: uuid.UUID
     status: str
+    activity: str = "RIDE"
     title: str | None
     startedAt: datetime
     endedAt: datetime | None

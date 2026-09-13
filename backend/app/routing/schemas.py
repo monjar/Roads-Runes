@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import Field
 
+from app.core.activity import Activity
 from app.core.schemas import APIModel, Coordinate
 
 
@@ -27,6 +28,8 @@ class RouteGenerateRequest(APIModel):
     loop: bool | None = None
     preferences: PreferencesIn | None = None
     request: str | None = Field(default=None, max_length=400)
+    # None: however this player usually moves (the rider profile).
+    activity: Activity | None = None
 
 
 class InstructionOut(APIModel):
@@ -45,6 +48,7 @@ class RouteOptionOut(APIModel):
     id: uuid.UUID
     label: str
     engine: str
+    activity: str = "RIDE"
     distanceMeters: float
     estimatedDurationSeconds: int
     elevationGainMeters: float

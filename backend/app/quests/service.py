@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.characters import catalog
 from app.characters.models import Character
 from app.characters.service import ability_map, default_bike, get_rider_profile
+from app.core.activity import comfortable_distance_km, normalise
 from app.core.config import Settings
 from app.core.errors import NotFound, QuestGenerationFailed
 from app.core.geo import haversine_m
@@ -68,6 +69,7 @@ def quest_out(q: QuestInstance) -> QuestOut:
         id=q.id,
         questType=q.quest_type,
         characterClass=q.character_class,
+        activity=normalise(q.activity),
         templateId=q.template_id,
         title=q.title,
         description=q.description,
@@ -151,8 +153,11 @@ async def build_context(
     latitude: float,
     longitude: float,
     requested_distance_km: float | None = None,
+    activity: str | None = None,
 ) -> GenerationContext:
     profile = await get_rider_profile(db, user.id)
+    # Asked for, or however this player usually moves.
+    activity = normalise(activity or profile.default_activity)
     bike = await default_bike(db, user.id)
     cells = await known_cells(db, user.id)
     explored = {h for h, s in cells.items() if s == "EXPLORED"}
@@ -178,7 +183,7 @@ async def build_context(
         character_class=character.character_class,
         overall_level=character.overall_level,
         class_level=character.class_level,
-        comfortable_distance_km=profile.comfortable_distance_km,
+        comfortable_distance_km=comfortable_distance_km(profile, activity),
         comfortable_elevation_gain=profile.comfortable_elevation_gain,
         gravel_comfort=profile.gravel_comfort,
         bike_allows_gravel=bike.allow_gravel if bike else True,
@@ -194,6 +199,7 @@ async def build_context(
         seed=f"{user.id}:{utcnow().date().isoformat()}",
         requested_distance_km=requested_distance_km,
         poi_visibility_bonus=poi_bonus,
+        activity=activity,
     )
 
 
@@ -203,6 +209,7 @@ def _persist(user: User, generated: GeneratedQuest, now: datetime) -> QuestInsta
         template_id=generated.template_id,
         quest_type=generated.quest_type,
         character_class=generated.character_class,
+        activity=generated.activity,
         title=generated.title,
         description=generated.description,
         narrative=generated.narrative,
@@ -249,6 +256,7 @@ async def generate_quests(
     longitude: float,
     count: int,
     request: str | None = None,
+    activity: str | None = None,
 ) -> list[QuestInstance]:
     requested_km = None
     if request:
@@ -257,7 +265,7 @@ async def generate_quests(
         parsed = parse_rules(request)
         if parsed.preferences.distanceKm:
             requested_km = parsed.preferences.distanceKm["target"]
-    ctx = await build_context(db, settings, user, character, latitude, longitude, requested_km)
+    ctx = await build_context(db, settings, user, character, latitude, longitude, requested_km, activity)
     existing = (
         await db.execute(
             select(QuestInstance.template_id).where(
@@ -309,11 +317,14 @@ async def ensure_available(
     latitude: float,
     longitude: float,
     minimum: int = 3,
+    activity: str | None = None,
 ) -> list[QuestInstance]:
     available = await list_quests(db, user, "AVAILABLE", latitude, longitude, 20)
     if len(available) >= minimum:
         return available
-    await generate_quests(db, settings, llm, user, character, latitude, longitude, minimum - len(available))
+    await generate_quests(
+        db, settings, llm, user, character, latitude, longitude, minimum - len(available), activity=activity
+    )
     return await list_quests(db, user, "AVAILABLE", latitude, longitude, 20)
 
 

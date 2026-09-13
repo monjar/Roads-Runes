@@ -182,3 +182,29 @@ def test_valhalla_costing_follows_the_rider_and_the_bike():
         RoutePreferences(trafficAversion=0.2, cyclewayPreference=0.2, gravelPreference=0.8), "ROAD", False, False
     )
     assert (road["bicycle_type"], road["use_roads"], road["avoid_bad_surfaces"]) == ("Road", 0.8, 0.9)
+
+
+async def test_a_run_is_routed_as_a_pedestrian():
+    """Runs and walks use Valhalla's pedestrian costing; bikes keep theirs."""
+    calls: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, json=route_payload() if request.url.path == "/route" else TRACE)
+
+    await client_for(handler).route(EngineRequest([(51.5, -0.1), (51.503, -0.102)], "foot", activity="RUN"))
+    route_body, trace_body = calls[0], calls[1]
+    assert route_body["costing"] == "pedestrian"
+    assert route_body["costing_options"] == {"pedestrian": {"walking_speed": 9.5}}
+    assert trace_body["costing"] == "pedestrian"
+
+    calls.clear()
+    await client_for(handler).route(EngineRequest([(51.5, -0.1), (51.503, -0.102)], "gravel"))
+    assert calls[0]["costing"] == "bicycle"
+
+
+def test_the_local_graph_never_routes_feet():
+    router = RegionalRouter(SyntheticRouter(), GREATER_LONDON, SyntheticRouter())
+    inside = EngineRequest([(51.5, -0.1), (51.51, -0.11)], "hybrid")
+    assert router.covers(inside)
+    assert not router.covers(EngineRequest([(51.5, -0.1), (51.51, -0.11)], "foot", activity="RUN"))

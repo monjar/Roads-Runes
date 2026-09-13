@@ -21,6 +21,7 @@ from typing import Any
 
 import httpx
 
+from app.core.activity import VALHALLA_COSTING, WALKING_SPEED_KMH, normalise
 from app.core.geo import decode_polyline, destination_point, encode_polyline, haversine_m
 from app.core.logging import EVENT_ROUTE_GENERATION_FAILED, get_logger
 from app.routing.engine import EngineRequest, EngineRoute, RoutingUnavailable
@@ -235,27 +236,40 @@ class ValhallaClient:
         return response.status_code == 200
 
     async def route(self, request: EngineRequest) -> list[EngineRoute]:
-        costing = request.costing or {"bicycle_type": BICYCLE_TYPE_FOR_PROFILE.get(request.profile, "Hybrid")}
+        activity = normalise(request.activity)
+        costing_name = VALHALLA_COSTING.get(activity, "bicycle")
+        if request.costing:
+            costing = request.costing
+        elif costing_name == "bicycle":
+            costing = {"bicycle_type": BICYCLE_TYPE_FOR_PROFILE.get(request.profile, "Hybrid")}
+        else:
+            costing = {"walking_speed": WALKING_SPEED_KMH.get(activity, 5.0)}
         async with self._client() as client:
             try:
                 if request.round_trip_distance_m:
-                    trips = [await self._loop(client, request, costing)]
+                    trips = [await self._loop(client, request, costing, costing_name)]
                 else:
                     alternates = request.alternatives - 1 if len(request.points) == 2 else 0
-                    trips = await self._trips(client, request.points, costing, alternates)
+                    trips = await self._trips(client, request.points, costing, alternates, costing_name)
             except RoutingUnavailable as exc:
                 log.error(EVENT_ROUTE_GENERATION_FAILED, engine="valhalla", error=str(exc)[:300])
                 raise
-            return [await self._build(client, trip, costing) for trip in trips]
+            return [await self._build(client, trip, costing, costing_name) for trip in trips]
 
-    async def _loop(self, client: httpx.AsyncClient, request: EngineRequest, costing: dict[str, Any]) -> dict[str, Any]:
+    async def _loop(
+        self,
+        client: httpx.AsyncClient,
+        request: EngineRequest,
+        costing: dict[str, Any],
+        costing_name: str = "bicycle",
+    ) -> dict[str, Any]:
         lat, lon = request.points[0]
         target = float(request.round_trip_distance_m or 0.0)
         radius = target / (2 * math.pi) / LOOP_DETOUR
         best: dict[str, Any] | None = None
         for _ in range(2):
             waypoints = loop_waypoints(lat, lon, radius, request.seed, request.heading)
-            trip = (await self._trips(client, [(lat, lon), *waypoints, (lat, lon)], costing, 0))[0]
+            trip = (await self._trips(client, [(lat, lon), *waypoints, (lat, lon)], costing, 0, costing_name))[0]
             length = _length_m(trip)
             if best is None or abs(length - target) < abs(_length_m(best) - target):
                 best = trip
@@ -271,6 +285,7 @@ class ValhallaClient:
         points: list[tuple[float, float]],
         costing: dict[str, Any],
         alternates: int,
+        costing_name: str = "bicycle",
     ) -> list[dict[str, Any]]:
         last = len(points) - 1
         body: dict[str, Any] = {
@@ -280,8 +295,8 @@ class ValhallaClient:
                 {"lat": lat, "lon": lon, "type": "break" if i in (0, last) else "via"}
                 for i, (lat, lon) in enumerate(points)
             ],
-            "costing": "bicycle",
-            "costing_options": {"bicycle": costing},
+            "costing": costing_name,
+            "costing_options": {costing_name: costing},
             "elevation_interval": ELEVATION_INTERVAL_M,
             "directions_options": {"units": "kilometers", "language": "en-US"},
         }
@@ -290,7 +305,9 @@ class ValhallaClient:
         payload = await self._post(client, "route", body)
         return [payload["trip"], *(alt["trip"] for alt in payload.get("alternates", []) if "trip" in alt)]
 
-    async def _build(self, client: httpx.AsyncClient, trip: dict[str, Any], costing: dict[str, Any]) -> EngineRoute:
+    async def _build(
+        self, client: httpx.AsyncClient, trip: dict[str, Any], costing: dict[str, Any], costing_name: str = "bicycle"
+    ) -> EngineRoute:
         points: list[tuple[float, float]] = []
         elevation: list[Any] = []
         instructions: list[dict[str, Any]] = []
@@ -327,12 +344,16 @@ class ValhallaClient:
             distance_m=round(_length_m(trip), 1),
             duration_s=int(summary.get("time", 0)),
             instructions=instructions,
-            details=await self._details(client, points, costing),
+            details=await self._details(client, points, costing, costing_name),
             engine="valhalla",
         )
 
     async def _details(
-        self, client: httpx.AsyncClient, points: list[tuple[float, float]], costing: dict[str, Any]
+        self,
+        client: httpx.AsyncClient,
+        points: list[tuple[float, float]],
+        costing: dict[str, Any],
+        costing_name: str = "bicycle",
     ) -> dict[str, list[list[Any]]]:
         if len(points) < 2:
             return {}
@@ -340,8 +361,8 @@ class ValhallaClient:
             "encoded_polyline": encode_polyline(points, precision=6),
             # Exact walk when it can; map matching when it cannot (loops that double back).
             "shape_match": "walk_or_snap",
-            "costing": "bicycle",
-            "costing_options": {"bicycle": costing},
+            "costing": costing_name,
+            "costing_options": {costing_name: costing},
             "filters": {"attributes": DETAIL_ATTRIBUTES, "action": "include"},
         }
         try:

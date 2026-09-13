@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.characters.models import Bike, RiderProfile
 from app.characters.service import default_bike, get_rider_profile
+from app.core.activity import ASSUMED_SPEED_KMH, DISTANCE_SCALE, comfortable_distance_km, is_foot, normalise
 from app.core.config import Settings
 from app.core.errors import NotFound, RouteGenerationFailed
 from app.core.geo import bearing_deg, encode_polyline, haversine_m
@@ -100,6 +101,7 @@ def route_out(route: Route, components: dict[str, float] | None = None) -> Route
         id=route.id,
         label=route.label,
         engine=route.engine,
+        activity=normalise(route.activity),
         distanceMeters=route.distance_meters,
         estimatedDurationSeconds=route.estimated_duration_seconds,
         elevationGainMeters=route.elevation_gain_meters,
@@ -614,16 +616,21 @@ async def generate(
     payload: RouteGenerateRequest,
 ) -> tuple[list[tuple[Route, dict[str, float]]], dict[str, Any] | None]:
     profile: RiderProfile = await get_rider_profile(db, user.id)
+    # How the player moves: asked for, or however they usually do. On foot there is
+    # no bike to consult; the pedestrian costing and shorter distances do the work.
+    activity = normalise(payload.activity or profile.default_activity)
+    on_foot = is_foot(activity)
     bike: Bike | None = None
-    if payload.bikeId is not None:
-        bike = await db.get(Bike, payload.bikeId)
-        if bike is None or bike.user_id != user.id:
-            raise NotFound("Bike not found")
-    else:
-        bike = await default_bike(db, user.id)
-    bike_type = bike.bike_type if bike else "HYBRID"
+    if not on_foot:
+        if payload.bikeId is not None:
+            bike = await db.get(Bike, payload.bikeId)
+            if bike is None or bike.user_id != user.id:
+                raise NotFound("Bike not found")
+        else:
+            bike = await default_bike(db, user.id)
+    bike_type = bike.bike_type if bike else ("FOOT" if on_foot else "HYBRID")
     allow_gravel = bike.allow_gravel if bike else True
-    allow_trails = bike.allow_trails if bike else False
+    allow_trails = bike.allow_trails if bike else on_foot
 
     quest: QuestInstance | None = None
     if payload.questId is not None:
@@ -695,10 +702,10 @@ async def generate(
         (base_prefs.distanceKm or {}).get("target")
         or payload.distanceTargetKm
         or (quest.recommended_distance_km if quest else None)
-        or profile.comfortable_distance_km
+        or comfortable_distance_km(profile, activity)
     )
     if area is not None and payload.distanceTargetKm is None and not (base_prefs.distanceKm or {}).get("target"):
-        target_km = min(target_km, NEIGHBOURHOOD_RIDE_KM)
+        target_km = min(target_km, NEIGHBOURHOOD_RIDE_KM * DISTANCE_SCALE.get(activity, 1.0))
 
     loop = (
         payload.loop
@@ -707,8 +714,11 @@ async def generate(
     )
 
     cfg = scoring_config()
-    labels = list(cfg["bikeDefaultLabels"].get(bike_type, cfg["bikeDefaultLabels"]["OTHER"]))
-    if base_prefs.gravelPreference > 0.7 and "Gravel" not in labels and allow_gravel:
+    if on_foot:
+        labels = list(cfg["activityLabels"].get(activity, cfg["activityLabels"]["WALK"]))
+    else:
+        labels = list(cfg["bikeDefaultLabels"].get(bike_type, cfg["bikeDefaultLabels"]["OTHER"]))
+    if base_prefs.gravelPreference > 0.7 and "Gravel" not in labels and allow_gravel and not on_foot:
         labels[-1] = "Gravel"
     if base_prefs.hillTolerance > 0.8 and "Challenge" not in labels:
         labels[-1] = "Challenge"
@@ -793,7 +803,7 @@ async def generate(
         poi_candidates = requested_stops + [p for p in poi_candidates if p.id not in chosen_ids]
 
     rider = RiderLimits(
-        comfortable_distance_km=profile.comfortable_distance_km,
+        comfortable_distance_km=comfortable_distance_km(profile, activity),
         comfortable_elevation_gain=profile.comfortable_elevation_gain,
         max_preferred_gradient=profile.max_preferred_gradient,
         gravel_comfort=profile.gravel_comfort,
@@ -813,7 +823,7 @@ async def generate(
     for index, variant in enumerate(_variants(base_prefs, usual_prefs, requested_stops, labels, cfg, asked)):
         label, prefs = variant.label, variant.prefs
         distance_m = target_km * 1000 * variant.distance_factor
-        custom_model = build_custom_model(prefs, bike_type, allow_gravel, allow_trails)
+        custom_model = None if on_foot else build_custom_model(prefs, bike_type, allow_gravel, allow_trails)
         points = [(start.latitude, start.longitude)]
         for lat, lon, _ in targets.points:
             points.append((lat, lon))
@@ -838,12 +848,15 @@ async def generate(
             )
         request = EngineRequest(
             points=points,
-            profile=PROFILE_FOR_BIKE.get(bike_type, "hybrid"),
+            profile="foot" if on_foot else PROFILE_FOR_BIKE.get(bike_type, "hybrid"),
             round_trip_distance_m=round_trip,
             seed=seed_base + index * 17,
-            custom_model=custom_model if engine.name == "synthetic" else strip_internal(custom_model),
+            custom_model=custom_model
+            if (engine.name == "synthetic" or custom_model is None)
+            else strip_internal(custom_model),
             heading=heading,
-            costing=valhalla_costing(prefs, bike_type, allow_gravel, allow_trails),
+            costing=valhalla_costing(prefs, bike_type, allow_gravel, allow_trails, activity),
+            activity=activity,
         )
         try:
             engine_routes = await engine.route(request)
@@ -868,7 +881,7 @@ async def generate(
         traffic = traffic_exposure(coords, er.details.get("road_class"))
         new_fraction = _new_territory_fraction(coords, known, settings.h3_resolution)
         coverage = _coverage(coords, targets)
-        speed_mps = cfg["assumedSpeedKmh"].get(bike_type, 15) / 3.6
+        speed_mps = (ASSUMED_SPEED_KMH[activity] if on_foot else cfg["assumedSpeedKmh"].get(bike_type, 15)) / 3.6
         pois = attach_pois(
             coords,
             poi_candidates,
@@ -897,6 +910,7 @@ async def generate(
             bike_id=bike.id if bike else None,
             label=label,
             profile=request.profile,
+            activity=activity,
             engine=er.engine,
             distance_meters=round(er.distance_m, 1),
             estimated_duration_seconds=int(er.distance_m / speed_mps),
@@ -952,6 +966,7 @@ async def generate(
     log.info(
         EVENT_ROUTE_GENERATED,
         user=str(user.id),
+        activity=activity,
         request=(payload.request or "")[:120] or None,
         source=parsed_dict.get("source") if parsed_dict else None,
         matched=parsed_dict.get("matched") if parsed_dict else None,
