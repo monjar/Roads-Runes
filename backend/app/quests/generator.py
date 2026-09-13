@@ -27,7 +27,7 @@ from app.core.geo import destination_point, haversine_m
 from app.core.logging import get_logger
 from app.economy.rules import quest_ac
 from app.exploration.cells import cell_center, cell_for, frontier_cells
-from app.quests.templates import DIFFICULTIES, templates_for
+from app.quests.templates import ANY_CLASS, DIFFICULTIES, template_by_id, templates_for
 
 REGION_RADIUS_M = 250.0  # radius around a cell centre that counts as "entered"
 
@@ -430,15 +430,24 @@ def _try_instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int
 
 
 def generate(
-    ctx: GenerationContext, count: int = 3, exclude_template_ids: set[str] | None = None
+    ctx: GenerationContext,
+    count: int = 3,
+    exclude_template_ids: set[str] | None = None,
+    *,
+    only_any: bool = False,
 ) -> list[GeneratedQuest]:
     """Produce up to `count` distinct quests, preferring templates the user has
-    completed least recently and weighting by template weight."""
+    completed least recently and weighting by template weight.
+
+    One of them is for anyone whenever such a template can be made here: a class
+    shapes the quests, it does not own the whole board. `only_any` asks for the
+    open quests alone (topping up a list that has none).
+    """
     exclude = set(exclude_template_ids or ())
     candidates = [
         t
         for t in templates_for(ctx.character_class, ctx.class_level, ctx.unlocked_templates, activity=ctx.activity)
-        if t["id"] not in exclude
+        if t["id"] not in exclude and (not only_any or t["characterClass"] == ANY_CLASS)
     ]
     if not candidates:
         return []
@@ -469,5 +478,21 @@ def generate(
         ):
             continue
         generated.append(quest)
+    # One for anyone, if the class picks crowded it out and one can be made here.
+    open_templates = [t for t in candidates if t["characterClass"] == ANY_CLASS]
+    if open_templates and generated and not any(q.character_class == ANY_CLASS for q in generated):
+        for salt in range(200, 220):
+            quest = _try_instantiate(rng.choice(open_templates), ctx, salt)
+            if quest is None:
+                continue
+            if len(generated) >= count:
+                # The lightest class pick makes room; the list stays `count` long.
+                lightest = min(
+                    range(len(generated)),
+                    key=lambda i: template_by_id()[generated[i].template_id].get("weight", 1),
+                )
+                generated.pop(lightest)
+            generated.append(quest)
+            break
     assert DIFFICULTIES
     return generated

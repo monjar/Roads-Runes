@@ -5,6 +5,8 @@ public enum CharacterClass: String, SafeEnum {
     case wizard = "WIZARD"
     case warrior = "WARRIOR"
     case scribe = "SCRIBE"
+    /// A quest for anyone: not a class a character can be, but a class a quest can have.
+    case any = "ANY"
     case unknown = "UNKNOWN"
 }
 

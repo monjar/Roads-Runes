@@ -29,6 +29,7 @@ from app.quests.generator import GeneratedQuest, GenerationContext, POICandidate
 from app.quests.models import QuestInstance, QuestObjective, QuestProgressEvent
 from app.quests.schemas import ObjectiveEventIn, ObjectiveOut, ObjectiveProgress, QuestOut
 from app.quests.state_machine import assert_transition
+from app.quests.templates import ANY_CLASS
 from app.users.models import User
 
 log = get_logger(__name__)
@@ -257,6 +258,7 @@ async def generate_quests(
     count: int,
     request: str | None = None,
     activity: str | None = None,
+    only_any: bool = False,
 ) -> list[QuestInstance]:
     requested_km = None
     if request:
@@ -275,12 +277,12 @@ async def generate_quests(
         )
     ).all()
     try:
-        generated = generate(ctx, count, exclude_template_ids={t for (t,) in existing})
+        generated = generate(ctx, count, exclude_template_ids={t for (t,) in existing}, only_any=only_any)
     except Exception as exc:  # noqa: BLE001
         log.error(EVENT_QUEST_GENERATION_FAILED, error=str(exc))
         raise QuestGenerationFailed("Quest generation failed") from exc
     if not generated:
-        generated = generate(ctx, count)  # allow repeats rather than returning nothing
+        generated = generate(ctx, count, only_any=only_any)  # allow repeats rather than returning nothing
     now = utcnow()
     quests: list[QuestInstance] = []
     for g in generated:
@@ -320,12 +322,18 @@ async def ensure_available(
     activity: str | None = None,
 ) -> list[QuestInstance]:
     available = await list_quests(db, user, "AVAILABLE", latitude, longitude, 20)
-    if len(available) >= minimum:
-        return available
-    await generate_quests(
-        db, settings, llm, user, character, latitude, longitude, minimum - len(available), activity=activity
-    )
-    return await list_quests(db, user, "AVAILABLE", latitude, longitude, 20)
+    if len(available) < minimum:
+        await generate_quests(
+            db, settings, llm, user, character, latitude, longitude, minimum - len(available), activity=activity
+        )
+        available = await list_quests(db, user, "AVAILABLE", latitude, longitude, 20)
+    # A board with nothing for anyone on it gets one open quest, whatever the class.
+    if available and not any(q.character_class == ANY_CLASS for q in available):
+        await generate_quests(
+            db, settings, llm, user, character, latitude, longitude, 1, activity=activity, only_any=True
+        )
+        available = await list_quests(db, user, "AVAILABLE", latitude, longitude, 20)
+    return available
 
 
 # Transitions --------------------------------------------------------------

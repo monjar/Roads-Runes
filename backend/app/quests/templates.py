@@ -29,6 +29,8 @@ OBJECTIVE_TYPES = (
 )
 
 DIFFICULTIES = ("EASY", "MODERATE", "HARD", "EPIC")
+# Templates any class can take; every list of quests on offer keeps one of them.
+ANY_CLASS = "ANY"
 
 
 @lru_cache
@@ -52,7 +54,8 @@ def templates_for(
     unlocked = unlocked or set()
     out = []
     for t in all_templates():
-        if t["characterClass"] != character_class.upper():
+        # A quest for anyone is a quest for this class too.
+        if t["characterClass"] not in (character_class.upper(), ANY_CLASS):
             continue
         # A template written for bikes stays a bike quest unless it says otherwise.
         if activity.upper() not in t.get("activities", ["RIDE"]):

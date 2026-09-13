@@ -1282,6 +1282,227 @@
         "RUN",
         "WALK"
       ]
+    },
+    {
+      "id": "ANY_FIRST_FIVE",
+      "characterClass": "ANY",
+      "questType": "COMPLETE_DISTANCE",
+      "minLevel": 1,
+      "weight": 3,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "distanceKm": {
+          "RIDE": [
+            10,
+            20
+          ],
+          "RUN": [
+            4,
+            7
+          ],
+          "WALK": [
+            2.5,
+            5
+          ]
+        }
+      },
+      "objectives": [
+        {
+          "type": "COMPLETE_DISTANCE",
+          "title": "{activityVerb} at least {distanceKm} km",
+          "required": true
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Out the Door",
+          "description": "The hardest kilometre is the first one. {activityVerb} {distanceKm} km and the rest of the day is yours."
+        },
+        {
+          "title": "A Good Stretch",
+          "description": "No target but the road. {distanceKm} km, any way you like, and it counts."
+        }
+      ]
+    },
+    {
+      "id": "ANY_GREEN_HOUR",
+      "characterClass": "ANY",
+      "questType": "VISIT_POI",
+      "minLevel": 1,
+      "weight": 3,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "poiCategory": "NATURE",
+        "poiDistanceKm": [
+          1.5,
+          12
+        ]
+      },
+      "objectives": [
+        {
+          "type": "VISIT_POI",
+          "title": "Reach {poiName}",
+          "required": true,
+          "radiusMeters": 80
+        },
+        {
+          "type": "RETURN_TO_START",
+          "title": "Come back the way you did not go",
+          "required": false,
+          "radiusMeters": 300
+        }
+      ],
+      "narrative": [
+        {
+          "title": "The Green Hour",
+          "description": "{poiName} is closer than it feels. {poiFact} Go and stand in it."
+        },
+        {
+          "title": "Somewhere Leafy",
+          "description": "An hour with more trees than traffic. {poiName} will do."
+        }
+      ]
+    },
+    {
+      "id": "ANY_HIGH_GROUND",
+      "characterClass": "ANY",
+      "questType": "VISIT_POI",
+      "minLevel": 1,
+      "weight": 2,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "poiCategory": "VIEWPOINT",
+        "poiDistanceKm": [
+          2,
+          15
+        ],
+        "elevationMeters": [
+          40,
+          120
+        ]
+      },
+      "objectives": [
+        {
+          "type": "VISIT_POI",
+          "title": "Reach {poiName}",
+          "required": true,
+          "radiusMeters": 80
+        },
+        {
+          "type": "REACH_ELEVATION",
+          "title": "Climb {elevationMeters} m on the way",
+          "required": false
+        }
+      ],
+      "narrative": [
+        {
+          "title": "High Ground",
+          "description": "Every view is paid for in height. {poiName} asks {elevationMeters} m; the view is the change."
+        },
+        {
+          "title": "The Long Look",
+          "description": "Somewhere above the rooftops there is a place to see it all. {poiName}, today."
+        }
+      ]
+    },
+    {
+      "id": "ANY_NEW_GROUND",
+      "characterClass": "ANY",
+      "questType": "EXPLORE_NEW_ROADS",
+      "minLevel": 1,
+      "weight": 2,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "newTerritoryKm": {
+          "RIDE": [
+            2,
+            5
+          ],
+          "RUN": [
+            1,
+            2.5
+          ],
+          "WALK": [
+            0.6,
+            1.5
+          ]
+        }
+      },
+      "objectives": [
+        {
+          "type": "EXPLORE_NEW_ROADS",
+          "title": "{activityVerb} {newTerritoryKm} km of roads you have never travelled",
+          "required": true
+        }
+      ],
+      "narrative": [
+        {
+          "title": "New Ground",
+          "description": "Turn where you usually do not. {newTerritoryKm} km of roads the map has never seen you on."
+        },
+        {
+          "title": "Off the Usual",
+          "description": "The usual way is the usual way. Find {newTerritoryKm} km that is not."
+        }
+      ]
+    },
+    {
+      "id": "ANY_COFFEE_LOOP",
+      "characterClass": "ANY",
+      "questType": "VISIT_POI",
+      "minLevel": 1,
+      "weight": 2,
+      "activities": [
+        "RIDE",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "poiCategory": "CAFE",
+        "poiDistanceKm": [
+          1,
+          10
+        ]
+      },
+      "objectives": [
+        {
+          "type": "VISIT_POI",
+          "title": "Stop at {poiName}",
+          "required": true,
+          "radiusMeters": 60
+        },
+        {
+          "type": "RETURN_TO_START",
+          "title": "Return home",
+          "required": true,
+          "radiusMeters": 300
+        }
+      ],
+      "narrative": [
+        {
+          "title": "The Coffee Loop",
+          "description": "Out, a cup at {poiName}, and home. The oldest quest there is."
+        },
+        {
+          "title": "A Cup Away",
+          "description": "{poiName} is a {activityNoun} away. So is the way back."
+        }
+      ]
     }
   ]
 }

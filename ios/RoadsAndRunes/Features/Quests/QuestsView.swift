@@ -37,6 +37,9 @@ struct QuestsView: View {
                         if !model.recommended.isEmpty {
                             section("For \(ClassStyle.name(model.characterClass))s", model.recommended, empty: "")
                         }
+                        if !model.forAnyone.isEmpty {
+                            section("For anyone", model.forAnyone, empty: "")
+                        }
                         if container.session.isEnabled("story_quests") { section("Story", model.story, empty: "No story quests unlocked.") }
                         if container.session.isEnabled("party_quests") { section("Party", model.party, empty: "No party quests.") }
                         section("Completed", model.completed, empty: "Your completed adventures will appear here.", compact: true)

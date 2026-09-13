@@ -234,6 +234,7 @@ enum ClassStyle {
     static func name(_ characterClass: CharacterClass) -> String {
         switch characterClass {
         case .unknown: return "Adventurer"
+        case .any: return "Open"  // "Open quest": one anyone can take
         default: return characterClass.rawValue.capitalized
         }
     }

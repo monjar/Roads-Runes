@@ -44,6 +44,8 @@ final class QuestsViewModel {
     }
 
     var recommended: [Quest] { available.filter { $0.characterClass == characterClass }.prefix(3).map { $0 } }
+    /// Quests for anyone: a class shapes the board, it does not own it.
+    var forAnyone: [Quest] { available.filter { $0.characterClass == .any } }
     var story: [Quest] { available.filter { $0.storyQuestId != nil } }
     var party: [Quest] { available.filter { $0.partyId != nil } + active.filter { $0.partyId != nil } }
 

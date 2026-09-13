@@ -111,7 +111,9 @@ async def test_first_playable_journey(explorer_client: AsyncClient):
     assert r.status_code == 200, r.text
     quests = r.json()["items"]
     assert len(quests) >= 3
-    assert all(q["status"] == "AVAILABLE" and q["characterClass"] == "EXPLORER" for q in quests)
+    # The board is the Explorer's, plus one quest anyone can take.
+    assert all(q["status"] == "AVAILABLE" and q["characterClass"] in ("EXPLORER", "ANY") for q in quests)
+    assert any(q["characterClass"] == "ANY" for q in quests)
     # Regions/POIs targeted by quests are revealed on the map as DISCOVERED.
     r = await c.get("/world", params={"latitude": ORIGIN[0], "longitude": ORIGIN[1], "radiusMeters": 30000})
     assert any(cell["state"] == "DISCOVERED" for cell in r.json()["cells"])

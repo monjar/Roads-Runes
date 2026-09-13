@@ -80,8 +80,13 @@ async def test_quests_on_offer_for_the_old_class_are_withdrawn(explorer_client):
     r = await c.post("/quests/generate", json={"latitude": ORIGIN[0], "longitude": ORIGIN[1]})
     assert r.status_code == 200, r.text
     offered = [q for q in r.json()["items"] if q["status"] == "AVAILABLE"]
-    assert offered, "no quests to withdraw"
+    explorer_quests = [q for q in offered if q["characterClass"] == "EXPLORER"]
+    open_quests = [q for q in offered if q["characterClass"] == "ANY"]
+    assert explorer_quests, "no class quests to withdraw"
     r = await c.patch("/character", json={"characterClass": "WARRIOR"})
     assert r.status_code == 200, r.text
-    for quest in offered:
+    for quest in explorer_quests:
         assert (await c.get(f"/quests/{quest['id']}")).json()["status"] == "EXPIRED"
+    # A quest for anyone is still for the Warrior they have become.
+    for quest in open_quests:
+        assert (await c.get(f"/quests/{quest['id']}")).json()["status"] == "AVAILABLE"
