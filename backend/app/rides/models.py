@@ -42,6 +42,8 @@ class Ride(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Client-reported exploration candidates, merged with server-derived cells at processing.
     client_cells: Mapped[list[Any]] = mapped_column(JSONType, default=list, nullable=False)
     objective_events: Mapped[list[Any]] = mapped_column(JSONType, default=list, nullable=False)
+    # What the phone thinks it beat or opened on the way (world_objects); the server decides.
+    encounter_events: Mapped[list[Any]] = mapped_column(JSONType, default=list, nullable=False)
     processing_result: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
     flags: Mapped[list[Any]] = mapped_column(JSONType, default=list, nullable=False)
     processed_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)

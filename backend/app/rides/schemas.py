@@ -49,6 +49,18 @@ class ObjectiveEventIn(APIModel):
     value: float | None = None
 
 
+class EncounterEventIn(APIModel):
+    """The phone's word that it beat or opened something; the trace has the last word."""
+
+    objectId: uuid.UUID
+    method: str = Field(max_length=16)
+    occurredAt: datetime
+    latitude: float | None = None
+    longitude: float | None = None
+    note: str | None = Field(default=None, max_length=1000)
+    photoTaken: bool = False
+
+
 class RideCompleteIn(APIModel):
     endedAt: datetime
     distanceMeters: float = Field(ge=0)
@@ -59,6 +71,7 @@ class RideCompleteIn(APIModel):
     points: list[RidePointIn] = Field(default_factory=list, max_length=20000)
     cellsVisited: list[str] = Field(default_factory=list, max_length=5000)
     objectiveEvents: list[ObjectiveEventIn] = Field(default_factory=list, max_length=200)
+    encounterEvents: list[EncounterEventIn] = Field(default_factory=list, max_length=200)
     healthKitWorkoutId: str | None = None
 
 
@@ -115,6 +128,7 @@ class AdventureSummary(APIModel):
     acAwarded: int = 0
     acBreakdown: list[dict[str, Any]] = []
     walletBalance: int | None = None
+    worldObjects: dict[str, Any] | None = None
 
 
 class RideGeometry(APIModel):

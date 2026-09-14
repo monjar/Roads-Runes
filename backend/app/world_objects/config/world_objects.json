@@ -1,0 +1,52 @@
+{
+  "_comment": "Personal spawns: each player gets their own chests, collectables and monsters, anchored to real places.",
+  "quota": {"MONSTER": 2, "CHEST": 3, "COLLECTABLE": 4},
+  "maxLiveInRadius": 12,
+  "spawnRadiusMeters": 6000,
+  "minSpacingMeters": 150,
+  "expiryDays": 3,
+  "claimRadiusMeters": {"CHEST": 40, "COLLECTABLE": 30},
+  "monsterNearMeters": 150,
+  "tierWeights": [70, 25, 5],
+  "monsters": [
+    {"name": "Bog Wraith", "flavour": "A cold patch of air that follows the towpath."},
+    {"name": "Fen Troll", "flavour": "Sleeps under the bridge; wakes for footsteps."},
+    {"name": "Gutter Drake", "flavour": "Small, quick, and fond of bins."},
+    {"name": "Hollow Knight", "flavour": "Armour with nobody in it, still patrolling."},
+    {"name": "Mire Hag", "flavour": "Has been waiting by this pond a very long time."},
+    {"name": "Lamp Sprite", "flavour": "Flickers when you look straight at it."},
+    {"name": "Rook Lord", "flavour": "Holds the park by the sheer number of rooks."},
+    {"name": "Cinder Hound", "flavour": "Faster than it looks. Look again."},
+    {"name": "Moss Golem", "flavour": "Mostly wall. The moss is the dangerous part."},
+    {"name": "Tide Serpent", "flavour": "Only ever seen at the water's edge."},
+    {"name": "Grey Stag", "flavour": "Stands in the mist and dares you."},
+    {"name": "Ash Warden", "flavour": "Guards a place that burned down long ago."}
+  ],
+  "collectableSets": [
+    {"id": "RUNES", "name": "Old Runes", "pieces": ["Ansuz", "Raido", "Kenaz", "Wunjo", "Sowilo", "Dagaz"]},
+    {"id": "COINS", "name": "Milled Coins", "pieces": ["Farthing", "Groat", "Shilling", "Crown"]}
+  ],
+  "killMethods": {
+    "PACE": {
+      "windowMeters": {"1": 600, "2": 1000, "3": 1500},
+      "paceSecPerKm": {
+        "RIDE": {"1": 150, "2": 130, "3": 115},
+        "RUN": {"1": 390, "2": 330, "3": 290},
+        "WALK": {"1": 720, "2": 660, "3": 600}
+      },
+      "classEase": {"WARRIOR": 1.15},
+      "searchRadiusMeters": 1000
+    },
+    "RUNE": {
+      "shapes": ["TRIANGLE", "SQUARE", "STAR", "LOOP", "ZIGZAG"],
+      "scoreThreshold": 0.22,
+      "classThreshold": {"WIZARD": 0.3},
+      "searchRadiusMeters": 1000,
+      "minLengthMeters": 300,
+      "maxLengthMeters": 4000
+    },
+    "CLIMB": {"gainMeters": {"1": 40, "2": 80, "3": 150}, "withinMeters": 2000, "classEase": {"WARRIOR": 0.75}},
+    "LORE": {"radiusMeters": 120, "requires": ["photo", "note"], "classRequires": {"SCRIBE": ["note"]}},
+    "EXPLORE": {"cells": {"1": 3, "2": 5, "3": 8}, "withinMeters": 1500, "classEase": {"EXPLORER": -2}}
+  }
+}

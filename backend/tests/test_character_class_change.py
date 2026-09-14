@@ -11,6 +11,7 @@ from app.characters.models import Character
 from app.core.security import utcnow
 from app.db.session import get_session_factory
 from app.economy import service as economy
+from app.quests import generator
 from tests.test_first_playable_journey import ORIGIN, seed_discoveries
 
 
@@ -74,10 +75,15 @@ async def test_the_first_change_is_free_and_switching_back_restores_the_class(ex
     assert ledger[0]["payload"] == {"from": "WIZARD", "to": "EXPLORER"}
 
 
-async def test_quests_on_offer_for_the_old_class_are_withdrawn(explorer_client):
+async def test_quests_on_offer_for_the_old_class_are_withdrawn(explorer_client, monkeypatch):
     c = explorer_client
     await seed_discoveries()
-    r = await c.post("/quests/generate", json={"latitude": ORIGIN[0], "longitude": ORIGIN[1]})
+    # One Explorer quest and one for anyone, whatever the day's seed would have dealt.
+    pair = [
+        t for t in generator.templates_for("EXPLORER", 1) if t["id"] in ("EXPLORER_NEW_TERRITORY", "ANY_FIRST_FIVE")
+    ]
+    monkeypatch.setattr(generator, "templates_for", lambda *a, **k: pair)
+    r = await c.post("/quests/generate", json={"latitude": ORIGIN[0], "longitude": ORIGIN[1], "count": 2})
     assert r.status_code == 200, r.text
     offered = [q for q in r.json()["items"] if q["status"] == "AVAILABLE"]
     explorer_quests = [q for q in offered if q["characterClass"] == "EXPLORER"]

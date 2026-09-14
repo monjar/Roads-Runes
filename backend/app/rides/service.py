@@ -156,6 +156,7 @@ async def complete_ride(db: AsyncSession, ride: Ride, payload: RideCompleteIn) -
     ride.active_calories = payload.activeCalories
     ride.healthkit_workout_id = payload.healthKitWorkoutId
     ride.objective_events = [e.model_dump(mode="json") for e in payload.objectiveEvents]
+    ride.encounter_events = [e.model_dump(mode="json") for e in payload.encounterEvents]
     ride.status = "UPLOADED"
     await db.flush()
     return ride
@@ -201,6 +202,7 @@ async def summary(db: AsyncSession, user: User, ride: Ride) -> AdventureSummary 
         acAwarded=int(result.get("acAwarded", 0)),
         acBreakdown=result.get("acBreakdown", []),
         walletBalance=result.get("walletBalance"),
+        worldObjects=result.get("worldObjects"),
     )
 
 

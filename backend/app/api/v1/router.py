@@ -18,6 +18,7 @@ from app.rides.router import router as rides_router
 from app.routing.router import router as routes_router
 from app.social.router import feed_router, friends_router, parties_router
 from app.users.router import router as users_router
+from app.world_objects.router import router as world_objects_router
 
 api_router = APIRouter()
 
@@ -53,5 +54,6 @@ for r in (
     integrations_router,
     devices_router,
     wallet_router,
+    world_objects_router,
 ):
     api_router.include_router(r)

@@ -112,23 +112,36 @@ async def test_first_playable_journey(explorer_client: AsyncClient):
     quests = r.json()["items"]
     assert len(quests) >= 3
     # The board is the Explorer's, plus one quest anyone can take.
-    assert all(q["status"] == "AVAILABLE" and q["characterClass"] in ("EXPLORER", "ANY") for q in quests)
-    assert any(q["characterClass"] == "ANY" for q in quests)
+    assert all(q["status"] == "AVAILABLE" and q["characterClass"] in ("EXPLORER", "ANY") for q in quests), [
+        (q["templateId"], q["status"], q["characterClass"]) for q in quests
+    ]
+    assert any(q["characterClass"] == "ANY" for q in quests), [(q["templateId"], q["status"]) for q in quests]
     # Regions/POIs targeted by quests are revealed on the map as DISCOVERED.
     r = await c.get("/world", params={"latitude": ORIGIN[0], "longitude": ORIGIN[1], "radiusMeters": 30000})
-    assert any(cell["state"] == "DISCOVERED" for cell in r.json()["cells"])
+    if any(o.get("latitude") is not None for q in quests for o in q["objectives"]):
+        assert any(cell["state"] == "DISCOVERED" for cell in r.json()["cells"]), [q["templateId"] for q in quests]
 
     # 9. Choose a quest with a concrete destination.
     def located(q, types):
         return next((o for o in q["objectives"] if o["objectiveType"] in types and o.get("latitude") is not None), None)
 
-    single = [(q, located(q, ("VISIT_POI", "VISIT_REGION", "VISIT_LOCATION"))) for q in quests]
-    single = [(q, o) for q, o in single if o is not None]
-    if single:
-        quest, target_obj = single[0]
-    else:
-        quest = next(q for q in quests if located(q, ("VISIT_MULTIPLE_LOCATIONS",)))
-        target_obj = located(quest, ("VISIT_MULTIPLE_LOCATIONS",))
+    def choose(offered):
+        single = [(q, located(q, ("VISIT_POI", "VISIT_REGION", "VISIT_LOCATION"))) for q in offered]
+        single = [(q, o) for q, o in single if o is not None]
+        if single:
+            return single[0]
+        multi = [(q, located(q, ("VISIT_MULTIPLE_LOCATIONS",))) for q in offered]
+        multi = [(q, o) for q, o in multi if o is not None]
+        return multi[0] if multi else None
+
+    chosen = choose(quests)
+    if chosen is None:
+        # A board can be all distance and monsters; ask for more until one points somewhere.
+        r = await c.post("/quests/generate", json={"latitude": ORIGIN[0], "longitude": ORIGIN[1], "count": 6})
+        assert r.status_code == 200, r.text
+        chosen = choose(r.json()["items"])
+    assert chosen is not None, "no quest points anywhere"
+    quest, target_obj = chosen
     target = (target_obj["latitude"], target_obj["longitude"])
     multi = target_obj["objectiveType"] == "VISIT_MULTIPLE_LOCATIONS"
 

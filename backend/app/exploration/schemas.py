@@ -30,6 +30,8 @@ class WorldOut(APIModel):
     discoveries: list[Any]
     questMarkers: list[QuestMarker]
     featureFlags: dict[str, bool]
+    # Chests, pieces and monsters placed for this player (world_objects); default for old readers.
+    objects: list[Any] = []
 
 
 class ExplorationOut(APIModel):

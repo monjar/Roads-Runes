@@ -54,8 +54,10 @@ def compute_ride_ac(
     new_cells: int,
     quest_completed: bool = False,
     quest_difficulty: str | None = None,
+    claims: list[dict[str, Any]] | None = None,
 ) -> list[ACLine]:
-    """What a ride earns: coins per kilometre by activity, one per new cell, and the quest's purse."""
+    """What a ride earns: coins per kilometre by activity, one per new cell, the quest's
+    purse, and whatever was opened, gathered or beaten on the way."""
     rules = load_ac_rules()
     lines: list[ACLine] = []
     km = max(0.0, distance_meters) / 1000
@@ -66,6 +68,13 @@ def compute_ride_ac(
         lines.append(ACLine("NEW_CELLS", new_cells * int(rules["newCell"]), {"cells": new_cells}))
     if quest_completed:
         lines.append(ACLine("QUEST_COMPLETED", quest_ac(quest_difficulty), {"difficulty": quest_difficulty or "EASY"}))
+    kinds = {"CHEST": "CHEST_OPENED", "COLLECTABLE": "COLLECTABLE", "MONSTER": "MONSTER_SLAIN"}
+    for claim in claims or []:
+        reward = int(claim.get("rewardAC", 0))
+        if reward <= 0:
+            continue
+        kind = "BOUNTY" if claim.get("bounty") else kinds.get(str(claim.get("kind")), "ADJUSTMENT")
+        lines.append(ACLine(kind, reward, {"objectId": str(claim.get("id")), "name": claim.get("name")}))
     return apply_cap(lines, int(rules["caps"]["perRideTotal"]))
 
 

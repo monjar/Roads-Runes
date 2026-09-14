@@ -1503,6 +1503,119 @@
           "description": "{poiName} is a {activityNoun} away. So is the way back."
         }
       ]
+    },
+    {
+      "id": "ANY_UNLOCK_CHEST",
+      "characterClass": "ANY",
+      "questType": "OPEN_CHEST",
+      "minLevel": 1,
+      "weight": 2,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "worldObject": {
+          "kind": "CHEST",
+          "count": 1
+        }
+      },
+      "objectives": [
+        {
+          "type": "OPEN_CHEST",
+          "title": "Open the {objectName} at {objectPlace}",
+          "required": true,
+          "radiusMeters": 60
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Something Left Behind",
+          "description": "There is a {objectName} at {objectPlace}. Pass close enough and it is yours."
+        },
+        {
+          "title": "Finders Keepers",
+          "description": "Somebody hid a {objectName} at {objectPlace} and never came back. You could."
+        }
+      ]
+    },
+    {
+      "id": "ANY_SLAY_NEARBY",
+      "characterClass": "ANY",
+      "questType": "SLAY_MONSTER",
+      "minLevel": 1,
+      "weight": 3,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "worldObject": {
+          "kind": "MONSTER"
+        }
+      },
+      "objectives": [
+        {
+          "type": "SLAY_MONSTER",
+          "title": "Beat the {objectName} at {objectPlace}",
+          "required": true,
+          "radiusMeters": 150
+        },
+        {
+          "type": "RETURN_TO_START",
+          "title": "Come home in one piece",
+          "required": false,
+          "radiusMeters": 300
+        }
+      ],
+      "narrative": [
+        {
+          "title": "The {objectName}",
+          "description": "A {objectName} has settled at {objectPlace}. It has a weakness; the map will tell you which."
+        },
+        {
+          "title": "Trouble at {objectPlace}",
+          "description": "Something is at {objectPlace} that should not be. Go and see it off."
+        }
+      ]
+    },
+    {
+      "id": "ANY_GATHER_THREE",
+      "characterClass": "ANY",
+      "questType": "COLLECT",
+      "minLevel": 1,
+      "weight": 2,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "worldObject": {
+          "kind": "COLLECTABLE",
+          "count": 3
+        }
+      },
+      "objectives": [
+        {
+          "type": "COLLECT",
+          "title": "Gather three pieces on one outing",
+          "required": true,
+          "radiusMeters": 60
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Three of a Kind",
+          "description": "Pieces of something are scattered near {objectPlace}. Pick up three in one go."
+        },
+        {
+          "title": "Odds and Ends",
+          "description": "The map is littered with pieces. Three of them, one outing."
+        }
+      ]
     }
   ]
 }

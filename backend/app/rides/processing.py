@@ -34,6 +34,8 @@ from app.rides.models import Ride, RidePoint, RideRoute
 from app.rides.validation import CleanPoint, check_cell_plausibility, validate_points
 from app.social.service import publish
 from app.users.models import User
+from app.world_objects import service as world_objects
+from app.world_objects.service import ClaimOutcome
 
 log = get_logger(__name__)
 
@@ -58,6 +60,7 @@ def evaluate_objectives(
     new_cells: set[str],
     resolution: int,
     client_events: list[dict[str, Any]],
+    claims: ClaimOutcome | None = None,
 ) -> list[QuestObjective]:
     """Server-authoritative objective evaluation against the GPS trace."""
     completed: list[QuestObjective] = []
@@ -135,6 +138,19 @@ def evaluate_objectives(
             o.progress_current = min(o.progress_target, distance_m)
         elif t == "COMPLETE_WITH_FRIEND":
             done = bool(o.extra.get("friendConfirmed"))
+        elif t == "SLAY_MONSTER":
+            wanted = str(o.extra.get("objectId") or "")
+            slain = [m for m in (claims.claimed_of("MONSTER") if claims else []) if not wanted or str(m.id) == wanted]
+            o.progress_current = 1.0 if slain else 0.0
+            done = bool(slain)
+        elif t == "OPEN_CHEST":
+            opened = len(claims.claimed_of("CHEST")) if claims else 0
+            o.progress_current = float(min(o.progress_target, opened))
+            done = opened >= (o.target_count or 1)
+        elif t == "COLLECT":
+            gathered = len(claims.claimed_of("COLLECTABLE")) if claims else 0
+            o.progress_current = float(min(o.progress_target, gathered))
+            done = gathered >= (o.target_count or 1)
         if done:
             o.status = "COMPLETED"
             o.provisional = False
@@ -280,6 +296,20 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             db, ride.user_id, [(p.latitude, p.longitude) for p in points], ride.id, ended
         )
 
+    # What the trace passed or beat. Same gate as XP: a suspicious ride wins nothing.
+    claims = ClaimOutcome()
+    if points and not validation.suspicious:
+        claims = await world_objects.claim_from_ride(
+            db,
+            ride,
+            character.character_class if character else "EXPLORER",
+            points,
+            set(exploration.new_cells),
+            list(ride.encounter_events or []),
+            resolution=settings.h3_resolution,
+            ended=ended,
+        )
+
     quest: QuestInstance | None = None
     quest_completed = False
     objectives_completed: list[QuestObjective] = []
@@ -301,6 +331,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
                 new_cells=set(exploration.new_cells),
                 resolution=settings.h3_resolution,
                 client_events=list(ride.objective_events or []),
+                claims=claims,
             )
             for o in objectives_completed:
                 if o.discovery_id:
@@ -349,6 +380,16 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
                 new_cells=len(exploration.new_cells),
                 quest_completed=quest_completed,
                 quest_difficulty=quest.difficulty if quest else None,
+                claims=[
+                    {
+                        "id": o.id,
+                        "kind": o.kind,
+                        "name": o.payload.get("name"),
+                        "rewardAC": o.reward_ac,
+                        "bounty": o.bounty,
+                    }
+                    for o in claims.claimed
+                ],
             ),
             ride_id=ride.id,
             quest_id=quest.id if quest_completed and quest else None,
@@ -382,6 +423,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         "acAwarded": coins["acAwarded"],
         "acBreakdown": coins["acBreakdown"],
         "walletBalance": coins["walletBalance"],
+        "worldObjects": claims.to_dict(),
         "newCells": len(exploration.new_cells),
         "upgradedCells": len(exploration.upgraded_cells),
         "newTerritoryMeters": round(exploration.new_territory_m, 1),

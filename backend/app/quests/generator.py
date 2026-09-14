@@ -47,6 +47,18 @@ class POICandidate:
 
 
 @dataclass
+class WorldObjectCandidate:
+    """A chest, piece or monster already placed in this player's world (world_objects)."""
+
+    id: str
+    kind: str
+    name: str
+    anchor_name: str | None
+    latitude: float
+    longitude: float
+
+
+@dataclass
 class GenerationContext:
     latitude: float
     longitude: float
@@ -68,6 +80,7 @@ class GenerationContext:
     requested_distance_km: float | None = None
     poi_visibility_bonus: float = 0.0
     activity: str = "RIDE"  # RIDE | RUN | WALK (core/activity.py)
+    world_objects: list[WorldObjectCandidate] = field(default_factory=list)
 
 
 @dataclass
@@ -304,6 +317,23 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
         if len(region_cells) < count:
             return None
 
+    # A quest about the world points at something already in it: the nearest few, one at random.
+    target_object: WorldObjectCandidate | None = None
+    if "worldObject" in rules:
+        kind = str(rules["worldObject"].get("kind", "MONSTER"))
+        pool = sorted(
+            (o for o in ctx.world_objects if o.kind == kind),
+            key=lambda o: haversine_m(ctx.latitude, ctx.longitude, o.latitude, o.longitude),
+        )
+        if not pool:
+            return None
+        target_object = rng.choice(pool[:3])
+        variables["objectName"] = target_object.name
+        variables["objectPlace"] = target_object.anchor_name or "somewhere near"
+        farthest_m = max(
+            farthest_m, haversine_m(ctx.latitude, ctx.longitude, target_object.latitude, target_object.longitude)
+        )
+
     explored_region_cells: list[str] = []
     order = 0
     for spec in template["objectives"]:
@@ -370,6 +400,17 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
             obj.target_value = float(variables.get("speedKmh", 20))
             # A fast two kilometres is not a tempo ride.
             obj.extra = {"minDistanceMeters": float(variables.get("distanceKm", 10)) * 1000 * 0.8}
+        elif otype in ("SLAY_MONSTER", "OPEN_CHEST", "COLLECT"):
+            wanted = int(rules.get("worldObject", {}).get("count", 1))
+            obj.target_count = 1 if otype == "SLAY_MONSTER" else wanted
+            if target_object is not None:
+                obj.latitude, obj.longitude = target_object.latitude, target_object.longitude
+                obj.radius_meters = 150.0 if otype == "SLAY_MONSTER" else 60.0
+                obj.extra = {
+                    "kind": target_object.kind,
+                    "objectName": target_object.name,
+                    **({"objectId": target_object.id} if otype != "COLLECT" else {}),
+                }
         if spec.get("hidden"):
             # A puzzle: the app is told there is a target, never where it is,
             # until the ride is processed (`objective_out`).

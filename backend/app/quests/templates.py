@@ -26,6 +26,10 @@ OBJECTIVE_TYPES = (
     "COMPLETE_ROUTE",
     "RIDE_DURATION",
     "SUSTAIN_SPEED",
+    # The world: something placed for this player to beat, open or gather (world_objects).
+    "SLAY_MONSTER",
+    "OPEN_CHEST",
+    "COLLECT",
 )
 
 DIFFICULTIES = ("EASY", "MODERATE", "HARD", "EPIC")

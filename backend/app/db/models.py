@@ -25,5 +25,6 @@ from app.rides.models import Ride, RidePoint, RideRoute  # noqa: F401
 from app.routing.models import Route  # noqa: F401
 from app.social.models import FeedEvent, Friendship, Party, PartyMember  # noqa: F401
 from app.users.models import User  # noqa: F401
+from app.world_objects.models import WorldObject  # noqa: F401
 
 __all__ = ["Base"]

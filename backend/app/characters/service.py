@@ -34,6 +34,7 @@ from app.progression.engine import level_bounds
 from app.progression.models import RewardEvent, XPEvent
 from app.quests.models import QuestInstance, QuestObjective, QuestProgressEvent
 from app.users.models import User
+from app.world_objects.models import WorldObject
 
 BIKE_DEFAULTS = {
     "ROAD": (False, False, 0),
@@ -223,7 +224,7 @@ async def reset_character(db: AsyncSession, user: User) -> None:
     await db.execute(delete(QuestProgressEvent).where(QuestProgressEvent.quest_id.in_(quest_ids)))
     await db.execute(delete(QuestObjective).where(QuestObjective.quest_id.in_(quest_ids)))
     await db.execute(delete(QuestInstance).where(QuestInstance.user_id == user.id))
-    for model in (XPEvent, RewardEvent, WalletTransaction, Wallet, UserExplorationCell, UserDiscovery):
+    for model in (XPEvent, RewardEvent, WalletTransaction, Wallet, UserExplorationCell, UserDiscovery, WorldObject):
         await db.execute(delete(model).where(model.user_id == user.id))
     await db.delete(character)
     await db.flush()

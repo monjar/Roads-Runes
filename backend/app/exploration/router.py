@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
+from app.characters.service import get_rider_profile, maybe_character
 from app.core.deps import CurrentUser, DBDep, SettingsDep
 from app.core.schemas import Coordinate
 from app.discoveries.service import nearby as discoveries_nearby
@@ -9,6 +10,7 @@ from app.discoveries.service import summaries, user_found
 from app.exploration import service
 from app.exploration.schemas import ExplorationOut, ExplorationStats, QuestMarker, WorldOut
 from app.quests.service import list_quests
+from app.world_objects import service as world_objects
 
 router = APIRouter(prefix="/world", tags=["world"])
 
@@ -29,6 +31,20 @@ async def world(
     )
     discoveries = await discoveries_nearby(db, latitude, longitude, radiusMeters, limit=100)
     found = await user_found(db, user.id, [d.id for d in discoveries])
+    character = await maybe_character(db, user.id)
+    objects = []
+    if character is not None:
+        profile = await get_rider_profile(db, user.id)
+        objects = await world_objects.ensure_spawned(
+            db,
+            settings,
+            user.id,
+            latitude,
+            longitude,
+            radiusMeters,
+            character_class=character.character_class,
+            activity=profile.default_activity,
+        )
     quests = await list_quests(db, user, None, latitude, longitude, 30)
     markers = []
     for q in quests:
@@ -55,6 +71,7 @@ async def world(
         discoveries=[d.model_dump(mode="json") for d in summaries(discoveries, found)],
         questMarkers=markers,
         featureFlags=settings.flags,
+        objects=[world_objects.to_out(o).model_dump(mode="json") for o in objects],
     )
 
 

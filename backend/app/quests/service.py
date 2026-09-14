@@ -25,12 +25,13 @@ from app.discoveries.service import nearby as discoveries_nearby
 from app.exploration.cells import cell_for
 from app.exploration.service import known_cells, reveal
 from app.quests import narrative
-from app.quests.generator import GeneratedQuest, GenerationContext, POICandidate, generate
+from app.quests.generator import GeneratedQuest, GenerationContext, POICandidate, WorldObjectCandidate, generate
 from app.quests.models import QuestInstance, QuestObjective, QuestProgressEvent
 from app.quests.schemas import ObjectiveEventIn, ObjectiveOut, ObjectiveProgress, QuestOut
 from app.quests.state_machine import assert_transition
 from app.quests.templates import ANY_CLASS
 from app.users.models import User
+from app.world_objects import service as world_objects
 
 log = get_logger(__name__)
 
@@ -168,6 +169,10 @@ async def build_context(
     # Places come from OpenStreetMap the first time an area is used, so quests work anywhere.
     await osm_import.ensure_pois(settings, latitude, longitude)
     pois = await discoveries_nearby(db, latitude, longitude, 30_000 * (1 + poi_bonus), limit=800)
+    # And the chests, pieces and monsters already placed here, for the quests that point at them.
+    placed = await world_objects.ensure_spawned(
+        db, settings, user.id, latitude, longitude, 6000, character_class=character.character_class, activity=activity
+    )
     completed = [
         r
         for (r,) in (
@@ -201,6 +206,17 @@ async def build_context(
         requested_distance_km=requested_distance_km,
         poi_visibility_bonus=poi_bonus,
         activity=activity,
+        world_objects=[
+            WorldObjectCandidate(
+                str(o.id),
+                o.kind,
+                str(o.payload.get("name", o.kind.title())),
+                o.payload.get("anchorName"),
+                o.latitude,
+                o.longitude,
+            )
+            for o in placed
+        ],
     )
 
 
@@ -301,7 +317,7 @@ async def generate_quests(
             elif (
                 o.latitude is not None
                 and o.longitude is not None
-                and o.objective_type in ("VISIT_POI", "VISIT_LOCATION")
+                and o.objective_type in ("VISIT_POI", "VISIT_LOCATION", "SLAY_MONSTER", "OPEN_CHEST", "COLLECT")
             ):
                 reveal_cells.append(cell_for(o.latitude, o.longitude, settings.h3_resolution))
     await reveal(db, user.id, list(dict.fromkeys(reveal_cells)), settings.h3_resolution, "QUEST")
