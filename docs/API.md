@@ -332,8 +332,9 @@ post-processing re-validates.
 }
 ```
 
-`request` is free text. It is parsed (rules first, an LLM only if `llm_narrative`-style
-configuration enables one) into preferences, and two of those change where the ride goes:
+`request` is free text, read by Claude into preferences (there is no keyword parser
+behind it — with no provider configured the request is reported unread rather than
+guessed at). Three of those preferences change where the ride goes:
 
 * **a place** — "a ride **in Notting Hill** with 5 pubs". The phrase is resolved by
   `app/routing/geocode.py` (Photon, then Nominatim, both biased to within 60 km of
@@ -341,6 +342,11 @@ configuration enables one) into preferences, and two of those change where the r
   *there*, and the response carries `parsedRequest.startsAt` so the app can say where the
   ride begins. A phrase that resolves to nothing is ignored — the geocoder is what decides
   whether a phrase was a place.
+* **a place to pass through** — "visit **the Moby Dick** then to Aragon Tower". Each
+  name in `via` is resolved as a point, the way `destination` is, and becomes a real
+  waypoint in the order it was said. A name is what separates this from a stop: "2 pubs"
+  names none. Resolved places come back in `parsedRequest.via`; one that resolves to
+  nothing is named in `parsedRequest.notes` rather than dropped in silence.
 * **how many stops** — "about **5 pubs**". That many places of the category are chosen
   around the centre, one per sector of the circle so the ride threads them rather than
   doubling back, and they are passed to the routing engine as waypoints. They come back in

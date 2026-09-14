@@ -107,6 +107,33 @@ async def test_the_same_name_is_not_both_a_destination_and_an_area():
 
 
 @pytest.mark.anyio
+async def test_a_place_named_on_the_way_is_kept_in_order_and_deduplicated():
+    parsed = await parse_request(
+        "via the Mayflower then the Ship York",
+        StubLLM(parse(via=[{"query": "the Mayflower"}, {"query": "the mayflower"}, {"query": "Ship York"}])),
+    )
+    assert parsed.preferences.via == [{"query": "the Mayflower"}, {"query": "Ship York"}]
+
+
+@pytest.mark.anyio
+async def test_the_finish_is_not_also_somewhere_to_pass_through():
+    """Routed to twice, it is a there-and-back to the same door."""
+    parsed = await parse_request(
+        "to the Aragon Tower via the Aragon Tower",
+        StubLLM(parse(destination={"query": "Aragon Tower"}, via=[{"query": "aragon tower"}])),
+    )
+    assert parsed.preferences.via is None
+    assert parsed.preferences.destination == {"query": "Aragon Tower"}
+
+
+@pytest.mark.anyio
+async def test_a_place_on_the_way_that_is_not_a_place_is_dropped():
+    for reply in ("the moby dick", [{"name": "the moby dick"}], [{"query": "  "}], []):
+        parsed = await parse_request("via something", StubLLM(parse(via=reply)))
+        assert parsed.preferences.via is None, reply
+
+
+@pytest.mark.anyio
 async def test_a_sentence_the_model_read_as_nothing_says_nothing():
     parsed = await parse_request("zxq blorp", StubLLM(parse()))
     assert parsed.source == "llm" and parsed.matched == []

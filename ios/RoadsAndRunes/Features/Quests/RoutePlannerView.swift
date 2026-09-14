@@ -121,6 +121,11 @@ final class RoutePlannerViewModel {
 
     private static func legacyParts(of parsed: [String: JSONValue]) -> [String] {
         var parts: [String] = []
+        for place in parsed["via"]?.arrayValue ?? [] {
+            if let named = place.objectValue, let name = (named["name"] ?? named["query"])?.stringValue {
+                parts.append("via \(name)")
+            }
+        }
         if let to = parsed["destination"]?.objectValue, let name = (to["name"] ?? to["query"])?.stringValue {
             parts.append("to \(name)")
         }

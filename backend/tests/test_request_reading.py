@@ -118,6 +118,41 @@ async def test_how_many_stops_and_of_what(llm, request_text, category, count):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("request_text", "name", "finish"),
+    [
+        ("Visit the moby dick pub then to aragon tower", "moby dick", "aragon tower"),
+        ("ride past the Cutty Sark to Greenwich Park", "cutty sark", "greenwich park"),
+        ("to the Aragon Tower via the Mayflower", "mayflower", "aragon tower"),
+    ],
+)
+async def test_a_named_place_on_the_way_is_named_not_counted(llm, request_text, name, finish):
+    """A named pub is that pub. Read as "1 pub" it becomes whichever pub the
+    router likes, which is the ride the rider did not ask for."""
+    prefs = await read(llm, request_text)
+    assert prefs.via, request_text
+    assert any(name in place["query"].lower() for place in prefs.via), prefs.via
+    assert finish in (prefs.destination or {}).get("query", "").lower()
+    assert prefs.poi is None, "a place with a name is not a kind of place"
+
+
+@pytest.mark.anyio
+async def test_named_places_come_back_in_the_order_they_were_said(llm):
+    prefs = await read(llm, "ride to the Aragon Tower via the Mayflower then the Ship York")
+    assert prefs.via and len(prefs.via) == 2, prefs.via
+    assert "mayflower" in prefs.via[0]["query"].lower()
+    assert "ship york" in prefs.via[1]["query"].lower()
+
+
+@pytest.mark.anyio
+async def test_a_kind_of_stop_is_still_counted_not_named(llm):
+    """The other half of the same line: "2 pubs on the way" names no pub."""
+    prefs = await read(llm, "I want to go to the Aragon Tower and 2 pubs on the way")
+    assert prefs.via is None, prefs.via
+    assert prefs.poi is not None and prefs.poi["category"] == "PUB"
+
+
+@pytest.mark.anyio
 async def test_a_place_in_the_destination_is_not_a_kind_of_stop(llm):
     prefs = await read(llm, "ride to the Old Church and 2 pubs on the way")
     assert prefs.poi["category"] == "PUB"

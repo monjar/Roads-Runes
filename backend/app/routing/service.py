@@ -263,6 +263,8 @@ def _understood(prefs: RoutePreferences, usual: RoutePreferences, wanted: int, c
     for "quiet roads", which changes the routes without naming a place or a stop.
     """
     parts: list[str] = []
+    for place in prefs.via or []:
+        parts.append("via " + str(place.get("name") or place.get("query")))
     destination = prefs.destination or {}
     if destination.get("name") or destination.get("query"):
         parts.append("to " + str(destination.get("name") or destination.get("query")))
@@ -694,6 +696,30 @@ async def generate(
     elif parsed_dict is not None:
         parsed_dict["destination"] = base_prefs.destination
 
+    # "Visit the Moby Dick pub then to Aragon Tower" names a place to pass through,
+    # not a kind of place: no other pub will do, so it is a waypoint. Each is looked
+    # up the way the destination is, and one the geocoder cannot place is named in
+    # the notes rather than quietly dropped from the ride.
+    via: list[Coordinate] = []
+    unresolved_via: list[str] = []
+    resolved_via: list[dict[str, Any]] = []
+    for place in base_prefs.via or []:
+        found = await geocode.resolve(
+            settings, str(place["query"]), payload.origin.latitude, payload.origin.longitude, kind="point"
+        )
+        if found is None:
+            unresolved_via.append(str(place["query"]))
+            continue
+        via.append(Coordinate(latitude=found.latitude, longitude=found.longitude))
+        resolved_via.append({**place, **found.to_dict()})
+    base_prefs.via = resolved_via or None
+    if parsed_dict is not None:
+        parsed_dict["via"] = base_prefs.via
+        kept = {p["query"] for p in resolved_via}
+        parsed_dict["matched"] = [
+            m for m in parsed_dict["matched"] if not str(m).startswith("via:") or str(m)[4:] in kept
+        ]
+
     # A named place ("a ride in Notting Hill") moves the ride; the rider's own position
     # still seeds the alternatives and counts new territory.
     area = None
@@ -751,7 +777,17 @@ async def generate(
     # slider is theirs; typing "go to the tower" never touched it.
     typed_destination = payload.destination is None and destination is not None
     if typed_destination and not (base_prefs.distanceKm or {}).get("target"):
-        direct_km = haversine_m(start.latitude, start.longitude, destination.latitude, destination.longitude) / 1000
+        # Through the named places, not straight there: a pub two kilometres off the
+        # line makes the ride longer, and scoring it against the direct distance
+        # marks the only route that does what was asked for as too long.
+        legs = [start, *via, destination]
+        direct_km = (
+            sum(
+                haversine_m(a.latitude, a.longitude, b.latitude, b.longitude)
+                for a, b in zip(legs, legs[1:], strict=False)
+            )
+            / 1000
+        )
         target_km = max(2.0, direct_km * (2.4 if loop else 1.25))
 
     cfg = scoring_config()
@@ -822,6 +858,7 @@ async def generate(
             parsed_dict["matched"]
             or categories
             or base_prefs.area
+            or base_prefs.via
             or (base_prefs.distanceKm or {}).get("target")
             or base_prefs.loop is not None
         )
@@ -866,6 +903,10 @@ async def generate(
             points.append((lat, lon))
         for stop in variant.stops:
             points.append((stop.latitude, stop.longitude))
+        # In the order the rider said them, and before the finish: "the Moby Dick
+        # then the tower" is a sequence, not a set.
+        for point in via:
+            points.append((point.latitude, point.longitude))
         for wp in payload.waypoints:
             points.append((wp.latitude, wp.longitude))
         if destination is not None:
@@ -996,6 +1037,8 @@ async def generate(
             notes.append(f"couldn't find a place called '{unresolved_place}'")
         if unresolved_destination:
             notes.append(f"couldn't find '{unresolved_destination}' — riding from here instead")
+        for name in unresolved_via:
+            notes.append(f"couldn't find '{name}' — the route doesn't pass it")
         if not parsed_dict["understood"] and not parsed_dict["matched"]:
             notes.append(NO_READER if parsed_dict.get("source") == "unavailable" else CANNOT_READ)
         parsed_dict["notes"] = notes + same_road
