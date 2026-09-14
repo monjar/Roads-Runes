@@ -24,6 +24,8 @@ public protocol RoadsAndRunesAPI: Sendable {
     func walletTransactions(limit: Int?, cursor: String?) async throws -> Page<WalletTransaction>
     func worldObjects(near center: Coordinate, radiusMeters: Double) async throws -> [WorldObject]
     func worldObject(id: UUID) async throws -> WorldObject
+    /// Today's bounty; nil until the world has been looked at today, or once it is gone.
+    func bounty() async throws -> WorldObject?
     func lure(at center: Coordinate) async throws -> [WorldObject]
     func abilities() async throws -> [AbilityState]
     func unlockAbility(id: String) async throws -> Character

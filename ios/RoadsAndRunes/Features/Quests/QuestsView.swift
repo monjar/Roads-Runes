@@ -8,6 +8,7 @@ struct QuestsView: View {
     @State private var model: QuestsViewModel?
     @State private var plannerQuest: Quest?
     @State private var planningCustom = false
+    @State private var bountyDestination: Place?
     /// Navigation state lives in the view so setting it always pushes the detail.
     @State private var selectedQuest: Quest?
 
@@ -33,6 +34,15 @@ struct QuestsView: View {
                             .buttonStyle(.pressable)
                             .accessibilityIdentifier("customAdventure")
                             .disabled(container.rideRecorder.isActive)
+                        if let bounty = model.bounty {
+                            BountyCard(
+                                bounty: bounty,
+                                distanceMeters: container.location.lastFix.map { GeoMath.distance($0.coordinate, bounty.coordinate) },
+                                units: model.units,
+                                onPlan: { bountyDestination = WorldViewModel.place(for: bounty) }
+                            )
+                            .disabled(container.rideRecorder.isActive)
+                        }
                         section("Nearby adventures", model.available, empty: model.isLoading ? "Looking around…" : "Nothing nearby yet. Move around the map or generate more.")
                         if !model.recommended.isEmpty {
                             section("For \(ClassStyle.name(model.characterClass))s", model.recommended, empty: "")
@@ -57,6 +67,7 @@ struct QuestsView: View {
             .refreshable { await model?.load() }
             .sheet(item: $plannerQuest) { quest in RoutePlannerView(quest: quest) }
             .sheet(isPresented: $planningCustom) { RoutePlannerView(quest: nil) }
+            .sheet(item: $bountyDestination) { place in RoutePlannerView(quest: nil, destination: place) }
             // Back from a quest (accepted, abandoned) or from a ride, the list and the current quest have changed.
             .onChange(of: selectedQuest) { _, quest in
                 if quest == nil { Task { await model?.load() } }

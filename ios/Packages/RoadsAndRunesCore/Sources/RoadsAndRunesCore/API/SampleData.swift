@@ -212,7 +212,7 @@ public enum SampleData {
 
     public static let sampleMonster = WorldObject(
         id: UUID(uuidString: "8A1F0B2C-0000-4000-8000-00000000A001")!, kind: .monster, tier: 2,
-        latitude: 51.4952, longitude: -0.0265, name: "Bog Wraith", anchorName: "Southwark Park", rewardAC: 150,
+        latitude: 51.4952, longitude: -0.0265, name: "Bog Wraith", anchorName: "Southwark Park", bounty: true, rewardAC: 300,
         expiresAt: referenceDate.addingTimeInterval(3 * 86_400),
         monster: MonsterInfo(hp: 200, flavour: "A cold patch of air that follows the towpath.", killMethods: [
             KillMethod(method: .pace, params: ["windowMeters": .number(1000), "paceSecPerKm": .object(["RIDE": .number(130), "RUN": .number(330), "WALK": .number(660)]), "searchRadiusMeters": .number(1000)], hint: "Cover 1000 m at 2:10/km or faster within a kilometre of it."),

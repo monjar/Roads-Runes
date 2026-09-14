@@ -211,6 +211,9 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     public func worldObject(id: UUID) async throws -> WorldObject {
         try await run { try self.storedObjects[id] ?? { throw self.notFound("World object") }() }
     }
+    public func bounty() async throws -> WorldObject? {
+        try await run { self.storedObjects.values.first { $0.isBounty && $0.status == .spawned } }
+    }
     public func lure(at center: Coordinate) async throws -> [WorldObject] {
         try await run {
             if self.storedCoins < 50 {

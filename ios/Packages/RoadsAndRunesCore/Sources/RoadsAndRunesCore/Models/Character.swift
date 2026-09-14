@@ -93,14 +93,19 @@ public struct Character: Codable, Hashable, Identifiable, Sendable {
     public var classChangeCostAC: Int?
     /// Class level and XP of the classes this character has been, keyed by class id.
     public var classProgress: [String: ClassProgress]?
+    /// Days in a row with an outing that counted, and the best run of them.
+    public var streakDays: Int?
+    public var longestStreakDays: Int?
 
     public init(
         id: UUID, name: String, characterClass: CharacterClass, overallLevel: Int, overallXP: Int,
         nextOverallLevelXP: Int?, overallLevelFloorXP: Int, classLevel: Int, classXP: Int, nextClassLevelXP: Int?,
         classLevelFloorXP: Int, title: String?, abilities: [AbilityState], unspentAbilityPoints: Int, createdAt: Date,
         activeCoins: Int? = nil, classChanges: Int? = nil, nextClassChangeAt: Date? = nil, classChangeCostAC: Int? = nil,
-        classProgress: [String: ClassProgress]? = nil
+        classProgress: [String: ClassProgress]? = nil, streakDays: Int? = nil, longestStreakDays: Int? = nil
     ) {
+        self.streakDays = streakDays
+        self.longestStreakDays = longestStreakDays
         self.id = id
         self.name = name
         self.characterClass = characterClass

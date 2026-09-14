@@ -214,8 +214,10 @@ public struct AdventureSummary: Codable, Hashable, Sendable {
     public var walletBalance: Int?
     /// What the ride took from the world, and what it walked past.
     public var worldObjects: WorldObjectOutcome?
+    public var streak: StreakOutcome?
 
-    public init(ride: Ride, quest: Quest? = nil, questCompletion: QuestCompletion? = nil, xpAwarded: Int, xpBreakdown: [XPBreakdownEntry], newCells: Int, newTerritoryMeters: Double, newRoadsMeters: Double, discoveries: [DiscoverySummary], levelUps: [LevelUp], abilitiesUnlocked: [Ability], titlesUnlocked: [String]? = nil, flags: [String], acAwarded: Int? = nil, acBreakdown: [ACBreakdownEntry]? = nil, walletBalance: Int? = nil, worldObjects: WorldObjectOutcome? = nil) {
+    public init(ride: Ride, quest: Quest? = nil, questCompletion: QuestCompletion? = nil, xpAwarded: Int, xpBreakdown: [XPBreakdownEntry], newCells: Int, newTerritoryMeters: Double, newRoadsMeters: Double, discoveries: [DiscoverySummary], levelUps: [LevelUp], abilitiesUnlocked: [Ability], titlesUnlocked: [String]? = nil, flags: [String], acAwarded: Int? = nil, acBreakdown: [ACBreakdownEntry]? = nil, walletBalance: Int? = nil, worldObjects: WorldObjectOutcome? = nil, streak: StreakOutcome? = nil) {
+        self.streak = streak
         self.worldObjects = worldObjects
         self.ride = ride
         self.quest = quest

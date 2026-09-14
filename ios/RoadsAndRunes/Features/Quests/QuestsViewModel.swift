@@ -9,6 +9,8 @@ final class QuestsViewModel {
     private(set) var active: [Quest] = []
     private(set) var available: [Quest] = []
     private(set) var completed: [Quest] = []
+    /// Today's bounty, if the world has been looked at today.
+    private(set) var bounty: WorldObject?
     private(set) var isLoading = false
     var error: String?
 
@@ -36,6 +38,7 @@ final class QuestsViewModel {
                 available = container.persistence.cachedQuests()
             }
             container.persistence.cache(quests: available)
+            bounty = try? await container.api.bounty()
             error = nil
         } catch {
             self.error = error.localizedDescription

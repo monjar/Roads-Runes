@@ -252,6 +252,12 @@ public actor APIClient: RoadsAndRunesAPI {
     public func walletTransactions(limit: Int?, cursor: String?) async throws -> Page<WalletTransaction> { try await request(Endpoints.walletTransactions(limit: limit, cursor: cursor)) }
     public func worldObjects(near center: Coordinate, radiusMeters: Double) async throws -> [WorldObject] { try await request(Endpoints.worldObjects(near: center, radiusMeters: radiusMeters)) }
     public func worldObject(id: UUID) async throws -> WorldObject { try await request(Endpoints.worldObject(id: id)) }
+    public func bounty() async throws -> WorldObject? {
+        do { return try await request(Endpoints.bounty()) } catch let error as APIError {
+            if case .server(let code, _, let status) = error, code == "NO_BOUNTY" || status == 404 { return nil }
+            throw error
+        }
+    }
     public func lure(at center: Coordinate) async throws -> [WorldObject] { try await request(try Endpoints.lure(LureRequest(latitude: center.latitude, longitude: center.longitude))) }
     public func abilities() async throws -> [AbilityState] { try await request(Endpoints.abilities()) }
     public func unlockAbility(id: String) async throws -> Character { try await request(Endpoints.unlockAbility(id: id)) }

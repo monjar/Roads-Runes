@@ -47,11 +47,24 @@ struct CharacterHeader: View {
                     if let title = character.title {
                         Text("“\(title)”").font(Theme.Typography.caption).opacity(0.85)
                     }
-                    if let coins = character.activeCoins {
-                        CoinPill(coins: coins, foreground: Theme.Colors.cream)
-                            .padding(.top, 2)
-                            .accessibilityIdentifier("character.coins")
+                    HStack(spacing: 8) {
+                        if let coins = character.activeCoins {
+                            CoinPill(coins: coins, foreground: Theme.Colors.cream)
+                                .accessibilityIdentifier("character.coins")
+                        }
+                        if let days = character.streakDays, days > 0 {
+                            HStack(spacing: 4) {
+                                Image(systemName: "flame.fill").font(.system(size: 11, weight: .bold))
+                                Text("\(days) day\(days == 1 ? "" : "s")").font(Theme.Typography.text(12, .semibold))
+                            }
+                            .foregroundStyle(Theme.Colors.cream)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .overlay(Capsule().stroke(Theme.Colors.cream.opacity(0.35), lineWidth: 1))
+                            .accessibilityLabel("\(days) days in a row")
+                            .accessibilityIdentifier("character.streak")
+                        }
                     }
+                    .padding(.top, 2)
                 }
             }
             XPBar(

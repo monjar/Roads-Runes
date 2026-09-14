@@ -150,6 +150,10 @@ struct AdventureSummaryView: View {
         for missed in summary.worldObjects?.missed ?? [] where missed.kind == .monster && missed.reason == "UNBEATEN" {
             out.append("\(missed.name) shrugged it off")
         }
+        if let streak = summary.streak, streak.extended {
+            let days = "\(streak.days) day\(streak.days == 1 ? "" : "s") in a row"
+            out.append(streak.milestone != nil ? "\(days) · milestone · +\(streak.bonusAC) AC" : "\(days) · +\(streak.bonusAC) AC")
+        }
         return out
     }
 }

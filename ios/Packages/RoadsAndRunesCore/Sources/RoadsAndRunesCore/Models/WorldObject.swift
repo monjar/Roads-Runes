@@ -156,6 +156,23 @@ public struct WorldObjectOutcome: Codable, Hashable, Sendable {
     }
 }
 
+/// What a processed ride said about the days in a row.
+public struct StreakOutcome: Codable, Hashable, Sendable {
+    public var days: Int
+    public var longest: Int
+    public var extended: Bool
+    public var milestone: Int?
+    public var bonusAC: Int
+
+    public init(days: Int, longest: Int, extended: Bool, milestone: Int? = nil, bonusAC: Int = 0) {
+        self.days = days
+        self.longest = longest
+        self.extended = extended
+        self.milestone = milestone
+        self.bonusAC = bonusAC
+    }
+}
+
 /// `POST /world/objects/lure`.
 public struct LureRequest: Codable, Hashable, Sendable {
     public var latitude: Double

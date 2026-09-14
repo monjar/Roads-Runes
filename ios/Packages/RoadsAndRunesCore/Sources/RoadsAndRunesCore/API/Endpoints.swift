@@ -78,6 +78,7 @@ public enum Endpoints {
         ])
     }
     public static func worldObject(id: UUID) -> Endpoint { Endpoint(method: .get, path: "/world/objects/\(id.uuidString)") }
+    public static func bounty() -> Endpoint { Endpoint(method: .get, path: "/world/objects/bounty") }
     public static func lure(_ body: LureRequest) throws -> Endpoint { try .json(.post, "/world/objects/lure", body: body) }
     public static func walletTransactions(limit: Int?, cursor: String?) -> Endpoint {
         var query: [QueryItem] = []
