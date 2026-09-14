@@ -23,6 +23,8 @@ ios/**/xcuserdata/
 ios/**/DerivedData/
 ios/**/.build/
 ios/**/*.xcresult
+ios/build/
+ios/**/*.xcarchive
 .swiftpm/
 *.hmap
 *.ipa

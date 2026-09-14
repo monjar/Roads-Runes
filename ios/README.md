@@ -59,6 +59,35 @@ matches the bundle id (it does).
 Do not pass `CODE_SIGN_ENTITLEMENTS` on the command line: it applies to *every* target,
 including the test bundles, whose App IDs have no HealthKit, and the build then fails.
 
+### On TestFlight
+
+`.github/workflows/testflight.yml` archives, signs and uploads. Run it from the
+Actions tab ("Run workflow"), or push a tag: `git tag v0.2.0 && git push --tags`
+takes the version from the tag. Locally the same three commands are
+`make ios-testflight ASC_KEY_ID=… ASC_ISSUER_ID=…`.
+
+Signing is automatic in both, driven by an App Store Connect API key rather than
+a checked-in certificate: `xcodebuild` uses it to fetch the distribution profile,
+the way `make ios-device` does for development. Make the key at App Store Connect
+→ Users and Access → Integrations → App Store Connect API with the **App Manager**
+role. It downloads exactly once. Then:
+
+* in the repository, Settings → Secrets and variables → Actions, add
+  `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID` and
+  `APP_STORE_CONNECT_KEY_P8` (the whole `.p8` file, `BEGIN`/`END` lines included);
+* on your Mac, put the file at `~/private_keys/AuthKey_<key id>.p8`, which is
+  where `altool` looks for it by name.
+
+The build number defaults to the minute it ran (`20260914.1320`), because
+TestFlight refuses one it has seen before; the marketing version stays at
+`project.yml`'s `MARKETING_VERSION` unless the tag or the workflow input says
+otherwise. Both targets take the same pair — the watch app and the phone app
+have to agree or validation rejects them. `ITSAppUsesNonExemptEncryption: false`
+is already in the Info.plist, so no export-compliance question is asked per build.
+
+The dSYMs are kept as a workflow artifact for 90 days to symbolicate crash
+reports against.
+
 ### Running against the local backend in the simulator
 
 ```bash

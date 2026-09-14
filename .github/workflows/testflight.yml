@@ -1,0 +1,150 @@
+# Archive, sign and upload a build to TestFlight.
+#
+# Signing is automatic, driven by an App Store Connect API key: xcodebuild uses it
+# to register the App IDs and fetch the distribution profile, so no certificate,
+# no .mobileprovision and no match repo is needed. Three repository secrets:
+#
+#   APP_STORE_CONNECT_KEY_ID      the key's id, e.g. ABC123XYZ9
+#   APP_STORE_CONNECT_ISSUER_ID   the issuer uuid, shown above the key list
+#   APP_STORE_CONNECT_KEY_P8      the whole AuthKey_XXXX.p8 file, BEGIN/END lines and all
+#
+# The key is made at App Store Connect > Users and Access > Integrations > App Store
+# Connect API, with the App Manager role. It is downloadable exactly once.
+name: testflight
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Marketing version, e.g. 0.1.0 (blank keeps the project's)"
+        required: false
+      build:
+        description: "Build number (blank uses the date, which never repeats)"
+        required: false
+  push:
+    tags: ["v*"]
+
+# One upload at a time: two archives racing would fight over the build number.
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the credentials are present
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
+        run: |
+          missing=
+          [ -n "$KEY_ID" ] || missing="$missing APP_STORE_CONNECT_KEY_ID"
+          [ -n "$ISSUER_ID" ] || missing="$missing APP_STORE_CONNECT_ISSUER_ID"
+          [ -n "$KEY_P8" ] || missing="$missing APP_STORE_CONNECT_KEY_P8"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing — see the comment at the top of this workflow."
+            exit 1
+          fi
+
+      - name: Write the App Store Connect key
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
+        run: |
+          # altool looks for the key by name in ~/private_keys; xcodebuild is given
+          # the path outright. One file serves both.
+          mkdir -p "$HOME/private_keys"
+          printf '%s\n' "$KEY_P8" > "$HOME/private_keys/AuthKey_$KEY_ID.p8"
+          chmod 600 "$HOME/private_keys/AuthKey_$KEY_ID.p8"
+
+      - name: Decide the version and build number
+        id: stamp
+        env:
+          VERSION_IN: ${{ inputs.version }}
+          BUILD_IN: ${{ inputs.build }}
+        run: |
+          # A tag named v0.2.0 is the version it names. Otherwise the project's own.
+          version="$VERSION_IN"
+          if [ -z "$version" ] && [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          # TestFlight refuses a build number it has already seen, so the default is
+          # the minute this ran: monotonic, unique, and readable in the build list.
+          # Two dot-separated parts because each part has to fit in a 32-bit integer.
+          build="${BUILD_IN:-$(date -u +%Y%m%d.%H%M)}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "Uploading build $build${version:+ of version $version}"
+
+      - run: brew install xcodegen
+
+      - name: Generate the project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Archive
+        working-directory: ios
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          BUILD: ${{ steps.stamp.outputs.build }}
+          VERSION: ${{ steps.stamp.outputs.version }}
+        run: |
+          # Left off entirely when no version was asked for, so the project's stands.
+          VERSION_SETTING=${VERSION:+MARKETING_VERSION=$VERSION}
+          xcodebuild archive \
+            -project RoadsAndRunes.xcodeproj \
+            -scheme RoadsAndRunes \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/RoadsAndRunes.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/private_keys/AuthKey_$KEY_ID.p8" \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID" \
+            CURRENT_PROJECT_VERSION="$BUILD" \
+            $VERSION_SETTING
+
+      - name: Export the ipa
+        working-directory: ios
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/RoadsAndRunes.xcarchive" \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/private_keys/AuthKey_$KEY_ID.p8" \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID"
+
+      - name: Upload to TestFlight
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          ipa=$(ls "$RUNNER_TEMP/export"/*.ipa | head -1)
+          xcrun altool --validate-app -f "$ipa" -t ios \
+            --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID"
+          xcrun altool --upload-app -f "$ipa" -t ios \
+            --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID"
+
+      - name: Keep the archive to symbolicate crashes against
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RoadsAndRunes-${{ steps.stamp.outputs.build }}
+          path: ${{ runner.temp }}/RoadsAndRunes.xcarchive/dSYMs
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Shred the key
+        if: always()
+        run: rm -rf "$HOME/private_keys"

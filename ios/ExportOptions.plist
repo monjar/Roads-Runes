@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Export for upload to App Store Connect, which is where TestFlight builds
+	     come from. Signing is automatic: the App Store Connect key passed to
+	     xcodebuild lets it register and download the distribution profile, so
+	     there is no certificate or profile checked in here or kept in secrets. -->
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>teamID</key>
+	<string>7WBQP62F6Z</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<key>uploadSymbols</key>
+	<true/>
+	<!-- Export the .ipa and upload it as a separate step, so a failed upload can
+	     be retried without paying for another archive. -->
+	<key>destination</key>
+	<string>export</string>
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+</dict>
+</plist>
