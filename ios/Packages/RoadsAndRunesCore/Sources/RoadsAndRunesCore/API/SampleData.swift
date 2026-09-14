@@ -215,8 +215,26 @@ public enum SampleData {
         latitude: 51.4952, longitude: -0.0265, name: "Bog Wraith", anchorName: "Southwark Park", bounty: true, rewardAC: 300,
         expiresAt: referenceDate.addingTimeInterval(3 * 86_400),
         monster: MonsterInfo(hp: 200, flavour: "A cold patch of air that follows the towpath.", killMethods: [
-            KillMethod(method: .pace, params: ["windowMeters": .number(1000), "paceSecPerKm": .object(["RIDE": .number(130), "RUN": .number(330), "WALK": .number(660)]), "searchRadiusMeters": .number(1000)], hint: "Cover 1000 m at 2:10/km or faster within a kilometre of it."),
-            KillMethod(method: .rune, params: ["shape": .string("TRIANGLE"), "scoreThreshold": .number(0.22), "searchRadiusMeters": .number(1000), "minLengthMeters": .number(300), "maxLengthMeters": .number(4000)], hint: "Trace a triangle with your track, within a kilometre of it."),
+            KillMethod(
+                method: .pace,
+                params: [
+                    "windowMeters": .number(1000),
+                    "paceSecPerKm": .object(["RIDE": .number(130), "RUN": .number(330), "WALK": .number(660)]),
+                    "searchRadiusMeters": .number(1000),
+                ],
+                hint: "Cover 1000 m at 2:10/km or faster within a kilometre of it."
+            ),
+            KillMethod(
+                method: .rune,
+                params: [
+                    "shape": .string("TRIANGLE"),
+                    "scoreThreshold": .number(0.22),
+                    "searchRadiusMeters": .number(1000),
+                    "minLengthMeters": .number(300),
+                    "maxLengthMeters": .number(4000),
+                ],
+                hint: "Trace a triangle with your track, within a kilometre of it."
+            ),
         ])
     )
     public static let sampleChest = WorldObject(

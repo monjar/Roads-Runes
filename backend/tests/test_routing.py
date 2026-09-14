@@ -7,23 +7,13 @@ from app.routing.analysis import (
     surface_composition,
 )
 from app.routing.engine import EngineRequest, SyntheticRouter
-from app.routing.preferences import RoutePreferences, parse_rules
+from app.routing.preferences import RoutePreferences
 from app.routing.scoring import RiderLimits, RouteMetrics, score_route
 
 
 def test_polyline_roundtrip():
     pts = [(51.5, -0.1), (51.501, -0.102), (51.49, -0.09)]
     assert decode_polyline(encode_polyline(pts)) == pts
-
-
-def test_nl_parse_rules():
-    parsed = parse_rules("Give me around 30 km, quiet roads, some gravel and a pub towards the end.")
-    p = parsed.preferences
-    assert p.distanceKm["target"] == 30
-    assert p.trafficAversion >= 0.9
-    assert 0.5 <= p.gravelPreference <= 0.7
-    # "a pub" is one pub: the planner threads exactly one rather than as many as fit.
-    assert p.poi == {"category": "PUB", "preferredPosition": 0.8, "count": 1}
 
 
 def test_elevation_analysis_finds_climb():

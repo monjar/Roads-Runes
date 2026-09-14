@@ -25,6 +25,72 @@ Labels are never "Route 1/2/3": Relaxed, Adventure, Scenic, Direct, Gravel,
 Challenge, chosen per bike type and adjusted when the request asks for
 gravel, hills or a destination.
 
+## Reading a request
+
+A rider types one sentence. Claude reads it — there is no keyword parser behind
+it any more. There used to be: word lists for every way of saying "pub", a regex
+per preposition, a table of number words, and a rule that whatever was left of
+the sentence might be a place. It answered the phrasings someone had thought of
+and nothing else, and "quiet roads" planned a ride in Roads Wood.
+
+`app/routing/preferences.py` holds the prompt and a JSON Schema the API
+enforces (`output_config.format`, falling back to describing the schema in the
+prompt where that parameter is not taken). Every field comes back null when the
+sentence did not say it, so the rider's own profile stands.
+
+The sentence can name a place in one of two ways, and they plan different rides:
+
+| They wrote | Reads as | The ride |
+|---|---|---|
+| "a loop **in** Notting Hill with 5 pubs" | `area` | Moves there, wanders around it, comes home |
+| "go **to** the Aragon Tower, 2 pubs on the way" | `destination` | Starts where they are, finishes at the tower |
+
+**The model returns names, never coordinates.** `app/routing/geocode.py` resolves
+them, so nothing it invents reaches navigation (spec §20, §31). The two resolve
+differently, because a wrong answer costs differently:
+
+* `area` searches Photon and Nominatim for ground — `place`, `boundary`,
+  `leisure`, `natural`, `landuse`, `tourism`. The whole ride moves there, so a
+  shop matching the phrase would waste the ride.
+* `destination` (`kind="point"`) accepts nearly anything named: a building, a
+  tower, a bridge, a pub, a station. The guard is the name instead — the answer
+  has to be called what the rider called it, or a point search will happily
+  return a bakery for "the way home".
+
+A destination that resolves becomes a real waypoint: `loop` defaults off, the
+stops are picked from the corridor along the way (`_pick_stops_between`, in the
+order they are reached) rather than rung around the origin, and the target
+distance comes from the trip rather than the app's slider. One that does not
+resolve is said out loud in `parsedRequest.notes` — riding somewhere else
+quietly is the worse answer.
+
+Everything the model returns is range-checked in `parse_request`: a category
+nobody imports, a 900 km "ride", a null where a float was expected. A bad answer
+narrows to a plain ride, never a wrong one.
+
+### No provider, no reader
+
+`LLM_PROVIDER=anthropic` is the default, but with no `ANTHROPIC_API_KEY` there is
+nothing to read a typed request. The planner says so
+(`parsedRequest.notes`) and plans from the rider's profile. It does not guess.
+
+### Testing it
+
+Two different questions, tested in two places:
+
+* What the planner *does* with a reading — `tests/test_route_requests.py` and
+  `tests/test_llm_parse.py`, against a scripted model (`SCRIPT` in
+  `tests/conftest.py`). No network, no spend.
+* Whether the model reads a sentence *correctly* — `tests/test_request_reading.py`,
+  against the real API, skipped unless `ANTHROPIC_API_KEY` is set:
+
+  ```bash
+  ANTHROPIC_API_KEY=sk-... pytest tests/test_request_reading.py
+  ```
+
+  A failure there means the prompt needs the case, not that a word list needs
+  another word.
+
 ## Engine
 
 `GraphHopperClient` posts to `/route` with `ch.disable=true`, a custom model,

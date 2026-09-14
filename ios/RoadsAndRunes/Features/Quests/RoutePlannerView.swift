@@ -98,6 +98,14 @@ final class RoutePlannerViewModel {
         return String((asked.prefix(1).uppercased() + asked.dropFirst()).prefix(120))
     }
 
+    /// A typed request decides its own shape: "go to the Aragon Tower" is not a loop,
+    /// and saying so here used to override the sentence the rider wrote. Only a plan
+    /// with nothing typed and nowhere picked is a loop by default.
+    private var loopForRequest: Bool? {
+        if destination != nil { return false }
+        return request.isEmpty ? true : nil
+    }
+
     /// Reads the server's loosely-typed parse back into one line a rider can check.
     static func understood(from parsed: [String: JSONValue]?) -> String? {
         guard let parsed else { return nil }
@@ -113,6 +121,9 @@ final class RoutePlannerViewModel {
 
     private static func legacyParts(of parsed: [String: JSONValue]) -> [String] {
         var parts: [String] = []
+        if let to = parsed["destination"]?.objectValue, let name = (to["name"] ?? to["query"])?.stringValue {
+            parts.append("to \(name)")
+        }
         if let area = parsed["area"]?.objectValue, let name = (area["name"] ?? area["query"])?.stringValue {
             parts.append(name)
         }
@@ -187,7 +198,7 @@ final class RoutePlannerViewModel {
         do {
             let response = try await container.api.generateRoutes(RouteGenerateRequest(
                 origin: origin, destination: destination?.coordinate, bikeId: activity == .ride ? selectedBike?.id : nil, questId: quest?.id,
-                distanceTargetKm: distanceKm, loop: destination == nil, request: request.isEmpty ? nil : request,
+                distanceTargetKm: distanceKm, loop: loopForRequest, request: request.isEmpty ? nil : request,
                 activity: activity
             ))
             // The quest's own route stays first so the rider can always go back to it.
@@ -264,6 +275,14 @@ struct RoutePlannerView: View {
 
     private static let presets = ["Café ride", "Pub ride", "Easy", "Gravel", "Scenic", "Quiet roads"]
 
+    /// An example of the kind of sentence the planner reads, in the shape of the
+    /// activity the rider picked.
+    private var placeholder: String {
+        model?.activity == .ride
+            ? "About 30 km, mostly quiet roads, easy gravel and a pub halfway."
+            : "About 5 km, through a park, with a café at the end."
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             Theme.Colors.cream.ignoresSafeArea()
@@ -303,7 +322,7 @@ struct RoutePlannerView: View {
                     .pickerStyle(.segmented)
                     .accessibilityIdentifier("planner.activity")
                     VStack(spacing: 14) {
-                        TextField(model.activity == .ride ? "About 30 km, mostly quiet roads, easy gravel and a pub halfway." : "About 5 km, through a park, with a café at the end.", text: $model.request, axis: .vertical)
+                        TextField(placeholder, text: $model.request, axis: .vertical)
                             .font(Theme.Typography.text(17))
                             .foregroundStyle(Theme.Colors.ink)
                             .lineLimit(2...4)

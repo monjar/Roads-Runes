@@ -263,6 +263,9 @@ def _understood(prefs: RoutePreferences, usual: RoutePreferences, wanted: int, c
     for "quiet roads", which changes the routes without naming a place or a stop.
     """
     parts: list[str] = []
+    destination = prefs.destination or {}
+    if destination.get("name") or destination.get("query"):
+        parts.append("to " + str(destination.get("name") or destination.get("query")))
     area = prefs.area or {}
     if area.get("name") or area.get("query"):
         parts.append(str(area.get("name") or area.get("query")))
@@ -284,6 +287,9 @@ def _understood(prefs: RoutePreferences, usual: RoutePreferences, wanted: int, c
 
 
 CANNOT_READ = "couldn't read that — try 'through 2 cafes' or 'mostly gravel'"
+# There is no keyword parser behind the model any more, so "no provider" means a
+# typed request goes unread. Saying so beats a ride that ignores the sentence.
+NO_READER = "free-text needs an AI provider — planned from your profile instead"
 # The corridor import runs only when stops were asked for and none were found, and
 # only for tiles never fetched, so a known area costs nothing.
 CORRIDOR_IMPORT_BUDGET_S = 25.0
@@ -664,11 +670,35 @@ async def generate(
         }
     ms_parse = int((monotonic() - started) * 1000)
 
+    # "Go to the Aragon Tower" names a finish line, not a neighbourhood, so it is
+    # resolved as a point — a tower, a bridge, a pub all count — and becomes the
+    # route's destination. A tap on the map (payload.destination) already is one.
+    destination = payload.destination
+    unresolved_destination: str | None = None
+    if destination is None and (base_prefs.destination or {}).get("query"):
+        wanted_place = str(base_prefs.destination["query"])
+        found = await geocode.resolve(
+            settings, wanted_place, payload.origin.latitude, payload.origin.longitude, kind="point"
+        )
+        if found is not None:
+            destination = Coordinate(latitude=found.latitude, longitude=found.longitude)
+            base_prefs.destination = {**base_prefs.destination, **found.to_dict()}
+        else:
+            unresolved_destination = wanted_place
+            base_prefs.destination = None
+    elif destination is not None and not (base_prefs.destination or {}).get("query"):
+        base_prefs.destination = None
+    if base_prefs.destination is None and parsed_dict is not None:
+        parsed_dict["destination"] = None
+        parsed_dict["matched"] = [m for m in parsed_dict["matched"] if not str(m).startswith("destination:")]
+    elif parsed_dict is not None:
+        parsed_dict["destination"] = base_prefs.destination
+
     # A named place ("a ride in Notting Hill") moves the ride; the rider's own position
     # still seeds the alternatives and counts new territory.
     area = None
     unresolved_place: str | None = None
-    if (base_prefs.area or {}).get("query") and payload.destination is None:
+    if (base_prefs.area or {}).get("query") and destination is None:
         area = await geocode.resolve(
             settings, str(base_prefs.area["query"]), payload.origin.latitude, payload.origin.longitude
         )
@@ -710,8 +740,19 @@ async def generate(
     loop = (
         payload.loop
         if payload.loop is not None
-        else (base_prefs.loop if base_prefs.loop is not None else payload.destination is None)
+        else (base_prefs.loop if base_prefs.loop is not None else destination is None)
     )
+    # Riding somewhere has its own length: the way there and, if they asked to come
+    # home, the way back. Scoring against the rider's usual 30 km would mark a 6 km
+    # trip to the tower down for being short.
+    #
+    # Only when the destination came out of the sentence. Picking a place on the map
+    # and then setting a distance is a rider asking for the long way round, and the
+    # slider is theirs; typing "go to the tower" never touched it.
+    typed_destination = payload.destination is None and destination is not None
+    if typed_destination and not (base_prefs.distanceKm or {}).get("target"):
+        direct_km = haversine_m(start.latitude, start.longitude, destination.latitude, destination.longitude) / 1000
+        target_km = max(2.0, direct_km * (2.4 if loop else 1.25))
 
     cfg = scoring_config()
     if on_foot:
@@ -722,7 +763,7 @@ async def generate(
         labels[-1] = "Gravel"
     if base_prefs.hillTolerance > 0.8 and "Challenge" not in labels:
         labels[-1] = "Challenge"
-    if payload.destination is not None and "Direct" not in labels:
+    if destination is not None and "Direct" not in labels:
         labels[0] = "Direct"
 
     # "with about 5 pubs" is a promise: put them on the line rather than hoping the
@@ -740,11 +781,9 @@ async def generate(
     importing = monotonic()
     await osm_import.ensure_pois(settings, start.latitude, start.longitude, wait=bool(wanted and categories))
     if wanted and categories:
-        if payload.destination is not None:
+        if destination is not None:
             # "Ride here, through three cafés" — a destination does not cancel the stops.
-            requested_stops = await _pick_stops_between(
-                db, start, payload.destination, categories, wanted, appeal_weight
-            )
+            requested_stops = await _pick_stops_between(db, start, destination, categories, wanted, appeal_weight)
             if len(requested_stops) < wanted:
                 # Not enough imported along this way yet; fetch the tiles the leg
                 # crosses (a 20 km ride crosses several) and look again.
@@ -752,13 +791,11 @@ async def generate(
                     settings,
                     start.latitude,
                     start.longitude,
-                    payload.destination.latitude,
-                    payload.destination.longitude,
+                    destination.latitude,
+                    destination.longitude,
                     budget_s=CORRIDOR_IMPORT_BUDGET_S,
                 )
-                requested_stops = await _pick_stops_between(
-                    db, start, payload.destination, categories, wanted, appeal_weight
-                )
+                requested_stops = await _pick_stops_between(db, start, destination, categories, wanted, appeal_weight)
         else:
             requested_stops = await _pick_stops(
                 db,
@@ -831,8 +868,11 @@ async def generate(
             points.append((stop.latitude, stop.longitude))
         for wp in payload.waypoints:
             points.append((wp.latitude, wp.longitude))
-        if payload.destination is not None:
-            points.append((payload.destination.latitude, payload.destination.longitude))
+        if destination is not None:
+            points.append((destination.latitude, destination.longitude))
+            # "to the tower and back" — the way home is a second leg, not a U-turn.
+            if loop:
+                points.append(points[0])
         elif loop and len(points) > 1:
             points.append(points[0])
         round_trip = distance_m if (loop and len(points) == 1) else None
@@ -954,8 +994,10 @@ async def generate(
         notes = _shortfalls(base_prefs, requested_stops, wanted, [route for route, _ in results])
         if unresolved_place:
             notes.append(f"couldn't find a place called '{unresolved_place}'")
+        if unresolved_destination:
+            notes.append(f"couldn't find '{unresolved_destination}' — riding from here instead")
         if not parsed_dict["understood"] and not parsed_dict["matched"]:
-            notes.append(CANNOT_READ)
+            notes.append(NO_READER if parsed_dict.get("source") == "unavailable" else CANNOT_READ)
         parsed_dict["notes"] = notes + same_road
     await db.flush()
     _keep_labels_honest(results)
@@ -973,7 +1015,7 @@ async def generate(
         understood=parsed_dict.get("understood") if parsed_dict else None,
         wanted=wanted,
         stops_found=len(requested_stops),
-        destination=payload.destination is not None,
+        destination=(base_prefs.destination or {}).get("name") if destination is not None else None,
         labels=[route.label for route, _ in results],
         notes=parsed_dict.get("notes") if parsed_dict else None,
         engine=results[0][0].engine,

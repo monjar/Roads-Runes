@@ -220,7 +220,17 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
                 throw APIError.server(code: "INSUFFICIENT_AC", message: "That costs 50 Active Coins and you have \(self.storedCoins)", status: 409)
             }
             self.storedCoins -= 50
-            let lured = WorldObject(id: UUID(), kind: .monster, latitude: center.latitude + 0.004, longitude: center.longitude + 0.003, name: "Lured Fen Troll", anchorName: "the towpath", rewardAC: 60, expiresAt: Date().addingTimeInterval(3 * 86_400), monster: SampleData.sampleMonster.monster)
+            let lured = WorldObject(
+                id: UUID(),
+                kind: .monster,
+                latitude: center.latitude + 0.004,
+                longitude: center.longitude + 0.003,
+                name: "Lured Fen Troll",
+                anchorName: "the towpath",
+                rewardAC: 60,
+                expiresAt: Date().addingTimeInterval(3 * 86_400),
+                monster: SampleData.sampleMonster.monster
+            )
             self.storedObjects[lured.id] = lured
             return self.storedObjects.values.filter { $0.status == .spawned }
         }

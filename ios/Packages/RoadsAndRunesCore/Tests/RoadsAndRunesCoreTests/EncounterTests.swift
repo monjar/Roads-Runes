@@ -41,9 +41,9 @@ final class EncounterTests: XCTestCase {
         }
     }
 
-    func testTheFastestKilometreIsFoundAndTimed() {
+    func testTheFastestKilometreIsFoundAndTimed() throws {
         let points = northbound(Array(repeating: 5.0, count: 200) + Array(repeating: 8.0, count: 125) + Array(repeating: 5.0, count: 200))
-        let window = try! XCTUnwrap(PaceFinder.bestWindow(points, windowMeters: 1000, speedCap: 25))
+        let window = try XCTUnwrap(PaceFinder.bestWindow(points, windowMeters: 1000, speedCap: 25))
         XCTAssertEqual(window.seconds, 125, accuracy: 1.5)
         XCTAssertNil(PaceFinder.bestWindow(points, windowMeters: 1000, speedCap: 25, near: Array(repeating: false, count: points.count)))
         XCTAssertNil(PaceFinder.bestWindow(northbound(Array(repeating: 8.0, count: 150)), windowMeters: 600, speedCap: 4))

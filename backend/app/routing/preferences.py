@@ -1,54 +1,50 @@
-"""Route preference model and natural-language parsing (spec §25, §31)."""
+"""What a rider asked for, read by Claude (spec §25, §31).
+
+This used to be a keyword parser: word lists for every way of saying "pub", a
+regex per preposition, a table of number words, and a rule that whatever was
+left of the sentence might be a place. It answered "a biker ride in notting hill
+with about 5 pubs" and little that was not close to it, and every phrasing a
+rider actually used needed another pattern. Reading a sentence is the model's
+job, so it does it.
+
+The model returns *names*, never coordinates: `app/routing/geocode.py` resolves
+them, and anything it cannot find is reported rather than ridden past — so
+nothing the model invents reaches navigation (spec §20). Everything else it
+returns is range-checked here, so a bad answer narrows to a plain ride rather
+than a wrong one.
+
+With no provider configured there is no parser at all, and a typed request says
+so instead of quietly planning something else.
+"""
 
 from __future__ import annotations
 
-import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from app.core.llm import LLMClient
 
-# Words a rider uses for a kind of stop. The categories must be ones
-# `app/discoveries/osm_import.py:category_for` actually produces, or the stop
-# search finds nothing: CAFE, PUB, NATURE, HISTORICAL, CULTURAL, LANDMARK,
-# VIEWPOINT, CYCLING. FOOD and TRAIL are understood but never imported, so they
-# read as a request the route can only honour incidentally.
-POI_WORDS = {
-    "pub": "PUB",
-    "beer": "PUB",
-    "pint": "PUB",
-    "bar": "PUB",
-    "cafe": "CAFE",
-    "café": "CAFE",
-    "coffee": "CAFE",
-    "food": "FOOD",
-    "lunch": "FOOD",
-    "restaurant": "FOOD",
-    "view": "VIEWPOINT",
-    "viewpoint": "VIEWPOINT",
-    "peak": "VIEWPOINT",
-    "summit": "VIEWPOINT",
-    "park": "NATURE",
-    "forest": "NATURE",
-    "wood": "NATURE",
-    "garden": "NATURE",
-    "nature": "NATURE",
-    "castle": "HISTORICAL",
-    "church": "HISTORICAL",
-    "monument": "HISTORICAL",
-    "historic": "HISTORICAL",
-    "historical": "HISTORICAL",
-    "ruin": "HISTORICAL",
-    "museum": "CULTURAL",
-    "gallery": "CULTURAL",
-    "art": "CULTURAL",
-    "cultural": "CULTURAL",
-    "culture": "CULTURAL",
-    "landmark": "LANDMARK",
-    "attraction": "LANDMARK",
-    "sight": "LANDMARK",
-    "trail": "TRAIL",
-}
+# The kinds of stop the world actually holds: `app/discoveries/osm_import.py`
+# imports these, so asking for anything else finds nothing.
+CATEGORIES = (
+    "PUB",
+    "CAFE",
+    "FOOD",
+    "VIEWPOINT",
+    "NATURE",
+    "HISTORICAL",
+    "CULTURAL",
+    "LANDMARK",
+    "TRAIL",
+)
+
+SCALARS = (
+    "trafficAversion",
+    "cyclewayPreference",
+    "gravelPreference",
+    "scenicPreference",
+    "hillTolerance",
+)
 
 
 @dataclass
@@ -65,16 +61,14 @@ class RoutePreferences:
     # Where the rider asked to ride: {"query": "Notting Hill"} until resolved, then
     # {"name", "latitude", "longitude"} as well (app/routing/geocode.py).
     area: dict[str, Any] | None = None
+    # Somewhere to ride *to*, which is a different ride from riding *in* somewhere:
+    # "to the Aragon Tower" ends there, "in Deptford" wanders around it. Same shape
+    # as `area`: {"query": ...} until the geocoder answers.
+    destination: dict[str, Any] | None = None
     loop: bool | None = None
 
     def clamp(self) -> RoutePreferences:
-        for name in (
-            "trafficAversion",
-            "cyclewayPreference",
-            "gravelPreference",
-            "scenicPreference",
-            "hillTolerance",
-        ):
+        for name in SCALARS:
             setattr(self, name, min(1.0, max(0.0, float(getattr(self, name)))))
         return self
 
@@ -85,510 +79,239 @@ class RoutePreferences:
 @dataclass
 class ParsedRequest:
     preferences: RoutePreferences
-    source: str  # "llm" | "rules"
+    #  "llm"          the model read it
+    #  "unreadable"   the model was asked and gave nothing usable
+    #  "unavailable"  no provider configured, so nothing read it
+    source: str
     matched: list[str] = field(default_factory=list)
 
-
-# Asking for a good one, not just any one.
-QUALITY_WORDS = (
-    "nice",
-    "best",
-    "good",
-    "great",
-    "top",
-    "proper",
-    "decent",
-    "lovely",
-    "favourite",
-    "favorite",
-    "independent",
-    "special",
-    "famous",
-)
-
-COUNT_WORDS = {
-    "a couple": 2,
-    "a couple of": 2,
-    "a": 1,
-    "an": 1,
-    "a few": 3,
-    "some": 3,
-    "several": 4,
-    "one": 1,
-    "two": 2,
-    "three": 3,
-    "four": 4,
-    "five": 5,
-    "six": 6,
-    "seven": 7,
-    "eight": 8,
-    "nine": 9,
-    "ten": 10,
-}
-# "in Notting Hill with 5 pubs" -> "notting hill". The phrase is a guess; the geocoder
-# decides whether it is a place, so this can afford to be generous.
-AREA_PATTERN = re.compile(
-    r"\b(?:in|around|near|through|via|round)\s+(?!the\s+(?:morning|afternoon|evening))"
-    r"([a-z0-9'\u2019\-\. ]{3,40}?)"
-    r"(?=\s+(?:with|and|for|that|about|including|taking|via|through)\b|[,.;]|$)"
-)
-NOT_A_PLACE = re.compile(r"^\s*(?:\d|an? |the )?\s*(?:hour|hr|min|km|mile|k\b|loop|circle|ride|bit|while)")
+    @property
+    def read_by_nobody(self) -> bool:
+        return self.source == "unavailable"
 
 
-# Everything a request can say that is about the riding, not about a place. What is
-# left after removing these is a candidate name — "richmond bike ride" -> "richmond".
-RIDE_WORDS = {
-    "a",
-    "an",
-    "the",
-    "my",
-    "me",
-    "some",
-    "any",
-    "about",
-    "around",
-    "roughly",
-    "with",
-    "and",
-    "for",
-    "of",
-    "to",
-    "please",
-    "want",
-    "give",
-    "plan",
-    "find",
-    "take",
-    "go",
-    "ride",
-    "rides",
-    "riding",
-    "bike",
-    "biker",
-    "bicycle",
-    "cycle",
-    "cycling",
-    "route",
-    "loop",
-    "circular",
-    "tour",
-    "trip",
-    "spin",
-    "today",
-    "tomorrow",
-    "morning",
-    "afternoon",
-    "evening",
-    "quiet",
-    "calm",
-    "peaceful",
-    "scenic",
-    "pretty",
-    "beautiful",
-    "nice",
-    "easy",
-    "gentle",
-    "flat",
-    "hilly",
-    "hills",
-    "climb",
-    "climbing",
-    "hard",
-    "tough",
-    "challenging",
-    "fast",
-    "quick",
-    "direct",
-    "short",
-    "long",
-    "gravel",
-    "paved",
-    "tarmac",
-    "road",
-    "off-road",
-    "unpaved",
-    "trails",
-    "new",
-    "km",
-    "kms",
-    "kilometres",
-    "kilometers",
-    "miles",
-    "mile",
-    "hour",
-    "hours",
-    "hrs",
-    "min",
-    "mins",
-    "minutes",
-    "stops",
-    "stop",
-    "way",
-    "one-way",
-    "back",
-    "home",
-    "near",
-    "nearby",
-    "somewhere",
-    "place",
-    "places",
-    "views",
-    # Quantities and vagueness: "a couple of cafes", "something hilly".
-    "couple",
-    "few",
-    "several",
-    "lots",
-    "plenty",
-    "something",
-    "anything",
-    "everything",
-    "nothing",
-    "thing",
-    "things",
-    "bit",
-    "kind",
-    "sort",
-    "type",
-    "recommend",
-    "suggest",
-    "show",
-    "make",
-    "need",
-    "like",
-    "good",
-    "great",
-    "best",
-    "better",
-    "fun",
-    "lovely",
-    "interesting",
-    "safe",
-    "family",
-    "kids",
-    "weekend",
-    "week",
-    "day",
-    "night",
-    "weather",
-    # How a rider qualifies the stops they want: "3 top cafes", "the best pubs".
-    "top",
-    "favourite",
-    "favorite",
-    "popular",
-    "local",
-    "famous",
-    "cool",
-    "must",
-    "see",
-    "including",
-    "include",
-    "includes",
-    "visit",
-    "visiting",
-    "pass",
-    "passing",
-    "stopping",
-    "then",
-    "plus",
-    "or",
-    "also",
-    "maybe",
-    "either",
-    # Prepositions AREA_PATTERN uses; on their own they name nothing.
-    "through",
-    "via",
-    "along",
-    "across",
-    "past",
-    "between",
-    # How much of a thing: "gravel heavy", "mostly quiet", "loads of climbing".
-    "heavy",
-    "mostly",
-    "mainly",
-    "packed",
-    "full",
-    "loads",
-    "lot",
-    "little",
+SYSTEM = """You read one sentence from a cyclist and return what they asked for.
+
+Places. A rider names a place in one of two ways, and they plan different rides:
+- `destination` — somewhere to ride TO and finish at. "go to the Aragon Tower",
+  "out to Greenwich pier", "take me to the Cutty Sark", "as far as the old
+  bridge". It can be a single named thing: a tower, a bridge, a pub, a station,
+  a park.
+- `area` — somewhere to ride IN or AROUND. "a loop in Notting Hill", "a ride
+  around Richmond Park", "somewhere in the Chilterns". The whole ride moves
+  there.
+Use whichever the sentence means, not both for the same words. Return the name
+as the rider wrote it, trimmed to just the name. NEVER return coordinates,
+directions, or a description of the riding as a place: "a quiet 30 km loop"
+names no place at all, and neither does "3 top cafes".
+
+Stops. `stops.categories` is the kind of place they want on the way, best first:
+PUB (pubs, bars, a pint), CAFE (cafés, coffee), FOOD (lunch, restaurants),
+NATURE (parks, woods, gardens), HISTORICAL (castles, churches, monuments,
+ruins), CULTURAL (museums, galleries), LANDMARK (attractions, sights),
+VIEWPOINT (views, peaks, summits), TRAIL (trails). `stops.count` is how many
+they asked for ("a couple" is 2, "a few" is 3). `stops.preferredPosition` is
+where along the ride they want them: 0 is the start, 1 the finish, 0.5 halfway;
+use 0.5 when they just said "on the way". `stops.quality` is true when they want
+a *good* one ("a nice cafe", "the best pub") rather than whichever is nearest.
+A place named as the destination is not also a kind of stop: "to the Old Church
+and 2 pubs" wants pubs.
+
+Distance. `distanceKm.target` in kilometres. Convert miles (1.61 km) and time —
+assume 16 km/h on a bike, so "a couple of hours" is about 32 km. "up to 40 km"
+is a target of 40.
+
+Riding preferences are 0 to 1, and null when the sentence says nothing about
+them — the rider's own profile fills those in, so do not guess:
+- trafficAversion: high for "quiet", "calm", "avoid traffic"; low for "fast",
+  "direct".
+- cyclewayPreference: high for "bike paths", "cycle lanes".
+- gravelPreference: high for "gravel", "off-road", "trails"; 0 for "paved",
+  "tarmac", "no gravel", "road bike".
+- scenicPreference: high for "scenic", "pretty", "views"; low for "direct".
+- hillTolerance: high for "hilly", "climbing", "tough"; low for "flat", "easy",
+  "gentle", "nothing steep".
+
+`loop` is true for "loop", "circular", "back home"; false for "one way" or a
+ride to a destination; null when unsaid.
+
+Read negations as decisions: "no cafes, just riding" means stops is null, not
+CAFE. Return null for anything the sentence does not say."""
+
+
+def _place_schema(description: str) -> dict[str, Any]:
+    return {
+        "description": description,
+        "anyOf": [
+            {
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "The name as the rider wrote it."}},
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+            {"type": "null"},
+        ],
+    }
+
+
+def _scalar_schema(description: str) -> dict[str, Any]:
+    return {
+        "description": description,
+        "anyOf": [{"type": "number", "minimum": 0, "maximum": 1}, {"type": "null"}],
+    }
+
+
+SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "destination": _place_schema("Somewhere to ride to and finish at."),
+        "area": _place_schema("Somewhere to ride in or around."),
+        "distanceKm": {
+            "description": "How far they want to ride, in kilometres.",
+            "anyOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "target": {"type": "number", "minimum": 1, "maximum": 400},
+                        "tolerance": {"anyOf": [{"type": "number"}, {"type": "null"}]},
+                    },
+                    "required": ["target", "tolerance"],
+                    "additionalProperties": False,
+                },
+                {"type": "null"},
+            ],
+        },
+        "stops": {
+            "description": "The kind of place they want on the way.",
+            "anyOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "categories": {
+                            "type": "array",
+                            "items": {"type": "string", "enum": list(CATEGORIES)},
+                            "minItems": 1,
+                            "maxItems": 3,
+                        },
+                        "count": {"anyOf": [{"type": "integer", "minimum": 1, "maximum": 8}, {"type": "null"}]},
+                        "preferredPosition": {
+                            "anyOf": [{"type": "number", "minimum": 0, "maximum": 1}, {"type": "null"}]
+                        },
+                        "quality": {"type": "boolean"},
+                    },
+                    "required": ["categories", "count", "preferredPosition", "quality"],
+                    "additionalProperties": False,
+                },
+                {"type": "null"},
+            ],
+        },
+        "trafficAversion": _scalar_schema("How much they want to avoid traffic."),
+        "cyclewayPreference": _scalar_schema("How much they want cycle paths."),
+        "gravelPreference": _scalar_schema("How much unpaved riding they want."),
+        "scenicPreference": _scalar_schema("How much they want it to be pretty."),
+        "hillTolerance": _scalar_schema("How much climbing they will take."),
+        "loop": {"description": "Back where they started.", "anyOf": [{"type": "boolean"}, {"type": "null"}]},
+    },
+    "required": ["destination", "area", "distanceKm", "stops", *SCALARS, "loop"],
+    "additionalProperties": False,
 }
 
 
-def _names_a_place(phrase: str) -> bool:
-    """ "richmond park" is a place; "3 top cafes or cultural" is a shopping list.
-
-    `through`/`via` introduce both ("a ride through Richmond", "a ride through 3
-    cafes"), so a phrase that counts things, or says nothing but what kind of
-    stop is wanted, is not handed to the geocoder.
-    """
-    words = re.findall(r"[a-z0-9'\u2019\-]+", phrase)
-    if not words or any(word.isdigit() for word in words):
-        return False
-    return not all(
-        word in RIDE_WORDS
-        or word.rstrip("s") in RIDE_WORDS
-        or word in POI_WORDS
-        or word.rstrip("s") in POI_WORDS
-        or word in COUNT_WORDS
-        for word in words
-    )
-
-
-def _area_phrase(lowered: str) -> str | None:
-    for match in AREA_PATTERN.finditer(lowered):
-        phrase = match.group(1).strip(" .,")
-        if len(phrase) < 3 or NOT_A_PLACE.match(phrase) or not _names_a_place(phrase):
-            continue
-        return phrase
-    # No preposition ("richmond bike ride"): whatever is left once the riding words,
-    # the numbers and the kinds of stop are gone is a candidate name. The geocoder is
-    # what decides whether it is really a place.
-    leftover = [
-        word
-        for word in re.findall(r"[a-z0-9'\u2019\-]+", lowered)
-        if word not in RIDE_WORDS
-        # "quiet roads" is not a ride in Roads Wood: the plural of a riding word is one too.
-        and word.rstrip("s") not in RIDE_WORDS
-        and word not in POI_WORDS
-        and word.rstrip("s") not in POI_WORDS
-        and word not in COUNT_WORDS
-        and not word.isdigit()
-    ]
-    if 1 <= len(leftover) <= 3 and all(len(w) > 2 for w in leftover):
-        return " ".join(leftover)
-    return None
-
-
-HOURS_PATTERN = re.compile(
-    r"\b(\d+(?:\.\d)?|an|a|one|two|three|four|five|six|a couple of|a couple|a few)\s*"
-    r"(?:hours?|hrs?|h)\b(\s+and\s+a\s+half)?"
-)
-HOUR_WORDS = {"an": 1.0, "a": 1.0, "one": 1.0, "two": 2.0, "three": 3.0, "four": 4.0, "five": 5.0, "six": 6.0}
-HOUR_WORDS.update({"a couple of": 2.0, "a couple": 2.0, "a few": 3.0})
-
-
-def _hours(lowered: str) -> float | None:
-    """ "an hour and a half", "a couple of hours", "90 minutes" — riders say time as
-    often as distance, and only ever gave us a number before."""
-    match = HOURS_PATTERN.search(lowered)
-    if match:
-        word = match.group(1)
-        hours = float(word) if word.replace(".", "", 1).isdigit() else HOUR_WORDS.get(word)
-        if hours:
-            return hours + (0.5 if match.group(2) else 0.0)
-    minutes = re.search(r"\b(\d{2,3})\s*(?:minutes|mins|min)\b", lowered)
-    return int(minutes.group(1)) / 60 if minutes else None
-
-
-def _poi_count(lowered: str, word: str) -> int | None:
-    pattern = rf"\b(\d{{1,2}}|{'|'.join(COUNT_WORDS)})\s+(?:\w+\s+){{0,2}}?{re.escape(word)}s?\b"
-    match = re.search(pattern, lowered)
-    if not match:
+def _name(value: Any) -> dict[str, Any] | None:
+    """A place name the model read back out of the sentence."""
+    if not isinstance(value, dict):
         return None
-    found = match.group(1)
-    count = int(found) if found.isdigit() else COUNT_WORDS.get(found, 2)
-    return max(1, min(8, count))  # more than a handful stops being a bike ride
+    query = value.get("query")
+    if not isinstance(query, str) or not query.strip():
+        return None
+    return {"query": query.strip()[:60]}
 
 
-def parse_rules(text: str, base: RoutePreferences | None = None) -> ParsedRequest:
-    """Deterministic keyword parser used as fallback and as a sanity bound for LLM output."""
-    prefs = RoutePreferences(**(base.to_dict() if base else {}))
-    lowered = text.lower()
-    matched: list[str] = []
-
-    m = re.search(r"(\d{1,3})\s*(km|kilomet)", lowered)
-    if m:
-        prefs.distanceKm = {
-            "target": float(m.group(1)),
-            "tolerance": max(3.0, float(m.group(1)) * 0.15),
-        }
-        matched.append("distance")
-    m = re.search(r"(\d{1,3})\s*(mi|miles?)\b", lowered)
-    if m and not prefs.distanceKm:
-        km = float(m.group(1)) * 1.609
-        prefs.distanceKm = {"target": round(km, 1), "tolerance": max(3.0, km * 0.15)}
-        matched.append("distance")
-    hours = _hours(lowered)
-    if hours and not prefs.distanceKm:
-        km = hours * 16
-        prefs.distanceKm = {"target": round(km, 1), "tolerance": max(4.0, km * 0.2)}
-        matched.append("duration")
-
-    if any(w in lowered for w in ("quiet", "no traffic", "avoid traffic", "calm", "peaceful")):
-        prefs.trafficAversion = 0.95
-        matched.append("quiet")
-    if any(w in lowered for w in ("fast", "direct", "quick", "shortest")):
-        prefs.trafficAversion = min(prefs.trafficAversion, 0.5)
-        prefs.scenicPreference = 0.2
-        matched.append("direct")
-    if "gravel" in lowered or "off-road" in lowered or "off road" in lowered or "unpaved" in lowered:
-        prefs.gravelPreference = 0.6 if "some" in lowered or "bit" in lowered else 0.9
-        matched.append("gravel")
-    if any(w in lowered for w in ("no gravel", "paved", "tarmac", "road bike")):
-        prefs.gravelPreference = 0.0
-        matched.append("paved")
-    # "nothing steep" and "no big hills" are about hills, and mean the opposite of
-    # "hilly": look for the refusal first and let it stand.
-    gentle = any(
-        w in lowered
-        for w in ("flat", "easy", "gentle", "no hills", "nothing steep", "not steep", "nothing hilly", "not hilly")
-    )
-    if gentle:
-        prefs.hillTolerance = 0.15
-        matched.append("flat")
-    elif any(w in lowered for w in ("hilly", "climb", "hills", "hard", "tough", "steep")):
-        prefs.hillTolerance = 0.9
-        matched.append("hilly")
-    if any(w in lowered for w in ("scenic", "pretty", "beautiful", "views", "nature")):
-        prefs.scenicPreference = 0.95
-        matched.append("scenic")
-    if "loop" in lowered or "circular" in lowered or "back home" in lowered:
-        prefs.loop = True
-        matched.append("loop")
-    if "one way" in lowered or "one-way" in lowered:
-        prefs.loop = False
-        matched.append("one-way")
-
-    phrase = _area_phrase(lowered)
-
-    # "3 cafes or somewhere cultural" asks for two kinds of stop. They are kept in
-    # the order the rider wrote them: the first is the one scoring prefers, and any
-    # of them can fill the count.
-    asked = sorted(
-        (match.start(), word, category)
-        for word, category in POI_WORDS.items()
-        if (match := re.search(rf"\b{re.escape(word)}s?\b", lowered))
-    )
-    # "a loop around richmond park with a coffee stop" wants coffee; the park is part
-    # of where, not what. A word inside the place name is not a kind of stop.
-    if phrase:
-        elsewhere = [entry for entry in asked if entry[1] not in phrase]
-        asked = elsewhere or asked
-    if asked:
-        position = 0.5
-        if any(w in lowered for w in ("end", "towards the end", "finish", "near the end", "last")):
-            position = 0.8
-        elif any(w in lowered for w in ("start", "beginning", "first")):
-            position = 0.2
-        elif any(w in lowered for w in ("halfway", "middle", "midway")):
-            position = 0.5
-        categories: list[str] = []
-        for _, _, category in asked:
-            if category not in categories:
-                categories.append(category)
-        categories = categories[:3]
-        prefs.poi = {"category": categories[0], "preferredPosition": position}
-        if len(categories) > 1:
-            prefs.poi["categories"] = categories
-        # "a nice cafe", "the best pub": worth a detour past the nearest one.
-        if any(w in lowered for w in QUALITY_WORDS):
-            prefs.poi["quality"] = True
-            matched.append("quality")
-        matched.append(f"poi:{'+'.join(categories)}")
-        for _, word, _ in asked:
-            count = _poi_count(lowered, word)
-            if count:
-                prefs.poi["count"] = count
-                matched.append(f"count:{count}")
-                break
-
-    if phrase:
-        prefs.area = {"query": phrase}
-        matched.append(f"area:{phrase}")
-    return ParsedRequest(preferences=prefs.clamp(), source="rules", matched=matched)
+def _distance(value: Any) -> dict[str, float] | None:
+    if not isinstance(value, dict) or not isinstance(value.get("target"), int | float):
+        return None
+    target = float(value["target"])
+    if not 1 <= target <= 400:
+        return None
+    tolerance = value.get("tolerance")
+    usable = isinstance(tolerance, int | float) and not isinstance(tolerance, bool) and tolerance > 0
+    return {"target": target, "tolerance": float(tolerance) if usable else max(3.0, target * 0.15)}
 
 
-LLM_SYSTEM = (
-    "Convert a cyclist's free-text route request into structured preferences. "
-    "Output only fields you are confident about. Preference values are floats 0..1. "
-    "`area` is a place the rider named — a town, a neighbourhood, a park — as written, "
-    "never coordinates and never a description of the riding or of the stops. "
-    "`poi` is the kind of stop they want on the way: cafés and coffee are CAFE, pubs and "
-    "bars PUB, restaurants and lunch FOOD, museums, galleries and anything cultural "
-    "CULTURAL, parks, woods and gardens NATURE, castles, churches and monuments "
-    "HISTORICAL, attractions and sights LANDMARK, viewpoints, peaks and summits "
-    "VIEWPOINT, trails TRAIL. `poi.count` is how many of them they asked for, and "
-    "`poi.preferredPosition` where along the ride they want it (0 start, 1 finish). "
-    "`distanceKm.target` may come from a time they gave: assume 16 km per hour. "
-    '`poi.quality` is true when they want a *good* one — "a nice cafe", "the best pub" '
-    "— rather than whichever is nearest."
-)
-LLM_SCHEMA = (
-    '{"distanceKm": {"target": number, "tolerance": number} | null, "trafficAversion": number, '
-    '"cyclewayPreference": number, "gravelPreference": number, "scenicPreference": number, '
-    '"hillTolerance": number, "poi": {"category": "PUB|CAFE|FOOD|VIEWPOINT|NATURE|HISTORICAL|CULTURAL|LANDMARK|TRAIL", '
-    '"preferredPosition": number, "count": number | null, "quality": boolean} | null, '
-    '"area": {"query": string} | null, "loop": boolean | null}'
-)
+def _stops(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    raw = value.get("categories")
+    # Deduplicated, order kept: the first is the one scoring prefers.
+    ordered: list[str] = []
+    for category in raw if isinstance(raw, list) else []:
+        if category in CATEGORIES and category not in ordered:
+            ordered.append(category)
+    if not ordered:
+        return None
+    ordered = ordered[:3]
+    position = value.get("preferredPosition")
+    known = isinstance(position, int | float) and not isinstance(position, bool)
+    poi: dict[str, Any] = {
+        "category": ordered[0],
+        "preferredPosition": min(1.0, max(0.0, float(position))) if known else 0.5,
+    }
+    if len(ordered) > 1:
+        poi["categories"] = ordered
+    count = value.get("count")
+    if isinstance(count, int | float) and not isinstance(count, bool) and 1 <= count <= 8:
+        poi["count"] = int(count)
+    if value.get("quality") is True:
+        poi["quality"] = True
+    return poi
 
 
 async def parse_request(text: str, llm: LLMClient, base: RoutePreferences | None = None) -> ParsedRequest:
-    rules = parse_rules(text, base)
-    if not llm.enabled:
-        return rules
-    result = await llm.complete_json(LLM_SYSTEM, text, LLM_SCHEMA)
-    if not result:
-        return rules
+    """Read a rider's sentence into preferences, or say honestly that nothing did."""
     prefs = RoutePreferences(**(base.to_dict() if base else {}))
-    for name in (
-        "trafficAversion",
-        "cyclewayPreference",
-        "gravelPreference",
-        "scenicPreference",
-        "hillTolerance",
-    ):
-        if isinstance(result.get(name), int | float):
-            setattr(prefs, name, float(result[name]))
-    dist = result.get("distanceKm")
-    if isinstance(dist, dict) and isinstance(dist.get("target"), int | float) and 1 <= dist["target"] <= 400:
-        prefs.distanceKm = {
-            "target": float(dist["target"]),
-            "tolerance": float(dist.get("tolerance") or max(3.0, dist["target"] * 0.15)),
-        }
-    elif rules.preferences.distanceKm:
-        prefs.distanceKm = rules.preferences.distanceKm
-    poi = result.get("poi")
-    if isinstance(poi, dict) and poi.get("category") in {
-        "PUB",
-        "CAFE",
-        "FOOD",
-        "VIEWPOINT",
-        "NATURE",
-        "HISTORICAL",
-        "LANDMARK",
-        "TRAIL",
-    }:
-        # A model that has no opinion sends `"preferredPosition": null`, and float(None)
-        # would take the whole request down with it.
-        position = poi.get("preferredPosition")
-        prefs.poi = {
-            "category": poi["category"],
-            "preferredPosition": min(1.0, max(0.0, float(position))) if isinstance(position, int | float) else 0.5,
-        }
-        count = poi.get("count")
-        if isinstance(count, int | float) and 1 <= count <= 8:
-            prefs.poi["count"] = int(count)
-        elif (rules.preferences.poi or {}).get("count"):
-            prefs.poi["count"] = rules.preferences.poi["count"]
-        if poi.get("quality") is True or (rules.preferences.poi or {}).get("quality"):
-            prefs.poi["quality"] = True
-        # The schema has room for one category; the rules parser sees "cafes or
-        # museums", so keep its list when it agrees about the main one.
-        also = (rules.preferences.poi or {}).get("categories") or []
-        if prefs.poi["category"] in also:
-            prefs.poi["categories"] = list(also)
-    elif "poi" in result and poi is None:
-        # "no cafes, just riding": the model read the sentence, while the rules parser
-        # only saw the word "cafes". An explicit null is a decision, not a gap.
-        prefs.poi = None
-    elif rules.preferences.poi:
-        prefs.poi = rules.preferences.poi
-    area = result.get("area")
-    if isinstance(area, dict) and isinstance(area.get("query"), str) and area["query"].strip():
-        prefs.area = {"query": area["query"].strip()[:60]}
-    elif rules.preferences.area:
-        prefs.area = rules.preferences.area
+    if not llm.enabled:
+        return ParsedRequest(preferences=prefs.clamp(), source="unavailable")
+
+    result = await llm.extract(SYSTEM, text, SCHEMA)
+    if not isinstance(result, dict):
+        return ParsedRequest(preferences=prefs.clamp(), source="unreadable")
+
+    matched: list[str] = []
+    for name in SCALARS:
+        value = result.get(name)
+        if isinstance(value, int | float) and not isinstance(value, bool):
+            setattr(prefs, name, float(value))
+            matched.append(name)
+
+    prefs.distanceKm = _distance(result.get("distanceKm"))
+    if prefs.distanceKm:
+        matched.append("distance")
+
+    prefs.poi = _stops(result.get("stops"))
+    if prefs.poi:
+        kinds = prefs.poi.get("categories") or [prefs.poi["category"]]
+        matched.append(f"poi:{'+'.join(kinds)}")
+        if prefs.poi.get("count"):
+            matched.append(f"count:{prefs.poi['count']}")
+        if prefs.poi.get("quality"):
+            matched.append("quality")
+
+    prefs.destination = _name(result.get("destination"))
+    prefs.area = _name(result.get("area"))
+    # The same words cannot be both; riding to somewhere wins, because it is the
+    # more specific promise and the one a wrong answer ruins.
+    if prefs.destination and prefs.area and prefs.destination["query"].lower() == prefs.area["query"].lower():
+        prefs.area = None
+    if prefs.destination:
+        matched.append(f"destination:{prefs.destination['query']}")
+    if prefs.area:
+        matched.append(f"area:{prefs.area['query']}")
+
     if isinstance(result.get("loop"), bool):
         prefs.loop = result["loop"]
-    elif rules.preferences.loop is not None:
-        prefs.loop = rules.preferences.loop
-    return ParsedRequest(preferences=prefs.clamp(), source="llm", matched=rules.matched)
+        matched.append("loop" if prefs.loop else "one-way")
+    elif prefs.destination:
+        # Riding to somewhere is not riding in a circle, unless they asked for both.
+        prefs.loop = False
+
+    return ParsedRequest(preferences=prefs.clamp(), source="llm", matched=matched)

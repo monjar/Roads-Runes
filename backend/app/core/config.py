@@ -81,7 +81,9 @@ class Settings(BaseSettings):
     h3_resolution: int = 9
     explored_distance_threshold_meters: float = 400.0
 
-    llm_provider: Literal["none", "anthropic"] = "none"
+    # Reading a rider's typed request is the model's job (app/routing/preferences.py),
+    # so this is on by default and falls back to no provider when there is no key.
+    llm_provider: Literal["none", "anthropic"] = "anthropic"
     anthropic_api_key: str = ""
     # Reading a ride request is small structured extraction: Haiku scores the same as
     # Sonnet on backend/scripts/eval_requests.py (26/26 on the hard set) and answers

@@ -67,6 +67,7 @@ async def app(engine, settings):
 
     await build_state(application, settings)
     application.state.jobs = InlineJobQueue(HANDLERS, background=False)
+    application.state.llm = FakeLLM()
     yield application
 
 
@@ -97,3 +98,109 @@ async def explorer_client(user_client: AsyncClient) -> AsyncClient:
     r = await user_client.post("/character/bikes", json={"name": "Boardman ADV 8.8", "bikeType": "GRAVEL"})
     assert r.status_code == 201, r.text
     return user_client
+
+
+# --- Reading a rider's sentence ------------------------------------------------
+#
+# There is no keyword parser any more: Claude reads the request (see
+# app/routing/preferences.py). These tests are about what the planner *does* with
+# a reading, so the model is scripted rather than called — the script says what
+# it read, in the same shape the schema asks for.
+#
+# Whether the real model reads a sentence correctly is a different question, and
+# tests/test_request_reading.py asks it against the live API.
+
+PARSE_FIELDS = (
+    "destination",
+    "area",
+    "distanceKm",
+    "stops",
+    "trafficAversion",
+    "cyclewayPreference",
+    "gravelPreference",
+    "scenicPreference",
+    "hillTolerance",
+    "loop",
+)
+
+
+def parse(**fields) -> dict:
+    """A model reply: everything the sentence did not say comes back null."""
+    unknown = set(fields) - set(PARSE_FIELDS)
+    assert not unknown, f"not in the schema: {unknown}"
+    return {name: None for name in PARSE_FIELDS} | fields
+
+
+def stops(*categories, count=None, position=None, quality=False) -> dict:
+    return {
+        "categories": list(categories),
+        "count": count,
+        "preferredPosition": position,
+        "quality": quality,
+    }
+
+
+# What the model reads for each sentence the tests use. A sentence that is not
+# here comes back unread, so a test using a new one fails loudly instead of
+# quietly planning a ride from nothing.
+SCRIPT: dict[str, dict] = {
+    "quiet roads": parse(trafficAversion=0.95),
+    "a quiet 20 km loop": parse(trafficAversion=0.95, distanceKm={"target": 20, "tolerance": 3}, loop=True),
+    "a 12 km loop": parse(distanceKm={"target": 12, "tolerance": 3}, loop=True),
+    "through 3 cafes": parse(stops=stops("CAFE", count=3)),
+    "a biker ride in notting hill with about 5 pubs": parse(
+        area={"query": "notting hill"}, stops=stops("PUB", count=5)
+    ),
+    "I want the ride to be through 3 top cafes or cultural": parse(
+        stops=stops("CAFE", "CULTURAL", count=3, quality=True)
+    ),
+    "I want to go to the Aragon Tower and 2 pubs on the way": parse(
+        destination={"query": "aragon tower"}, stops=stops("PUB", count=2, position=0.5), loop=False
+    ),
+    "go to the Emerald Spire of Deptford": parse(destination={"query": "Emerald Spire of Deptford"}, loop=False),
+    "A gravel heavy ride with 1 nice cafe stop": parse(
+        gravelPreference=0.9, stops=stops("CAFE", count=1, quality=True)
+    ),
+    "a gravel heavy 10 km loop with 3 pubs": parse(
+        gravelPreference=0.9, distanceKm={"target": 10, "tolerance": 3}, stops=stops("PUB", count=3), loop=True
+    ),
+    "around 25 km, quiet roads, a pub near the end": parse(
+        distanceKm={"target": 25, "tolerance": 4},
+        trafficAversion=0.95,
+        stops=stops("PUB", count=1, position=0.8),
+    ),
+    # Nothing a planner can use, which is itself an answer.
+    "zxq blorp": parse(),
+}
+
+
+class FakeLLM:
+    """Claude's seat in the tests. `reply` overrides the script for one test."""
+
+    enabled = True
+
+    def __init__(self, reply: dict | None = None, *, use_script: bool = True) -> None:
+        self.reply = reply
+        self.use_script = use_script
+        self.asked: list[str] = []
+
+    async def extract(self, system: str, user: str, schema: dict) -> dict | None:
+        self.asked.append(user)
+        if self.reply is not None:
+            return self.reply
+        return SCRIPT.get(user) if self.use_script else None
+
+    async def complete_json(self, system: str, user: str, schema_hint: str) -> dict | None:
+        return None
+
+
+@pytest.fixture
+def reading(app):
+    """Swap in what the model read, for one test: `reading(parse(loop=True))`."""
+
+    def use(reply: dict | None = None, *, use_script: bool = False) -> FakeLLM:
+        fake = FakeLLM(reply, use_script=use_script)
+        app.state.llm = fake
+        return fake
+
+    return use
