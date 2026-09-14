@@ -19,7 +19,8 @@ let package = Package(
         .testTarget(
             name: "RoadsAndRunesCoreTests",
             dependencies: ["RoadsAndRunesCore"],
-            path: "Tests/RoadsAndRunesCoreTests"
+            path: "Tests/RoadsAndRunesCoreTests",
+            resources: [.copy("Resources")]
         ),
     ]
 )

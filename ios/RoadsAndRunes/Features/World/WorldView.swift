@@ -121,7 +121,17 @@ struct WorldView: View {
 
     @ViewBuilder
     private func bottomCard(_ model: WorldViewModel) -> some View {
-        if let place = model.selectedPlace {
+        if let object = model.selectedObject {
+            EncounterCard(
+                object: object,
+                distanceMeters: model.position.map { GeoMath.distance($0, object.coordinate) },
+                units: model.units,
+                onPlan: { directionsTo = WorldViewModel.place(for: object) },
+                onClose: { withAnimation(.snappy) { model.closeObject() } }
+            )
+            .padding(.horizontal, 12)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        } else if let place = model.selectedPlace {
             PlaceCard(
                 place: place,
                 distanceMeters: model.position.map { GeoMath.distance($0, place.coordinate) },

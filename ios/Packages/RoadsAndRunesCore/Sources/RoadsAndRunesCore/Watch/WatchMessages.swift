@@ -96,13 +96,17 @@ public struct WatchNavigationUpdate: Codable, Hashable, Sendable {
     public var latitude: Double?
     public var longitude: Double?
     public var timestamp: Date
+    /// "Bog Wraith · 120 m · pace 60%": the nearest thing in the world, if any.
+    public var encounterLine: String?
 
     public init(
         state: NavigationState, instruction: Instruction? = nil, distanceToInstructionMeters: Double? = nil,
         nextInstructionText: String? = nil, objectiveTitle: String? = nil, objectiveDistanceMeters: Double? = nil,
         distanceMeters: Double, elapsedSeconds: Double, elevationGainMeters: Double, heartRate: Int? = nil,
-        speedMps: Double? = nil, latitude: Double? = nil, longitude: Double? = nil, timestamp: Date = Date()
+        speedMps: Double? = nil, latitude: Double? = nil, longitude: Double? = nil, timestamp: Date = Date(),
+        encounterLine: String? = nil
     ) {
+        self.encounterLine = encounterLine
         self.state = state
         self.instruction = instruction
         self.distanceToInstructionMeters = distanceToInstructionMeters

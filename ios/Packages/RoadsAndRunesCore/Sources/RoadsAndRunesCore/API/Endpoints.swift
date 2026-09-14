@@ -71,6 +71,14 @@ public enum Endpoints {
     public static func changeClass(_ body: CharacterClassChange) throws -> Endpoint { try .json(.patch, "/character", body: body) }
     public static func resetCharacter() -> Endpoint { Endpoint(method: .delete, path: "/character") }
     public static func wallet() -> Endpoint { Endpoint(method: .get, path: "/wallet") }
+    public static func worldObjects(near center: Coordinate, radiusMeters: Double) -> Endpoint {
+        Endpoint(method: .get, path: "/world/objects", query: [
+            QueryItem("latitude", String(center.latitude)), QueryItem("longitude", String(center.longitude)),
+            QueryItem("radiusMeters", String(Int(radiusMeters))),
+        ])
+    }
+    public static func worldObject(id: UUID) -> Endpoint { Endpoint(method: .get, path: "/world/objects/\(id.uuidString)") }
+    public static func lure(_ body: LureRequest) throws -> Endpoint { try .json(.post, "/world/objects/lure", body: body) }
     public static func walletTransactions(limit: Int?, cursor: String?) -> Endpoint {
         var query: [QueryItem] = []
         if let limit { query.append(QueryItem("limit", String(limit))) }

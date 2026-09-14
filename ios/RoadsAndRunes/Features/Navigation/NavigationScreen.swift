@@ -47,6 +47,12 @@ struct NavigationScreen: View {
                     )
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
+                if let encounter = recorder.encounter {
+                    EncounterBanner(status: encounter, formatter: formatter) { note in
+                        recorder.complete(encounter: encounter.object, note: note, photoTaken: false)
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
                 if let objective = recorder.currentObjective, objective.needsRider {
                     ScribeActions(objective: objective) { note in
                         Task { await recorder.complete(objective: objective, note: note) }
@@ -362,6 +368,59 @@ struct NearbyStopCard: View {
         .background(Theme.Colors.sage, in: Capsule())
         .shadow(color: Theme.Colors.ink.opacity(0.2), radius: 8, y: 4)
         .accessibilityIdentifier("nearbyStop")
+    }
+}
+
+/// The nearest thing in the world and how the fight is going: "Bog Wraith · 120 m",
+/// the way in, and a bar that fills as the fast kilometre or the rune comes together.
+struct EncounterBanner: View {
+    let status: EncounterStatus
+    let formatter: UnitFormatter
+    var onNote: (String) -> Void = { _ in }
+    @State private var writingNote = false
+
+    private var loreMethod: KillMethod? { status.object.monster?.killMethods.first { $0.method == .lore } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                EncounterGlyph(kind: status.object.kind, bounty: status.object.isBounty, size: 34)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(status.object.name).font(Theme.Typography.text(15, .bold)).foregroundStyle(Theme.Colors.cream).lineLimit(1)
+                    Text(status.hint ?? (status.object.kind == .chest ? "pass close by to open it" : "pass close by to pick it up"))
+                        .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.cream.opacity(0.85)).lineLimit(2)
+                }
+                Spacer(minLength: 8)
+                Text(formatter.distance(meters: status.distanceMeters))
+                    .font(Theme.Typography.text(17, .bold).monospacedDigit()).foregroundStyle(Theme.Colors.cream)
+            }
+            if let progress = status.progress {
+                ProgressView(value: min(1, max(0, progress))).tint(Theme.Colors.cream)
+                    .accessibilityIdentifier("encounter.progress")
+            }
+            if let lore = loreMethod, status.object.kind == .monster {
+                Button {
+                    writingNote = true
+                } label: {
+                    Label(lore.params["requires"]?.arrayValue?.contains(.string("photo")) == true ? "Write a note (and take a photo)" : "Write a note", systemImage: "square.and.pencil")
+                        .font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink)
+                        .padding(.horizontal, 12).frame(height: 34).background(Theme.Colors.cream, in: Capsule())
+                }
+                .buttonStyle(.pressable)
+                .sheet(isPresented: $writingNote) {
+                    NoteSheet(title: status.object.name) { note in
+                        onNote(note)
+                        writingNote = false
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .background(Theme.Colors.terracottaDeep, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .shadow(color: Theme.Colors.ink.opacity(0.2), radius: 8, y: 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("encounter")
     }
 }
 

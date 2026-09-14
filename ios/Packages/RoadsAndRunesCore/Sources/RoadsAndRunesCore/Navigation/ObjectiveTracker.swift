@@ -119,6 +119,8 @@ public struct ObjectiveTracker: Sendable {
                 }
             case .photoLocation, .writeNote, .completeWithFriend, .completeRoute, .unknown:
                 completed = false  // these need the rider to act, or the server to decide
+            case .slayMonster, .openChest, .collect:
+                completed = false  // the encounter tracker marks these when the world object is claimed
             }
             if completed {
                 completedObjectiveIDs.insert(objective.id)

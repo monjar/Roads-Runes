@@ -210,6 +210,27 @@ public enum SampleData {
         totalDistanceMeters: 812_000, totalElevationMeters: 6200, ridesCompleted: 41, averageSpeedMps: 4.6, maxSpeedMps: 14.2
     )
 
+    public static let sampleMonster = WorldObject(
+        id: UUID(uuidString: "8A1F0B2C-0000-4000-8000-00000000A001")!, kind: .monster, tier: 2,
+        latitude: 51.4952, longitude: -0.0265, name: "Bog Wraith", anchorName: "Southwark Park", rewardAC: 150,
+        expiresAt: referenceDate.addingTimeInterval(3 * 86_400),
+        monster: MonsterInfo(hp: 200, flavour: "A cold patch of air that follows the towpath.", killMethods: [
+            KillMethod(method: .pace, params: ["windowMeters": .number(1000), "paceSecPerKm": .object(["RIDE": .number(130), "RUN": .number(330), "WALK": .number(660)]), "searchRadiusMeters": .number(1000)], hint: "Cover 1000 m at 2:10/km or faster within a kilometre of it."),
+            KillMethod(method: .rune, params: ["shape": .string("TRIANGLE"), "scoreThreshold": .number(0.22), "searchRadiusMeters": .number(1000), "minLengthMeters": .number(300), "maxLengthMeters": .number(4000)], hint: "Trace a triangle with your track, within a kilometre of it."),
+        ])
+    )
+    public static let sampleChest = WorldObject(
+        id: UUID(uuidString: "8A1F0B2C-0000-4000-8000-00000000A002")!, kind: .chest, tier: 1,
+        latitude: 51.4881, longitude: -0.0202, name: "Old chest", anchorName: "Stave Hill", rewardAC: 25,
+        expiresAt: referenceDate.addingTimeInterval(3 * 86_400)
+    )
+    public static let samplePiece = WorldObject(
+        id: UUID(uuidString: "8A1F0B2C-0000-4000-8000-00000000A003")!, kind: .collectable, tier: 1,
+        latitude: 51.4925, longitude: -0.0340, name: "Ansuz (Old Runes)", anchorName: "The Crown", rewardAC: 10,
+        expiresAt: referenceDate.addingTimeInterval(3 * 86_400), setId: "RUNES", piece: "Ansuz"
+    )
+    public static let sampleObjects: [WorldObject] = [sampleMonster, sampleChest, samplePiece]
+
     public static let sampleWorld = WorldSnapshot(
         center: origin, h3Resolution: 9,
         cells: [
@@ -219,7 +240,8 @@ public enum SampleData {
         ],
         discoveries: sampleDiscoveries,
         questMarkers: [QuestMarker(questId: questId, title: sampleQuest.title, latitude: 51.5, longitude: -0.02, difficulty: .moderate, questType: "EXPLORE_REGION", status: .available)],
-        featureFlags: ["fog_of_war": false, "story_quests": false]
+        featureFlags: ["fog_of_war": false, "story_quests": false],
+        objects: sampleObjects
     )
 
     // MARK: Social & meta

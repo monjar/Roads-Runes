@@ -141,6 +141,9 @@ final class MainFlowsUITests: XCTestCase {
         let stop = app.buttons.matching(identifier: "routeStop").matching(NSPredicate(format: "value == %@", "cafe")).firstMatch
         XCTAssertTrue(stop.waitForExistence(timeout: 30), "The route came back with no café to show")
         scrollTo(stop)
+        // The Start button floats over the bottom of the sheet; a row under it is
+        // "hittable" to XCUI and untouchable to a finger.
+        if stop.frame.midY > app.frame.height - 200 { app.swipeUp(); _ = stop.waitForExistence(timeout: 5) }
         tapOffCentre(stop, dx: 0.3)
         let callout = app.descendants(matching: .any).matching(identifier: "stopCallout").firstMatch
         XCTAssertTrue(callout.waitForExistence(timeout: 10), "Picking a stop showed nothing on the map")

@@ -143,6 +143,13 @@ struct AdventureSummaryView: View {
         }
         out += summary.abilitiesUnlocked.map { "\($0.name) available" }
         out += (summary.titlesUnlocked ?? []).map { "Title: \($0)" }
+        for taken in summary.worldObjects?.claimed ?? [] {
+            let verb = taken.kind == .monster ? "Beat" : (taken.kind == .chest ? "Opened" : "Found")
+            out.append("\(verb) \(taken.name) · +\(taken.rewardAC) AC")
+        }
+        for missed in summary.worldObjects?.missed ?? [] where missed.kind == .monster && missed.reason == "UNBEATEN" {
+            out.append("\(missed.name) shrugged it off")
+        }
         return out
     }
 }

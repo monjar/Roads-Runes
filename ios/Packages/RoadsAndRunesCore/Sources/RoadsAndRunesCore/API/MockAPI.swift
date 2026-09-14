@@ -17,6 +17,7 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     var storedCharacter: Character?
     var storedCoins = 0
     var storedTransactions: [WalletTransaction] = []
+    var storedObjects: [UUID: WorldObject] = Dictionary(uniqueKeysWithValues: SampleData.sampleObjects.map { ($0.id, $0) })
     var storedBikes: [Bike]
     var storedRiderProfile: RiderProfile
     var storedQuests: [UUID: Quest]
@@ -204,6 +205,23 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     public func walletTransactions(limit: Int?, cursor: String?) async throws -> Page<WalletTransaction> {
         try await run { Page(items: Array(self.storedTransactions.prefix(limit ?? 25)), nextCursor: nil) }
     }
+    public func worldObjects(near center: Coordinate, radiusMeters: Double) async throws -> [WorldObject] {
+        try await run { self.storedObjects.values.filter { $0.status == .spawned && GeoMath.distance(center, $0.coordinate) <= radiusMeters } }
+    }
+    public func worldObject(id: UUID) async throws -> WorldObject {
+        try await run { try self.storedObjects[id] ?? { throw self.notFound("World object") }() }
+    }
+    public func lure(at center: Coordinate) async throws -> [WorldObject] {
+        try await run {
+            if self.storedCoins < 50 {
+                throw APIError.server(code: "INSUFFICIENT_AC", message: "That costs 50 Active Coins and you have \(self.storedCoins)", status: 409)
+            }
+            self.storedCoins -= 50
+            let lured = WorldObject(id: UUID(), kind: .monster, latitude: center.latitude + 0.004, longitude: center.longitude + 0.003, name: "Lured Fen Troll", anchorName: "the towpath", rewardAC: 60, expiresAt: Date().addingTimeInterval(3 * 86_400), monster: SampleData.sampleMonster.monster)
+            self.storedObjects[lured.id] = lured
+            return self.storedObjects.values.filter { $0.status == .spawned }
+        }
+    }
     public func abilities() async throws -> [AbilityState] { try await run { try self.requireCharacter().abilities } }
     public func unlockAbility(id: String) async throws -> Character {
         try await run {
@@ -261,6 +279,7 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
                 QuestMarker(questId: $0.id, title: $0.title, latitude: $0.origin.latitude, longitude: $0.origin.longitude,
                             difficulty: $0.difficulty, questType: $0.questType, status: $0.status)
             }
+            world.objects = self.storedObjects.values.filter { $0.status == .spawned }
             return world
         }
     }

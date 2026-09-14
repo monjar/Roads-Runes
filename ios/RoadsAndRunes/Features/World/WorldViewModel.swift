@@ -16,6 +16,8 @@ final class WorldViewModel {
     private(set) var visibleBox: BoundingBox?
 
     var selectedPlace: Place?
+    /// A chest, piece or monster the rider tapped; the card says how to beat it.
+    var selectedObject: WorldObject?
     private(set) var results: [Place] = []
     private(set) var resultsTitle: String?
     private(set) var activeShortcut: PlaceShortcut?
@@ -80,11 +82,29 @@ final class WorldViewModel {
         if let selectedPlace {
             out.append(MapMarker(id: "place-\(selectedPlace.id)", coordinate: selectedPlace.coordinate, kind: .place, title: selectedPlace.name))
         }
+        out += worldObjects.map { object in
+            MapMarker(id: "object-\(object.id.uuidString)", coordinate: object.coordinate, kind: Self.markerKind(for: object), title: object.name)
+        }
         return out
     }
 
+    var worldObjects: [WorldObject] { (snapshot?.worldObjects ?? []).filter { $0.status == .spawned } }
+
+    static func markerKind(for object: WorldObject) -> MapMarker.Kind {
+        if object.isBounty { return .bounty }
+        switch object.kind {
+        case .chest: return .chest
+        case .collectable: return .collectable
+        default: return .monster
+        }
+    }
+
     func tapMarker(_ marker: MapMarker) {
-        if let place = results.first(where: { "result-\($0.id)" == marker.id }) {
+        if let object = worldObjects.first(where: { "object-\($0.id.uuidString)" == marker.id }) {
+            selectedPlace = nil
+            selectedObject = object
+            camera = MapCamera(center: object.coordinate)
+        } else if let place = results.first(where: { "result-\($0.id)" == marker.id }) {
             select(place, moveCamera: false)
         } else if let discovery = snapshot?.discoveries.first(where: { "discovery-\($0.id.uuidString)" == marker.id }) {
             select(Self.place(from: discovery), moveCamera: false)
@@ -94,6 +114,7 @@ final class WorldViewModel {
     // MARK: Places
 
     func select(_ place: Place, moveCamera: Bool = true) {
+        selectedObject = nil
         selectedPlace = place
         if moveCamera { camera = MapCamera(center: place.coordinate) }
         if place.address == nil { Task { await fillAddress(for: place) } }
@@ -105,6 +126,7 @@ final class WorldViewModel {
             select(PlaceSearch.place(from: feature), moveCamera: false)
         } else {
             selectedPlace = nil
+            selectedObject = nil
         }
     }
 
@@ -118,6 +140,16 @@ final class WorldViewModel {
     }
 
     func closePlace() { selectedPlace = nil }
+    func closeObject() { selectedObject = nil }
+
+    /// A world object as somewhere to go: the planner takes a place.
+    static func place(for object: WorldObject) -> Place {
+        Place(
+            id: "object-\(object.id.uuidString)", name: object.name, category: object.anchorName, address: nil,
+            symbol: object.kind == .monster ? "flame.fill" : (object.kind == .chest ? "shippingbox.fill" : "sparkles"),
+            coordinate: object.coordinate, source: .pin
+        )
+    }
 
     func locateMe() {
         guard let position else { return }

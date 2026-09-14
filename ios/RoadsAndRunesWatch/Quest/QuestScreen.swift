@@ -24,6 +24,14 @@ struct QuestScreen: View {
                 .lineLimit(2)
                 .minimumScaleFactor(0.8)
                 .padding(.top, 2)
+            if let encounter = store.encounterLine {
+                Text(encounter)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(WatchTheme.accent)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+            }
             if let objective = store.objectiveTitle {
                 Text("OBJECTIVE")
                     .font(.system(size: 11))

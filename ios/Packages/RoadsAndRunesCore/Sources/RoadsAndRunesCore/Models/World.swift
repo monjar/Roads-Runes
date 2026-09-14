@@ -45,15 +45,20 @@ public struct WorldSnapshot: Codable, Hashable, Sendable {
     public var discoveries: [DiscoverySummary]
     public var questMarkers: [QuestMarker]
     public var featureFlags: [String: Bool]
+    /// Chests, pieces and monsters placed for this player; nil from a server that predates them.
+    public var objects: [WorldObject]?
 
-    public init(center: Coordinate, h3Resolution: Int, cells: [ExplorationCell], discoveries: [DiscoverySummary], questMarkers: [QuestMarker], featureFlags: [String: Bool]) {
+    public init(center: Coordinate, h3Resolution: Int, cells: [ExplorationCell], discoveries: [DiscoverySummary], questMarkers: [QuestMarker], featureFlags: [String: Bool], objects: [WorldObject]? = nil) {
         self.center = center
         self.h3Resolution = h3Resolution
         self.cells = cells
         self.discoveries = discoveries
         self.questMarkers = questMarkers
         self.featureFlags = featureFlags
+        self.objects = objects
     }
+
+    public var worldObjects: [WorldObject] { objects ?? [] }
 
     public func isEnabled(_ flag: String) -> Bool { featureFlags[flag] ?? false }
 }

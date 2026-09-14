@@ -31,6 +31,10 @@ final class RideRecorder {
     /// "your café is 90 m away" rather than leaving them to spot it going past.
     private(set) var nearbyStop: RoutePOI?
     private var arrivedStops: Set<UUID> = []
+    /// The nearest chest, piece or monster and how the fight is going; claims are
+    /// provisional until the summary says.
+    private(set) var encounter: EncounterStatus?
+    private(set) var recentClaim: WorldObject?
     private(set) var newTerritoryMeters: Double = 0
     private(set) var localCellStates: [String: CellState] = [:]
     var recoverableRide: ActiveRideState?
@@ -53,6 +57,7 @@ final class RideRecorder {
     @ObservationIgnored private var statistics = RideStatistics()
     @ObservationIgnored private var progressTracker: RouteProgressTracker?
     @ObservationIgnored private var objectiveTracker: ObjectiveTracker?
+    @ObservationIgnored private var encounterTracker: EncounterTracker?
     @ObservationIgnored private var exploration: ExplorationRecorder?
     @ObservationIgnored private var rerouteAdvisor = RerouteAdvisor()
     @ObservationIgnored private var pendingPoints: [RidePoint] = []
@@ -116,6 +121,7 @@ final class RideRecorder {
         rerouteAdvisor = RerouteAdvisor()
         transition(to: .ready)
         configureTrackers(for: package, start: location.lastFix?.coordinate ?? package.route.path.first ?? package.route.instructions.first?.coordinate)
+        await loadEncounters(around: location.lastFix?.coordinate ?? package.route.path.first)
 
         if location.authorization != .always { location.requestAlways() }
         await health.requestAuthorization()
@@ -164,7 +170,8 @@ final class RideRecorder {
         let completion = RideComplete(
             endedAt: endedAt, distanceMeters: stats.distanceMeters, durationSeconds: Int(stats.elapsedSeconds), movingSeconds: Int(stats.movingSeconds),
             elevationGainMeters: stats.elevationGainMeters, activeCalories: nil, points: pendingPoints, cellsVisited: Array(Set(cells)),
-            objectiveEvents: pendingObjectiveEvents, healthKitWorkoutId: workoutId
+            objectiveEvents: pendingObjectiveEvents, healthKitWorkoutId: workoutId,
+            encounterEvents: encounterTracker?.pendingEvents ?? []
         )
         pendingPoints = []
         pendingObjectiveEvents = []
@@ -196,6 +203,9 @@ final class RideRecorder {
         currentObjective = nil
         progressTracker = nil
         objectiveTracker = nil
+        encounterTracker = nil
+        encounter = nil
+        recentClaim = nil
         exploration = nil
         offRouteSince = nil
         recoverableRide = nil
@@ -247,6 +257,15 @@ final class RideRecorder {
             if !events.isEmpty { handle(objectiveEvents: events) }
             currentObjective = tracker.pendingObjectives.first
         }
+        if var tracker = encounterTracker {
+            let result = tracker.update(
+                position: enriched.coordinate, timestamp: enriched.timestamp, altitude: enriched.altitude,
+                elevationGainMeters: stats.elevationGainMeters
+            )
+            encounterTracker = tracker
+            encounter = result.status
+            for object in result.claimed { handle(claimed: object, at: enriched.coordinate) }
+        }
         if pendingPoints.count >= Config.pointsUploadBatchSize {
             let batch = pendingPoints
             pendingPoints = []
@@ -254,6 +273,58 @@ final class RideRecorder {
         }
         sendWatchUpdate()
         persist()
+    }
+
+    /// The chests, pieces and monsters around the start, for live feedback on the way.
+    private func loadEncounters(around coordinate: Coordinate?) async {
+        guard let coordinate else { return }
+        let objects = (try? await api.worldObjects(near: coordinate, radiusMeters: 8000)) ?? []
+        encounterTracker = EncounterTracker(objects: objects, activity: activity)
+    }
+
+    /// A chest passed or a monster beaten, as far as the phone can tell: the quest
+    /// objective that points at it completes provisionally, the Watch buzzes, and
+    /// the summary has the last word.
+    private func handle(claimed object: WorldObject, at position: Coordinate) {
+        recentClaim = object
+        if var tracker = objectiveTracker, let quest {
+            for objective in quest.objectives where !completedObjectiveIDs.contains(objective.id) {
+                let pointsAtIt = objective.extra?["objectId"]?.stringValue == object.id.uuidString
+                let kindMatches = objective.extra?["kind"]?.stringValue == object.kind.rawValue
+                let wants: Bool = {
+                    switch objective.objectiveType {
+                    case .slayMonster: return object.kind == .monster && (pointsAtIt || objective.extra?["objectId"] == nil)
+                    case .openChest: return object.kind == .chest && (pointsAtIt || kindMatches)
+                    case .collect: return object.kind == .collectable
+                    default: return false
+                    }
+                }()
+                guard wants, let event = tracker.markCompleted(objective.id, at: position, timestamp: Date()) else { continue }
+                objectiveTracker = tracker
+                handle(objectiveEvents: [event])
+            }
+        }
+        let verb = object.kind == .monster ? "Beaten" : (object.kind == .chest ? "Opened" : "Found")
+        watch.send(objectiveCompleted: WatchObjectiveCompleted(title: "\(verb): \(object.name)", xp: nil))
+        analytics.track(.worldObjectClaimed, properties: ["kind": object.kind.rawValue, "name": object.name])
+    }
+
+    /// The Scribe's way past a monster: a note (and, for anyone else, a photo) within reach of it.
+    func complete(encounter object: WorldObject, note: String?, photoTaken: Bool) {
+        guard var tracker = encounterTracker else { return }
+        guard tracker.markLore(object.id, at: location.lastFix?.coordinate, timestamp: Date(), note: note, photoTaken: photoTaken) != nil else { return }
+        encounterTracker = tracker
+        handle(claimed: object, at: location.lastFix?.coordinate ?? object.coordinate)
+        encounter = nil
+    }
+
+    private var encounterLine: String? {
+        guard let encounter else { return nil }
+        let distance = Int(encounter.distanceMeters.rounded())
+        if let progress = encounter.progress, let method = encounter.method {
+            return "\(encounter.object.name) · \(distance) m · \(method.rawValue.lowercased()) \(Int(progress * 100))%"
+        }
+        return "\(encounter.object.name) · \(distance) m"
     }
 
     func record(heartRate bpm: Int) {
@@ -428,7 +499,8 @@ final class RideRecorder {
             nextInstructionText: nextText, objectiveTitle: currentObjective?.title, objectiveDistanceMeters: objectiveDistance,
             distanceMeters: stats.distanceMeters, elapsedSeconds: stats.elapsedSeconds, elevationGainMeters: stats.elevationGainMeters,
             heartRate: stats.lastHeartRateBpm, speedMps: stats.currentSpeedMps,
-            latitude: lastFix?.coordinate.latitude, longitude: lastFix?.coordinate.longitude
+            latitude: lastFix?.coordinate.latitude, longitude: lastFix?.coordinate.longitude,
+            encounterLine: encounterLine
         )
         watch.send(update: update, force: force)
     }

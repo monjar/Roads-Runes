@@ -82,6 +82,9 @@ final class RideStore {
 
     var questTitle: String? { summary?.questTitle }
 
+    /// The nearest thing in the world and how the fight is going, from the phone.
+    var encounterLine: String? { update?.encounterLine }
+
     var objectiveTitle: String? {
         if let title = update?.objectiveTitle { return title }
         return summary?.objectives.first?.title

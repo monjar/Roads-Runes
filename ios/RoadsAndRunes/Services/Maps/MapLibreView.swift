@@ -8,6 +8,8 @@ struct MapMarker: Identifiable, Hashable {
         case quest, questActive, objective, objectiveDone, discovery, poi, place, result
         /// A stop on the route — a café, a pub, a landmark — and the one being read.
         case stop, stopActive
+        /// The world's objects: a chest to pass, a piece to gather, a monster to beat, the day's bounty.
+        case chest, collectable, monster, bounty
     }
 
     let id: String
@@ -400,6 +402,28 @@ final class MarkerAnnotationView: MLNAnnotationView {
                 image.contentMode = .center
                 addSubview(image)
             }
+        case .chest, .collectable, .monster, .bounty:
+            // The world's objects read as what they are: a box, a spark, a flame; the
+            // bounty wears a gold ring.
+            let size: CGFloat = kind == .collectable ? 26 : 34
+            frame = CGRect(x: 0, y: 0, width: size, height: size)
+            layer.cornerRadius = size / 2
+            layer.borderWidth = kind == .bounty ? 3.5 : 2.5
+            layer.borderColor = kind == .bounty ? UIColor(red: 0.85, green: 0.65, blue: 0.13, alpha: 1).cgColor : UIColor.white.cgColor
+            backgroundColor = Self.color(for: kind)
+            let name: String = {
+                switch kind {
+                case .chest: return "shippingbox.fill"
+                case .collectable: return "sparkles"
+                default: return "flame.fill"
+                }
+            }()
+            if let glyph = UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(pointSize: size * 0.46, weight: .bold)) {
+                let image = UIImageView(image: glyph.withTintColor(.white, renderingMode: .alwaysOriginal))
+                image.frame = bounds
+                image.contentMode = .center
+                addSubview(image)
+            }
         case .quest, .questActive, .objective, .objectiveDone:
             let size: CGFloat = 30
             frame = CGRect(x: 0, y: 0, width: size, height: size)
@@ -486,6 +510,9 @@ final class MarkerAnnotationView: MLNAnnotationView {
         case .stop: return UIColor(hex: 0xC67139)
         case .stopActive: return UIColor(hex: 0x8C491A)
         case .place, .result: return UIColor(hex: 0xC67139)
+        case .chest: return UIColor(hex: 0x4A433A)
+        case .collectable: return UIColor(hex: 0x56633F)
+        case .monster, .bounty: return UIColor(hex: 0x8C491A)
         }
     }
 }

@@ -23,6 +23,8 @@ public enum AnalyticsEvent: String, CaseIterable, Hashable, Sendable {
     // Exploration & progression
     case newAreaExplored = "new_area_explored"
     case discoveryFound = "discovery_found"
+    // The world
+    case worldObjectClaimed = "world_object_claimed"
     case levelUp = "level_up"
     case abilityUnlocked = "ability_unlocked"
     // Social

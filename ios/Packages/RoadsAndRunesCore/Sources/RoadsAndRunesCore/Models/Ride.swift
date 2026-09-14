@@ -129,8 +129,11 @@ public struct RideComplete: Codable, Hashable, Sendable {
     public var cellsVisited: [String]
     public var objectiveEvents: [ObjectiveEvent]
     public var healthKitWorkoutId: String?
+    /// What the phone thinks it beat or opened on the way; optional so queued completions from before decode.
+    public var encounterEvents: [EncounterEvent]?
 
-    public init(endedAt: Date, distanceMeters: Double, durationSeconds: Int, movingSeconds: Int? = nil, elevationGainMeters: Double = 0, activeCalories: Double? = nil, points: [RidePoint] = [], cellsVisited: [String] = [], objectiveEvents: [ObjectiveEvent] = [], healthKitWorkoutId: String? = nil) {
+    public init(endedAt: Date, distanceMeters: Double, durationSeconds: Int, movingSeconds: Int? = nil, elevationGainMeters: Double = 0, activeCalories: Double? = nil, points: [RidePoint] = [], cellsVisited: [String] = [], objectiveEvents: [ObjectiveEvent] = [], healthKitWorkoutId: String? = nil, encounterEvents: [EncounterEvent]? = nil) {
+        self.encounterEvents = encounterEvents
         self.endedAt = endedAt
         self.distanceMeters = distanceMeters
         self.durationSeconds = durationSeconds
@@ -209,8 +212,11 @@ public struct AdventureSummary: Codable, Hashable, Sendable {
     public var acAwarded: Int?
     public var acBreakdown: [ACBreakdownEntry]?
     public var walletBalance: Int?
+    /// What the ride took from the world, and what it walked past.
+    public var worldObjects: WorldObjectOutcome?
 
-    public init(ride: Ride, quest: Quest? = nil, questCompletion: QuestCompletion? = nil, xpAwarded: Int, xpBreakdown: [XPBreakdownEntry], newCells: Int, newTerritoryMeters: Double, newRoadsMeters: Double, discoveries: [DiscoverySummary], levelUps: [LevelUp], abilitiesUnlocked: [Ability], titlesUnlocked: [String]? = nil, flags: [String], acAwarded: Int? = nil, acBreakdown: [ACBreakdownEntry]? = nil, walletBalance: Int? = nil) {
+    public init(ride: Ride, quest: Quest? = nil, questCompletion: QuestCompletion? = nil, xpAwarded: Int, xpBreakdown: [XPBreakdownEntry], newCells: Int, newTerritoryMeters: Double, newRoadsMeters: Double, discoveries: [DiscoverySummary], levelUps: [LevelUp], abilitiesUnlocked: [Ability], titlesUnlocked: [String]? = nil, flags: [String], acAwarded: Int? = nil, acBreakdown: [ACBreakdownEntry]? = nil, walletBalance: Int? = nil, worldObjects: WorldObjectOutcome? = nil) {
+        self.worldObjects = worldObjects
         self.ride = ride
         self.quest = quest
         self.questCompletion = questCompletion

@@ -250,6 +250,9 @@ public actor APIClient: RoadsAndRunesAPI {
     public func resetCharacter() async throws { try await requestNoContent(Endpoints.resetCharacter()) }
     public func wallet() async throws -> Wallet { try await request(Endpoints.wallet()) }
     public func walletTransactions(limit: Int?, cursor: String?) async throws -> Page<WalletTransaction> { try await request(Endpoints.walletTransactions(limit: limit, cursor: cursor)) }
+    public func worldObjects(near center: Coordinate, radiusMeters: Double) async throws -> [WorldObject] { try await request(Endpoints.worldObjects(near: center, radiusMeters: radiusMeters)) }
+    public func worldObject(id: UUID) async throws -> WorldObject { try await request(Endpoints.worldObject(id: id)) }
+    public func lure(at center: Coordinate) async throws -> [WorldObject] { try await request(try Endpoints.lure(LureRequest(latitude: center.latitude, longitude: center.longitude))) }
     public func abilities() async throws -> [AbilityState] { try await request(Endpoints.abilities()) }
     public func unlockAbility(id: String) async throws -> Character { try await request(Endpoints.unlockAbility(id: id)) }
     public func bikes() async throws -> [Bike] { try await request(Endpoints.bikes()) }

@@ -66,6 +66,10 @@ public enum ObjectiveType: String, SafeEnum {
     /// Warrior: effort measured over the whole ride.
     case rideDuration = "RIDE_DURATION"
     case sustainSpeed = "SUSTAIN_SPEED"
+    /// The world: something placed for this player to beat, open or gather.
+    case slayMonster = "SLAY_MONSTER"
+    case openChest = "OPEN_CHEST"
+    case collect = "COLLECT"
     case unknown = "UNKNOWN"
 }
 
