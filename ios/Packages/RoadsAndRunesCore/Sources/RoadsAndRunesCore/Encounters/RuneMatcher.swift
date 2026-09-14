@@ -37,6 +37,7 @@ struct Complex: Equatable {
 
     static let zero = Complex(re: 0, im: 0)
     static func + (a: Complex, b: Complex) -> Complex { Complex(re: a.re + b.re, im: a.im + b.im) }
+    static func += (a: inout Complex, b: Complex) { a = Complex(re: a.re + b.re, im: a.im + b.im) }
     static func - (a: Complex, b: Complex) -> Complex { Complex(re: a.re - b.re, im: a.im - b.im) }
     static func * (a: Complex, b: Complex) -> Complex { Complex(re: a.re * b.re - a.im * b.im, im: a.re * b.im + a.im * b.re) }
     static func * (a: Complex, k: Double) -> Complex { Complex(re: a.re * k, im: a.im * k) }
@@ -71,7 +72,11 @@ public enum RuneMatcher {
         let lengths = zip(pts, pts.dropFirst()).map { ($1 - $0).magnitude }
         let total = lengths.reduce(0, +)
         guard total > 0 else { return Array(repeating: pts[0], count: n) }
-        let targets = (0..<n).map { closed ? total * Double($0) / Double(n) : total * Double($0) / Double(n - 1) }
+        // Spelled out in steps: as one expression the type checker gives up
+        // on it, and the watchOS slice of the build fails.
+        let span: Double = closed ? Double(n) : Double(n - 1)
+        let step: Double = total / span
+        let targets: [Double] = (0..<n).map { index in step * Double(index) }
         var out: [Complex] = []
         var k = 0
         var passed = 0.0
@@ -112,7 +117,7 @@ public enum RuneMatcher {
 
     static func procrustesScore(_ a: [Complex], _ b: [Complex]) -> Double {
         var s = Complex.zero
-        for (ak, bk) in zip(a, b) { s = s + ak.conjugate * bk }
+        for (ak, bk) in zip(a, b) { s += ak.conjugate * bk }
         let magnitude = s.magnitude
         if magnitude == 0 { return 2 }
         let rotation = s / magnitude

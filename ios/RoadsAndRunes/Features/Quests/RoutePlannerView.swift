@@ -275,6 +275,14 @@ struct RoutePlannerView: View {
 
     private static let presets = ["Café ride", "Pub ride", "Easy", "Gravel", "Scenic", "Quiet roads"]
 
+    /// An example of the kind of sentence the planner reads, in the shape of the
+    /// activity the rider picked.
+    private var placeholder: String {
+        model?.activity == .ride
+            ? "About 30 km, mostly quiet roads, easy gravel and a pub halfway."
+            : "About 5 km, through a park, with a café at the end."
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             Theme.Colors.cream.ignoresSafeArea()
@@ -314,7 +322,7 @@ struct RoutePlannerView: View {
                     .pickerStyle(.segmented)
                     .accessibilityIdentifier("planner.activity")
                     VStack(spacing: 14) {
-                        TextField(model.activity == .ride ? "About 30 km, mostly quiet roads, easy gravel and a pub halfway." : "About 5 km, through a park, with a café at the end.", text: $model.request, axis: .vertical)
+                        TextField(placeholder, text: $model.request, axis: .vertical)
                             .font(Theme.Typography.text(17))
                             .foregroundStyle(Theme.Colors.ink)
                             .lineLimit(2...4)
