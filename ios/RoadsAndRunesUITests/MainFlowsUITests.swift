@@ -154,7 +154,15 @@ final class MainFlowsUITests: XCTestCase {
         let marker = app.buttons.matching(NSPredicate(format: "value == %@", "stop")).firstMatch
         XCTAssertTrue(marker.waitForExistence(timeout: 10), "The stops are not on the map")
         let name = marker.label
-        marker.images.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        // The stop rows sit below the map; reaching them scrolled the map (and the glyph's
+        // on-screen position with it) off the top. Bring the map back before tapping.
+        let glyph = marker.images.firstMatch
+        var swipes = 0
+        while (glyph.frame.isEmpty || glyph.frame.minY < 160), swipes < 4 {
+            app.swipeDown()
+            swipes += 1
+        }
+        glyph.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(
             app.descendants(matching: .any).matching(identifier: "stopCallout").staticTexts[name].waitForExistence(timeout: 10),
             "Tapping \(name) on the map did not open it"
