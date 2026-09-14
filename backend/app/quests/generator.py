@@ -523,10 +523,22 @@ def generate(
     # crowded them out, and one class quest if the open ones did — whichever is
     # missing, made here if it can be, in place of the lightest pick of the other kind.
     if generated and not only_any:
+        # `candidates` has had the rider's open quests excluded from it, and a class
+        # holds only a handful of templates early on — three for a Warrior at level
+        # 1 — so a second board in the same place can find none of them left and go
+        # out all-open. A template the rider already has is the cheaper miss: the
+        # same trade `generate_quests` makes when exclusions leave nothing at all.
+        every = templates_for(ctx.character_class, ctx.class_level, ctx.unlocked_templates, activity=ctx.activity)
         for wanted_open in (True, False):
-            pool = [t for t in candidates if (t["characterClass"] == ANY_CLASS) == wanted_open]
             have = any((q.character_class == ANY_CLASS) == wanted_open for q in generated)
-            if not pool or have:
+            if have:
+                continue
+            on_board = {q.template_id for q in generated}
+            pool = [t for t in candidates if (t["characterClass"] == ANY_CLASS) == wanted_open]
+            pool = pool or [
+                t for t in every if (t["characterClass"] == ANY_CLASS) == wanted_open and t["id"] not in on_board
+            ]
+            if not pool:
                 continue
             for salt in range(200, 220):
                 quest = _try_instantiate(rng.choice(pool), ctx, salt)

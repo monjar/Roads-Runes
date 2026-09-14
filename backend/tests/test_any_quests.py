@@ -57,3 +57,26 @@ async def test_a_board_is_the_classs_and_everyones(client):
         assert r.status_code == 200, r.text
         classes = [q["characterClass"] for q in r.json()["items"]]
         assert "WARRIOR" in classes and ANY_CLASS in classes, classes
+
+
+def test_a_class_keeps_its_place_once_its_templates_are_all_on_the_board():
+    """A board excludes the templates the rider already has open, and a class
+    holds only a handful early on, so the second board in one place could find
+    none of its own left and go out all-open. Which boards that hit depended on
+    the seed, which is the user's id — here every class template is excluded and
+    every seed is checked, so it is not a matter of luck either way.
+    """
+    from dataclasses import replace
+
+    from app.quests.generator import generate
+    from tests.test_class_quests import context
+
+    for character_class in ("EXPLORER", "WIZARD", "WARRIOR", "SCRIBE"):
+        own = {t["id"] for t in templates_for(character_class, 1) if t["characterClass"] != ANY_CLASS}
+        assert own, character_class
+        for seed in range(8):
+            ctx = replace(context(character_class, class_level=1), seed=f"exhausted:{seed}")
+            board = generate(ctx, count=3, exclude_template_ids=own)
+            classes = [q.character_class for q in board]
+            assert character_class in classes, f"{character_class} seed {seed}: {classes}"
+            assert ANY_CLASS in classes, f"{character_class} seed {seed}: {classes}"
