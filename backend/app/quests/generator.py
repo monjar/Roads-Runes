@@ -519,21 +519,24 @@ def generate(
         ):
             continue
         generated.append(quest)
-    # One for anyone, if the class picks crowded it out and one can be made here.
-    open_templates = [t for t in candidates if t["characterClass"] == ANY_CLASS]
-    if open_templates and generated and not any(q.character_class == ANY_CLASS for q in generated):
-        for salt in range(200, 220):
-            quest = _try_instantiate(rng.choice(open_templates), ctx, salt)
-            if quest is None:
+    # A board is the class's and everyone's: one open quest if the class picks
+    # crowded them out, and one class quest if the open ones did — whichever is
+    # missing, made here if it can be, in place of the lightest pick of the other kind.
+    if generated and not only_any:
+        for wanted_open in (True, False):
+            pool = [t for t in candidates if (t["characterClass"] == ANY_CLASS) == wanted_open]
+            have = any((q.character_class == ANY_CLASS) == wanted_open for q in generated)
+            if not pool or have:
                 continue
-            if len(generated) >= count:
-                # The lightest class pick makes room; the list stays `count` long.
-                lightest = min(
-                    range(len(generated)),
-                    key=lambda i: template_by_id()[generated[i].template_id].get("weight", 1),
-                )
-                generated.pop(lightest)
-            generated.append(quest)
-            break
+            for salt in range(200, 220):
+                quest = _try_instantiate(rng.choice(pool), ctx, salt)
+                if quest is None:
+                    continue
+                if len(generated) >= count:
+                    others = [i for i, q in enumerate(generated) if (q.character_class == ANY_CLASS) != wanted_open]
+                    lightest = min(others, key=lambda i: template_by_id()[generated[i].template_id].get("weight", 1))
+                    generated.pop(lightest)
+                generated.append(quest)
+                break
     assert DIFFICULTIES
     return generated

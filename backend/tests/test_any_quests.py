@@ -39,3 +39,21 @@ async def test_every_board_has_a_quest_for_anyone(explorer_client):
     )
     assert r.status_code == 200, r.text
     assert any(q["characterClass"] == ANY_CLASS for q in r.json()["items"])
+
+
+async def test_a_board_is_the_classs_and_everyones(client):
+    """A Warrior at level 1 has three templates of their own against eight open ones;
+    the board still carries one of each."""
+    from tests.conftest import sign_in
+
+    await sign_in(client, subject="brenna", name="Brenna")
+    r = await client.post("/character", json={"name": "Brenna", "characterClass": "WARRIOR"})
+    assert r.status_code == 201, r.text
+    await seed_discoveries()
+    for attempt in range(3):
+        r = await client.post(
+            "/quests/generate", json={"latitude": ORIGIN[0], "longitude": ORIGIN[1] + attempt * 0.001, "count": 3}
+        )
+        assert r.status_code == 200, r.text
+        classes = [q["characterClass"] for q in r.json()["items"]]
+        assert "WARRIOR" in classes and ANY_CLASS in classes, classes
