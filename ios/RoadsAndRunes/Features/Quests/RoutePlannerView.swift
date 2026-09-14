@@ -98,6 +98,14 @@ final class RoutePlannerViewModel {
         return String((asked.prefix(1).uppercased() + asked.dropFirst()).prefix(120))
     }
 
+    /// A typed request decides its own shape: "go to the Aragon Tower" is not a loop,
+    /// and saying so here used to override the sentence the rider wrote. Only a plan
+    /// with nothing typed and nowhere picked is a loop by default.
+    private var loopForRequest: Bool? {
+        if destination != nil { return false }
+        return request.isEmpty ? true : nil
+    }
+
     /// Reads the server's loosely-typed parse back into one line a rider can check.
     static func understood(from parsed: [String: JSONValue]?) -> String? {
         guard let parsed else { return nil }
@@ -113,6 +121,9 @@ final class RoutePlannerViewModel {
 
     private static func legacyParts(of parsed: [String: JSONValue]) -> [String] {
         var parts: [String] = []
+        if let to = parsed["destination"]?.objectValue, let name = (to["name"] ?? to["query"])?.stringValue {
+            parts.append("to \(name)")
+        }
         if let area = parsed["area"]?.objectValue, let name = (area["name"] ?? area["query"])?.stringValue {
             parts.append(name)
         }
@@ -187,7 +198,7 @@ final class RoutePlannerViewModel {
         do {
             let response = try await container.api.generateRoutes(RouteGenerateRequest(
                 origin: origin, destination: destination?.coordinate, bikeId: activity == .ride ? selectedBike?.id : nil, questId: quest?.id,
-                distanceTargetKm: distanceKm, loop: destination == nil, request: request.isEmpty ? nil : request,
+                distanceTargetKm: distanceKm, loop: loopForRequest, request: request.isEmpty ? nil : request,
                 activity: activity
             ))
             // The quest's own route stays first so the rider can always go back to it.

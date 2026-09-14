@@ -25,6 +25,41 @@ Labels are never "Route 1/2/3": Relaxed, Adventure, Scenic, Direct, Gravel,
 Challenge, chosen per bike type and adjusted when the request asks for
 gravel, hills or a destination.
 
+## Reading a request
+
+A rider types one sentence, and it can name two different things:
+
+| They wrote | Parses to | The ride |
+|---|---|---|
+| "a loop **in** Notting Hill with 5 pubs" | `area` | Moves there, wanders around it, comes home |
+| "go **to** the Aragon Tower, 2 pubs on the way" | `destination` | Starts where they are, finishes at the tower |
+
+`app/routing/preferences.py` finds both with the same trick: guess a phrase
+loosely, then let `app/routing/geocode.py` decide whether it is a place. The
+run-up is trimmed first, so "I want to **go to** the Aragon Tower" asks about
+"aragon tower" and "I want to **go for** a 20 km ride" asks about nothing.
+
+The two resolve differently, because a wrong answer costs differently:
+
+* `area` searches Photon and Nominatim for ground — `place`, `boundary`,
+  `leisure`, `natural`, `landuse`, `tourism`. The whole ride moves there, so a
+  shop matching the phrase would waste the ride.
+* `destination` (`kind="point"`) accepts nearly anything named: a building, a
+  tower, a bridge, a pub, a station. The guard is the name instead — the answer
+  has to be called what the rider called it, or a point search will happily
+  return a bakery for "the way home".
+
+A destination that resolves becomes a real waypoint: `loop` defaults off, the
+stops are picked from the corridor along the way (`_pick_stops_between`, in the
+order they are reached) rather than rung around the origin, and the target
+distance comes from the trip rather than the app's slider. One that does not
+resolve is said out loud in `parsedRequest.notes` — riding somewhere else
+quietly is the worse answer.
+
+The LLM (`LLM_PROVIDER=anthropic`) reads the same two fields and never returns
+coordinates; the geocoder does that, so a hallucinated point cannot reach
+navigation (spec §20, §31).
+
 ## Engine
 
 `GraphHopperClient` posts to `/route` with `ch.disable=true`, a custom model,

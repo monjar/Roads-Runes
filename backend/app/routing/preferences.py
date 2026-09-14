@@ -65,6 +65,10 @@ class RoutePreferences:
     # Where the rider asked to ride: {"query": "Notting Hill"} until resolved, then
     # {"name", "latitude", "longitude"} as well (app/routing/geocode.py).
     area: dict[str, Any] | None = None
+    # Somewhere to ride *to*, which is a different ride from riding *in* somewhere:
+    # "to the Aragon Tower" ends there, "in Deptford" wanders around it. Same shape
+    # as `area`: {"query": ...} until the geocoder answers.
+    destination: dict[str, Any] | None = None
     loop: bool | None = None
 
     def clamp(self) -> RoutePreferences:
@@ -133,6 +137,53 @@ AREA_PATTERN = re.compile(
     r"(?=\s+(?:with|and|for|that|about|including|taking|via|through)\b|[,.;]|$)"
 )
 NOT_A_PLACE = re.compile(r"^\s*(?:\d|an? |the )?\s*(?:hour|hr|min|km|mile|k\b|loop|circle|ride|bit|while)")
+
+# "go to the Aragon Tower", "out to Greenwich", "as far as the pier". A ride *to*
+# somewhere, which `in|around|near` never covered: those put the rider inside a
+# neighbourhood, this one gives them a finish line.
+DESTINATION_PATTERN = re.compile(
+    r"\b(?:as far as|all the way to|up to|out to|over to|down to|ending at|ending in|"
+    r"finishing at|finish at|end at|end up at|towards|toward|to)\s+"
+    r"([a-z0-9'\u2019\-\. ]{3,40}?)"
+    r"(?=\s+(?:with|and|for|that|about|including|taking|via|through|then|plus|on the way|"
+    r"and back|before|after)\b|[,.;]|$)"
+)
+
+
+def _destination_phrase(lowered: str) -> tuple[str, int, int] | None:
+    """The place a rider said they want to end up at, and where they said it.
+
+    "to" is the most overloaded word in a ride request — "I want to go", "close to
+    home", "up to 40 km" — so the same test the area guess uses applies here: a
+    phrase made only of riding words names nothing, and the geocoder is the judge
+    of what is left.
+    """
+    for match in DESTINATION_PATTERN.finditer(lowered):
+        phrase = _trim_lead(match.group(1).strip(" .,"))
+        if len(phrase) < 3 or NOT_A_PLACE.match(phrase) or not _names_a_place(phrase):
+            continue
+        return phrase, match.start(1), match.end(1)
+    return None
+
+
+def _trim_lead(phrase: str) -> str:
+    """Drop the run-up and keep the name.
+
+    "I want to go to the Aragon Tower" matches at the first `to`, so the phrase
+    arrives as "go to the aragon tower". Everything before the first word that
+    could be part of a name is run-up — and a phrase that is *all* run-up ("go for
+    a 20km ride") trims down to nothing, which is the right answer.
+    """
+    words = phrase.split()
+    while words and (
+        words[0] in RIDE_WORDS
+        or words[0].rstrip("s") in RIDE_WORDS
+        or words[0] in COUNT_WORDS
+        or words[0] in {"to", "the", "a", "an"}
+        or words[0][:1].isdigit()
+    ):
+        words.pop(0)
+    return " ".join(words)
 
 
 # Everything a request can say that is about the riding, not about a place. What is
@@ -230,6 +281,39 @@ RIDE_WORDS = {
     "near",
     "nearby",
     "somewhere",
+    "i",
+    "we",
+    "us",
+    "our",
+    "on",
+    "at",
+    "out",
+    "up",
+    "over",
+    "off",
+    "just",
+    "get",
+    "getting",
+    "head",
+    "heading",
+    "end",
+    "ending",
+    "finish",
+    "finishing",
+    "start",
+    "starting",
+    "there",
+    "here",
+    "towards",
+    "toward",
+    "as",
+    "far",
+    "all",
+    "going",
+    "goes",
+    "gone",
+    "let",
+    "lets",
     "place",
     "places",
     "views",
@@ -321,7 +405,7 @@ def _names_a_place(phrase: str) -> bool:
     stop is wanted, is not handed to the geocoder.
     """
     words = re.findall(r"[a-z0-9'\u2019\-]+", phrase)
-    if not words or any(word.isdigit() for word in words):
+    if not words or any(word[:1].isdigit() for word in words):
         return False
     return not all(
         word in RIDE_WORDS
@@ -351,7 +435,7 @@ def _area_phrase(lowered: str) -> str | None:
         and word not in POI_WORDS
         and word.rstrip("s") not in POI_WORDS
         and word not in COUNT_WORDS
-        and not word.isdigit()
+        and not word[:1].isdigit()
     ]
     if 1 <= len(leftover) <= 3 and all(len(w) > 2 for w in leftover):
         return " ".join(leftover)
@@ -448,7 +532,15 @@ def parse_rules(text: str, base: RoutePreferences | None = None) -> ParsedReques
         prefs.loop = False
         matched.append("one-way")
 
-    phrase = _area_phrase(lowered)
+    # A destination is read first, and hidden from the area guess: "to the Aragon
+    # Tower" must not also read as "a ride around Aragon Tower", which would move
+    # the start instead of setting a finish.
+    destination = _destination_phrase(lowered)
+    for_area = lowered
+    if destination:
+        _, start_at, end_at = destination
+        for_area = lowered[:start_at] + " " * (end_at - start_at) + lowered[end_at:]
+    phrase = _area_phrase(for_area)
 
     # "3 cafes or somewhere cultural" asks for two kinds of stop. They are kept in
     # the order the rider wrote them: the first is the one scoring prefers, and any
@@ -460,8 +552,9 @@ def parse_rules(text: str, base: RoutePreferences | None = None) -> ParsedReques
     )
     # "a loop around richmond park with a coffee stop" wants coffee; the park is part
     # of where, not what. A word inside the place name is not a kind of stop.
-    if phrase:
-        elsewhere = [entry for entry in asked if entry[1] not in phrase]
+    named = " ".join(filter(None, [phrase, destination[0] if destination else None]))
+    if named:
+        elsewhere = [entry for entry in asked if entry[1] not in named]
         asked = elsewhere or asked
     if asked:
         position = 0.5
@@ -494,14 +587,24 @@ def parse_rules(text: str, base: RoutePreferences | None = None) -> ParsedReques
     if phrase:
         prefs.area = {"query": phrase}
         matched.append(f"area:{phrase}")
+    if destination:
+        prefs.destination = {"query": destination[0]}
+        matched.append(f"destination:{destination[0]}")
+        # Riding to somewhere is not riding in a circle, unless they asked for both.
+        if prefs.loop is None:
+            prefs.loop = False
     return ParsedRequest(preferences=prefs.clamp(), source="rules", matched=matched)
 
 
 LLM_SYSTEM = (
     "Convert a cyclist's free-text route request into structured preferences. "
     "Output only fields you are confident about. Preference values are floats 0..1. "
-    "`area` is a place the rider named — a town, a neighbourhood, a park — as written, "
-    "never coordinates and never a description of the riding or of the stops. "
+    "`area` is a place the rider named to ride *in* — a town, a neighbourhood, a park "
+    '("a loop in Notting Hill") — as written, never coordinates and never a '
+    "description of the riding or of the stops. `destination` is a place they want to "
+    'ride *to* and finish at ("go to the Aragon Tower", "out to Greenwich pier"), '
+    "which can be a single named thing: a tower, a bridge, a pub, a station. Use one "
+    "or the other, not both for the same words. "
     "`poi` is the kind of stop they want on the way: cafés and coffee are CAFE, pubs and "
     "bars PUB, restaurants and lunch FOOD, museums, galleries and anything cultural "
     "CULTURAL, parks, woods and gardens NATURE, castles, churches and monuments "
@@ -517,7 +620,8 @@ LLM_SCHEMA = (
     '"cyclewayPreference": number, "gravelPreference": number, "scenicPreference": number, '
     '"hillTolerance": number, "poi": {"category": "PUB|CAFE|FOOD|VIEWPOINT|NATURE|HISTORICAL|CULTURAL|LANDMARK|TRAIL", '
     '"preferredPosition": number, "count": number | null, "quality": boolean} | null, '
-    '"area": {"query": string} | null, "loop": boolean | null}'
+    '"area": {"query": string} | null, "destination": {"query": string} | null, '
+    '"loop": boolean | null}'
 )
 
 
@@ -587,8 +691,26 @@ async def parse_request(text: str, llm: LLMClient, base: RoutePreferences | None
         prefs.area = {"query": area["query"].strip()[:60]}
     elif rules.preferences.area:
         prefs.area = rules.preferences.area
+    destination = result.get("destination")
+    if isinstance(destination, dict) and isinstance(destination.get("query"), str) and destination["query"].strip():
+        prefs.destination = {"query": destination["query"].strip()[:60]}
+    elif "destination" in result and destination is None:
+        # An explicit null is the model reading "no particular destination"; the
+        # rules parser only saw the word "to".
+        prefs.destination = None
+    elif rules.preferences.destination:
+        prefs.destination = rules.preferences.destination
+    # The same words cannot be both; riding to somewhere wins, because it is the
+    # more specific promise and the one a wrong answer ruins.
+    if prefs.destination and prefs.area and prefs.destination.get("query") == prefs.area.get("query"):
+        prefs.area = None
     if isinstance(result.get("loop"), bool):
         prefs.loop = result["loop"]
     elif rules.preferences.loop is not None:
         prefs.loop = rules.preferences.loop
-    return ParsedRequest(preferences=prefs.clamp(), source="llm", matched=rules.matched)
+    elif prefs.destination:
+        prefs.loop = False
+    matched = [m for m in rules.matched if not str(m).startswith("destination:")]
+    if prefs.destination:
+        matched.append(f"destination:{prefs.destination['query']}")
+    return ParsedRequest(preferences=prefs.clamp(), source="llm", matched=matched)

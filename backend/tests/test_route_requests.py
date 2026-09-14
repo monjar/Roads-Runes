@@ -167,7 +167,7 @@ async def test_a_ride_in_a_named_place_goes_there_with_the_stops_asked_for(explo
     geocode.clear_cache()
     await seed_pubs(NOTTING_HILL)
 
-    async def resolve(_settings, query, lat, lon, transport=None):
+    async def resolve(_settings, query, lat, lon, transport=None, kind="area"):
         assert query == "notting hill"
         return geocode.Area("Notting Hill", *NOTTING_HILL)
 
@@ -575,3 +575,208 @@ def test_the_understood_line_reads_like_the_request():
     ]
     assert service._understood(RoutePreferences(), usual, 1, ["PUB"]) == ["1 pub"]
     assert service._understood(RoutePreferences(), usual, 0, ["VIEWPOINT"]) == ["viewpoints"]
+
+
+# Far enough from HOME that stops can string along the way. The name is the real
+# one from the report; the coordinates are a stand-in, since what is being tested
+# is the routing, not where the building is.
+ARAGON_TOWER = (51.4906, 0.0234)
+
+
+def test_riding_to_somewhere_is_not_riding_in_it():
+    """The report: "go to the Aragon Tower and 2 pubs on the way".
+
+    A destination was a thing only the map's search box could set. Typed, the
+    name fell out of the sentence entirely and the rider got a loop from their
+    own door, so the tower and the "on the way" both went missing.
+    """
+    prefs = parse_rules("I want to go to the Aragon Tower and 2 pubs on the way").preferences
+    assert prefs.destination == {"query": "aragon tower"}
+    assert prefs.area is None, "a place to ride to is not a place to ride around in"
+    assert prefs.poi["category"] == "PUB" and prefs.poi["count"] == 2
+    assert prefs.loop is False
+
+
+def test_the_two_kinds_of_named_place_stay_apart():
+    assert parse_rules("a loop in Notting Hill with 5 pubs").preferences.destination is None
+    assert parse_rules("ride to Greenwich park, 3 cafes on the way").preferences.destination == {
+        "query": "greenwich park"
+    }
+    assert parse_rules("as far as the old pier and back").preferences.destination == {"query": "old pier"}
+    assert parse_rules("take me to the Cutty Sark").preferences.destination == {"query": "cutty sark"}
+
+
+def test_the_run_up_to_a_destination_is_not_the_destination():
+    """ "to" is the most overloaded word a rider can type."""
+    for request in (
+        "I want to go for a 20km ride",
+        "up to 40 km, flat and quiet",
+        "I'd like to ride somewhere nice",
+        "close to home",
+    ):
+        assert parse_rules(request).preferences.destination is None, request
+
+
+def test_a_named_thing_in_the_destination_is_not_a_kind_of_stop():
+    """ "to the Old Church and 2 pubs" wants pubs; the church is where, not what."""
+    prefs = parse_rules("ride to the Old Church and 2 pubs on the way").preferences
+    assert prefs.destination == {"query": "old church"}
+    assert prefs.poi["category"] == "PUB"
+
+
+async def test_the_geocoder_finds_a_named_building_only_when_asked_for_a_point(settings, monkeypatch):
+    """A tower is not a neighbourhood: it never passed the place filter, so
+    "go to the Aragon Tower" resolved to nothing even once it was parsed."""
+    monkeypatch.setattr(settings, "geocoding_enabled", True)
+    geocode.clear_cache()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "photon" in str(request.url):
+            return httpx.Response(
+                200,
+                json={
+                    "features": [
+                        {
+                            "properties": {"name": "Aragon Tower", "osm_key": "building", "osm_value": "apartments"},
+                            "geometry": {"coordinates": [ARAGON_TOWER[1], ARAGON_TOWER[0]]},
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(200, json=[])
+
+    transport = httpx.MockTransport(handler)
+    assert await geocode.resolve(settings, "aragon tower", *HOME, transport=transport) is None
+    geocode.clear_cache()
+    found = await geocode.resolve(settings, "aragon tower", *HOME, transport=transport, kind="point")
+    assert found is not None and found.name == "Aragon Tower"
+
+
+async def test_a_point_search_still_has_to_be_the_thing_that_was_named(settings, monkeypatch):
+    """A point search answers almost anything, so the name is the guard."""
+    monkeypatch.setattr(settings, "geocoding_enabled", True)
+    geocode.clear_cache()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "photon" in str(request.url):
+            return httpx.Response(
+                200,
+                json={
+                    "features": [
+                        {
+                            "properties": {"name": "Greggs", "osm_key": "shop", "osm_value": "bakery"},
+                            "geometry": {"coordinates": [HOME[1], HOME[0]]},
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(200, json=[])
+
+    assert (
+        await geocode.resolve(settings, "the way home", *HOME, transport=httpx.MockTransport(handler), kind="point")
+        is None
+    )
+
+
+@pytest.mark.anyio
+async def test_a_ride_to_a_named_place_ends_there_with_the_stops_on_the_way(explorer_client, settings, monkeypatch):
+    """The whole report, end to end: the tower is the finish and the pubs are on
+    the line to it, from nothing but the sentence the rider typed."""
+    monkeypatch.setattr(settings, "geocoding_enabled", True)
+    geocode.clear_cache()
+    await seed_cafes_on_the_way(HOME, ARAGON_TOWER)  # cafés are ignored; pubs are what was asked for
+    bearing = bearing_deg(HOME[0], HOME[1], ARAGON_TOWER[0], ARAGON_TOWER[1])
+    async with get_session_factory()() as db:
+        for i, along in enumerate((0.3, 0.65)):
+            lat = HOME[0] + (ARAGON_TOWER[0] - HOME[0]) * along
+            lon = HOME[1] + (ARAGON_TOWER[1] - HOME[1]) * along
+            lat, lon = destination_point(lat, lon, bearing + 90, 120)
+            db.add(
+                Discovery(
+                    name=f"The Waypoint Arms {i}",
+                    category="PUB",
+                    latitude=lat,
+                    longitude=lon,
+                    source="OSM",
+                    osm_id=f"n{uuid.uuid4().int % 10**9}",
+                    tags={"amenity": "pub"},
+                    moderation_status="APPROVED",
+                    cycling_accessible=True,
+                )
+            )
+        await db.commit()
+
+    async def resolve(_settings, query, lat, lon, transport=None, kind="area"):
+        assert kind == "point", "a tower is a place to ride to"
+        assert query == "aragon tower"
+        return geocode.Area("Aragon Tower", *ARAGON_TOWER)
+
+    monkeypatch.setattr(geocode, "resolve", resolve)
+
+    r = await explorer_client.post(
+        "/routes/generate",
+        json={
+            # The shape the app really sends: its distance slider always has a value,
+            # and it must not turn a trip to the tower into a 25 km wander.
+            "origin": {"latitude": HOME[0], "longitude": HOME[1]},
+            "distanceTargetKm": 25,
+            "request": "I want to go to the Aragon Tower and 2 pubs on the way",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    parsed = body["parsedRequest"]
+
+    assert parsed["destination"]["name"] == "Aragon Tower"
+    assert parsed["area"] is None
+    assert len(parsed["stops"]) == 2
+    assert all("Arms" in stop["name"] for stop in parsed["stops"]), parsed["stops"]
+    assert "to Aragon Tower" in parsed["understood"]
+
+    # The stops come in the order they are reached, not scattered back and forth.
+    distances = [haversine_m(HOME[0], HOME[1], stop["latitude"], stop["longitude"]) for stop in parsed["stops"]]
+    assert distances == sorted(distances)
+
+    # A 3 km trip, not the slider's 25 km: the sentence set the length.
+    for route in body["alternatives"]:
+        assert route["distanceMeters"] < 12000, f"{route['label']} wandered: {route['distanceMeters']} m"
+
+    # Every card starts at the rider and finishes at the tower.
+    for route in body["alternatives"]:
+        start_lon, start_lat = route["coordinates"][0][:2]
+        end_lon, end_lat = route["coordinates"][-1][:2]
+        assert abs(start_lat - HOME[0]) < 0.01 and abs(start_lon - HOME[1]) < 0.01
+        assert abs(end_lat - ARAGON_TOWER[0]) < 0.01 and abs(end_lon - ARAGON_TOWER[1]) < 0.01
+
+    carrying = [alt for alt in body["alternatives"] if any(poi.get("requested") for poi in alt["pois"])]
+    assert carrying, "no alternative went past the pubs"
+    for route in carrying:
+        for stop in parsed["stops"]:
+            assert any(
+                abs(c[1] - stop["latitude"]) < 0.005 and abs(c[0] - stop["longitude"]) < 0.005
+                for c in route["coordinates"]
+            ), f"{stop['name']} is not on the {route['label']} route"
+
+
+@pytest.mark.anyio
+async def test_a_destination_nobody_can_find_says_so(explorer_client, settings, monkeypatch):
+    """Better than quietly riding somewhere else, which is what it used to do."""
+    monkeypatch.setattr(settings, "geocoding_enabled", True)
+    geocode.clear_cache()
+
+    async def resolve(_settings, query, lat, lon, transport=None, kind="area"):
+        return None
+
+    monkeypatch.setattr(geocode, "resolve", resolve)
+
+    r = await explorer_client.post(
+        "/routes/generate",
+        json={
+            "origin": {"latitude": HOME[0], "longitude": HOME[1]},
+            "request": "go to the Emerald Spire of Deptford",
+        },
+    )
+    assert r.status_code == 200, r.text
+    parsed = r.json()["parsedRequest"]
+    assert parsed["destination"] is None
+    assert any("emerald spire" in note.lower() for note in parsed["notes"]), parsed["notes"]
