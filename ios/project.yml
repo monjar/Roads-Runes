@@ -13,8 +13,10 @@ settings:
     SWIFT_VERSION: "5.9"
     DEVELOPMENT_TEAM: "7WBQP62F6Z"   # paid Individual team; Xcode registers the App IDs and capabilities
     CODE_SIGN_STYLE: Automatic
-    # One build number for the app and its watch app, overridable per upload:
-    # TestFlight refuses a build number it has seen before.
+    # One version and one build number for the app and its watch app, both
+    # overridable per upload: TestFlight refuses a build number it has seen
+    # before, and the two targets have to agree or validation rejects the pair.
+    MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_STRICT_CONCURRENCY: minimal
     ENABLE_USER_SCRIPT_SANDBOXING: YES
@@ -54,7 +56,7 @@ targets:
       path: RoadsAndRunes/Resources/Info.plist
       properties:
         CFBundleDisplayName: Roads & Runes
-        CFBundleShortVersionString: "0.1.0"
+        CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # actool writes the nested CFBundleIcons dict and leaves the top-level key to
         # the Info.plist; App Store validation reads the top-level one.
@@ -119,7 +121,7 @@ targets:
       path: RoadsAndRunesWatch/Resources/Info.plist
       properties:
         CFBundleDisplayName: Roads & Runes
-        CFBundleShortVersionString: "0.1.0"
+        CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleIconName: AppIcon
         WKCompanionAppBundleIdentifier: com.roadsandrunes.app
