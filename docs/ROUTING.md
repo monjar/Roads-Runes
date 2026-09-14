@@ -38,12 +38,20 @@ enforces (`output_config.format`, falling back to describing the schema in the
 prompt where that parameter is not taken). Every field comes back null when the
 sentence did not say it, so the rider's own profile stands.
 
-The sentence can name a place in one of two ways, and they plan different rides:
+The sentence can name a place in one of three ways, and they plan different rides:
 
 | They wrote | Reads as | The ride |
 |---|---|---|
 | "a loop **in** Notting Hill with 5 pubs" | `area` | Moves there, wanders around it, comes home |
 | "go **to** the Aragon Tower, 2 pubs on the way" | `destination` | Starts where they are, finishes at the tower |
+| "visit **the Moby Dick** then to Aragon Tower" | `via` | Passes through that pub on the way to the tower |
+
+`via` and `stops` look alike in a sentence and are not the same promise. **A name
+is the whole test**: "2 pubs on the way" names no pub, so the router picks
+whichever two suit the line (`stops`); "the Moby Dick" is one pub and no other
+will do, so it is a waypoint (`via`). Read the wrong way round, a rider asking
+for their local gets a ride past a stranger's — which is what it used to do,
+because the name was dropped and only "1 pub" survived.
 
 **The model returns names, never coordinates.** `app/routing/geocode.py` resolves
 them, so nothing it invents reaches navigation (spec §20, §31). The two resolve
@@ -52,10 +60,10 @@ differently, because a wrong answer costs differently:
 * `area` searches Photon and Nominatim for ground — `place`, `boundary`,
   `leisure`, `natural`, `landuse`, `tourism`. The whole ride moves there, so a
   shop matching the phrase would waste the ride.
-* `destination` (`kind="point"`) accepts nearly anything named: a building, a
-  tower, a bridge, a pub, a station. The guard is the name instead — the answer
-  has to be called what the rider called it, or a point search will happily
-  return a bakery for "the way home".
+* `destination` and each `via` (`kind="point"`) accept nearly anything named: a
+  building, a tower, a bridge, a pub, a station. The guard is the name instead —
+  the answer has to be called what the rider called it, or a point search will
+  happily return a bakery for "the way home".
 
 A destination that resolves becomes a real waypoint: `loop` defaults off, the
 stops are picked from the corridor along the way (`_pick_stops_between`, in the
@@ -63,6 +71,13 @@ order they are reached) rather than rung around the origin, and the target
 distance comes from the trip rather than the app's slider. One that does not
 resolve is said out loud in `parsedRequest.notes` — riding somewhere else
 quietly is the worse answer.
+
+Each `via` that resolves goes on the line in the order the rider said it, before
+the finish, and the trip's own length is measured **through** them: a pub two
+kilometres off the direct line makes the ride longer, and scoring it against the
+straight distance marks the only route that does what was asked for as too long.
+One that does not resolve is named in the notes as well, and the rest of the ride
+is planned without it.
 
 Everything the model returns is range-checked in `parse_request`: a category
 nobody imports, a 900 km "ride", a null where a float was expected. A bad answer

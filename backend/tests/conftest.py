@@ -113,6 +113,7 @@ async def explorer_client(user_client: AsyncClient) -> AsyncClient:
 PARSE_FIELDS = (
     "destination",
     "area",
+    "via",
     "distanceKm",
     "stops",
     "trafficAversion",
@@ -158,6 +159,14 @@ SCRIPT: dict[str, dict] = {
         destination={"query": "aragon tower"}, stops=stops("PUB", count=2, position=0.5), loop=False
     ),
     "go to the Emerald Spire of Deptford": parse(destination={"query": "Emerald Spire of Deptford"}, loop=False),
+    # A named pub is that pub, so it is somewhere to pass through — not "a pub",
+    # which is whichever one suits the route.
+    "Visit the moby dick pub then to aragon tower": parse(
+        via=[{"query": "the moby dick"}], destination={"query": "aragon tower"}, loop=False
+    ),
+    "ride past the Hidden Chapel of Deptford to the Aragon Tower": parse(
+        via=[{"query": "Hidden Chapel of Deptford"}], destination={"query": "aragon tower"}, loop=False
+    ),
     "A gravel heavy ride with 1 nice cafe stop": parse(
         gravelPreference=0.9, stops=stops("CAFE", count=1, quality=True)
     ),

@@ -65,6 +65,11 @@ class RoutePreferences:
     # "to the Aragon Tower" ends there, "in Deptford" wanders around it. Same shape
     # as `area`: {"query": ...} until the geocoder answers.
     destination: dict[str, Any] | None = None
+    # Named places to pass *through*, in the order the rider said them: "visit the
+    # Moby Dick pub then to Aragon Tower" names one. A category stop ("2 pubs") is
+    # whichever pub suits the route; this is that pub and no other, so it is a
+    # waypoint rather than a preference. Same shape as `area` once resolved.
+    via: list[dict[str, Any]] | None = None
     loop: bool | None = None
 
     def clamp(self) -> RoutePreferences:
@@ -100,6 +105,11 @@ Places. A rider names a place in one of two ways, and they plan different rides:
 - `area` — somewhere to ride IN or AROUND. "a loop in Notting Hill", "a ride
   around Richmond Park", "somewhere in the Chilterns". The whole ride moves
   there.
+- `via` — named places to ride THROUGH on the way, in the order they said them.
+  "visit the Moby Dick pub then to Aragon Tower" rides through the Moby Dick and
+  finishes at the tower. "past the old mill" is one. These are *named* places, so
+  a name is the whole test: "2 pubs on the way" names none and belongs in
+  `stops`, but "the Moby Dick" is one place and no other will do.
 Use whichever the sentence means, not both for the same words. Return the name
 as the rider wrote it, trimmed to just the name. NEVER return coordinates,
 directions, or a description of the riding as a place: "a quiet 30 km loop"
@@ -114,8 +124,9 @@ they asked for ("a couple" is 2, "a few" is 3). `stops.preferredPosition` is
 where along the ride they want them: 0 is the start, 1 the finish, 0.5 halfway;
 use 0.5 when they just said "on the way". `stops.quality` is true when they want
 a *good* one ("a nice cafe", "the best pub") rather than whichever is nearest.
-A place named as the destination is not also a kind of stop: "to the Old Church
-and 2 pubs" wants pubs.
+A place named as the destination or in `via` is not also a kind of stop: "to the
+Old Church and 2 pubs" wants pubs, and "the Moby Dick pub then Aragon Tower"
+wants no `stops` at all — both places are named.
 
 Distance. `distanceKm.target` in kilometres. Convert miles (1.61 km) and time —
 assume 16 km/h on a bike, so "a couple of hours" is about 32 km. "up to 40 km"
@@ -166,6 +177,23 @@ SCHEMA: dict[str, Any] = {
     "properties": {
         "destination": _place_schema("Somewhere to ride to and finish at."),
         "area": _place_schema("Somewhere to ride in or around."),
+        "via": {
+            "description": "Named places to ride through on the way, in the order said.",
+            "anyOf": [
+                {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {"query": {"type": "string", "description": "The name as the rider wrote it."}},
+                        "required": ["query"],
+                        "additionalProperties": False,
+                    },
+                    "minItems": 1,
+                    "maxItems": 5,
+                },
+                {"type": "null"},
+            ],
+        },
         "distanceKm": {
             "description": "How far they want to ride, in kilometres.",
             "anyOf": [
@@ -212,7 +240,7 @@ SCHEMA: dict[str, Any] = {
         "hillTolerance": _scalar_schema("How much climbing they will take."),
         "loop": {"description": "Back where they started.", "anyOf": [{"type": "boolean"}, {"type": "null"}]},
     },
-    "required": ["destination", "area", "distanceKm", "stops", *SCALARS, "loop"],
+    "required": ["destination", "area", "via", "distanceKm", "stops", *SCALARS, "loop"],
     "additionalProperties": False,
 }
 
@@ -225,6 +253,20 @@ def _name(value: Any) -> dict[str, Any] | None:
     if not isinstance(query, str) or not query.strip():
         return None
     return {"query": query.strip()[:60]}
+
+
+def _places(value: Any) -> list[dict[str, Any]] | None:
+    """The named places to ride through, in order, with the repeats dropped."""
+    if not isinstance(value, list):
+        return None
+    ordered: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in value[:5]:
+        place = _name(item)
+        if place and place["query"].lower() not in seen:
+            seen.add(place["query"].lower())
+            ordered.append(place)
+    return ordered or None
 
 
 def _distance(value: Any) -> dict[str, float] | None:
@@ -298,6 +340,12 @@ async def parse_request(text: str, llm: LLMClient, base: RoutePreferences | None
 
     prefs.destination = _name(result.get("destination"))
     prefs.area = _name(result.get("area"))
+    prefs.via = _places(result.get("via"))
+    # The finish is not also somewhere to pass through, and neither name is the
+    # region the ride sits in: a duplicate would route the rider there twice.
+    if prefs.via:
+        named = {p["query"].lower() for p in (prefs.destination, prefs.area) if p}
+        prefs.via = [p for p in prefs.via if p["query"].lower() not in named] or None
     # The same words cannot be both; riding to somewhere wins, because it is the
     # more specific promise and the one a wrong answer ruins.
     if prefs.destination and prefs.area and prefs.destination["query"].lower() == prefs.area["query"].lower():
@@ -306,6 +354,8 @@ async def parse_request(text: str, llm: LLMClient, base: RoutePreferences | None
         matched.append(f"destination:{prefs.destination['query']}")
     if prefs.area:
         matched.append(f"area:{prefs.area['query']}")
+    for place in prefs.via or []:
+        matched.append(f"via:{place['query']}")
 
     if isinstance(result.get("loop"), bool):
         prefs.loop = result["loop"]

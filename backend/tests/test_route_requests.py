@@ -690,3 +690,130 @@ async def test_a_destination_nobody_can_find_says_so(explorer_client, settings, 
     parsed = r.json()["parsedRequest"]
     assert parsed["destination"] is None
     assert any("emerald spire" in note.lower() for note in parsed["notes"]), parsed["notes"]
+
+
+MOBY_DICK = (51.4930, -0.0100)  # off the straight line from HOME to the tower
+
+
+@pytest.mark.anyio
+async def test_a_named_place_on_the_way_is_that_place_and_no_other(explorer_client, settings, monkeypatch):
+    """ "Visit the moby dick pub then to aragon tower" used to plan a ride past
+    whichever pub scored best, because the name was thrown away and only "1 pub"
+    survived. A named place is a waypoint, not a preference."""
+    monkeypatch.setattr(settings, "geocoding_enabled", True)
+    geocode.clear_cache()
+    # A rival pub, nearer the straight line: the one that used to get picked.
+    async with get_session_factory()() as db:
+        db.add(
+            Discovery(
+                name="The White Haus",
+                category="PUB",
+                latitude=(HOME[0] + ARAGON_TOWER[0]) / 2,
+                longitude=(HOME[1] + ARAGON_TOWER[1]) / 2,
+                source="OSM",
+                osm_id=f"n{uuid.uuid4().int % 10**9}",
+                tags={"amenity": "pub"},
+                moderation_status="APPROVED",
+                cycling_accessible=True,
+            )
+        )
+        await db.commit()
+
+    asked: list[tuple[str, str]] = []
+
+    async def resolve(_settings, query, lat, lon, transport=None, kind="area"):
+        asked.append((query, kind))
+        if "moby" in query.lower():
+            return geocode.Area("The Moby Dick", *MOBY_DICK)
+        return geocode.Area("Aragon Tower", *ARAGON_TOWER)
+
+    monkeypatch.setattr(geocode, "resolve", resolve)
+
+    r = await explorer_client.post(
+        "/routes/generate",
+        json={
+            "origin": {"latitude": HOME[0], "longitude": HOME[1]},
+            "distanceTargetKm": 25,
+            "request": "Visit the moby dick pub then to aragon tower",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    parsed = body["parsedRequest"]
+
+    # Looked up as a point, like the destination — a pub is a thing you arrive at.
+    assert ("the moby dick", "point") in asked, asked
+    assert [place["name"] for place in parsed["via"]] == ["The Moby Dick"]
+    assert parsed["destination"]["name"] == "Aragon Tower"
+    # No category stop was invented from the word "pub", so no rival was chosen.
+    assert not parsed.get("stops")
+    assert "via The Moby Dick" in parsed["understood"]
+    assert "to Aragon Tower" in parsed["understood"]
+
+    # Every route goes through the pub that was named and finishes at the tower.
+    for route in body["alternatives"]:
+        assert any(
+            abs(c[1] - MOBY_DICK[0]) < 0.005 and abs(c[0] - MOBY_DICK[1]) < 0.005 for c in route["coordinates"]
+        ), f"{route['label']} skipped the Moby Dick"
+        end_lon, end_lat = route["coordinates"][-1][:2]
+        assert abs(end_lat - ARAGON_TOWER[0]) < 0.01 and abs(end_lon - ARAGON_TOWER[1]) < 0.01
+
+
+@pytest.mark.anyio
+async def test_the_detour_counts_towards_how_far_the_ride_is(explorer_client, settings, monkeypatch):
+    """The length of a trip to a named finish is measured from the trip, and the
+    trip now bends. Measured straight, the only route that does what was asked
+    for is marked down for being too long."""
+    monkeypatch.setattr(settings, "geocoding_enabled", True)
+    geocode.clear_cache()
+
+    far = destination_point(HOME[0], HOME[1], 0, 3000)  # 3 km north, well off the line east
+
+    async def resolve(_settings, query, lat, lon, transport=None, kind="area"):
+        return (
+            geocode.Area("The Moby Dick", *far)
+            if "moby" in query.lower()
+            else geocode.Area("Aragon Tower", *ARAGON_TOWER)
+        )
+
+    monkeypatch.setattr(geocode, "resolve", resolve)
+
+    r = await explorer_client.post(
+        "/routes/generate",
+        json={
+            "origin": {"latitude": HOME[0], "longitude": HOME[1]},
+            "request": "Visit the moby dick pub then to aragon tower",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    direct_km = haversine_m(HOME[0], HOME[1], *ARAGON_TOWER) / 1000
+    # The detour is longer than the direct trip, so the plan has to be too.
+    for route in body["alternatives"]:
+        assert route["distanceMeters"] / 1000 > direct_km, route["label"]
+
+
+@pytest.mark.anyio
+async def test_a_place_on_the_way_nobody_can_find_is_said_out_loud(explorer_client, settings, monkeypatch):
+    """The ride still happens; the rider is told it does not pass the chapel,
+    rather than finding out on the road."""
+    monkeypatch.setattr(settings, "geocoding_enabled", True)
+    geocode.clear_cache()
+
+    async def resolve(_settings, query, lat, lon, transport=None, kind="area"):
+        return None if "chapel" in query.lower() else geocode.Area("Aragon Tower", *ARAGON_TOWER)
+
+    monkeypatch.setattr(geocode, "resolve", resolve)
+
+    r = await explorer_client.post(
+        "/routes/generate",
+        json={
+            "origin": {"latitude": HOME[0], "longitude": HOME[1]},
+            "request": "ride past the Hidden Chapel of Deptford to the Aragon Tower",
+        },
+    )
+    assert r.status_code == 200, r.text
+    parsed = r.json()["parsedRequest"]
+    assert parsed["via"] is None
+    assert parsed["destination"]["name"] == "Aragon Tower"
+    assert any("hidden chapel" in note.lower() for note in parsed["notes"]), parsed["notes"]
