@@ -17,37 +17,10 @@ from app.db.session import get_session_factory
 from app.discoveries.models import Discovery
 from app.routing import geocode, service
 from app.routing.models import Route
-from app.routing.preferences import RoutePreferences, parse_rules
+from app.routing.preferences import RoutePreferences
 
 NOTTING_HILL = (51.5109, -0.2055)
 HOME = (51.4906, -0.0316)  # Rotherhithe, ~11 km away
-
-
-def test_a_request_names_a_place_and_how_many_stops():
-    prefs = parse_rules("a biker ride in notting hill with about 5 pubs").preferences
-    assert prefs.area == {"query": "notting hill"}
-    assert prefs.poi == {"category": "PUB", "preferredPosition": 0.5, "count": 5}
-
-
-def test_a_place_on_its_own_is_still_a_place():
-    """ "Richmond bike ride" has no preposition to hang a place on, and used to plan
-    a ride wherever the rider was standing."""
-    assert parse_rules("Richmond bike ride").preferences.area == {"query": "richmond"}
-    assert parse_rules("hampstead heath").preferences.area == {"query": "hampstead heath"}
-    assert parse_rules("pub ride in shoreditch").preferences.area == {"query": "shoreditch"}
-
-
-def test_describing_the_riding_is_not_naming_a_place():
-    for request in (
-        "a quiet 30 km loop",
-        "something hilly and fast",
-        "pub ride",
-        "a scenic gravel ride",
-        # The plural of a riding word is a riding word: this planned a ride in Roads Wood.
-        "quiet roads",
-        "gravel trails and hills",
-    ):
-        assert parse_rules(request).preferences.area is None, request
 
 
 async def test_the_geocoder_ignores_answers_that_are_not_places(settings, monkeypatch):
@@ -73,13 +46,6 @@ async def test_the_geocoder_ignores_answers_that_are_not_places(settings, monkey
         )
 
     assert await geocode.resolve(settings, "quiet", *HOME, transport=httpx.MockTransport(handler)) is None
-
-
-def test_times_and_distances_are_not_places():
-    assert parse_rules("a 30 km loop in 2 hours").preferences.area is None
-    assert parse_rules("something quick in the morning").preferences.area is None
-    assert parse_rules("quiet ride with a couple of cafes").preferences.poi["count"] == 2
-    assert parse_rules("scenic ride around richmond park").preferences.area == {"query": "richmond park"}
 
 
 async def test_the_place_is_the_one_near_the_rider(settings, monkeypatch):
@@ -250,21 +216,6 @@ async def seed_cafes_on_the_way(start: tuple[float, float], end: tuple[float, fl
                 )
             )
         await db.commit()
-
-
-def test_asking_for_kinds_of_stop_is_not_naming_a_place():
-    """The rider's own words. "through" introduces a place as often as a shopping
-    list, and "3 top cafes" used to be geocoded as if it were a neighbourhood."""
-    prefs = parse_rules("I want the ride to be through 3 top cafes or cultural").preferences
-    assert prefs.area is None
-    assert prefs.poi["count"] == 3
-    assert prefs.poi["categories"] == ["CAFE", "CULTURAL"]
-
-
-def test_counts_written_as_words():
-    assert parse_rules("three cafes and a museum").preferences.poi["count"] == 3
-    assert parse_rules("a ride through two pubs").preferences.poi["count"] == 2
-    assert parse_rules("three cafes and a museum").preferences.area is None
 
 
 @pytest.mark.anyio
@@ -581,47 +532,6 @@ def test_the_understood_line_reads_like_the_request():
 # one from the report; the coordinates are a stand-in, since what is being tested
 # is the routing, not where the building is.
 ARAGON_TOWER = (51.4906, 0.0234)
-
-
-def test_riding_to_somewhere_is_not_riding_in_it():
-    """The report: "go to the Aragon Tower and 2 pubs on the way".
-
-    A destination was a thing only the map's search box could set. Typed, the
-    name fell out of the sentence entirely and the rider got a loop from their
-    own door, so the tower and the "on the way" both went missing.
-    """
-    prefs = parse_rules("I want to go to the Aragon Tower and 2 pubs on the way").preferences
-    assert prefs.destination == {"query": "aragon tower"}
-    assert prefs.area is None, "a place to ride to is not a place to ride around in"
-    assert prefs.poi["category"] == "PUB" and prefs.poi["count"] == 2
-    assert prefs.loop is False
-
-
-def test_the_two_kinds_of_named_place_stay_apart():
-    assert parse_rules("a loop in Notting Hill with 5 pubs").preferences.destination is None
-    assert parse_rules("ride to Greenwich park, 3 cafes on the way").preferences.destination == {
-        "query": "greenwich park"
-    }
-    assert parse_rules("as far as the old pier and back").preferences.destination == {"query": "old pier"}
-    assert parse_rules("take me to the Cutty Sark").preferences.destination == {"query": "cutty sark"}
-
-
-def test_the_run_up_to_a_destination_is_not_the_destination():
-    """ "to" is the most overloaded word a rider can type."""
-    for request in (
-        "I want to go for a 20km ride",
-        "up to 40 km, flat and quiet",
-        "I'd like to ride somewhere nice",
-        "close to home",
-    ):
-        assert parse_rules(request).preferences.destination is None, request
-
-
-def test_a_named_thing_in_the_destination_is_not_a_kind_of_stop():
-    """ "to the Old Church and 2 pubs" wants pubs; the church is where, not what."""
-    prefs = parse_rules("ride to the Old Church and 2 pubs on the way").preferences
-    assert prefs.destination == {"query": "old church"}
-    assert prefs.poi["category"] == "PUB"
 
 
 async def test_the_geocoder_finds_a_named_building_only_when_asked_for_a_point(settings, monkeypatch):

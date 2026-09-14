@@ -278,9 +278,9 @@ async def generate_quests(
 ) -> list[QuestInstance]:
     requested_km = None
     if request:
-        from app.routing.preferences import parse_rules
+        from app.routing.preferences import parse_request
 
-        parsed = parse_rules(request)
+        parsed = await parse_request(request, llm)
         if parsed.preferences.distanceKm:
             requested_km = parsed.preferences.distanceKm["target"]
     ctx = await build_context(db, settings, user, character, latitude, longitude, requested_km, activity)

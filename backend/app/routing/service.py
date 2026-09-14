@@ -287,6 +287,9 @@ def _understood(prefs: RoutePreferences, usual: RoutePreferences, wanted: int, c
 
 
 CANNOT_READ = "couldn't read that — try 'through 2 cafes' or 'mostly gravel'"
+# There is no keyword parser behind the model any more, so "no provider" means a
+# typed request goes unread. Saying so beats a ride that ignores the sentence.
+NO_READER = "free-text needs an AI provider — planned from your profile instead"
 # The corridor import runs only when stops were asked for and none were found, and
 # only for tiles never fetched, so a known area costs nothing.
 CORRIDOR_IMPORT_BUDGET_S = 25.0
@@ -994,7 +997,7 @@ async def generate(
         if unresolved_destination:
             notes.append(f"couldn't find '{unresolved_destination}' — riding from here instead")
         if not parsed_dict["understood"] and not parsed_dict["matched"]:
-            notes.append(CANNOT_READ)
+            notes.append(NO_READER if parsed_dict.get("source") == "unavailable" else CANNOT_READ)
         parsed_dict["notes"] = notes + same_road
     await db.flush()
     _keep_labels_honest(results)

@@ -52,5 +52,6 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
     "integration: requires PostGIS/Redis (set DATABASE_URL)",
+    "llm: calls the real model (set ANTHROPIC_API_KEY); costs money",
 ]
 filterwarnings = ["ignore::DeprecationWarning"]
