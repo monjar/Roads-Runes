@@ -10,7 +10,11 @@ options:
 
 settings:
   base:
-    SWIFT_VERSION: "5.9"
+    # The Swift *language mode*, which has only ever been 4.0, 4.2, 5.0 or 6.0 —
+    # "5.9" was a compiler version standing in for one, tolerated by Xcode 16 and
+    # rejected outright by some toolchains. Release builds now run on a much newer
+    # Xcode than local ones, so say the thing that is actually meant.
+    SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: "7WBQP62F6Z"   # paid Individual team; Xcode registers the App IDs and capabilities
     CODE_SIGN_STYLE: Automatic
     # One version and one build number for the app and its watch app, both

@@ -31,7 +31,9 @@ concurrency:
 
 jobs:
   upload:
-    runs-on: macos-15
+    # App Store Connect rejects anything built with an SDK older than iOS 26, and
+    # macos-15 ships Xcode 16 (iOS 18.5). The step below checks before archiving.
+    runs-on: macos-26
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -80,6 +82,21 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "build=$build" >> "$GITHUB_OUTPUT"
           echo "Uploading build $build${version:+ of version $version}"
+
+      - name: Select an Xcode new enough for App Store Connect
+        run: |
+          # The image carries several Xcodes; take the newest. A too-old SDK is a
+          # validation failure ten minutes into the archive, so find out in five
+          # seconds instead.
+          latest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$latest"
+          xcodebuild -version
+          sdk=$(xcrun --sdk iphoneos --show-sdk-version)
+          echo "iOS SDK $sdk from $latest"
+          if [ "${sdk%%.*}" -lt 26 ]; then
+            echo "::error::$latest carries the iOS $sdk SDK; App Store Connect needs iOS 26 or later. Installed: $(ls -d /Applications/Xcode*.app | tr '\n' ' ')"
+            exit 1
+          fi
 
       - run: brew install xcodegen
 
