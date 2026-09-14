@@ -153,7 +153,7 @@ async def test_a_monster_falls_to_pace_and_shrugs_off_a_stroll(explorer_client):
     c = explorer_client
     await seed_discoveries()
     world_objects.forget_checks()
-    monster = next(o for o in await spawned(c) if o["kind"] == "MONSTER")
+    monster = next(o for o in await spawned(c) if o["kind"] == "MONSTER" and not o["bounty"])
     await set_methods(monster["id"], PACE_ONLY)
     here = (monster["latitude"], monster["longitude"])
 
@@ -177,7 +177,7 @@ async def test_a_slay_quest_completes_on_the_kill(explorer_client, monkeypatch):
     c = explorer_client
     await seed_discoveries()
     world_objects.forget_checks()
-    monster = next(o for o in await spawned(c) if o["kind"] == "MONSTER")
+    monster = next(o for o in await spawned(c) if o["kind"] == "MONSTER" and not o["bounty"])
     await set_methods(monster["id"], PACE_ONLY)
     slay = [t for t in generator.templates_for("EXPLORER", 1) if t["id"] == "ANY_SLAY_NEARBY"]
     monkeypatch.setattr(generator, "templates_for", lambda *a, **k: slay)

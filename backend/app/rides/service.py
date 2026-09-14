@@ -203,6 +203,7 @@ async def summary(db: AsyncSession, user: User, ride: Ride) -> AdventureSummary 
         acBreakdown=result.get("acBreakdown", []),
         walletBalance=result.get("walletBalance"),
         worldObjects=result.get("worldObjects"),
+        streak=result.get("streak"),
     )
 
 

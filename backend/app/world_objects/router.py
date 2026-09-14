@@ -6,6 +6,7 @@ from fastapi import APIRouter, Query
 
 from app.characters.service import get_character, get_rider_profile
 from app.core.deps import CurrentUser, DBDep, SettingsDep
+from app.core.errors import NotFound
 from app.core.schemas import APIModel
 from app.world_objects import service
 from app.world_objects.schemas import WorldObjectOut
@@ -56,6 +57,15 @@ async def lure(payload: LureIn, user: CurrentUser, db: DBDep, settings: Settings
         activity=profile.default_activity,
     )
     return [service.to_out(o) for o in live]
+
+
+@router.get("/bounty", response_model=WorldObjectOut)
+async def bounty(user: CurrentUser, db: DBDep) -> WorldObjectOut:
+    """Today's bounty, spawned on the first look at the world today; 404 until then, or once it is gone."""
+    found = await service.todays_bounty(db, user.id)
+    if found is None:
+        raise NotFound("No bounty today yet", code="NO_BOUNTY")
+    return service.to_out(found)
 
 
 @router.get("/{object_id}", response_model=WorldObjectOut)

@@ -23,6 +23,7 @@ from app.discoveries.models import Discovery
 from app.discoveries.service import discoveries_along, mark_found
 from app.economy import service as economy
 from app.economy.rules import compute_ride_ac
+from app.economy.streaks import StreakOutcome, streak_lines, update_streak
 from app.exploration.cells import cell_for, traverse
 from app.exploration.service import ExplorationOutcome, record_traversal
 from app.progression.engine import RideRewardInput, compute_ride_xp
@@ -371,7 +372,10 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
     # Coins are the other purse: spent on the character where XP is kept. Same
     # gate as XP, so a suspicious ride earns neither.
     coins: dict[str, Any] = {"acAwarded": 0, "acBreakdown": [], "walletBalance": None}
+    streak = StreakOutcome(0, 0, extended=False)
     if character is not None and not validation.suspicious:
+        # Days in a row: the outing counts once a day, if it went anywhere.
+        streak = await update_streak(db, ride.user_id, ended.date(), ride.distance_meters)
         coins = await economy.credit_lines(
             db,
             ride.user_id,
@@ -390,6 +394,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
                     }
                     for o in claims.claimed
                 ],
+                extra_lines=streak_lines(streak),
             ),
             ride_id=ride.id,
             quest_id=quest.id if quest_completed and quest else None,
@@ -424,6 +429,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         "acBreakdown": coins["acBreakdown"],
         "walletBalance": coins["walletBalance"],
         "worldObjects": claims.to_dict(),
+        "streak": streak.to_dict(),
         "newCells": len(exploration.new_cells),
         "upgradedCells": len(exploration.upgraded_cells),
         "newTerritoryMeters": round(exploration.new_territory_m, 1),

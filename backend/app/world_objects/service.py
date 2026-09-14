@@ -6,7 +6,7 @@ import json
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -136,8 +136,35 @@ async def get_object(db: AsyncSession, user_id: uuid.UUID, object_id: uuid.UUID)
     return obj
 
 
+async def _seeds_like(db: AsyncSession, user_id: uuid.UUID, prefix: str) -> set[str]:
+    rows = await db.execute(
+        select(WorldObject.seed).where(WorldObject.user_id == user_id, WorldObject.seed.like(f"{prefix}:%"))
+    )
+    return set(rows.scalars())
+
+
+async def todays_bounty(db: AsyncSession, user_id: uuid.UUID) -> WorldObject | None:
+    return await db.scalar(
+        select(WorldObject)
+        .where(
+            WorldObject.user_id == user_id,
+            WorldObject.bounty.is_(True),
+            WorldObject.status == "SPAWNED",
+            WorldObject.expires_at >= utcnow(),
+        )
+        .order_by(WorldObject.spawned_at.desc())
+    )
+
+
 async def _persist(
-    db: AsyncSession, user_id: uuid.UUID, plans: list[SpawnPlan], now: datetime, expiry_days: float, resolution: int
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    plans: list[SpawnPlan],
+    now: datetime,
+    expiry_days: float,
+    resolution: int,
+    *,
+    expires_at: datetime | None = None,
 ) -> list[WorldObject]:
     created: list[WorldObject] = []
     for plan in plans:
@@ -155,7 +182,7 @@ async def _persist(
             reward_ac=plan.reward_ac,
             payload=plan.payload,
             spawned_at=now,
-            expires_at=now + timedelta(days=expiry_days),
+            expires_at=expires_at or (now + timedelta(days=expiry_days)),
         )
         try:
             async with db.begin_nested():
@@ -213,13 +240,29 @@ async def ensure_spawned(
         seed = day_seed(user_id, day, tile, seed_suffix)
         # Slots already used today (claimed, expired or live) so a replacement gets a
         # fresh seed; at most twice the quota a day, so a chest is not a chest factory.
-        used_seeds = set(
-            (
-                await db.execute(
-                    select(WorldObject.seed).where(WorldObject.user_id == user_id, WorldObject.seed.like(f"{seed}:%"))
-                )
-            ).scalars()
-        )
+        used_seeds = await _seeds_like(db, user_id, seed)
+        # The day's bounty: the first monster placed, twice the purse, gone at midnight. One a
+        # day whatever happens to it, so its seed carries no slot.
+        bounty_seed = day_seed(user_id, day, "bounty", seed_suffix)
+        if not seed_suffix and f"{bounty_seed}:MONSTER:0" not in await _seeds_like(db, user_id, bounty_seed):
+            taken = {str(o.anchor_discovery_id) for o in live if o.anchor_discovery_id}
+            bounty = plan_spawns(
+                seed=bounty_seed,
+                kind="MONSTER",
+                indices=[0],
+                anchors=anchors,
+                taken_anchor_ids=taken,
+                occupied=[(o.latitude, o.longitude) for o in live],
+                cfg=cfg,
+                ac_rules=load_ac_rules(),
+                frontier=frontier,
+                known=known,
+                character_class=character_class,
+                activity=normalise(activity),
+                bounty=True,
+            )
+            end_of_day = datetime.combine(utcnow().date() + timedelta(days=1), datetime.min.time(), tzinfo=UTC)
+            live += await _persist(db, user_id, bounty, utcnow(), 0.0, settings.h3_resolution, expires_at=end_of_day)
         room = int(cfg["maxLiveInRadius"]) - len(live)
         plans: list[SpawnPlan] = []
         for kind, quota in cfg["quota"].items():

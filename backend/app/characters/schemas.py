@@ -66,6 +66,8 @@ class CharacterOut(APIModel):
     nextClassChangeAt: datetime | None = None
     classChangeCostAC: int = 0
     classProgress: dict[str, ClassProgressOut] = {}
+    streakDays: int = 0
+    longestStreakDays: int = 0
 
 
 class ClassInfo(APIModel):

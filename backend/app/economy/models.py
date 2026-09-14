@@ -1,12 +1,24 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date
 from typing import Any
 
-from sqlalchemy import ForeignKey, Index, Integer, String, Uuid
+from sqlalchemy import Date, ForeignKey, Index, Integer, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, JSONType, TimestampMixin, UUIDPrimaryKeyMixin
+
+
+class UserStreak(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Days in a row with an outing that counted (economy/streaks.py)."""
+
+    __tablename__ = "user_streaks"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True)
+    current_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    longest_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_activity_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
 
 class Wallet(UUIDPrimaryKeyMixin, TimestampMixin, Base):

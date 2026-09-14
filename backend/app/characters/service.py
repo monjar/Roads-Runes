@@ -27,8 +27,9 @@ from app.core.feature_flags import class_enabled
 from app.core.security import utcnow
 from app.discoveries.models import UserDiscovery
 from app.economy import service as economy
-from app.economy.models import Wallet, WalletTransaction
+from app.economy.models import UserStreak, Wallet, WalletTransaction
 from app.economy.rules import class_change_terms
+from app.economy.streaks import get_streak
 from app.exploration.models import UserExplorationCell
 from app.progression.engine import level_bounds
 from app.progression.models import RewardEvent, XPEvent
@@ -93,10 +94,18 @@ def class_change_offer(character: Character) -> tuple[int, datetime | None]:
 
 
 async def character_out(db: AsyncSession, character: Character) -> CharacterOut:
-    return to_character_out(character, active_coins=await economy.balance(db, character.user_id))
+    streak = await get_streak(db, character.user_id)
+    return to_character_out(
+        character,
+        active_coins=await economy.balance(db, character.user_id),
+        streak_days=streak.current_days if streak else 0,
+        longest_streak_days=streak.longest_days if streak else 0,
+    )
 
 
-def to_character_out(character: Character, *, active_coins: int = 0) -> CharacterOut:
+def to_character_out(
+    character: Character, *, active_coins: int = 0, streak_days: int = 0, longest_streak_days: int = 0
+) -> CharacterOut:
     o_floor, o_next = level_bounds(character.overall_level, "overall")
     c_floor, c_next = level_bounds(character.class_level, "class")
     cost, next_at = class_change_offer(character)
@@ -124,6 +133,8 @@ def to_character_out(character: Character, *, active_coins: int = 0) -> Characte
             cid: ClassProgressOut(classXp=int(p.get("classXp", 0)), classLevel=int(p.get("classLevel", 1)))
             for cid, p in (character.class_progress or {}).items()
         },
+        streakDays=streak_days,
+        longestStreakDays=longest_streak_days,
     )
 
 
@@ -224,7 +235,16 @@ async def reset_character(db: AsyncSession, user: User) -> None:
     await db.execute(delete(QuestProgressEvent).where(QuestProgressEvent.quest_id.in_(quest_ids)))
     await db.execute(delete(QuestObjective).where(QuestObjective.quest_id.in_(quest_ids)))
     await db.execute(delete(QuestInstance).where(QuestInstance.user_id == user.id))
-    for model in (XPEvent, RewardEvent, WalletTransaction, Wallet, UserExplorationCell, UserDiscovery, WorldObject):
+    for model in (
+        XPEvent,
+        RewardEvent,
+        WalletTransaction,
+        Wallet,
+        UserStreak,
+        UserExplorationCell,
+        UserDiscovery,
+        WorldObject,
+    ):
         await db.execute(delete(model).where(model.user_id == user.id))
     await db.delete(character)
     await db.flush()

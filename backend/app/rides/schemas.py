@@ -129,6 +129,7 @@ class AdventureSummary(APIModel):
     acBreakdown: list[dict[str, Any]] = []
     walletBalance: int | None = None
     worldObjects: dict[str, Any] | None = None
+    streak: dict[str, Any] | None = None
 
 
 class RideGeometry(APIModel):
