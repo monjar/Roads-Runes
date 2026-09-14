@@ -88,6 +88,13 @@ is already in the Info.plist, so no export-compliance question is asked per buil
 The dSYMs are kept as a workflow artifact for 90 days to symbolicate crash
 reports against.
 
+The upload job runs on `macos-26` and picks the newest Xcode on the image:
+App Store Connect refuses a build made with an SDK older than iOS 26, and the
+`macos-15` image the rest of CI uses ships Xcode 16. A step checks the SDK
+before archiving, so a runner image without it fails in seconds rather than ten
+minutes in at validation. The deployment target stays at iOS 17 — the SDK the
+app is built *with* and the iOS it runs *on* are separate.
+
 ### Running against the local backend in the simulator
 
 ```bash
