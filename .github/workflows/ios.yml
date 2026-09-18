@@ -1,3 +1,8 @@
+# The same Xcode the release builds with (see testflight.yml). A green build here
+# used to prove nothing about the archive: the RuneMatcher type-check timeout that
+# broke `app-build` only appeared on one toolchain's watchOS slice, and App Store
+# Connect now requires the iOS 26 SDK, so the release runs on an Xcode this
+# workflow never exercised. Same image, same selection step, no gap.
 name: ios
 
 on:
@@ -9,9 +14,14 @@ on:
 
 jobs:
   core-package:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
+      - name: Select the Xcode the release uses
+        run: |
+          latest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$latest"
+          xcodebuild -version
       - name: Build and test RoadsAndRunesCore
         working-directory: ios/Packages/RoadsAndRunesCore
         run: |
@@ -19,7 +29,7 @@ jobs:
           swift test
 
   lint:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - run: brew install swiftlint
@@ -27,9 +37,14 @@ jobs:
 
   app-build:
     # Unsigned simulator build of the iPhone app and its embedded Watch app.
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
+      - name: Select the Xcode the release uses
+        run: |
+          latest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$latest"
+          xcodebuild -version
       - run: brew install xcodegen
       - run: xcodegen generate
         working-directory: ios
