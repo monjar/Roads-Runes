@@ -150,7 +150,7 @@ struct AdventureSummaryView: View {
         .task {
             // "Ask every time" is asked here, once, where the ride is fresh. "Automatically"
             // has already happened on the server by now; "Never" shows nothing.
-            if container.session.user?.stravaUploadMode == .ask, summary.ride.stravaUploadStatus == nil,
+            if container.session.settings.stravaUploadMode == .ask, summary.ride.stravaUploadStatus == nil,
                let status = try? await container.api.stravaStatus(), status.connected {
                 offerStrava = true
             }
