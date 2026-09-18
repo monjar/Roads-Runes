@@ -50,6 +50,8 @@ final class QuestsViewModel {
     /// Quests for anyone: a class shapes the board, it does not own it.
     var forAnyone: [Quest] { available.filter { $0.characterClass == .any } }
     var story: [Quest] { available.filter { $0.storyQuestId != nil } }
+    /// Every quest in hand, whatever list it is shown in — for looking one up by id.
+    var all: [Quest] { available + active + completed }
     var party: [Quest] { available.filter { $0.partyId != nil } + active.filter { $0.partyId != nil } }
 
     func generateMore() async {

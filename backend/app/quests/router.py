@@ -7,8 +7,9 @@ from fastapi import APIRouter, Depends, Query
 
 from app.characters.service import get_character
 from app.core.deps import CurrentUser, DBDep, SettingsDep, get_job_queue, get_llm, get_router_client
+from app.core.feature_flags import require_flag
 from app.core.pagination import Page, clamp_limit
-from app.quests import service
+from app.quests import service, story
 from app.quests.schemas import (
     QuestCompleteRequest,
     QuestCompletion,
@@ -16,6 +17,7 @@ from app.quests.schemas import (
     QuestOut,
     QuestProgressRequest,
     QuestStartRequest,
+    StoryArcOut,
 )
 from app.routing import service as routing
 from app.routing.schemas import RouteOptionOut
@@ -65,6 +67,18 @@ async def generate(
         activity=payload.activity,
     )  # type: ignore[arg-type]
     return Page(items=[service.quest_out(q) for q in quests], nextCursor=None)
+
+
+@router.get("/story", response_model=list[StoryArcOut])
+async def story_arcs(user: CurrentUser, db: DBDep, settings: SettingsDep) -> list[StoryArcOut]:
+    """The authored arcs and where the rider stands in each.
+
+    Every arc is returned, locked ones included: an arc the rider cannot start yet
+    is the reason to come back, and hiding it hides the game.
+    """
+    require_flag(settings, "story_quests")
+    character = await get_character(db, user)
+    return [StoryArcOut(**arc) for arc in await story.progress(db, user, character)]
 
 
 @router.get("/{quest_id}", response_model=QuestOut)

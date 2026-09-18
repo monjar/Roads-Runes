@@ -1,0 +1,139 @@
+{
+  "arcs": [
+    {
+      "slug": "first-light",
+      "title": "First Light",
+      "description": "Nobody starts as an adventurer. They start by going outside, and then going a little further than last time. Three rides, in order, and the map is no longer only the bit you already knew.",
+      "characterClass": null,
+      "minLevel": 1,
+      "quests": [
+        {
+          "slug": "first-light-out-of-the-door",
+          "title": "Out of the Door",
+          "description": "The hardest part of every ride is the first hundred metres. Take a road you have never taken — any road, as long as it is new to you — and the rest of the map starts to owe you something.",
+          "templateId": "ANY_NEW_GROUND"
+        },
+        {
+          "slug": "first-light-something-green",
+          "title": "Something Green",
+          "description": "Every town keeps a green place, and most riders pass the turning for years without taking it. Take it, then come home the way you like.",
+          "templateId": "ANY_GREEN_HOUR"
+        },
+        {
+          "slug": "first-light-somewhere-to-look-from",
+          "title": "Somewhere to Look From",
+          "description": "Ground you have ridden looks different from above it. Climb to somewhere you can see it from, and the first light of this is done.",
+          "templateId": "ANY_HIGH_GROUND"
+        }
+      ]
+    },
+    {
+      "slug": "the-edge-of-the-map",
+      "title": "The Edge of the Map",
+      "description": "An Explorer's map has an edge, and the edge moves. This is the work of moving it: out past the fog, across three unknown places, and back with the shape of them.",
+      "characterClass": "EXPLORER",
+      "minLevel": 2,
+      "quests": [
+        {
+          "slug": "edge-of-the-map-past-the-fog",
+          "title": "Past the Fog",
+          "description": "Roads you have never travelled, and enough of them to be sure it was deliberate. The fog does not lift for a rider who turns back at the first unfamiliar junction.",
+          "templateId": "EXPLORER_NEW_TERRITORY"
+        },
+        {
+          "slug": "edge-of-the-map-three-unknowns",
+          "title": "Three Unknowns",
+          "description": "One unknown place is an accident. Three, in one ride, is a survey.",
+          "templateId": "EXPLORER_THREE_REGIONS"
+        },
+        {
+          "slug": "edge-of-the-map-and-back-again",
+          "title": "And Back Again",
+          "description": "The edge is only moved once you can find your way home from it. Out to the far place, and back under your own navigation.",
+          "templateId": "EXPLORER_OUT_AND_BACK"
+        }
+      ]
+    },
+    {
+      "slug": "what-the-stones-remember",
+      "title": "What the Stones Remember",
+      "description": "A Wizard reads the city as a text somebody else wrote. Markers nobody explains, lines that are too straight to be accidents, ground older than the road on top of it.",
+      "characterClass": "WIZARD",
+      "minLevel": 2,
+      "quests": [
+        {
+          "slug": "stones-remember-the-marker",
+          "title": "The Marker",
+          "description": "Somebody put it there and meant something by it. Stand at it, and write down what you think they meant.",
+          "templateId": "WIZARD_STRANGE_MARKER"
+        },
+        {
+          "slug": "stones-remember-the-straight-idea",
+          "title": "The Straight Idea",
+          "description": "Three points on one bearing. Ride them in any order; the line does not care, but you will see it once you have.",
+          "templateId": "WIZARD_LEY_LINE"
+        },
+        {
+          "slug": "stones-remember-older-than-the-road",
+          "title": "Older Than the Road",
+          "description": "The tarmac is new. What it runs past is not. Find the old ground, and take a way there nobody has mapped for you.",
+          "templateId": "WIZARD_OLD_GROUND"
+        }
+      ]
+    },
+    {
+      "slug": "the-iron-hours",
+      "title": "The Iron Hours",
+      "description": "A Warrior's arc is not about places. It is about the hours: holding a pace, paying a hill what it asks, and staying on the bike after the interesting part is over.",
+      "characterClass": "WARRIOR",
+      "minLevel": 2,
+      "quests": [
+        {
+          "slug": "iron-hours-the-tempo",
+          "title": "The Tempo",
+          "description": "Not a sprint. A speed you can hold while you think about something else, held for long enough that it stops being comfortable.",
+          "templateId": "WARRIOR_STEADY_TEMPO"
+        },
+        {
+          "slug": "iron-hours-the-hill-toll",
+          "title": "The Hill's Toll",
+          "description": "Every hill charges the same price and does not negotiate. Climb until it is paid.",
+          "templateId": "WARRIOR_HILL_TOLL"
+        },
+        {
+          "slug": "iron-hours-the-hour-of-iron",
+          "title": "The Hour of Iron",
+          "description": "The last one is only time. Stay out in it, keep turning the pedals, and come back having done the unremarkable thing well.",
+          "templateId": "WARRIOR_HOUR_OF_IRON"
+        }
+      ]
+    },
+    {
+      "slug": "a-record-of-small-things",
+      "title": "A Record of Small Things",
+      "description": "A Scribe's claim is that the small things are the record: one place looked at properly, three corners of a neighbourhood, a road nobody has written down. Ride it, photograph it, say what it was.",
+      "characterClass": "SCRIBE",
+      "minLevel": 2,
+      "quests": [
+        {
+          "slug": "record-of-small-things-one-place-properly",
+          "title": "One Place, Properly",
+          "description": "Not a glance from the saddle. Stop, photograph it, and write the thing about it that a photograph does not carry.",
+          "templateId": "SCRIBE_DOCUMENT_PLACE"
+        },
+        {
+          "slug": "record-of-small-things-three-corners",
+          "title": "Three Corners",
+          "description": "A neighbourhood is not one place. Take its corners, and note what changes between them.",
+          "templateId": "SCRIBE_THREE_CORNERS"
+        },
+        {
+          "slug": "record-of-small-things-the-unwritten-road",
+          "title": "The Unwritten Road",
+          "description": "Roads you have never travelled, surveyed rather than merely ridden: the photograph, the note, and the distance to earn them.",
+          "templateId": "SCRIBE_ROUTE_SURVEY"
+        }
+      ]
+    }
+  ]
+}

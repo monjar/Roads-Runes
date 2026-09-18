@@ -338,6 +338,7 @@ public actor APIClient: RoadsAndRunesAPI {
     // MARK: Friends & feed
 
     public func searchUsers(query: String) async throws -> [FriendSummary] { try await request(Endpoints.searchUsers(query: query)) }
+    public func storyArcs() async throws -> [StoryArc] { try await request(Endpoints.storyArcs()) }
     public func friends() async throws -> [FriendSummary] { try await request(Endpoints.friends()) }
     public func friendRequests() async throws -> FriendRequests { try await request(Endpoints.friendRequests()) }
     public func sendFriendRequest(userId: UUID) async throws -> FriendRequestResult { try await request(try Endpoints.sendFriendRequest(userId: userId)) }

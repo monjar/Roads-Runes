@@ -45,6 +45,8 @@ public protocol RoadsAndRunesAPI: Sendable {
     func quests(near: Coordinate, status: QuestStatus?, limit: Int?, cursor: String?) async throws -> Page<Quest>
     func generateQuests(_ request: QuestGenerateRequest) async throws -> Page<Quest>
     func quest(id: UUID) async throws -> Quest
+    /// The authored arcs and where this rider stands in each.
+    func storyArcs() async throws -> [StoryArc]
     func acceptQuest(id: UUID) async throws -> Quest
     func startQuest(id: UUID, rideId: UUID?) async throws -> Quest
     func reportQuestProgress(id: UUID, events: [ObjectiveEvent]) async throws -> Quest

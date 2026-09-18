@@ -95,7 +95,7 @@ end to end.
 | 6 Other classes | Wizard/Warrior/Scribe | live; 3–6 templates each |
 | 7 Social | friends, feed, parties | backend done; people found by name, party lifecycle in the app; `party_quests` flag |
 | 8 Integrations | Strava OAuth/upload, GPX/TCX, HealthKit | Strava loop closed: auto-upload after processing, status and retry on the adventure, open in Strava |
-| 9 Living world | story arcs, regions, events | world objects (monsters, chests, bounties) live; story arcs schema only |
+| 9 Living world | story arcs, regions, events | world objects (monsters, chests, bounties) live; five authored story arcs on the board behind `story_quests`; regional events not started |
 
 Verification: the backend suite (unit + HTTP end-to-end) passes on SQLite
 and, in CI, against PostGIS after the Alembic migration; the
