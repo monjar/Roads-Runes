@@ -815,13 +815,10 @@
       "weight": 2,
       "objectiveRules": {
         "regionCount": 3,
+        "regionLayout": "line",
         "regionDistanceKm": [
           3,
           11
-        ],
-        "distanceKm": [
-          18,
-          40
         ]
       },
       "objectives": [

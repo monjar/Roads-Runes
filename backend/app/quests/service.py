@@ -286,19 +286,29 @@ async def generate_quests(
     ctx = await build_context(db, settings, user, character, latitude, longitude, requested_km, activity)
     existing = (
         await db.execute(
-            select(QuestInstance.template_id).where(
+            select(QuestInstance.template_id, QuestInstance.character_class).where(
                 QuestInstance.user_id == user.id,
                 QuestInstance.status.in_(["AVAILABLE", "ACCEPTED", "ACTIVE"]),
             )
         )
     ).all()
+    open_templates = {template for (template, _) in existing}
     try:
-        generated = generate(ctx, count, exclude_template_ids={t for (t,) in existing}, only_any=only_any)
+        generated = generate(
+            ctx,
+            count,
+            exclude_template_ids=open_templates,
+            only_any=only_any,
+            board_classes={character_class for (_, character_class) in existing},
+        )
     except Exception as exc:  # noqa: BLE001
         log.error(EVENT_QUEST_GENERATION_FAILED, error=str(exc))
         raise QuestGenerationFailed("Quest generation failed") from exc
-    if not generated:
-        generated = generate(ctx, count, only_any=only_any)  # allow repeats rather than returning nothing
+    # A quest the rider already has open is never dealt twice. This used to fall
+    # back to generating without the exclusions "rather than returning nothing",
+    # and a rider who had been offered every template got the whole board again:
+    # The Old Stones twice, a street apart. A full board is full.
+    generated = [g for g in generated if g.template_id not in open_templates]
     now = utcnow()
     quests: list[QuestInstance] = []
     for g in generated:
@@ -326,6 +336,35 @@ async def generate_quests(
     return quests
 
 
+async def retire_duplicates(db: AsyncSession, user: User, latitude: float, longitude: float) -> int:
+    """One open quest per template; the nearer one stays.
+
+    Boards made a street apart used to repeat each other once the rider had been
+    offered every template, so an existing board can hold The Old Stones twice.
+    This is the rider's board being tidied, not a quest being taken away: the same
+    quest, from the same template, is still on it.
+    """
+    rows = (
+        await db.execute(
+            select(QuestInstance).where(QuestInstance.user_id == user.id, QuestInstance.status == "AVAILABLE")
+        )
+    ).scalars()
+    by_template: dict[str, list[QuestInstance]] = {}
+    for quest in rows:
+        by_template.setdefault(quest.template_id, []).append(quest)
+    retired = 0
+    for quests in by_template.values():
+        if len(quests) < 2:
+            continue
+        quests.sort(key=lambda q: haversine_m(latitude, longitude, q.latitude, q.longitude))
+        for quest in quests[1:]:
+            quest.status = "EXPIRED"
+            retired += 1
+    if retired:
+        await db.flush()
+    return retired
+
+
 async def ensure_available(
     db: AsyncSession,
     settings: Settings,
@@ -337,6 +376,7 @@ async def ensure_available(
     minimum: int = 3,
     activity: str | None = None,
 ) -> list[QuestInstance]:
+    await retire_duplicates(db, user, latitude, longitude)
     available = await list_quests(db, user, "AVAILABLE", latitude, longitude, 20)
     if len(available) < minimum:
         await generate_quests(

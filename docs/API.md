@@ -472,7 +472,7 @@ background job (validation, exploration, XP). Poll:
 
 - `GET /rides` paginated, newest first. `GET /rides/{id}`. `GET /rides/{id}/geometry` → `{"coordinates": [...], "encodedPolyline": "..."}`.
 - `PATCH /rides/{id}` `{"visibility": "FRIENDS", "title": "...", "notes": "..."}`
-- `DELETE /rides/{id}`
+- `DELETE /rides/{id}` — discards the ride; it leaves the journal and the stats (XP already awarded stays)
 
 ---
 

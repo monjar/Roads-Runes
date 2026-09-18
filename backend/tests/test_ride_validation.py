@@ -47,3 +47,31 @@ def test_inaccurate_points_dropped_and_malformed_flagged():
 def test_cell_plausibility():
     assert check_cell_plausibility(5, 1000) is None
     assert check_cell_plausibility(200, 1000) == "UNREALISTIC_CELL_COUNT"
+
+
+def test_top_speed_is_a_stretch_not_a_twitch():
+    """One fix 20 m off the line, a second later, used to be a 72 km/h top speed
+    on a 18 km/h ride — under the cap, so nothing flagged it, and the journal
+    reported it as fact."""
+    pts = _pts(60, speed_mps=5.0)
+    pts[30]["longitude"] += 20 / 71_000  # ~20 m sideways for one second
+    r = validate_points(pts)
+    assert r.flags == []
+    assert 4.5 <= r.max_speed_mps <= 6.5, f"{r.max_speed_mps * 3.6:.1f} km/h"
+
+
+def test_a_real_sprint_still_counts():
+    """The window is long enough to hide a twitch and short enough to keep a sprint."""
+    pts = _pts(40, speed_mps=5.0)
+    # Ten seconds at 12 m/s (43 km/h) in the middle of the ride.
+    for i in range(20, 30):
+        pts[i]["latitude"] = pts[19]["latitude"] + (i - 19) * 12.0 / 111_195
+    for i in range(30, 40):
+        pts[i]["latitude"] = pts[29]["latitude"] + (i - 29) * 5.0 / 111_195
+    r = validate_points(pts)
+    assert r.max_speed_mps >= 11.0, f"{r.max_speed_mps * 3.6:.1f} km/h"
+
+
+def test_a_ride_shorter_than_the_window_has_no_top_speed():
+    r = validate_points(_pts(4, speed_mps=5.0))
+    assert r.max_speed_mps == 0.0

@@ -15,6 +15,20 @@ final class JournalViewModel {
     init(container: AppContainer) { self.container = container }
     var units: Units { container.session.units }
 
+    /// Takes an adventure out of the journal. The server discards the ride, so
+    /// its distance and speeds leave the stats with it; XP already earned stays.
+    func delete(_ entry: AdventureEntry) async -> Bool {
+        do {
+            try await container.api.deleteRide(id: entry.ride.id)
+        } catch {
+            self.error = error.localizedDescription
+            return false
+        }
+        adventures.removeAll { $0.id == entry.id }
+        stats = try? await container.api.journalStats()
+        return true
+    }
+
     func load() async {
         do {
             adventures = try await container.api.adventures().items
@@ -99,6 +113,7 @@ struct JournalView: View {
     @State private var model: JournalViewModel?
     @State private var section: JournalSection = .adventures
     @State private var filter: String? = nil
+    @State private var deleting: AdventureEntry?
 
     var body: some View {
         NavigationStack {
@@ -131,6 +146,17 @@ struct JournalView: View {
             .background(Theme.Colors.cream)
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await model?.load() }
+            .confirmationDialog(
+                "Delete this adventure?",
+                isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                titleVisibility: .visible,
+                presenting: deleting
+            ) { entry in
+                Button("Delete", role: .destructive) { Task { _ = await model?.delete(entry) } }
+                Button("Keep", role: .cancel) {}
+            } message: { _ in
+                Text("It leaves the journal and the stats. XP already earned stays.")
+            }
         }
         .task {
             if model == nil { model = JournalViewModel(container: container) }
@@ -171,10 +197,13 @@ struct JournalView: View {
             EmptyState(icon: "book.closed", title: "No adventures yet", message: "Your completed rides, quests and discoveries will be recorded here.")
         }
         ForEach(model.adventures) { entry in
-            NavigationLink { AdventureDetailView(entry: entry) } label: {
+            NavigationLink { AdventureDetailView(entry: entry, onDelete: { await model.delete(entry) }) } label: {
                 AdventureRow(entry: entry, units: model.units)
             }
             .buttonStyle(.pressable)
+            .contextMenu {
+                Button(role: .destructive) { deleting = entry } label: { Label("Delete adventure", systemImage: "trash") }
+            }
         }
     }
 
@@ -330,20 +359,26 @@ struct AdventureDetailView: View {
     @Environment(AppContainer.self) private var container
     @Environment(\.dismiss) private var dismiss
     let entry: AdventureEntry
+    /// Removes the adventure; the screen closes when it succeeds.
+    var onDelete: (() async -> Bool)? = nil
     @State private var geometry: RideGeometry?
     @State private var notes: String = ""
+    @State private var confirmingDelete = false
 
     var body: some View {
         let f = UnitFormatter(units: container.session.units)
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 14) {
-                HStack {
+                HStack(spacing: 10) {
                     IconCircleButton(symbol: "chevron.left", background: Theme.Colors.surface) { dismiss() }
                     Spacer()
                     if let quest = entry.quest {
                         Eyebrow(text: "\(ClassStyle.name(quest.characterClass)) quest · \(entry.ride.startedAt.formatted(date: .abbreviated, time: .omitted))", color: ClassStyle.textColor(quest.characterClass))
                     } else {
                         Eyebrow(text: entry.ride.startedAt.formatted(date: .abbreviated, time: .omitted))
+                    }
+                    if onDelete != nil {
+                        IconCircleButton(symbol: "trash", background: Theme.Colors.surface) { confirmingDelete = true }
                     }
                 }
                 HStack(alignment: .bottom) {
@@ -387,6 +422,16 @@ struct AdventureDetailView: View {
         }
         .background(Theme.Colors.cream)
         .toolbar(.hidden, for: .navigationBar)
+        .confirmationDialog("Delete this adventure?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                Task {
+                    if let onDelete, await onDelete() { dismiss() }
+                }
+            }
+            Button("Keep", role: .cancel) {}
+        } message: {
+            Text("It leaves the journal and the stats. XP already earned stays.")
+        }
         .task {
             notes = entry.notes ?? ""
             geometry = try? await container.api.rideGeometry(id: entry.ride.id)

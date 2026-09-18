@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import random
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -193,6 +194,36 @@ def _unexplored_cell_at(
     return None
 
 
+def _line_cells(
+    ctx: GenerationContext, rng: random.Random, count: int, distance_km_range: list[float], exclude: set[str]
+) -> list[str] | None:
+    """`count` unexplored cells on one bearing from the rider, nearest first.
+
+    Each takes its own band of the range, nudged along the line when it lands on
+    ground already seen; a bearing that cannot seat them all is given up for
+    another.
+    """
+    lo, hi = distance_km_range
+    step = (hi - lo) / count
+    for _ in range(16):
+        bearing = rng.uniform(0, 360)
+        cells: list[str] = []
+        for i in range(count):
+            for nudge in (0.0, 0.25, -0.25, 0.4, -0.4):
+                distance_m = (lo + step * (i + 0.5 + nudge)) * 1000
+                lat, lon = destination_point(ctx.latitude, ctx.longitude, bearing, distance_m)
+                cell = cell_for(lat, lon, ctx.resolution)
+                if cell in ctx.visited_cells or cell in ctx.explored_cells or cell in exclude or cell in cells:
+                    continue
+                cells.append(cell)
+                break
+            else:
+                break
+        if len(cells) == count:
+            return cells
+    return None
+
+
 def _frontier_cell(ctx: GenerationContext, rng: random.Random, exclude: set[str], max_km: float) -> str | None:
     origin = cell_for(ctx.latitude, ctx.longitude, ctx.resolution)
     edge_m = h3.average_hexagon_edge_length(ctx.resolution, unit="m")
@@ -302,16 +333,24 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
             "regionDistanceKm", [3 * DISTANCE_SCALE.get(ctx.activity, 1.0), 12 * DISTANCE_SCALE.get(ctx.activity, 1.0)]
         )
         dist_range = [dist_range[0] * scale, dist_range[1] * scale]
-        for _ in range(count):
-            cell = (
-                _frontier_cell(ctx, rng, used_cells, dist_range[1])
-                if rules.get("frontier")
-                else _unexplored_cell_at(ctx, rng, dist_range, used_cells)
-            )
-            if cell is None:
-                break
-            used_cells.add(cell)
-            region_cells.append(cell)
+        if rules.get("regionLayout") == "line":
+            # "Three points, one straight idea": all on one bearing from the rider,
+            # nearest first. Picked one random bearing at a time they made a
+            # triangle across the city, and a quest called a line was a 50 km lie.
+            region_cells = _line_cells(ctx, rng, count, dist_range, used_cells) or []
+            used_cells.update(region_cells)
+        else:
+            for _ in range(count):
+                cell = (
+                    _frontier_cell(ctx, rng, used_cells, dist_range[1])
+                    if rules.get("frontier")
+                    else _unexplored_cell_at(ctx, rng, dist_range, used_cells)
+                )
+                if cell is None:
+                    break
+                used_cells.add(cell)
+                region_cells.append(cell)
+        for cell in region_cells:
             lat, lon = cell_center(cell)
             farthest_m = max(farthest_m, haversine_m(ctx.latitude, ctx.longitude, lat, lon))
         if len(region_cells) < count:
@@ -476,13 +515,17 @@ def generate(
     exclude_template_ids: set[str] | None = None,
     *,
     only_any: bool = False,
+    board_classes: Iterable[str] = (),
 ) -> list[GeneratedQuest]:
     """Produce up to `count` distinct quests, preferring templates the user has
     completed least recently and weighting by template weight.
 
-    One of them is for anyone whenever such a template can be made here: a class
-    shapes the quests, it does not own the whole board. `only_any` asks for the
-    open quests alone (topping up a list that has none).
+    The board is the class's and everyone's: one open quest and one class quest,
+    whenever such a template can be made here. `board_classes` are the classes of
+    the quests the rider already has open — a batch tops up what the whole board
+    lacks, not what it lacks itself, or a second board in the same town repeats a
+    template to carry a class quest the first one already has. `only_any` asks
+    for the open quests alone.
     """
     exclude = set(exclude_template_ids or ())
     candidates = [
@@ -523,21 +566,14 @@ def generate(
     # crowded them out, and one class quest if the open ones did — whichever is
     # missing, made here if it can be, in place of the lightest pick of the other kind.
     if generated and not only_any:
-        # `candidates` has had the rider's open quests excluded from it, and a class
-        # holds only a handful of templates early on — three for a Warrior at level
-        # 1 — so a second board in the same place can find none of them left and go
-        # out all-open. A template the rider already has is the cheaper miss: the
-        # same trade `generate_quests` makes when exclusions leave nothing at all.
-        every = templates_for(ctx.character_class, ctx.class_level, ctx.unlocked_templates, activity=ctx.activity)
+        on_board = set(board_classes)
         for wanted_open in (True, False):
-            have = any((q.character_class == ANY_CLASS) == wanted_open for q in generated)
+            have = any((q.character_class == ANY_CLASS) == wanted_open for q in generated) or any(
+                (c == ANY_CLASS) == wanted_open for c in on_board
+            )
             if have:
                 continue
-            on_board = {q.template_id for q in generated}
             pool = [t for t in candidates if (t["characterClass"] == ANY_CLASS) == wanted_open]
-            pool = pool or [
-                t for t in every if (t["characterClass"] == ANY_CLASS) == wanted_open and t["id"] not in on_board
-            ]
             if not pool:
                 continue
             for salt in range(200, 220):

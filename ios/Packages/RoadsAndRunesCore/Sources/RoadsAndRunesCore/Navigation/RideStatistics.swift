@@ -73,6 +73,9 @@ public struct RideStatistics: Hashable, Sendable {
     public static let maxPlausibleSpeedMps = 25.0
     public static let movingSpeedThresholdMps = 0.5
     public static let elevationHysteresisMeters = 3.0
+    /// A top speed is ground made good over at least this long. Same window as
+    /// the server's, so the number the ride ends on is the number the journal keeps.
+    public static let speedWindowSeconds = 5.0
 
     public private(set) var distanceMeters: Double = 0
     public private(set) var movingSeconds: Double = 0
@@ -87,6 +90,8 @@ public struct RideStatistics: Hashable, Sendable {
     public private(set) var lastAcceptedFix: LocationFix?
 
     private var elevationReference: Double?
+    /// The accepted fixes inside the last speed window.
+    private var recent: [LocationFix] = []
     private var heartRateSum: Double = 0
     private var heartRateCount: Int = 0
     private var elapsedOffset: Double = 0
@@ -158,7 +163,19 @@ public struct RideStatistics: Hashable, Sendable {
         acceptedFixCount += 1
         lastAcceptedFix = fix
         currentSpeedMps = speed ?? 0
-        maxSpeedMps = max(maxSpeedMps, currentSpeedMps)
+        // The fastest the rider covered ground, not the fastest thing the GPS drew:
+        // a 20 m twitch in one second reads as 72 km/h and passes the cap. Over a
+        // window the twitch goes out and comes back and nets to nothing.
+        recent.append(fix)
+        while recent.count > 1, fix.timestamp.timeIntervalSince(recent[1].timestamp) >= Self.speedWindowSeconds {
+            recent.removeFirst()
+        }
+        if let then = recent.first {
+            let span = fix.timestamp.timeIntervalSince(then.timestamp)
+            if span >= Self.speedWindowSeconds {
+                maxSpeedMps = max(maxSpeedMps, GeoMath.distance(then.coordinate, fix.coordinate) / span)
+            }
+        }
 
         if let altitude = fix.altitude {
             if let reference = elevationReference {
