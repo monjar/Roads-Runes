@@ -623,7 +623,7 @@ struct PartyDetailView: View {
                 Button(party.status == .ready ? "Start the ride" : "Start with whoever is in (\(joined))") {
                     Task { await act { try await container.api.startParty(id: partyId) } }
                 }
-                .buttonStyle(party.status == .ready ? .primary : .surfacePill)
+                .buttonStyle(.primary)
                 .disabled(joined < 1)
             }
             if party.status == .forming || party.status == .ready || party.status == .active {
