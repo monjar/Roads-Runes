@@ -272,3 +272,64 @@ public struct QuestProgressRequest: Codable, Hashable, Sendable {
         self.events = events
     }
 }
+
+/// One step of an authored arc (`GET /quests/story`). The words are written; where
+/// it sends the rider is generated from where they are, like any other quest.
+public struct StoryStep: Codable, Hashable, Identifiable, Sendable {
+    /// COMPLETED (ridden) · OPEN (on the board now) · READY (next up) · LOCKED
+    public enum State: String, SafeEnum {
+        case completed = "COMPLETED"
+        case open = "OPEN"
+        case ready = "READY"
+        case locked = "LOCKED"
+        case unknown = "UNKNOWN"
+    }
+
+    public var slug: String
+    public var sequence: Int
+    public var title: String
+    public var description: String
+    public var state: State
+    /// The quest on the board for this step, while there is one.
+    public var questId: UUID?
+
+    public var id: String { slug }
+
+    public init(slug: String, sequence: Int, title: String, description: String, state: State, questId: UUID? = nil) {
+        self.slug = slug
+        self.sequence = sequence
+        self.title = title
+        self.description = description
+        self.state = state
+        self.questId = questId
+    }
+}
+
+/// An authored chain: a fixed order of steps where riding one opens the next.
+public struct StoryArc: Codable, Hashable, Identifiable, Sendable {
+    public var slug: String
+    public var title: String
+    public var description: String
+    /// nil when the arc is for anyone.
+    public var characterClass: CharacterClass?
+    public var minLevel: Int
+    /// Whether this rider's class and level have reached it. Locked arcs are still
+    /// sent: what is coming is the reason to come back.
+    public var unlocked: Bool
+    public var quests: [StoryStep]
+
+    public var id: String { slug }
+
+    public var completedCount: Int { quests.filter { $0.state == .completed }.count }
+    public var isComplete: Bool { !quests.isEmpty && completedCount == quests.count }
+
+    public init(slug: String, title: String, description: String, characterClass: CharacterClass? = nil, minLevel: Int, unlocked: Bool, quests: [StoryStep]) {
+        self.slug = slug
+        self.title = title
+        self.description = description
+        self.characterClass = characterClass
+        self.minLevel = minLevel
+        self.unlocked = unlocked
+        self.quests = quests
+    }
+}

@@ -62,6 +62,11 @@ async def engine(settings):
 @pytest.fixture
 async def app(engine, settings):
     application = create_app(settings)
+    # Story arcs are synced into the database once per process; every test builds a
+    # fresh one, so the memo must not outlive it.
+    from app.quests.story import reset_sync_cache
+
+    reset_sync_cache()
     # Build state eagerly (lifespan is not run by ASGITransport).
     from app.main import build_state
 

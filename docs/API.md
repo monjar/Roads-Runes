@@ -316,6 +316,30 @@ post-processing re-validates.
 
 ## Routes
 
+### `GET /quests/story`
+
+Every authored arc and where the rider stands in it. Behind the `story_quests`
+flag; 403 when it is off.
+
+```json
+[{
+  "slug": "first-light", "title": "First Light", "description": "…",
+  "characterClass": null, "minLevel": 1, "unlocked": true,
+  "quests": [
+    {"slug": "first-light-out-of-the-door", "sequence": 1, "title": "Out of the Door",
+     "description": "…", "state": "COMPLETED", "questId": null},
+    {"slug": "first-light-something-green", "sequence": 2, "title": "Something Green",
+     "description": "…", "state": "OPEN", "questId": "uuid"}
+  ]
+}]
+```
+
+`state` is `COMPLETED` (ridden), `OPEN` (on the board now, `questId` set), `READY`
+(next up) or `LOCKED` (waiting on the step before). Locked arcs are returned too —
+`unlocked` says whether this rider's class and level have reached it. A step is
+put on the board by `GET /quests` (`ensure_available`), one at a time, and never
+expires. See `docs/QUEST_SYSTEM.md` for the rules.
+
 ### `POST /routes/generate`
 
 ```json

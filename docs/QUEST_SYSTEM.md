@@ -78,6 +78,45 @@ touched. Any failure falls back to the template narrative.
 After persisting, target cells/POIs are marked `DISCOVERED` on the user's map
 so the fog shows where to go.
 
+## Story arcs
+
+The generated board is a different three quests every time and goes nowhere. An
+arc is the other thing: a fixed order of steps, authored in
+`app/quests/config/story_arcs.json`, where riding one is what opens the next.
+
+A step names a **template**, not a place. Where it actually sends the rider is
+generated from their own position, profile and explored ground like any other
+quest — only the title and description are written, so an arc reads the same in
+London and in Lisbon and still sends each rider somewhere real near them.
+Authored text may name what the generator found (`{poiName}`); text naming
+something the template does not produce is used as written rather than dropped.
+
+Rules the code keeps:
+
+* **One step at a time.** A chain read three-at-once is not a chain.
+* **Progress is derived, never stored.** A step is done when a quest carrying its
+  id is COMPLETED — there is no second source of truth to drift.
+* **A class arc is that class's**, measured against their *class* level; an open
+  arc is anyone's, measured against their *overall* level.
+* **Steps never expire.** The generated board turns over every fortnight; an arc
+  waits for the rider.
+* **A step is not a duplicate.** `retire_duplicates` keeps one quest per template
+  and skips story steps: two arcs may be built on the same template, and the step
+  is the one quest that is *supposed* to be on the board.
+* **A waiting step does not cost the board its template.** Generation excludes
+  templates the rider already has open; story steps are left out of that set, or a
+  step waiting a month would retire its template from the ordinary board for a
+  month.
+* **A stalled arc does not stall the others.** "Somewhere to Look From" needs high
+  ground and a flat city has none, so `story.due()` returns the next step of
+  *every* unlocked arc and `offer()` takes the first that can actually be built
+  here. The waiting one comes back the day the rider is somewhere it works.
+
+`GET /quests/story` returns every arc — locked ones included, because what is
+coming is the reason to come back — each step marked COMPLETED, OPEN (on the
+board now), READY (next up) or LOCKED. All of it is behind the `story_quests`
+feature flag.
+
 ## Progress and completion
 
 * The client reports objective events (`POST /quests/{id}/progress`) as it

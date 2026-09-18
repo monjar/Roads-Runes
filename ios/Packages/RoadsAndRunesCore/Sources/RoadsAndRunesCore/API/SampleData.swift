@@ -275,6 +275,36 @@ public enum SampleData {
         createdAt: referenceDate
     )
 
+    public static let sampleStoryArcs: [StoryArc] = [
+        StoryArc(
+            slug: "first-light",
+            title: "First Light",
+            description: "Nobody starts as an adventurer. They start by going outside, and then going a little further than last time.",
+            minLevel: 1,
+            unlocked: true,
+            quests: [
+                StoryStep(slug: "first-light-out-of-the-door", sequence: 1, title: "Out of the Door",
+                          description: "The hardest part of every ride is the first hundred metres.", state: .completed),
+                StoryStep(slug: "first-light-something-green", sequence: 2, title: "Something Green",
+                          description: "Every town keeps a green place, and most riders pass the turning for years.", state: .open, questId: questId),
+                StoryStep(slug: "first-light-somewhere-to-look-from", sequence: 3, title: "Somewhere to Look From",
+                          description: "Ground you have ridden looks different from above it.", state: .locked),
+            ]
+        ),
+        StoryArc(
+            slug: "the-edge-of-the-map",
+            title: "The Edge of the Map",
+            description: "An Explorer's map has an edge, and the edge moves. This is the work of moving it.",
+            characterClass: .explorer,
+            minLevel: 2,
+            unlocked: false,
+            quests: [
+                StoryStep(slug: "edge-of-the-map-past-the-fog", sequence: 1, title: "Past the Fog",
+                          description: "Roads you have never travelled, and enough of them to be sure it was deliberate.", state: .ready),
+            ]
+        ),
+    ]
+
     public static let sampleConfig = AppConfig(
         featureFlags: ["fog_of_war": false, "story_quests": false, "party_quests": false, "strava": false,
                        "wizard_class": false, "warrior_class": false, "scribe_class": false],

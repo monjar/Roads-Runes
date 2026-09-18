@@ -151,6 +151,8 @@ extension MockAPI {
 
     // MARK: Friends & feed
 
+    public func storyArcs() async throws -> [StoryArc] { try await run { SampleData.sampleStoryArcs } }
+
     public func friends() async throws -> [FriendSummary] { try await run { self.storedFriends } }
     public func searchUsers(query: String) async throws -> [FriendSummary] {
         try await run { self.storedFriends.filter { $0.displayName.localizedCaseInsensitiveContains(query) } }

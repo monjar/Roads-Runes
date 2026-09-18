@@ -11,6 +11,7 @@ struct QuestsView: View {
     @State private var bountyDestination: Place?
     /// Navigation state lives in the view so setting it always pushes the detail.
     @State private var selectedQuest: Quest?
+    @State private var showingStory = false
 
     var body: some View {
         NavigationStack {
@@ -50,7 +51,20 @@ struct QuestsView: View {
                         if !model.forAnyone.isEmpty {
                             section("For anyone", model.forAnyone, empty: "")
                         }
-                        if container.session.isEnabled("story_quests") { section("Story", model.story, empty: "No story quests unlocked.") }
+                        if container.session.isEnabled("story_quests") {
+                            section("Story", model.story, empty: "No story step on the board yet.")
+                            Button { showingStory = true } label: {
+                                HStack {
+                                    Text("The arcs so far").font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.terracottaDeep)
+                                    Spacer()
+                                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.Colors.muted)
+                                }
+                                .padding(.vertical, 10)
+                                .padding(.horizontal, 14)
+                                .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
+                            }
+                            .buttonStyle(.pressable)
+                        }
                         if container.session.isEnabled("party_quests") { section("Party", model.party, empty: "No party quests.") }
                         section("Completed", model.completed, empty: "Your completed adventures will appear here.", compact: true)
                         Button("Generate more quests here") { Task { await model.generateMore() } }
@@ -64,6 +78,14 @@ struct QuestsView: View {
             .background(Theme.Colors.cream)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(item: $selectedQuest) { quest in QuestDetailView(quest: quest) }
+            .navigationDestination(isPresented: $showingStory) {
+                StoryArcsView(onOpenQuest: { questId in
+                    // Back to the board, on the step they tapped.
+                    guard let quest = model?.all.first(where: { $0.id == questId }) else { return }
+                    showingStory = false
+                    selectedQuest = quest
+                })
+            }
             .refreshable { await model?.load() }
             .sheet(item: $plannerQuest) { quest in RoutePlannerView(quest: quest) }
             .sheet(isPresented: $planningCustom) { RoutePlannerView(quest: nil) }

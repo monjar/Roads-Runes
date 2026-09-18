@@ -65,6 +65,26 @@ class QuestOut(APIModel):
     createdAt: datetime
 
 
+class StoryStepOut(APIModel):
+    slug: str
+    sequence: int
+    title: str
+    description: str
+    # COMPLETED (ridden) / OPEN (on the board now) / READY (next up) / LOCKED
+    state: str
+    questId: uuid.UUID | None = None
+
+
+class StoryArcOut(APIModel):
+    slug: str
+    title: str
+    description: str
+    characterClass: str | None = None
+    minLevel: int
+    unlocked: bool
+    quests: list[StoryStepOut]
+
+
 class QuestGenerateRequest(APIModel):
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)

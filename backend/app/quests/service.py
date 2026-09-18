@@ -24,7 +24,7 @@ from app.discoveries import osm_import
 from app.discoveries.service import nearby as discoveries_nearby
 from app.exploration.cells import cell_for
 from app.exploration.service import known_cells, reveal
-from app.quests import narrative
+from app.quests import narrative, story
 from app.quests.generator import GeneratedQuest, GenerationContext, POICandidate, WorldObjectCandidate, generate
 from app.quests.models import QuestInstance, QuestObjective, QuestProgressEvent
 from app.quests.schemas import ObjectiveEventIn, ObjectiveOut, ObjectiveProgress, QuestOut
@@ -286,20 +286,23 @@ async def generate_quests(
     ctx = await build_context(db, settings, user, character, latitude, longitude, requested_km, activity)
     existing = (
         await db.execute(
-            select(QuestInstance.template_id, QuestInstance.character_class).where(
+            select(QuestInstance.template_id, QuestInstance.character_class, QuestInstance.story_quest_id).where(
                 QuestInstance.user_id == user.id,
                 QuestInstance.status.in_(["AVAILABLE", "ACCEPTED", "ACTIVE"]),
             )
         )
     ).all()
-    open_templates = {template for (template, _) in existing}
+    # Story steps are excluded from this: one sits on the board until it is ridden,
+    # and counting its template as "already dealt" would retire that template from
+    # the ordinary board for as long as the arc waits.
+    open_templates = {template for (template, _, story_id) in existing if story_id is None}
     try:
         generated = generate(
             ctx,
             count,
             exclude_template_ids=open_templates,
             only_any=only_any,
-            board_classes={character_class for (_, character_class) in existing},
+            board_classes={character_class for (_, character_class, _story) in existing},
         )
     except Exception as exc:  # noqa: BLE001
         log.error(EVENT_QUEST_GENERATION_FAILED, error=str(exc))
@@ -346,7 +349,13 @@ async def retire_duplicates(db: AsyncSession, user: User, latitude: float, longi
     """
     rows = (
         await db.execute(
-            select(QuestInstance).where(QuestInstance.user_id == user.id, QuestInstance.status == "AVAILABLE")
+            select(QuestInstance).where(
+                QuestInstance.user_id == user.id,
+                QuestInstance.status == "AVAILABLE",
+                # A story step is the one quest on the board that is *supposed* to be
+                # there; two arcs may even be built on the same template.
+                QuestInstance.story_quest_id.is_(None),
+            )
         )
     ).scalars()
     by_template: dict[str, list[QuestInstance]] = {}
@@ -389,6 +398,12 @@ async def ensure_available(
             db, settings, llm, user, character, latitude, longitude, 1, activity=activity, only_any=True
         )
         available = await list_quests(db, user, "AVAILABLE", latitude, longitude, 20)
+    # The spine: one authored step, waiting until it is ridden. Generated quests
+    # are a different three every time and go nowhere; an arc is what the rider is
+    # actually in the middle of.
+    if settings.flags.get("story_quests") and not any(q.story_quest_id for q in available):
+        if await story.offer(db, settings, llm, user, character, latitude, longitude, utcnow(), activity):
+            available = await list_quests(db, user, "AVAILABLE", latitude, longitude, 20)
     return available
 
 
