@@ -3,6 +3,7 @@ feature flag and client credentials are configured."""
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -98,35 +99,111 @@ async def _fresh_token(settings: Settings, connection: StravaConnection) -> str:
     return connection.access_token
 
 
-async def upload_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID) -> str:
+# Strava takes the file at once and makes the activity a few seconds later; the
+# upload record says when, and the activity id is what "Open in Strava" needs.
+UPLOAD_POLL_ATTEMPTS = 6
+UPLOAD_POLL_SECONDS = 2.0
+
+
+async def connection_for(db: AsyncSession, user_id: uuid.UUID) -> StravaConnection | None:
+    return await db.scalar(select(StravaConnection).where(StravaConnection.user_id == user_id))
+
+
+async def upload_ride(
+    db: AsyncSession, settings: Settings, ride_id: uuid.UUID, transport: httpx.AsyncBaseTransport | None = None
+) -> str:
+    """Send the ride to Strava and record where it got to on the ride itself.
+
+    Returns the Strava activity id, or the upload id when Strava has the file but
+    has not finished making the activity — the status on the ride says which.
+    Raises on failure, after recording FAILED and why, so the caller decides
+    whether that is a job to log or a request to answer.
+    """
     ride = await db.get(Ride, ride_id)
     if ride is None:
         raise NotFound("Ride not found")
-    connection = await db.scalar(select(StravaConnection).where(StravaConnection.user_id == ride.user_id))
+    connection = await connection_for(db, ride.user_id)
     if connection is None:
         raise FeatureDisabled("Strava not connected")
-    token = await _fresh_token(settings, connection)
-    points = list(
-        (await db.execute(select(RidePoint).where(RidePoint.ride_id == ride.id).order_by(RidePoint.sequence))).scalars()
-    )
-    gpx = to_gpx(ride, points)
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
-            STRAVA_UPLOAD,
-            headers={"Authorization": f"Bearer {token}"},
-            data={
-                "data_type": "gpx",
-                "name": ride.title or "Roads & Runes adventure",
-                "activity_type": STRAVA_TYPE.get(normalise(ride.activity), "ride"),
-                "external_id": str(ride.id),
-            },
-            files={"file": (f"{ride.id}.gpx", gpx.encode(), "application/gpx+xml")},
+    try:
+        token = await _fresh_token(settings, connection)
+        points = list(
+            (
+                await db.execute(select(RidePoint).where(RidePoint.ride_id == ride.id).order_by(RidePoint.sequence))
+            ).scalars()
         )
-        response.raise_for_status()
-    upload_id = str(response.json().get("id", ""))
-    ride.strava_activity_id = upload_id
+        gpx = to_gpx(ride, points)
+        async with httpx.AsyncClient(timeout=30.0, transport=transport) as client:
+            response = await client.post(
+                STRAVA_UPLOAD,
+                headers={"Authorization": f"Bearer {token}"},
+                data={
+                    "data_type": "gpx",
+                    "name": ride.title or "Roads & Runes adventure",
+                    "activity_type": STRAVA_TYPE.get(normalise(ride.activity), "ride"),
+                    "external_id": str(ride.id),
+                },
+                files={"file": (f"{ride.id}.gpx", gpx.encode(), "application/gpx+xml")},
+            )
+            response.raise_for_status()
+            upload = response.json()
+            upload_id = str(upload.get("id", ""))
+            activity_id = upload.get("activity_id")
+            for _ in range(UPLOAD_POLL_ATTEMPTS):
+                if activity_id or not upload_id:
+                    break
+                await asyncio.sleep(UPLOAD_POLL_SECONDS)
+                status = await client.get(f"{STRAVA_UPLOAD}/{upload_id}", headers={"Authorization": f"Bearer {token}"})
+                if status.status_code != 200:
+                    break
+                upload = status.json()
+                if upload.get("error"):
+                    raise RuntimeError(str(upload["error"])[:200])
+                activity_id = upload.get("activity_id")
+    except Exception as exc:
+        ride.strava_upload_status = "FAILED"
+        ride.strava_error = _reason(exc)
+        await db.flush()
+        raise
+    ride.strava_activity_id = str(activity_id) if activity_id else None
+    ride.strava_upload_status = "UPLOADED"
+    ride.strava_error = None
     await db.flush()
-    return upload_id
+    return str(activity_id or upload_id)
+
+
+def _reason(exc: Exception) -> str:
+    """What the rider can act on: Strava's own message when there is one."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        try:
+            body = exc.response.json()
+            return str(body.get("message") or body)[:300]
+        except ValueError:
+            return f"Strava answered {exc.response.status_code}"[:300]
+    return (str(exc) or exc.__class__.__name__)[:300]
+
+
+async def upload_after_processing(db: AsyncSession, settings: Settings, ride_id: uuid.UUID) -> bool:
+    """The automatic half of the loop: a processed ride goes to Strava on its own
+    when the rider asked for that and is connected. Never raises — a Strava
+    outage is not a reason for the ride's own processing to fail."""
+    ride = await db.get(Ride, ride_id)
+    if ride is None or ride.status not in ("PROCESSED", "FLAGGED") or ride.strava_upload_status:
+        return False
+    if not settings.flags.get("strava"):
+        return False
+    from app.users.models import User
+
+    user = await db.get(User, ride.user_id)
+    if user is None or user.effective_settings().get("stravaUploadMode") != "AUTO":
+        return False
+    if await connection_for(db, ride.user_id) is None:
+        return False
+    try:
+        await upload_ride(db, settings, ride.id)
+    except Exception:  # noqa: BLE001 - recorded on the ride by upload_ride
+        return False
+    return True
 
 
 async def disconnect(db: AsyncSession, user_id: uuid.UUID) -> None:

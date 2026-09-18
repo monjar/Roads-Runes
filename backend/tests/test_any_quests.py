@@ -42,30 +42,67 @@ async def test_every_board_has_a_quest_for_anyone(explorer_client):
 
 
 async def test_a_board_is_the_classs_and_everyones(client):
-    """A Warrior at level 1 has three templates of their own against eight open ones;
-    the board still carries one of each."""
+    """A Warrior at level 1 has three templates of their own against eight open
+    ones; the board still carries one of each. The *board* — a second batch in
+    the same town has no need of a second Warrior quest while the first is open,
+    and making one meant dealing a template twice."""
     from tests.conftest import sign_in
 
     await sign_in(client, subject="brenna", name="Brenna")
     r = await client.post("/character", json={"name": "Brenna", "characterClass": "WARRIOR"})
     assert r.status_code == 201, r.text
     await seed_discoveries()
+    dealt: list[str] = []
     for attempt in range(3):
         r = await client.post(
             "/quests/generate", json={"latitude": ORIGIN[0], "longitude": ORIGIN[1] + attempt * 0.001, "count": 3}
         )
         assert r.status_code == 200, r.text
-        classes = [q["characterClass"] for q in r.json()["items"]]
-        assert "WARRIOR" in classes and ANY_CLASS in classes, classes
+        dealt += [q["templateId"] for q in r.json()["items"]]
+        r = await client.get("/quests", params={"latitude": ORIGIN[0], "longitude": ORIGIN[1]})
+        board = [q["characterClass"] for q in r.json()["items"] if q["status"] == "AVAILABLE"]
+        assert "WARRIOR" in board and ANY_CLASS in board, board
+    assert len(dealt) == len(set(dealt)), dealt
 
 
-def test_a_class_keeps_its_place_once_its_templates_are_all_on_the_board():
-    """A board excludes the templates the rider already has open, and a class
-    holds only a handful early on, so the second board in one place could find
-    none of its own left and go out all-open. Which boards that hit depended on
-    the seed, which is the user's id — here every class template is excluded and
-    every seed is checked, so it is not a matter of luck either way.
-    """
+async def test_the_board_never_holds_the_same_quest_twice(client):
+    """Ask for more than there are templates and the answer is fewer, then none —
+    not The Old Stones again, a street over. Every board the rider opens is also
+    tidied of any repeats an older server dealt."""
+    from app.db.session import get_session_factory
+    from app.quests.models import QuestInstance
+    from tests.conftest import sign_in
+
+    await sign_in(client, subject="idris", name="Idris")
+    r = await client.post("/character", json={"name": "Idris", "characterClass": "WIZARD"})
+    assert r.status_code == 201, r.text
+    await seed_discoveries()
+    for attempt in range(6):
+        r = await client.post(
+            "/quests/generate", json={"latitude": ORIGIN[0], "longitude": ORIGIN[1] + attempt * 0.002, "count": 3}
+        )
+        assert r.status_code == 200, r.text
+    r = await client.get("/quests", params={"latitude": ORIGIN[0], "longitude": ORIGIN[1], "status": "AVAILABLE"})
+    templates = [q["templateId"] for q in r.json()["items"]]
+    assert templates and len(templates) == len(set(templates)), templates
+
+    # A repeat already on the board — dealt before this rule — goes when the board is next opened.
+    async with get_session_factory()() as db:
+        first = (await db.execute(__import__("sqlalchemy").select(QuestInstance).limit(1))).scalar_one()
+        columns = {c.name: getattr(first, c.name) for c in QuestInstance.__table__.columns}
+        for key in ("id", "created_at", "updated_at"):
+            columns.pop(key, None)
+        db.add(QuestInstance(**columns))
+        await db.commit()
+        repeated = first.template_id
+    r = await client.get("/quests", params={"latitude": ORIGIN[0], "longitude": ORIGIN[1], "status": "AVAILABLE"})
+    assert [q["templateId"] for q in r.json()["items"]].count(repeated) == 1
+
+
+def test_a_batch_tops_up_the_board_not_itself():
+    """With the class's quests all still open, a new batch owes the board nothing
+    of that class — and deals none of those templates again. With nothing open,
+    it carries one of each."""
     from dataclasses import replace
 
     from app.quests.generator import generate
@@ -73,10 +110,13 @@ def test_a_class_keeps_its_place_once_its_templates_are_all_on_the_board():
 
     for character_class in ("EXPLORER", "WIZARD", "WARRIOR", "SCRIBE"):
         own = {t["id"] for t in templates_for(character_class, 1) if t["characterClass"] != ANY_CLASS}
-        assert own, character_class
-        for seed in range(8):
-            ctx = replace(context(character_class, class_level=1), seed=f"exhausted:{seed}")
-            board = generate(ctx, count=3, exclude_template_ids=own)
-            classes = [q.character_class for q in board]
-            assert character_class in classes, f"{character_class} seed {seed}: {classes}"
-            assert ANY_CLASS in classes, f"{character_class} seed {seed}: {classes}"
+        for seed in range(6):
+            ctx = replace(context(character_class, class_level=1), seed=f"board:{seed}")
+            batch = generate(ctx, count=3, exclude_template_ids=own, board_classes={character_class})
+            assert batch, f"{character_class} seed {seed}"
+            assert not {q.template_id for q in batch} & own, f"{character_class} seed {seed} dealt a repeat"
+            assert all(q.character_class == ANY_CLASS for q in batch)
+
+            fresh = generate(ctx, count=3)
+            classes = {q.character_class for q in fresh}
+            assert {character_class, ANY_CLASS} <= classes, f"{character_class} seed {seed}: {classes}"

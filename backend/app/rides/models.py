@@ -48,6 +48,10 @@ class Ride(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     flags: Mapped[list[Any]] = mapped_column(JSONType, default=list, nullable=False)
     processed_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
     strava_activity_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # QUEUED / UPLOADED / FAILED, or null when never sent. UPLOADED with no
+    # activity id means Strava took the file and is still turning it into an activity.
+    strava_upload_status: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    strava_error: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
 
 class RidePoint(UUIDPrimaryKeyMixin, Base):

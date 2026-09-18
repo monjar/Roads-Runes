@@ -9,6 +9,12 @@ from app.core.activity import SPEED_CAP_MPS, normalise
 from app.core.geo import haversine_m
 
 MAX_PLAUSIBLE_SPEED_MPS = 25.0  # 90 km/h sustained is not cycling; runs and walks cap lower (core/activity.py)
+# A top speed is how fast the rider actually covered ground, not the fastest
+# thing the GPS drew: a 20 m twitch between two fixes a second apart reads as
+# 72 km/h and sails under the cap. So the max is the straight-line distance made
+# good over windows at least this long — a twitch goes out and comes back and
+# nets to nothing, while a real sprint is as straight as it needs to be.
+SPEED_WINDOW_S = 5.0
 MAX_ACCURACY_M = 100.0
 TELEPORT_DISTANCE_M = 500.0
 TELEPORT_WINDOW_S = 10.0
@@ -73,6 +79,9 @@ def validate_points(
 
     speeding = 0
     anchor_alt: float | None = None
+    # Every accepted fix, for the windowed top speed.
+    trail: list[CleanPoint] = cleaned[:1]
+    window_start = 0
     for prev, cur in zip(cleaned, cleaned[1:], strict=False):
         dt = (cur.timestamp - prev.timestamp).total_seconds()
         d = haversine_m(prev.latitude, prev.longitude, cur.latitude, cur.longitude)
@@ -87,7 +96,18 @@ def validate_points(
             speeding += 1
             continue
         result.computed_distance_m += d
-        result.max_speed_mps = max(result.max_speed_mps, speed)
+        trail.append(cur)
+        # The latest earlier fix that is a full window behind this one.
+        while (
+            window_start + 1 < len(trail)
+            and (cur.timestamp - trail[window_start + 1].timestamp).total_seconds() >= SPEED_WINDOW_S
+        ):
+            window_start += 1
+        then = trail[window_start]
+        span_s = (cur.timestamp - then.timestamp).total_seconds()
+        if span_s >= SPEED_WINDOW_S:
+            made_good = haversine_m(then.latitude, then.longitude, cur.latitude, cur.longitude) / span_s
+            result.max_speed_mps = max(result.max_speed_mps, made_good)
         if speed >= 0.5:
             result.moving_seconds += int(dt)
         if cur.altitude is not None:

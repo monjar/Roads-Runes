@@ -160,3 +160,29 @@ def test_pace_and_time_are_judged_over_the_whole_ride():
     )  # fmt: skip
     assert short.status != "COMPLETED"
     assert short.progress_current == 20.0 or short.progress_current > 0
+
+
+def test_the_ley_line_is_a_line():
+    """Three points on one bearing, nearest first, and a ride the length of going
+    out along them and back. Picked one random bearing at a time they made a
+    triangle across the city: 51.6 km for a quest whose title promised a line."""
+    from app.core.geo import bearing_deg, haversine_m
+    from app.quests.templates import template_by_id
+
+    for seed in range(6):
+        ctx = context("WIZARD")
+        ctx.seed = f"ley:{seed}"
+        quest = generator.instantiate(template_by_id()["WIZARD_LEY_LINE"], ctx)
+        assert quest is not None, seed
+        points = [(c["latitude"], c["longitude"]) for c in quest.objectives[0].extra["cells"]]
+        assert len(points) == 3
+        bearings = [bearing_deg(ctx.latitude, ctx.longitude, lat, lon) for lat, lon in points]
+        for bearing in bearings[1:]:
+            off = (bearing - bearings[0] + 180) % 360 - 180
+            assert abs(off) <= 6, f"seed {seed}: bearings {bearings}"
+        distances = [haversine_m(ctx.latitude, ctx.longitude, lat, lon) for lat, lon in points]
+        assert distances == sorted(distances), distances
+        # The range is scaled to the rider (30 km is a comfortable day here), so the far point can pass 11 km.
+        assert 3_000 <= distances[0] and distances[-1] <= 15_000, distances
+        # Out along the line and back, with room for roads: not a lap of the city.
+        assert quest.recommended_distance_km <= distances[-1] / 1000 * 2.3, quest.recommended_distance_km

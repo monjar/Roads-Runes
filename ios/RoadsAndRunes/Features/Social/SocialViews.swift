@@ -43,15 +43,70 @@ final class SocialViewModel {
         try? await container.api.removeFriend(userId: friend.id)
         await load()
     }
+
+    // MARK: Finding people
+
+    private(set) var found: [FriendSummary] = []
+    private(set) var searching = false
+
+    /// People by name. Two letters is the least the server will look for.
+    func search(_ query: String) async {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        guard trimmed.count >= 2 else { found = []; return }
+        searching = true
+        found = (try? await container.api.searchUsers(query: trimmed)) ?? []
+        searching = false
+    }
+
+    /// Where this person stands with me, so the search row shows the right button.
+    func standing(of person: FriendSummary) -> FriendshipState {
+        if friends.contains(where: { $0.id == person.id }) { return .friends }
+        if requests.outgoing.contains(where: { $0.user.id == person.id }) { return .requestSent }
+        if requests.incoming.contains(where: { $0.user.id == person.id }) { return .requestReceived }
+        return .none
+    }
+
+    // MARK: Parties
+
+    /// Parties I have been asked into and not yet answered.
+    var invitations: [Party] {
+        guard let me = container.session.user?.id else { return [] }
+        return parties.filter { party in
+            party.status == .forming && party.members.contains { $0.user.id == me && $0.status == "INVITED" }
+        }
+    }
+
+    func acceptInvite(_ party: Party) async {
+        do { _ = try await container.api.acceptPartyInvite(id: party.id); await load() } catch { self.error = error.localizedDescription }
+    }
 }
 
 /// Friends (design 15b): the light feed — "look where people went". Nearby
 /// adventurers as a count only; exact locations are never shared.
 struct FriendsView: View {
+    @ViewBuilder
+    private func searchAction(_ person: FriendSummary, _ model: SocialViewModel) -> some View {
+        switch model.standing(of: person) {
+        case .friends:
+            Text("Friends").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+        case .requestSent:
+            Text("Sent").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+        case .requestReceived:
+            Button("Accept") {
+                Task {
+                    if let request = model.requests.incoming.first(where: { $0.user.id == person.id }) { await model.respond(request, accept: true) }
+                }
+            }
+            .buttonStyle(.inkPill)
+        default:
+            Button("Add") { Task { await model.sendRequest(userId: person.id) } }.buttonStyle(.inkPill)
+        }
+    }
+
     @Environment(AppContainer.self) private var container
     @Environment(\.dismiss) private var dismiss
     @State private var model: SocialViewModel?
-    @State private var newFriendId = ""
+    @State private var query = ""
     @State private var showAdd = false
 
     var body: some View {
@@ -70,15 +125,41 @@ struct FriendsView: View {
                     privacyCard
 
                     if showAdd {
-                        HStack(spacing: 8) {
-                            TextField("Friend's user id", text: $newFriendId).textFieldStyle(CreamFieldStyle())
-                            Button("Send") {
-                                if let id = UUID(uuidString: newFriendId) { Task { await model.sendRequest(userId: id); newFriendId = "" } }
+                        TextField("Search by name", text: $query)
+                            .textFieldStyle(CreamFieldStyle())
+                            .textInputAutocapitalization(.words)
+                            .autocorrectionDisabled()
+                            .onChange(of: query) { _, text in Task { await model.search(text) } }
+                        if model.found.isEmpty, query.trimmingCharacters(in: .whitespaces).count >= 2, !model.searching {
+                            Text("Nobody by that name yet.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                        }
+                        ForEach(model.found) { person in
+                            HStack(spacing: 8) {
+                                FriendAvatar(name: person.displayName, characterClass: person.characterClass, size: 40)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(person.displayName).font(Theme.Typography.cardTitle).foregroundStyle(Theme.Colors.ink)
+                                    if let level = person.overallLevel {
+                                        Text("Level \(level)\(person.characterClass.map { " · \(ClassStyle.name($0))" } ?? "")")
+                                            .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                                    }
+                                }
+                                Spacer()
+                                searchAction(person, model)
                             }
-                            .buttonStyle(.inkPill)
+                            .card(radius: Theme.Radius.row)
                         }
                         if !model.requests.outgoing.isEmpty {
                             Text("\(model.requests.outgoing.count) request\(model.requests.outgoing.count == 1 ? "" : "s") pending").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                        }
+                    }
+
+                    if container.session.isEnabled("party_quests"), !model.invitations.isEmpty {
+                        SectionHeader(title: "You're invited")
+                        ForEach(model.invitations) { party in
+                            NavigationLink { PartyDetailView(partyId: party.id) } label: {
+                                PartyCard(party: party)
+                            }
+                            .buttonStyle(.pressable)
                         }
                     }
 
@@ -124,7 +205,7 @@ struct FriendsView: View {
                         }
                     }
                     if model.friends.isEmpty {
-                        Text("Add friends by their user id to plan shared adventures and see where they went.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                        Text("Find friends by name to plan shared adventures and see where they went.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
                     }
 
                     if !model.feed.isEmpty {
@@ -135,7 +216,10 @@ struct FriendsView: View {
                     }
                     if container.session.isEnabled("party_quests"), !model.parties.isEmpty {
                         SectionHeader(title: "Parties")
-                        ForEach(model.parties) { PartyCard(party: $0) }
+                        ForEach(model.parties.filter { party in !model.invitations.contains { $0.id == party.id } }) { party in
+                            NavigationLink { PartyDetailView(partyId: party.id) } label: { PartyCard(party: party) }
+                                .buttonStyle(.pressable)
+                        }
                     }
                 }
                 .padding(.horizontal, 22)
@@ -448,6 +532,150 @@ struct PartyInviteSheet: View {
             let accepted = (try? await container.api.quests(near: origin, status: .accepted, limit: 10, cursor: nil))?.items ?? []
             let active = (try? await container.api.quests(near: origin, status: .active, limit: 5, cursor: nil))?.items ?? []
             quests = accepted + active
+        }
+    }
+}
+
+/// One party: who is in, where each of them stands, the quest, and what I can
+/// do about it — which depends on whether I lead it and where it has got to.
+///
+/// FORMING: invitees answer, joined members mark ready, the leader can start
+/// once someone is in or cancel. READY: everyone joined is ready; the leader
+/// starts. ACTIVE: the ride is on; leaving is the only exit. The server owns
+/// the transitions (`social/service.py`); this screen only offers the ones it
+/// will accept.
+struct PartyDetailView: View {
+    @Environment(AppContainer.self) private var container
+    @Environment(\.dismiss) private var dismiss
+    let partyId: UUID
+    @State private var party: Party?
+    @State private var quest: Quest?
+    @State private var busy = false
+    @State private var error: String?
+    @State private var confirmingLeave = false
+
+    private var me: UUID? { container.session.user?.id }
+    private var mine: PartyMember? { party?.members.first { $0.user.id == me } }
+    private var leading: Bool { party?.ownerId == me }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .firstTextBaseline) {
+                    IconCircleButton(symbol: "chevron.left", background: Theme.Colors.surface) { dismiss() }
+                    Text("Party").font(Theme.Typography.voice(32, relativeTo: .largeTitle)).foregroundStyle(Theme.Colors.ink)
+                    Spacer()
+                    if let party { Eyebrow(text: statusWord(party.status), color: Theme.Colors.terracottaDeep) }
+                }
+                if let error { ErrorLine(text: error) }
+                if let party {
+                    if let quest {
+                        QuestCard(quest: quest, compact: true, units: container.session.units)
+                    }
+                    Text(party.completionRule == .group ? "Everyone finishes together: the quest completes when the last of you does." : "Each of you finishes on your own ride; the party is company.")
+                        .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+
+                    SectionHeader(title: "Riders")
+                    ForEach(party.members) { member in
+                        HStack(spacing: 10) {
+                            FriendAvatar(name: member.user.displayName, characterClass: member.user.characterClass, size: 40)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(member.user.displayName + (member.user.id == me ? " (you)" : "")).font(Theme.Typography.cardTitle).foregroundStyle(Theme.Colors.ink)
+                                Text(member.role == "OWNER" ? "Leads the party" : memberWord(member.status)).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                            }
+                            Spacer()
+                            Image(systemName: memberSymbol(member.status)).foregroundStyle(member.status == "READY" ? Theme.Colors.sageDeep : Theme.Colors.muted)
+                        }
+                        .card(radius: Theme.Radius.row)
+                    }
+
+                    actions(party)
+                } else {
+                    ProgressView().tint(Theme.Colors.terracotta).frame(maxWidth: .infinity)
+                }
+            }
+            .padding(.horizontal, 22)
+            .padding(.top, 8)
+            .padding(.bottom, Theme.Layout.tabBarClearance)
+        }
+        .background(Theme.Colors.cream)
+        .toolbar(.hidden, for: .navigationBar)
+        .confirmationDialog("Leave this party?", isPresented: $confirmingLeave, titleVisibility: .visible) {
+            Button(leading ? "Cancel the party" : "Leave", role: .destructive) { Task { await act { try await container.api.leaveParty(id: partyId) } } }
+            Button("Stay", role: .cancel) {}
+        } message: {
+            Text(leading ? "You lead it, so leaving ends it for everyone." : "The others ride on without you.")
+        }
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    @ViewBuilder
+    private func actions(_ party: Party) -> some View {
+        VStack(spacing: 10) {
+            if mine?.status == "INVITED", party.status == .forming {
+                Button("Join the party") { Task { await act { try await container.api.acceptPartyInvite(id: partyId) } } }.buttonStyle(.primary)
+            } else if mine?.status == "JOINED", party.status == .forming {
+                Button("I'm ready") { Task { await act { try await container.api.readyParty(id: partyId) } } }.buttonStyle(.primary)
+            }
+            if leading, party.status == .forming || party.status == .ready {
+                let joined = party.members.filter { $0.status == "JOINED" || $0.status == "READY" }.count
+                Button(party.status == .ready ? "Start the ride" : "Start with whoever is in (\(joined))") {
+                    Task { await act { try await container.api.startParty(id: partyId) } }
+                }
+                .buttonStyle(.primary)
+                .disabled(joined < 1)
+            }
+            if party.status == .forming || party.status == .ready || party.status == .active {
+                Button(leading ? "Cancel the party" : "Leave the party", role: .destructive) { confirmingLeave = true }.buttonStyle(.surfacePill)
+            }
+        }
+        .disabled(busy)
+        .padding(.top, 6)
+    }
+
+    private func act(_ call: () async throws -> Party) async {
+        busy = true
+        do { party = try await call(); error = nil } catch { self.error = error.localizedDescription }
+        busy = false
+    }
+
+    private func load() async {
+        do {
+            party = try await container.api.party(id: partyId)
+            if let questId = party?.questId { quest = try? await container.api.quest(id: questId) }
+            error = nil
+        } catch { self.error = error.localizedDescription }
+    }
+
+    private func statusWord(_ status: PartyStatus) -> String {
+        switch status {
+        case .forming: return "Forming"
+        case .ready: return "Ready"
+        case .active: return "Riding"
+        case .completed: return "Completed"
+        case .cancelled: return "Cancelled"
+        case .unknown: return "Party"
+        }
+    }
+
+    private func memberWord(_ status: String) -> String {
+        switch status {
+        case "INVITED": return "Invited, not yet answered"
+        case "JOINED": return "In, not yet ready"
+        case "READY": return "Ready to ride"
+        case "LEFT": return "Left"
+        default: return status.capitalized
+        }
+    }
+
+    private func memberSymbol(_ status: String) -> String {
+        switch status {
+        case "INVITED": return "envelope"
+        case "JOINED": return "person.fill"
+        case "READY": return "checkmark.circle.fill"
+        case "LEFT": return "figure.walk.departure"
+        default: return "person"
         }
     }
 }

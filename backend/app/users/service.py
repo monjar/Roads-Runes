@@ -10,6 +10,7 @@ from app.core.errors import NotFound
 from app.discoveries.models import UserDiscovery
 from app.quests.models import QuestInstance
 from app.rides.models import Ride
+from app.social.schemas import FriendSummary
 from app.social.service import relationship_state
 from app.users.models import User
 from app.users.schemas import (
@@ -103,3 +104,33 @@ async def public_profile(db: AsyncSession, viewer: User, user_id: uuid.UUID) -> 
         friendship=friendship,
         recentAdventures=recent,
     )
+
+
+async def search_users(db: AsyncSession, me: User, query: str, limit: int) -> list[FriendSummary]:
+    """People by display name, nearest match first, never oneself and never
+    anyone who has blocked or been blocked by the searcher."""
+    from app.social.service import summary
+
+    needle = query.strip().lower()
+    if not needle:
+        return []
+    rows = (
+        (
+            await db.execute(
+                select(User)
+                .where(func.lower(User.display_name).contains(needle), User.id != me.id)
+                .order_by(func.length(User.display_name), User.display_name)
+                .limit(limit * 2)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    found: list[FriendSummary] = []
+    for other in rows:
+        if await relationship_state(db, me.id, other.id) == "BLOCKED":
+            continue
+        found.append(await summary(db, other))
+        if len(found) >= limit:
+            break
+    return found

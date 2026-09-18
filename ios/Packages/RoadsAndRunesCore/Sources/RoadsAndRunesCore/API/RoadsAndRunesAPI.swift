@@ -85,6 +85,8 @@ public protocol RoadsAndRunesAPI: Sendable {
     func createDiscovery(_ request: DiscoveryCreate) async throws -> Discovery
 
     // MARK: Friends & feed
+    /// People by name, to add as friends.
+    func searchUsers(query: String) async throws -> [FriendSummary]
     func friends() async throws -> [FriendSummary]
     func friendRequests() async throws -> FriendRequests
     func sendFriendRequest(userId: UUID) async throws -> FriendRequestResult

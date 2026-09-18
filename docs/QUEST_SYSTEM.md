@@ -42,7 +42,13 @@ with the Trail Sense ability), unlocked templates from abilities, seed.
 Stage 1 (`generator.py`, deterministic):
 
 1. Filter templates by class, level and ability unlocks; weight by template
-   weight, down-weight recently completed templates.
+   weight, down-weight recently completed templates. **A template the rider
+   already has open is never dealt again**: a board holds one quest per
+   template, and asking for more than there are templates returns fewer, then
+   none. (It used to fall back to generating without that exclusion "rather
+   than returning nothing", and a rider who had been offered everything got
+   the whole board again, a street apart. A board opened with a location also
+   tidies any such repeats an older server left — the nearer copy stays.)
 2. For each pick, `instantiate()` resolves rules:
    * `distanceKm` / `newTerritoryKm` / `elevationMeters` ranges scaled by
      the rider's comfortable distance (0.5×–2×);
@@ -50,7 +56,10 @@ Stage 1 (`generator.py`, deterministic):
      choose a POI in the distance band; missing POI → template skipped;
    * `regionCount` → unexplored cells at random bearings/distances, or
      frontier cells (unexplored cells bordering explored ones) when
-     `frontier` is set.
+     `frontier` is set, or — with `regionLayout: "line"` — all on one bearing
+     from the rider, nearest first, so a quest that calls itself a line is
+     one (The Ley Line used to be a triangle across the city, 50 km for a
+     template whose narrative promised "one straight idea").
 3. Objectives get coordinates (POI, cell centre with a 250 m radius, or the
    origin for RETURN_TO_START) and targets.
 4. Difficulty = distance vs comfortable distance (EASY < 0.7×, MODERATE
@@ -58,6 +67,9 @@ Stage 1 (`generator.py`, deterministic):
    `xp_rules.json` `questBase[difficulty]`.
 5. A second pass re-rolls region templates with new seeds if sparse POI data
    left fewer than the requested count.
+6. The board is the class's and everyone's: one class quest and one open
+   quest, judged against everything the rider has open, not the batch alone —
+   a second batch in the same town owes the board nothing it already has.
 
 Stage 2 (`narrative.py`): if `llm_narrative` is on, Claude rewrites title,
 hook and completion text from the facts. Objectives and coordinates are never

@@ -24,15 +24,24 @@ public struct Ride: Codable, Hashable, Identifiable, Sendable {
     public var createdAt: Date
     /// How it was done; nil from a server that predates activities (a ride).
     public var activity: Activity?
+    /// Where the Strava upload stands: QUEUED, UPLOADED or FAILED; nil when never sent.
+    /// UPLOADED with no activity id means Strava has the file and is still making the activity.
+    public var stravaUploadStatus: String?
+    public var stravaActivityId: String?
+    public var stravaError: String?
 
     public init(
         id: UUID, clientRideId: UUID, status: RideStatus, title: String? = nil, startedAt: Date, endedAt: Date? = nil,
         distanceMeters: Double, durationSeconds: Int, movingSeconds: Int, elevationGainMeters: Double,
         activeCalories: Double? = nil, averageSpeedMps: Double? = nil, maxSpeedMps: Double? = nil, questId: UUID? = nil,
         bikeId: UUID? = nil, routeId: UUID? = nil, visibility: Visibility, healthKitWorkoutId: String? = nil,
-        pointCount: Int, flags: [String]? = nil, createdAt: Date, activity: Activity? = nil
+        pointCount: Int, flags: [String]? = nil, createdAt: Date, activity: Activity? = nil,
+        stravaUploadStatus: String? = nil, stravaActivityId: String? = nil, stravaError: String? = nil
     ) {
         self.activity = activity
+        self.stravaUploadStatus = stravaUploadStatus
+        self.stravaActivityId = stravaActivityId
+        self.stravaError = stravaError
         self.id = id
         self.clientRideId = clientRideId
         self.status = status
@@ -54,6 +63,14 @@ public struct Ride: Codable, Hashable, Identifiable, Sendable {
         self.pointCount = pointCount
         self.flags = flags
         self.createdAt = createdAt
+    }
+}
+
+public extension Ride {
+    /// The activity on strava.com, once Strava has made one.
+    var stravaURL: URL? {
+        guard let id = stravaActivityId, !id.isEmpty else { return nil }
+        return URL(string: "https://www.strava.com/activities/\(id)")
     }
 }
 

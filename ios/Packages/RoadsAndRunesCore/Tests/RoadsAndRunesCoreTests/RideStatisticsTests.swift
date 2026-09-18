@@ -37,6 +37,19 @@ final class RideStatisticsTests: XCTestCase {
         XCTAssertEqual(stats.currentSpeedMps, 0)
     }
 
+    func testTopSpeedIsAStretchNotATwitch() {
+        // 5 m/s up the road, with one fix 20 m to the side for a second: the
+        // journal used to keep that second as a 72 km/h top speed.
+        var stats = RideStatistics()
+        for i in 0...29 {
+            var point = GeoMath.destination(from: start, bearingDegrees: 0, distanceMeters: Double(i) * 5)
+            if i == 15 { point = GeoMath.destination(from: point, bearingDegrees: 90, distanceMeters: 20) }
+            stats.add(fix: LocationFix(coordinate: point, timestamp: t0.addingTimeInterval(Double(i)), horizontalAccuracy: 5))
+        }
+        XCTAssertLessThan(stats.maxSpeedMps, 6.5, "\(stats.maxSpeedMps * 3.6) km/h")
+        XCTAssertGreaterThan(stats.maxSpeedMps, 4.5)
+    }
+
     func testImplausibleAndInaccurateFixesAreIgnored() {
         var stats = RideStatistics()
         stats.add(fix: fix(seconds: 0, metersNorth: 0))

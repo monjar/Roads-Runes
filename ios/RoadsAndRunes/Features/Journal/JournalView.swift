@@ -15,6 +15,20 @@ final class JournalViewModel {
     init(container: AppContainer) { self.container = container }
     var units: Units { container.session.units }
 
+    /// Takes an adventure out of the journal. The server discards the ride, so
+    /// its distance and speeds leave the stats with it; XP already earned stays.
+    func delete(_ entry: AdventureEntry) async -> Bool {
+        do {
+            try await container.api.deleteRide(id: entry.ride.id)
+        } catch {
+            self.error = error.localizedDescription
+            return false
+        }
+        adventures.removeAll { $0.id == entry.id }
+        stats = try? await container.api.journalStats()
+        return true
+    }
+
     func load() async {
         do {
             adventures = try await container.api.adventures().items
@@ -99,6 +113,7 @@ struct JournalView: View {
     @State private var model: JournalViewModel?
     @State private var section: JournalSection = .adventures
     @State private var filter: String? = nil
+    @State private var deleting: AdventureEntry?
 
     var body: some View {
         NavigationStack {
@@ -131,6 +146,17 @@ struct JournalView: View {
             .background(Theme.Colors.cream)
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await model?.load() }
+            .confirmationDialog(
+                "Delete this adventure?",
+                isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                titleVisibility: .visible,
+                presenting: deleting
+            ) { entry in
+                Button("Delete", role: .destructive) { Task { _ = await model?.delete(entry) } }
+                Button("Keep", role: .cancel) {}
+            } message: { _ in
+                Text("It leaves the journal and the stats. XP already earned stays.")
+            }
         }
         .task {
             if model == nil { model = JournalViewModel(container: container) }
@@ -171,10 +197,13 @@ struct JournalView: View {
             EmptyState(icon: "book.closed", title: "No adventures yet", message: "Your completed rides, quests and discoveries will be recorded here.")
         }
         ForEach(model.adventures) { entry in
-            NavigationLink { AdventureDetailView(entry: entry) } label: {
+            NavigationLink { AdventureDetailView(entry: entry, onDelete: { await model.delete(entry) }) } label: {
                 AdventureRow(entry: entry, units: model.units)
             }
             .buttonStyle(.pressable)
+            .contextMenu {
+                Button(role: .destructive) { deleting = entry } label: { Label("Delete adventure", systemImage: "trash") }
+            }
         }
     }
 
@@ -330,20 +359,75 @@ struct AdventureDetailView: View {
     @Environment(AppContainer.self) private var container
     @Environment(\.dismiss) private var dismiss
     let entry: AdventureEntry
+    /// Removes the adventure; the screen closes when it succeeds.
+    var onDelete: (() async -> Bool)? = nil
     @State private var geometry: RideGeometry?
     @State private var notes: String = ""
+    @State private var confirmingDelete = false
+    @State private var strava: StravaStatus?
+    @State private var stravaUpload: String?  // the ride's status, refreshed after a retry
+    @State private var stravaError: String?
+    @State private var stravaBusy = false
+
+    /// Where this ride stands with Strava: sent (with a link once Strava has made
+    /// the activity), failed (with the reason and a retry), or not sent (with the
+    /// upload, when connected). Nothing at all when Strava is not connected.
+    @ViewBuilder
+    private var stravaRow: some View {
+        let status = stravaUpload ?? entry.ride.stravaUploadStatus
+        if status == "UPLOADED", let url = (refreshed ?? entry.ride).stravaURL {
+            Link(destination: url) { Label("Open in Strava", systemImage: "arrow.up.right.square") }.buttonStyle(.surfacePill)
+        } else if status == "UPLOADED" || status == "QUEUED" {
+            Label(status == "QUEUED" ? "Sending to Strava…" : "On Strava", systemImage: "checkmark.circle")
+                .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.sageDeep)
+        } else if status == "FAILED" {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Strava upload failed: \(stravaError ?? entry.ride.stravaError ?? "unknown reason")")
+                    .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.terracottaDeep)
+                Button(stravaBusy ? "Retrying…" : "Retry") { uploadToStrava() }.buttonStyle(.surfacePill).disabled(stravaBusy)
+            }
+        } else if strava?.connected == true {
+            Button(stravaBusy ? "Sending…" : "Upload to Strava") { uploadToStrava() }.buttonStyle(.surfacePill).disabled(stravaBusy)
+        }
+    }
+
+    private func uploadToStrava() {
+        stravaBusy = true
+        Task {
+            do {
+                _ = try await container.api.uploadRideToStrava(rideId: entry.ride.id)
+                stravaUpload = "QUEUED"
+                stravaError = nil
+                // The job runs in the background; look again in a few seconds for the link.
+                try? await Task.sleep(for: .seconds(8))
+                if let ride = try? await container.api.ride(id: entry.ride.id) {
+                    stravaUpload = ride.stravaUploadStatus
+                    stravaError = ride.stravaError
+                    refreshed = ride
+                }
+            } catch {
+                stravaUpload = "FAILED"
+                stravaError = error.localizedDescription
+            }
+            stravaBusy = false
+        }
+    }
+    @State private var refreshed: Ride?
 
     var body: some View {
         let f = UnitFormatter(units: container.session.units)
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 14) {
-                HStack {
+                HStack(spacing: 10) {
                     IconCircleButton(symbol: "chevron.left", background: Theme.Colors.surface) { dismiss() }
                     Spacer()
                     if let quest = entry.quest {
                         Eyebrow(text: "\(ClassStyle.name(quest.characterClass)) quest · \(entry.ride.startedAt.formatted(date: .abbreviated, time: .omitted))", color: ClassStyle.textColor(quest.characterClass))
                     } else {
                         Eyebrow(text: entry.ride.startedAt.formatted(date: .abbreviated, time: .omitted))
+                    }
+                    if onDelete != nil {
+                        IconCircleButton(symbol: "trash", background: Theme.Colors.surface) { confirmingDelete = true }
                     }
                 }
                 HStack(alignment: .bottom) {
@@ -379,6 +463,7 @@ struct AdventureDetailView: View {
                 HStack(spacing: 8) {
                     Button("Save notes") { Task { _ = try? await container.api.updateRide(id: entry.ride.id, RidePatch(notes: notes)) } }.buttonStyle(.inkPill)
                     ShareLink(item: container.api.rideExportURL(id: entry.ride.id, format: .gpx)) { Label("Export GPX", systemImage: "square.and.arrow.up") }.buttonStyle(.surfacePill)
+                    stravaRow
                 }
             }
             .padding(.horizontal, 22)
@@ -387,9 +472,20 @@ struct AdventureDetailView: View {
         }
         .background(Theme.Colors.cream)
         .toolbar(.hidden, for: .navigationBar)
+        .confirmationDialog("Delete this adventure?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                Task {
+                    if let onDelete, await onDelete() { dismiss() }
+                }
+            }
+            Button("Keep", role: .cancel) {}
+        } message: {
+            Text("It leaves the journal and the stats. XP already earned stays.")
+        }
         .task {
             notes = entry.notes ?? ""
             geometry = try? await container.api.rideGeometry(id: entry.ride.id)
+            strava = try? await container.api.stravaStatus()
         }
     }
 
