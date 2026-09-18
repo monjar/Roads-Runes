@@ -49,6 +49,9 @@ def ride_out(ride: Ride) -> RideOut:
         pointCount=ride.point_count,
         flags=list(ride.flags or []),
         createdAt=ride.created_at,
+        stravaActivityId=ride.strava_activity_id,
+        stravaUploadStatus=ride.strava_upload_status,
+        stravaError=ride.strava_error,
     )
 
 

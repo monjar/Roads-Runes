@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 
 from app.core.deps import CurrentUser, DBDep, SettingsDep, get_job_queue
+from app.core.errors import FeatureDisabled
 from app.core.schemas import APIModel
 from app.integrations import strava
 from app.integrations.models import StravaConnection
@@ -69,5 +70,10 @@ async def strava_upload(
 ) -> dict:
     strava._check(settings)
     ride = await get_ride(db, user, ride_id)
+    if await strava.connection_for(db, user.id) is None:
+        raise FeatureDisabled("Strava not connected")
+    ride.strava_upload_status = "QUEUED"
+    ride.strava_error = None
+    await db.commit()  # the job runs in another session/process; make QUEUED visible first
     await jobs.enqueue("strava_upload", {"rideId": str(ride.id)})  # type: ignore[attr-defined]
     return {"status": "QUEUED"}

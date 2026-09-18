@@ -181,6 +181,9 @@ public enum Endpoints {
     public static func createDiscovery(_ body: DiscoveryCreate) throws -> Endpoint { try .json(.post, "/discoveries", body: body) }
 
     // MARK: Social
+    public static func searchUsers(query: String, limit: Int = 10) -> Endpoint {
+        Endpoint(method: .get, path: "/users/search", query: [QueryItem("q", query), QueryItem("limit", String(limit))])
+    }
     public static func friends() -> Endpoint { Endpoint(method: .get, path: "/friends") }
     public static func friendRequests() -> Endpoint { Endpoint(method: .get, path: "/friends/requests") }
     public static func sendFriendRequest(userId: UUID) throws -> Endpoint {

@@ -21,7 +21,8 @@ primary_region = "lhr"
   JOB_QUEUE = "inline"          # rides are processed in-process; no Redis to run
   ROUTING_ENGINE = "valhalla"   # no GraphHopper graph on Fly
   POI_IMPORT_ENABLED = "true"
-  FEATURE_FLAGS = "!fog_of_war"  # the hex layer is a readout nobody can act on yet
+  # party_quests: the party screens are built; strava still needs STRAVA_CLIENT_ID/SECRET set as secrets.
+  FEATURE_FLAGS = "!fog_of_war,party_quests"
 
 [http_service]
   internal_port = 8000

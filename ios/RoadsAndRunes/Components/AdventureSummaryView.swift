@@ -10,6 +10,37 @@ struct AdventureSummaryView: View {
     let units: Units
     let onDone: () -> Void
     @State private var geometry: RideGeometry?
+    @State private var offerStrava = false
+    @State private var stravaState: StravaLineState = .idle
+
+    private enum StravaLineState { case idle, sending, sent, failed(String) }
+
+    @ViewBuilder
+    private var stravaLine: some View {
+        switch stravaState {
+        case .sent:
+            Label("Sent to Strava", systemImage: "checkmark.circle.fill").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.sageDeep)
+        case .sending:
+            Label("Sending to Strava…", systemImage: "arrow.up.circle").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+        case .failed(let reason):
+            Text("Strava: \(reason)").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.terracottaDeep)
+        case .idle:
+            if summary.ride.stravaUploadStatus == "UPLOADED" || summary.ride.stravaUploadStatus == "QUEUED" {
+                Label("Sent to Strava", systemImage: "checkmark.circle.fill").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.sageDeep)
+            } else if offerStrava {
+                Button {
+                    stravaState = .sending
+                    Task {
+                        do { _ = try await container.api.uploadRideToStrava(rideId: summary.ride.id); stravaState = .sent }
+                        catch { stravaState = .failed(error.localizedDescription) }
+                    }
+                } label: {
+                    Label("Upload to Strava", systemImage: "arrow.up.circle")
+                }
+                .buttonStyle(.surfacePill)
+            }
+        }
+    }
 
     /// Average H3 resolution-9 cell area, km².
     private static let cellAreaKm2 = 0.1053
@@ -106,6 +137,7 @@ struct AdventureSummaryView: View {
                     if summary.ride.healthKitWorkoutId != nil {
                         Label("Saved to Health", systemImage: "heart.fill").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.sageDeep)
                     }
+                    stravaLine
                     Button("Collect rewards", action: onDone).buttonStyle(.primary).padding(.top, 4)
                 }
                 .padding(.horizontal, 22)
@@ -114,6 +146,14 @@ struct AdventureSummaryView: View {
             }
             .frame(maxHeight: 460)
             .sheetSurface()
+        }
+        .task {
+            // "Ask every time" is asked here, once, where the ride is fresh. "Automatically"
+            // has already happened on the server by now; "Never" shows nothing.
+            if container.session.user?.stravaUploadMode == .ask, summary.ride.stravaUploadStatus == nil,
+               let status = try? await container.api.stravaStatus(), status.connected {
+                offerStrava = true
+            }
         }
         .task {
             geometry = try? await container.api.rideGeometry(id: summary.ride.id)

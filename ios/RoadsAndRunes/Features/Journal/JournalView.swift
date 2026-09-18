@@ -364,6 +364,55 @@ struct AdventureDetailView: View {
     @State private var geometry: RideGeometry?
     @State private var notes: String = ""
     @State private var confirmingDelete = false
+    @State private var strava: StravaStatus?
+    @State private var stravaUpload: String?  // the ride's status, refreshed after a retry
+    @State private var stravaError: String?
+    @State private var stravaBusy = false
+
+    /// Where this ride stands with Strava: sent (with a link once Strava has made
+    /// the activity), failed (with the reason and a retry), or not sent (with the
+    /// upload, when connected). Nothing at all when Strava is not connected.
+    @ViewBuilder
+    private var stravaRow: some View {
+        let status = stravaUpload ?? entry.ride.stravaUploadStatus
+        if status == "UPLOADED", let url = (refreshed ?? entry.ride).stravaURL {
+            Link(destination: url) { Label("Open in Strava", systemImage: "arrow.up.right.square") }.buttonStyle(.surfacePill)
+        } else if status == "UPLOADED" || status == "QUEUED" {
+            Label(status == "QUEUED" ? "Sending to Strava…" : "On Strava", systemImage: "checkmark.circle")
+                .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.sageDeep)
+        } else if status == "FAILED" {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Strava upload failed: \(stravaError ?? entry.ride.stravaError ?? "unknown reason")")
+                    .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.terracottaDeep)
+                Button(stravaBusy ? "Retrying…" : "Retry") { uploadToStrava() }.buttonStyle(.surfacePill).disabled(stravaBusy)
+            }
+        } else if strava?.connected == true {
+            Button(stravaBusy ? "Sending…" : "Upload to Strava") { uploadToStrava() }.buttonStyle(.surfacePill).disabled(stravaBusy)
+        }
+    }
+
+    private func uploadToStrava() {
+        stravaBusy = true
+        Task {
+            do {
+                _ = try await container.api.uploadRideToStrava(rideId: entry.ride.id)
+                stravaUpload = "QUEUED"
+                stravaError = nil
+                // The job runs in the background; look again in a few seconds for the link.
+                try? await Task.sleep(for: .seconds(8))
+                if let ride = try? await container.api.ride(id: entry.ride.id) {
+                    stravaUpload = ride.stravaUploadStatus
+                    stravaError = ride.stravaError
+                    refreshed = ride
+                }
+            } catch {
+                stravaUpload = "FAILED"
+                stravaError = error.localizedDescription
+            }
+            stravaBusy = false
+        }
+    }
+    @State private var refreshed: Ride?
 
     var body: some View {
         let f = UnitFormatter(units: container.session.units)
@@ -414,6 +463,7 @@ struct AdventureDetailView: View {
                 HStack(spacing: 8) {
                     Button("Save notes") { Task { _ = try? await container.api.updateRide(id: entry.ride.id, RidePatch(notes: notes)) } }.buttonStyle(.inkPill)
                     ShareLink(item: container.api.rideExportURL(id: entry.ride.id, format: .gpx)) { Label("Export GPX", systemImage: "square.and.arrow.up") }.buttonStyle(.surfacePill)
+                    stravaRow
                 }
             }
             .padding(.horizontal, 22)
@@ -435,6 +485,7 @@ struct AdventureDetailView: View {
         .task {
             notes = entry.notes ?? ""
             geometry = try? await container.api.rideGeometry(id: entry.ride.id)
+            strava = try? await container.api.stravaStatus()
         }
     }
 

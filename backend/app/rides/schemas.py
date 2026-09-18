@@ -104,6 +104,9 @@ class RideOut(APIModel):
     pointCount: int
     flags: list[str]
     createdAt: datetime
+    stravaActivityId: str | None = None
+    stravaUploadStatus: str | None = None  # QUEUED / UPLOADED / FAILED
+    stravaError: str | None = None
 
 
 class RideCompleteOut(APIModel):

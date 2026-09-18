@@ -107,6 +107,9 @@ Only when `DEV_AUTH_ENABLED=true` (never in production). Body
 
 - `GET /users/me`
 - `PATCH /users/me` — any subset of `displayName`, `avatarUrl`, `settings`.
+- `GET /users/search?q=<name>&limit=10` → `[FriendSummary]`. People by display name, for
+  adding as friends; never the searcher, never anyone in a blocked relationship. The app
+  used to ask for a user id, which nobody knows.
 - `GET /users/{id}` → `PublicProfile`:
 
 ```json
@@ -473,6 +476,13 @@ background job (validation, exploration, XP). Poll:
 - `GET /rides` paginated, newest first. `GET /rides/{id}`. `GET /rides/{id}/geometry` → `{"coordinates": [...], "encodedPolyline": "..."}`.
 - `PATCH /rides/{id}` `{"visibility": "FRIENDS", "title": "...", "notes": "..."}`
 - `DELETE /rides/{id}` — discards the ride; it leaves the journal and the stats (XP already awarded stays)
+- `RideOut` carries where its Strava upload stands: `stravaUploadStatus` (`QUEUED` /
+  `UPLOADED` / `FAILED` / null when never sent), `stravaActivityId` (set once Strava has
+  made the activity; `UPLOADED` without one means Strava has the file and is still
+  processing it) and `stravaError` (Strava's own message when it failed). A rider whose
+  `stravaUploadMode` is `AUTO` and who is connected has the ride uploaded right after it
+  is processed; `ASK` is asked in the app on the ride summary; `POST
+  /integrations/strava/upload/{ride_id}` sends or re-sends it either way.
 
 ---
 

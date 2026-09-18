@@ -87,21 +87,22 @@ end to end.
 | Phase | Scope | State |
 |---|---|---|
 | 0 Repository | layout, CI, lint, compose, envs | done |
-| 1 Exploration | sign in, world, H3 fog, ride recording, cells | backend done and tested; iOS written, needs device validation |
-| 2 Explorer RPG | XP, levels, 13+ templates, generation, completion, abilities | backend done; iOS written |
-| 3 Routing | GraphHopper (London) + Valhalla (worldwide), alternatives, scoring, elevation, surface, POIs, packages | done (needs field validation) |
-| 4 Navigation | turn-by-turn, off-route, progress, crash recovery | client logic written, untested on a bike |
-| 5 Watch | workout, turns, quest, stats, haptics, Always-On | written, untested on hardware |
-| 6 Other classes | Wizard/Warrior/Scribe | on by default; 5–6 quest templates each: hidden puzzle targets, pace/duration objectives, photo and note records |
-| 7 Social | friends, feed, parties | backend done, flag-gated; minimal UI |
-| 8 Integrations | Strava OAuth/upload, GPX/TCX, HealthKit | backend done; HealthKit client written |
-| 9 Living world | story arcs, regions, events | schema only |
+| 1 Exploration | sign in, world, H3 fog, ride recording, cells | on TestFlight; field bugs being found and fixed by riding |
+| 2 Explorer RPG | XP, levels, templates, generation, completion, abilities | live; board rules hardened after a week on the road |
+| 3 Routing | GraphHopper (London) + Valhalla (worldwide), alternatives, scoring, elevation, surface, POIs, packages | live; requests read by Claude (destination, via, stops) — the real-model eval runs from the `request-reading` workflow |
+| 4 Navigation | turn-by-turn, off-route, progress, crash recovery | written; field protocols 3 and 4 in `docs/FIELD_TESTS.md` not yet ridden |
+| 5 Watch | workout, turns, quest, stats, haptics, Always-On | written; field protocol 5 not yet ridden |
+| 6 Other classes | Wizard/Warrior/Scribe | live; 3–6 templates each |
+| 7 Social | friends, feed, parties | backend done; people found by name, party lifecycle in the app; `party_quests` flag |
+| 8 Integrations | Strava OAuth/upload, GPX/TCX, HealthKit | Strava loop closed: auto-upload after processing, status and retry on the adventure, open in Strava |
+| 9 Living world | story arcs, regions, events | world objects (monsters, chests, bounties) live; story arcs schema only |
 
-Verification so far: the backend suite (unit + HTTP end-to-end) passes on
-SQLite and, in CI, against PostGIS after the Alembic migration; the
+Verification: the backend suite (unit + HTTP end-to-end) passes on SQLite
+and, in CI, against PostGIS after the Alembic migration; the
 `RoadsAndRunesCore` Swift package builds and its tests pass on macOS in CI;
 the iPhone app and its embedded Watch app compile in CI (Xcode 16, unsigned
-simulator build). The apps have not been run on a device or simulator yet:
-the field tests in spec §80 are still open.
+simulator build) and ship to TestFlight from the `testflight` workflow (Xcode
+26). The field tests in spec §80 are written up in `docs/FIELD_TESTS.md`, one
+ride per question; the first week of riding is what the fixes above came from.
 
 See `docs/ARCHITECTURE.md` for the design and `docs/API.md` for the contract.

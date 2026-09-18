@@ -13,12 +13,17 @@ log = get_logger(__name__)
 
 
 async def process_ride_job(payload: dict[str, Any]) -> None:
+    from app.integrations.strava import upload_after_processing
     from app.rides.processing import process_ride
 
     settings = get_settings()
     async with get_session_factory()() as db:
         try:
             await process_ride(db, settings, uuid.UUID(payload["rideId"]))
+            await db.commit()
+            # After the ride is safely processed, not before: the XP is the point,
+            # Strava is a copy.
+            await upload_after_processing(db, settings, uuid.UUID(payload["rideId"]))
             await db.commit()
         except Exception as exc:
             await db.rollback()
@@ -53,10 +58,11 @@ async def strava_upload_job(payload: dict[str, Any]) -> None:
     async with get_session_factory()() as db:
         try:
             await upload_ride(db, settings, uuid.UUID(payload["rideId"]))
-            await db.commit()
         except Exception as exc:  # noqa: BLE001
-            await db.rollback()
+            # upload_ride has already written FAILED and the reason onto the ride;
+            # commit that so the rider sees it, rather than rolling it away.
             log.error(EVENT_STRAVA_UPLOAD_FAILED, ride_id=payload.get("rideId"), error=str(exc))
+        await db.commit()
 
 
 async def notification_job(payload: dict[str, Any]) -> None:

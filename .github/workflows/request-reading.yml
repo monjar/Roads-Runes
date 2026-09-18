@@ -1,0 +1,52 @@
+# Does Claude read a rider's sentence the way the planner expects?
+#
+# tests/test_request_reading.py asks the real model, so it costs money and is
+# skipped everywhere else. It runs here on demand and once a week, with the one
+# secret it needs:
+#
+#   ANTHROPIC_API_KEY   an Anthropic API key (console.anthropic.com)
+#
+# A failure here is a prompt to fix (SYSTEM in app/routing/preferences.py), not
+# a word list: the cases are the sentences that cost a wrong ride when misread.
+name: request-reading
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * 1"  # Mondays, 07:00 UTC
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the key is present
+        env:
+          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::Missing repository secret ANTHROPIC_API_KEY — see the comment at the top of this workflow."
+            exit 1
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - run: pip install -e ".[dev]"
+
+      - name: Read every case with the real model
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-opus-5' }}
+          ENVIRONMENT: test
+          DEV_AUTH_ENABLED: "true"
+          JWT_SECRET: ci
+        run: pytest tests/test_request_reading.py -q -m llm -p no:randomly --tb=short
