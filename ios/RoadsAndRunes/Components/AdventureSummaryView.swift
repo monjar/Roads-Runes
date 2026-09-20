@@ -138,7 +138,16 @@ struct AdventureSummaryView: View {
                         Label("Saved to Health", systemImage: "heart.fill").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.sageDeep)
                     }
                     stravaLine
-                    Button("Collect rewards", action: onDone).buttonStyle(.primary).padding(.top, 4)
+                    if let nudge = comeBackLine {
+                        Label(nudge, systemImage: "flame.fill")
+                            .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.terracottaDeep)
+                            .accessibilityIdentifier("summary.comeBack")
+                    }
+                    Button("Collect rewards") {
+                        Task { await container.nudges.requestAuthorizationIfNeeded() }
+                        onDone()
+                    }
+                    .buttonStyle(.primary).padding(.top, 4)
                 }
                 .padding(.horizontal, 22)
                 .padding(.top, 14)
@@ -174,6 +183,16 @@ struct AdventureSummaryView: View {
         let classXP = summary.xpBreakdown.filter { $0.source == "CLASS_BONUS" }.reduce(0) { $0 + $1.xp }
         let className = ClassStyle.name(container.session.character?.characterClass ?? .explorer)
         return "\(className) +\(classXP) · General +\(max(0, summary.xpAwarded - classXP))"
+    }
+
+    /// What tomorrow is worth: the next streak purse, or simply the next day.
+    private var comeBackLine: String? {
+        guard let streak = summary.streak, streak.days > 0 else { return "Out again tomorrow and a streak begins." }
+        if let next = [7, 30].first(where: { $0 > streak.days }) {
+            let left = next - streak.days
+            return "\(left) more day\(left == 1 ? "" : "s") in a row for a \(next == 7 ? 100 : 500) AC purse. A new bounty is out at dawn."
+        }
+        return "\(streak.days) days in a row. A new bounty is out at dawn."
     }
 
     private var unlocks: [String] {

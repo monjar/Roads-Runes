@@ -98,13 +98,26 @@ async def character_out(db: AsyncSession, character: Character) -> CharacterOut:
     return to_character_out(
         character,
         active_coins=await economy.balance(db, character.user_id),
-        streak_days=streak.current_days if streak else 0,
+        streak_days=_live_streak_days(streak),
         longest_streak_days=streak.longest_days if streak else 0,
+        streak_active_today=bool(streak and streak.last_activity_date == utcnow().date()),
     )
 
 
+def _live_streak_days(streak: UserStreak | None) -> int:
+    """A streak whose last day was before yesterday is already over, whatever the row says."""
+    if streak is None or streak.last_activity_date is None:
+        return 0
+    return streak.current_days if (utcnow().date() - streak.last_activity_date).days <= 1 else 0
+
+
 def to_character_out(
-    character: Character, *, active_coins: int = 0, streak_days: int = 0, longest_streak_days: int = 0
+    character: Character,
+    *,
+    active_coins: int = 0,
+    streak_days: int = 0,
+    longest_streak_days: int = 0,
+    streak_active_today: bool = False,
 ) -> CharacterOut:
     o_floor, o_next = level_bounds(character.overall_level, "overall")
     c_floor, c_next = level_bounds(character.class_level, "class")
@@ -135,6 +148,7 @@ def to_character_out(
         },
         streakDays=streak_days,
         longestStreakDays=longest_streak_days,
+        streakActiveToday=streak_active_today,
     )
 
 

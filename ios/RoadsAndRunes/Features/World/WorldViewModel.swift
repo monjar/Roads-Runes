@@ -41,6 +41,7 @@ final class WorldViewModel {
     // MARK: Server world (fog + discoveries)
 
     func load(around coordinate: Coordinate, force: Bool = false) async {
+        await loadObjects(force: force)
         if !force, let last = lastLoadedCenter, GeoMath.distance(last, coordinate) < 1000 { return }
         do {
             let world = try await container.api.world(center: coordinate, radiusMeters: 6000)
@@ -73,7 +74,7 @@ final class WorldViewModel {
     // MARK: Markers
 
     var markers: [MapMarker] {
-        var out: [MapMarker] = (snapshot?.discoveries ?? []).map {
+        var out: [MapMarker] = mysteries.map {
             MapMarker(id: "discovery-\($0.id.uuidString)", coordinate: $0.coordinate, kind: .discovery, title: $0.name)
         }
         out += results.filter { $0.id != selectedPlace?.id }.map {
@@ -88,7 +89,48 @@ final class WorldViewModel {
         return out
     }
 
-    var worldObjects: [WorldObject] { (snapshot?.worldObjects ?? []).filter { $0.status == .spawned } }
+    /// Chests, pieces and monsters around the *player*. The map can be dragged
+    /// anywhere; what is out there is placed around where the rider actually is, so
+    /// it is asked for by position and not by whatever the map is showing.
+    private(set) var placedObjects: [WorldObject] = []
+    private var objectsLoadedAt: Coordinate?
+
+    func loadObjects(force: Bool = false) async {
+        guard let here = position else { return }
+        if !force, let last = objectsLoadedAt, GeoMath.distance(last, here) < 500 { return }
+        objectsLoadedAt = here
+        if let objects = try? await container.api.worldObjects(near: here, radiusMeters: 6000) {
+            placedObjects = objects
+        } else {
+            objectsLoadedAt = nil
+        }
+    }
+
+    var worldObjects: [WorldObject] {
+        let known = Dictionary((placedObjects + (snapshot?.worldObjects ?? [])).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return known.values.filter { $0.status == .spawned }.sorted { $0.id.uuidString < $1.id.uuidString }
+    }
+
+    /// The "?" rings: off when the rider says so, and never more than the nearest
+    /// thirty, because a hundred of them is wallpaper, not mystery.
+    static let mysteryLimit = 30
+    var mysteries: [DiscoverySummary] {
+        guard container.mapPreferences.showMysteries, let all = snapshot?.discoveries else { return [] }
+        guard all.count > Self.mysteryLimit, let here = center ?? position else { return all }
+        return Array(all.sorted { GeoMath.distance(here, $0.coordinate) < GeoMath.distance(here, $1.coordinate) }.prefix(Self.mysteryLimit))
+    }
+
+    /// The nearest thing worth going out for, for the today strip.
+    var nearestObject: (object: WorldObject, meters: Double)? {
+        guard let here = position else { return nil }
+        return worldObjects.map { ($0, GeoMath.distance(here, $0.coordinate)) }.min { $0.1 < $1.1 }.map { (object: $0.0, meters: $0.1) }
+    }
+
+    func open(_ object: WorldObject) {
+        selectedPlace = nil
+        selectedObject = object
+        camera = MapCamera(center: object.coordinate)
+    }
 
     static func markerKind(for object: WorldObject) -> MapMarker.Kind {
         if object.isBounty { return .bounty }

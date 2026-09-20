@@ -172,6 +172,7 @@ struct QuestDetailView: View {
                             cells: [],
                             route: model.route?.path ?? [],
                             markers: markers(for: quest, route: model.route, focused: model.focusedStop),
+                            emphasis: .adventure,
                             onMarkerTap: { marker in
                                 guard let poi = model.route?.pois.first(where: { "stop-\($0.id.uuidString)" == marker.id }) else { return }
                                 withAnimation(.snappy) { model.focus(poi) }

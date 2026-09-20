@@ -68,6 +68,8 @@ class CharacterOut(APIModel):
     classProgress: dict[str, ClassProgressOut] = {}
     streakDays: int = 0
     longestStreakDays: int = 0
+    # True once an outing has counted today, so the app can say "keep it alive" or "done".
+    streakActiveToday: bool = False
 
 
 class ClassInfo(APIModel):

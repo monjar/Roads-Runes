@@ -289,10 +289,24 @@ final class MainFlowsUITests: XCTestCase {
     /// not, once it has stopped moving (keyboard and sheet animations).
     private func tapOffCentre(_ element: XCUIElement, dx: CGFloat, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertTrue(element.waitForExistence(timeout: 20), "\(element) never appeared", file: file, line: line)
-        let deadline = Date().addingTimeInterval(10)
-        while !element.isHittable && Date() < deadline {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        // Hittable is not enough: a list that reloads behind a screen being dismissed
+        // rebuilds its rows, and a button resolved a moment ago has gone by the tap.
+        // Wait until it has existed, been hittable and stayed put for two samples.
+        let deadline = Date().addingTimeInterval(20)
+        var settled = 0
+        var lastFrame: CGRect = .null
+        while settled < 2, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+            guard element.exists, element.isHittable else {
+                settled = 0
+                lastFrame = .null
+                continue
+            }
+            let frame = element.frame
+            settled = frame == lastFrame ? settled + 1 : 0
+            lastFrame = frame
         }
+        XCTAssertTrue(element.exists, "\(element) went away before it could be tapped", file: file, line: line)
         element.coordinate(withNormalizedOffset: CGVector(dx: dx, dy: 0.5)).tap()
     }
 

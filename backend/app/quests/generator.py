@@ -557,9 +557,9 @@ def generate(
         quest = _try_instantiate(template, ctx, salt)
         if quest is None:
             continue
-        if any(
-            q.template_id == quest.template_id and q.title == quest.title and _same_targets(q, quest) for q in generated
-        ):
+        # One of each template in a batch: the same quest under its other title is
+        # still the same quest, and a short board is better than a repeated one.
+        if any(q.template_id == quest.template_id for q in generated):
             continue
         generated.append(quest)
     # A board is the class's and everyone's: one open quest if the class picks

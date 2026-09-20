@@ -35,6 +35,17 @@ struct SettingsView: View {
                     Text("Never").tag(StravaUploadMode.never); Text("Ask every time").tag(StravaUploadMode.ask); Text("Automatically").tag(StravaUploadMode.auto)
                 }
             }
+            Section("Reminders") {
+                Toggle("Streak and bounty reminders", isOn: Binding(
+                    get: { container.nudges.isEnabled },
+                    set: { enabled in
+                        container.nudges.isEnabled = enabled
+                        if enabled { Task { await container.nudges.requestAuthorizationIfNeeded() } }
+                    }
+                ))
+                Text("One in the evening if a streak is about to end, one in the morning when the day's bounty is out. Nothing else, and nothing leaves your phone.")
+                    .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
+            }
             Section("Character") {
                 Button {
                     changingClass = true

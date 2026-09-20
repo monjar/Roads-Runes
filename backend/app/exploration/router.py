@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
-from app.characters.service import get_rider_profile, maybe_character
+from app.characters.service import maybe_character
 from app.core.deps import CurrentUser, DBDep, SettingsDep
 from app.core.schemas import Coordinate
 from app.discoveries.service import nearby as discoveries_nearby
@@ -34,17 +34,10 @@ async def world(
     character = await maybe_character(db, user.id)
     objects = []
     if character is not None:
-        profile = await get_rider_profile(db, user.id)
-        objects = await world_objects.ensure_spawned(
-            db,
-            settings,
-            user.id,
-            latitude,
-            longitude,
-            radiusMeters,
-            character_class=character.character_class,
-            activity=profile.default_activity,
-        )
+        # The map is wherever the rider has dragged it; things are placed around the
+        # rider (GET /world/objects, quests, a ride's start), and only listed here.
+        await world_objects.expire_stale(db, user.id)
+        objects = await world_objects.live_objects(db, user.id, latitude, longitude, radiusMeters)
     quests = await list_quests(db, user, None, latitude, longitude, 30)
     markers = []
     for q in quests:

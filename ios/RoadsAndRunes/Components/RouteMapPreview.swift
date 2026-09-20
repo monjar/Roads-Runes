@@ -23,6 +23,7 @@ struct RouteMapPreview: View {
             zoom: 13,
             route: route.path,
             markers: markers,
+            emphasis: .cycling,
             interactive: false,
             onMarkerTap: { marker in
                 guard let poi = route.pois.first(where: { Self.identifier(for: $0) == marker.id }) else { return }

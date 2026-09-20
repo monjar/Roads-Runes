@@ -20,6 +20,11 @@ struct MapMarker: Identifiable, Hashable {
     var symbol: String?
 }
 
+/// What a map view draws over its base style: the cycle network, or the trails.
+enum MapEmphasis: Equatable {
+    case none, cycling, adventure
+}
+
 /// A one-shot camera move. A new value (new `id`) moves the map once; the rider
 /// is free to pan afterwards. `fit` wins over `center` when it has 2+ points.
 struct MapCamera: Equatable {
@@ -52,6 +57,7 @@ struct MapLibreView: UIViewRepresentable {
     var cells: [CellRender] = []
     var route: [Coordinate] = []
     var markers: [MapMarker] = []
+    var emphasis: MapEmphasis = .none
     var followsUser = false
     var navigationMode = false
     /// False for a route preview inside a scroll view: markers stay tappable, but
@@ -125,6 +131,7 @@ struct MapLibreView: UIViewRepresentable {
         private var lastCellsHash = 0
         private var lastRouteHash: Int?
         private var appliedFollowZoom = false
+        private var appliedEmphasis: MapEmphasis?
 
         init(_ parent: MapLibreView) { self.parent = parent }
 
@@ -136,6 +143,7 @@ struct MapLibreView: UIViewRepresentable {
             })
             lastCellsHash = 0
             lastRouteHash = nil
+            appliedEmphasis = nil
             apply(to: mapView)
             reportVisibleRegion(mapView)
         }
@@ -154,11 +162,63 @@ struct MapLibreView: UIViewRepresentable {
 
         func apply(to mapView: MLNMapView) {
             guard styleLoaded, let style = mapView.style else { return }
+            applyEmphasis(style)
             applyFog(style)
             applyRoute(style)
             applyMarkers(mapView)
             applyCamera(mapView)
             applyFollowZoom(mapView)
+        }
+
+        // MARK: Emphasis
+
+        /// Cycling: cycleways and designated bike routes in green over a quiet base.
+        /// Adventure: paths and tracks picked out in dashed terracotta. Both read the
+        /// base map's own `transportation` layer, so they work anywhere in the world.
+        private func applyEmphasis(_ style: MLNStyle) {
+            guard appliedEmphasis != parent.emphasis else { return }
+            appliedEmphasis = parent.emphasis
+            for id in ["rr-ways", "rr-ways-casing"] {
+                if let layer = style.layer(withIdentifier: id) { style.removeLayer(layer) }
+            }
+            let sources = style.sources.compactMap { $0 as? MLNVectorTileSource }
+            guard parent.emphasis != .none, let source = sources.first(where: { $0.identifier == "openmaptiles" }) ?? sources.first else { return }
+            let casing = MLNLineStyleLayer(identifier: "rr-ways-casing", source: source)
+            let line = MLNLineStyleLayer(identifier: "rr-ways", source: source)
+            let predicate: NSPredicate
+            let color: UIColor
+            switch parent.emphasis {
+            case .cycling:
+                predicate = NSPredicate(format: "subclass == 'cycleway' OR bicycle == 'designated'")
+                color = UIColor(hex: 0x3E7D4F)
+            default:
+                // Tracks, bridleways and unpaved paths. In a city `path` is mostly pavement
+                // (footway, pedestrian, steps), and drawing those buried the map in dashes.
+                predicate = NSPredicate(format: "%K == 'track' OR (%K == 'path' AND subclass IN {'path', 'bridleway'})", "class", "class")
+                color = UIColor(hex: 0xB5622E)
+                line.lineDashPattern = NSExpression(forConstantValue: [2.5, 1.5])
+            }
+            let width = NSExpression(format: "mgl_interpolate:withCurveType:parameters:stops:($zoomLevel, 'linear', nil, %@)", [11: 1.0, 14: 2.6, 17: 5.5])
+            let casingWidth = NSExpression(format: "mgl_interpolate:withCurveType:parameters:stops:($zoomLevel, 'linear', nil, %@)", [11: 2.2, 14: 4.6, 17: 8.5])
+            for layer in [casing, line] {
+                layer.sourceLayerIdentifier = "transportation"
+                layer.predicate = predicate
+                layer.minimumZoomLevel = 10
+                layer.lineCap = NSExpression(forConstantValue: "round")
+                layer.lineJoin = NSExpression(forConstantValue: "round")
+            }
+            casing.lineColor = NSExpression(forConstantValue: UIColor.white.withAlphaComponent(0.85))
+            casing.lineWidth = casingWidth
+            line.lineColor = NSExpression(forConstantValue: color)
+            line.lineWidth = width
+            // Under the labels, over the roads.
+            if let firstLabel = style.layers.first(where: { $0 is MLNSymbolStyleLayer }) {
+                style.insertLayer(casing, below: firstLabel)
+                style.insertLayer(line, below: firstLabel)
+            } else {
+                style.addLayer(casing)
+                style.addLayer(line)
+            }
         }
 
         // MARK: Camera

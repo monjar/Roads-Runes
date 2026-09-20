@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from collections import OrderedDict
@@ -38,6 +39,7 @@ log = get_logger(__name__)
 
 _checked: OrderedDict[tuple[str, str, str], bool] = OrderedDict()
 _CHECKED_LIMIT = 4096
+_locks: dict[str, asyncio.Lock] = {}
 
 
 @lru_cache(maxsize=1)
@@ -209,7 +211,40 @@ async def ensure_spawned(
     seed_suffix: str = "",
     force: bool = False,
 ) -> list[WorldObject]:
-    """The live objects around a point, topped up to quota if this is the first look today."""
+    """The live objects around a point, topped up to quota if this is the first look today.
+
+    `latitude`/`longitude` are where the player is: the rings are drawn around them.
+    One player is spawned for at a time, so two requests at launch (the map and the
+    quest board) cannot both decide the same place is free.
+    """
+    async with _locks.setdefault(str(user_id), asyncio.Lock()):
+        return await _ensure_spawned(
+            db,
+            settings,
+            user_id,
+            latitude,
+            longitude,
+            radius_m,
+            character_class=character_class,
+            activity=activity,
+            seed_suffix=seed_suffix,
+            force=force,
+        )
+
+
+async def _ensure_spawned(
+    db: AsyncSession,
+    settings: Any,
+    user_id: uuid.UUID,
+    latitude: float,
+    longitude: float,
+    radius_m: float,
+    *,
+    character_class: str,
+    activity: str,
+    seed_suffix: str,
+    force: bool,
+) -> list[WorldObject]:
     cfg = load_config()
     spawn_radius = float(cfg["spawnRadiusMeters"])
     await expire_stale(db, user_id)
@@ -259,17 +294,28 @@ async def ensure_spawned(
                 known=known,
                 character_class=character_class,
                 activity=normalise(activity),
+                centre=(latitude, longitude),
                 bounty=True,
             )
             end_of_day = datetime.combine(utcnow().date() + timedelta(days=1), datetime.min.time(), tzinfo=UTC)
             live += await _persist(db, user_id, bounty, utcnow(), 0.0, settings.h3_resolution, expires_at=end_of_day)
+        # The bounty has taken a place; the rest must not land on top of it.
+        taken = {str(o.anchor_discovery_id) for o in live if o.anchor_discovery_id}
+        occupied = [(o.latitude, o.longitude) for o in live]
         room = int(cfg["maxLiveInRadius"]) - len(live)
         plans: list[SpawnPlan] = []
-        for kind, quota in cfg["quota"].items():
-            deficit = min(room, int(quota) - sum(1 for o in live if o.kind == kind))
+        # In a village with six places the first kind used to take them all. Each kind
+        # gets its share of what there is, and at least one if it is owed any.
+        owed = {k: max(0, int(q) - sum(1 for o in live if o.kind == k)) for k, q in cfg["quota"].items()}
+        places = max(0, min(room, len(anchors) - len(live)))
+        total_owed = sum(owed.values())
+        if total_owed > places > 0:
+            owed = {k: (max(1, v * places // total_owed) if v else 0) for k, v in owed.items()}
+        for kind in cfg["quota"]:
+            deficit = min(room, owed[kind])
             if deficit <= 0:
                 continue
-            free_slots = [i for i in range(2 * int(quota)) if f"{seed}:{kind}:{i}" not in used_seeds]
+            free_slots = [i for i in range(2 * int(cfg["quota"][kind])) if f"{seed}:{kind}:{i}" not in used_seeds]
             if not free_slots:
                 continue
             batch = plan_spawns(
@@ -285,6 +331,7 @@ async def ensure_spawned(
                 known=known,
                 character_class=character_class,
                 activity=normalise(activity),
+                centre=(latitude, longitude),
             )
             plans.extend(batch)
             room -= len(batch)

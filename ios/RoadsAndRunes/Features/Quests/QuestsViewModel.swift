@@ -29,6 +29,7 @@ final class QuestsViewModel {
             async let activeTask = container.api.quests(near: origin ?? SampleData.origin, status: .active, limit: 5, cursor: nil)
             async let acceptedTask = container.api.quests(near: origin ?? SampleData.origin, status: .accepted, limit: 10, cursor: nil)
             async let completedTask = container.api.quests(near: origin ?? SampleData.origin, status: .completed, limit: 20, cursor: nil)
+            async let bountyTask = try? container.api.bounty()
             let (act, acc, comp) = try await (activeTask, acceptedTask, completedTask)
             active = act.items + acc.items
             completed = comp.items
@@ -38,7 +39,7 @@ final class QuestsViewModel {
                 available = container.persistence.cachedQuests()
             }
             container.persistence.cache(quests: available)
-            bounty = try? await container.api.bounty()
+            bounty = await bountyTask
             error = nil
         } catch {
             self.error = error.localizedDescription

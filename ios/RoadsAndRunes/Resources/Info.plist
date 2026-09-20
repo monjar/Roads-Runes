@@ -23,7 +23,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -46,7 +46,7 @@
 	<key>MAP_STYLE_ADVENTURE</key>
 	<string>https://tiles.openfreemap.org/styles/bright</string>
 	<key>MAP_STYLE_CYCLING</key>
-	<string>https://tiles.openfreemap.org/styles/liberty</string>
+	<string>https://tiles.openfreemap.org/styles/positron</string>
 	<key>MAP_STYLE_DETAILED</key>
 	<string>https://tiles.openfreemap.org/styles/liberty</string>
 	<key>MAP_STYLE_MINIMAL</key>

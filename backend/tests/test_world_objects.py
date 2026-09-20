@@ -19,9 +19,13 @@ WORLD = {"latitude": ORIGIN[0], "longitude": ORIGIN[1], "radiusMeters": 6000}
 
 
 async def spawned(c) -> list[dict]:
-    r = await c.get("/world", params=WORLD)
+    """What is placed around the player. The map (GET /world) only lists; it is the
+    player's own position (GET /world/objects) that places things."""
+    r = await c.get("/world/objects", params=WORLD)
     assert r.status_code == 200, r.text
-    return r.json()["objects"]
+    on_the_map = (await c.get("/world", params=WORLD)).json()["objects"]
+    assert {o["id"] for o in on_the_map} == {o["id"] for o in r.json()}
+    return r.json()
 
 
 def line_trace(start, end, speed_mps: float, interval_s: float = 5.0, and_back: bool = True) -> list[dict]:
@@ -223,3 +227,37 @@ async def test_starting_over_clears_the_world(explorer_client):
     assert (await c.delete("/character")).status_code == 204
     async with get_session_factory()() as db:
         assert (await db.scalar(select(func.count()).select_from(WorldObject))) == 0
+
+
+def test_spawns_land_in_rings_around_the_player():
+    """Most places in a city are a mile off, so a weighting put most spawns there too.
+    Slots belong to rings: the first is on the doorstep when there is a doorstep."""
+    from app.economy.rules import load_ac_rules
+    from app.world_objects.spawner import Anchor, plan_spawns
+
+    centre = (51.4906, -0.0316)
+    anchors = [
+        Anchor(str(uuid.uuid4()), f"Place {i}", "CAFE", *destination_point(*centre, (i * 37) % 360, 150 + i * 60), None)
+        for i in range(60)
+    ]
+    plans = plan_spawns(
+        seed="s",
+        kind="CHEST",
+        indices=list(range(8)),
+        anchors=anchors,
+        taken_anchor_ids=set(),
+        occupied=[],
+        cfg=world_objects.load_config(),
+        ac_rules=load_ac_rules(),
+        frontier=set(),
+        known={},
+        character_class="EXPLORER",
+        activity="RIDE",
+        centre=centre,
+    )
+    from app.core.geo import haversine_m
+
+    distances = sorted(haversine_m(*centre, p.anchor.latitude, p.anchor.longitude) for p in plans)
+    assert len(plans) == 8
+    assert sum(1 for d in distances if d <= 700) >= 3, distances
+    assert sum(1 for d in distances if d <= 1800) >= 6, distances

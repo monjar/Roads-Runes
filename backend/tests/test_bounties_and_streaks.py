@@ -55,7 +55,9 @@ async def _ride_on(c, day: datetime, meters: float = 3000.0) -> dict:
 
 async def test_days_in_a_row_pay_and_reset(explorer_client):
     c = explorer_client
-    day1 = datetime(2026, 6, 1, 9, tzinfo=UTC)
+    # Yesterday and today, so the streak is still alive when the character card is read:
+    # one whose last day is older than yesterday is over, whatever the row says.
+    day1 = datetime.now(UTC).replace(hour=9, minute=0, second=0, microsecond=0) - timedelta(days=1)
     summary = await _ride_on(c, day1)
     assert summary["streak"] == {"days": 1, "longest": 1, "extended": True, "milestone": None, "bonusAC": 5}
     assert any(line["kind"] == "STREAK" and line["ac"] == 5 for line in summary["acBreakdown"])
@@ -63,7 +65,8 @@ async def test_days_in_a_row_pay_and_reset(explorer_client):
     assert (await _ride_on(c, day1 + timedelta(hours=3)))["streak"]["extended"] is False
     summary = await _ride_on(c, day1 + timedelta(days=1))
     assert summary["streak"]["days"] == 2 and summary["streak"]["bonusAC"] == 10
-    assert (await c.get("/character")).json()["streakDays"] == 2
+    card = (await c.get("/character")).json()
+    assert card["streakDays"] == 2 and card["streakActiveToday"] is True
     # A short stroll does not count as a day.
     assert (await _ride_on(c, day1 + timedelta(days=2), meters=600))["streak"]["extended"] is False
     # A gap starts over; the longest is remembered.

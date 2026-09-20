@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timedelta
 from typing import Any
@@ -314,9 +315,11 @@ async def generate_quests(
     generated = [g for g in generated if g.template_id not in open_templates]
     now = utcnow()
     quests: list[QuestInstance] = []
+    if settings.flags.get("llm_narrative"):
+        # All at once: three stories in the time of one.
+        generated = list(await asyncio.gather(*(narrative.enrich(llm, g) for g in generated)))
     for g in generated:
-        if settings.flags.get("llm_narrative"):
-            g = await narrative.enrich(llm, g)
+        g = narrative.with_story(g)
         quest = _persist(user, g, now)
         db.add(quest)
         quests.append(quest)

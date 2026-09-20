@@ -1094,19 +1094,102 @@ async def quest_route(
     quest = await db.get(QuestInstance, quest_id)
     if quest is None or quest.user_id != user.id:
         raise NotFound("Quest not found")
+    must_cover_m = _must_cover_m(quest)
     if quest.suggested_route_id is not None:
         route = await db.get(Route, quest.suggested_route_id)
-        if route is not None:
+        # A route pinned before this rule, shorter than the quest demands, is replaced
+        # while the quest is still only on offer.
+        too_short = quest.status == "AVAILABLE" and route is not None and route.distance_meters < must_cover_m * 0.98
+        if route is not None and not too_short:
             return route, (route.request or {}).get("scoreComponents", {})
         quest.suggested_route_id = None
-    payload = RouteGenerateRequest(
-        origin=Coordinate(latitude=quest.latitude, longitude=quest.longitude),
-        questId=quest.id,
-        distanceTargetKm=quest.recommended_distance_km,
-        loop=True,
+    # "Ride at least 11.3 km" with a 9.5 km route could never be finished by following
+    # it. Loops come back approximate, so aim a little over and try once more if short.
+    target_km = max(quest.recommended_distance_km, must_cover_m / 1000 * 1.1)
+    best: tuple[Route, dict[str, float]] | None = None
+    for _attempt in range(3):
+        payload = RouteGenerateRequest(
+            origin=Coordinate(latitude=quest.latitude, longitude=quest.longitude),
+            questId=quest.id,
+            distanceTargetKm=min(400.0, max(1.0, target_km)),
+            loop=True,
+        )
+        quest.suggested_route_id = None
+        results, _ = await generate(db, settings, engine, llm, user, payload)
+        # The shortest way that still covers what the quest demands; failing that, the longest.
+        enough = [r for r in results if r[0].distance_meters >= must_cover_m]
+        pick = (
+            min(enough, key=lambda r: r[0].distance_meters)
+            if must_cover_m and enough
+            else (max(results, key=lambda r: r[0].distance_meters) if must_cover_m else results[0])
+        )
+        if (
+            best is None
+            or (pick[0].distance_meters >= must_cover_m > best[0].distance_meters)
+            or (best[0].distance_meters < must_cover_m and pick[0].distance_meters > best[0].distance_meters)
+        ):
+            best = pick
+        if best[0].distance_meters >= must_cover_m:
+            break
+        target_km *= max(1.15, must_cover_m / max(best[0].distance_meters, 1.0) * 1.05)
+    assert best is not None
+    quest.suggested_route_id = best[0].id
+    settle_quest_distance(quest, best[0])
+    return best
+
+
+def _must_cover_m(quest: QuestInstance) -> float:
+    return max(
+        (
+            float(o.target_meters or 0)
+            for o in quest.objectives
+            if o.required and o.objective_type in ("COMPLETE_DISTANCE", "COMPLETE_ROUTE")
+        ),
+        default=0.0,
     )
-    results, _ = await generate(db, settings, engine, llm, user, payload)
-    return results[0]
+
+
+def settle_quest_distance(quest: QuestInstance, route: Route) -> None:
+    """The quest's headline distance becomes its fixed route's.
+
+    The generator can only guess (twice the crow's flight and a bit), so the list
+    said 10 km and the quest, once opened, said 7.7. A required distance objective
+    still wins: a route shorter than what must be covered is not the whole outing.
+    """
+    km = max(route.distance_meters, _must_cover_m(quest)) / 1000
+    quest.recommended_distance_km = round(km, 1)
+    if route.distance_meters > 0:
+        pace = route.estimated_duration_seconds / route.distance_meters
+        quest.estimated_duration_minutes = max(5, int(round(km * 1000 * pace / 60)))
+
+
+async def settle_quest_routes(
+    db: AsyncSession,
+    settings: Settings,
+    engine: RoutingEngine,
+    llm: LLMClient,
+    user: User,
+    quests: list[QuestInstance],
+    *,
+    limit: int = 3,
+) -> None:
+    """Routes the quests on offer that have no fixed route yet, so their distance is
+    real before the rider ever sees it. A quest that cannot be routed keeps its guess.
+
+    Bounded by the number of routes, not by a clock: a timeout that cancelled a query
+    mid-flight would leave the session unusable, and the engine's own HTTP timeout
+    already caps each one.
+    """
+    pending = [q for q in quests if q.status == "AVAILABLE" and q.suggested_route_id is None][:limit]
+    for quest in pending:
+        started = monotonic()
+        try:
+            async with db.begin_nested():
+                await quest_route(db, settings, engine, llm, user, quest.id)
+        except Exception as exc:  # noqa: BLE001 - the board is more important than one route
+            log.warning("quest_route_prefetch_failed", quest=str(quest.id), error=str(exc)[:200])
+        finally:
+            log.info("quest_route_settled", quest=str(quest.id), ms=int((monotonic() - started) * 1000))
 
 
 async def package(db: AsyncSession, user: User, route_id: uuid.UUID) -> RoutePackageOut:

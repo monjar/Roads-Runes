@@ -31,6 +31,7 @@ async def list_quests(
     db: DBDep,
     settings: SettingsDep,
     llm: Annotated[object, Depends(get_llm)],
+    engine: Annotated[object, Depends(get_router_client)],
     latitude: float | None = Query(default=None, ge=-90, le=90),
     longitude: float | None = Query(default=None, ge=-180, le=180),
     status: str | None = None,
@@ -42,6 +43,9 @@ async def list_quests(
         character = await get_character(db, user)
         await service.ensure_available(db, settings, llm, user, character, latitude, longitude, activity=activity)  # type: ignore[arg-type]
     rows = await service.list_quests(db, user, status, latitude, longitude, size)
+    if status in (None, "AVAILABLE"):
+        # The distance on the card is the distance of the route behind it.
+        await routing.settle_quest_routes(db, settings, engine, llm, user, list(rows))  # type: ignore[arg-type]
     return Page(items=[service.quest_out(q) for q in rows], nextCursor=None)
 
 

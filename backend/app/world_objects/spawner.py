@@ -129,6 +129,7 @@ def plan_spawns(
     character_class: str,
     activity: str,
     bounty: bool = False,
+    centre: tuple[float, float] | None = None,
 ) -> list[SpawnPlan]:
     """One new object of `kind` per index, each at a real place nobody is using yet.
 
@@ -145,11 +146,15 @@ def plan_spawns(
     ]
     plans: list[SpawnPlan] = []
     used: list[tuple[float, float]] = []
-    for index in indices:
+    rings = list(cfg.get("rings") or ["anywhere"])
+    for position, index in enumerate(indices):
         pool = [a for a in free if all(haversine_m(a.latitude, a.longitude, lat, lon) >= spacing for lat, lon in used)]
         if not pool:
             break
-        weights = [1.0 + _appeal(a, kind, frontier, known) for a in pool]
+        # A weighting was not enough: in a city most places are a mile off, so most
+        # spawns were too. Each slot belongs to a ring, and widens only if it is empty.
+        pool = _in_ring(pool, rings[position % len(rings)], centre, cfg)
+        weights = [1.0 + _appeal(a, kind, frontier, known) + _nearness(a, centre, cfg) for a in pool]
         anchor = rng.choices(pool, weights=weights, k=1)[0]
         used.append((anchor.latitude, anchor.longitude))
         tier = rng.choices([1, 2, 3], weights=cfg["tierWeights"], k=1)[0]
@@ -191,6 +196,30 @@ def _pick_methods(rng: random.Random, cfg: dict[str, Any]) -> list[str]:
     first = rng.choice(physical)
     others = [m for m in cfg["killMethods"] if m != first]
     return [first, rng.choice(others)]
+
+
+def _in_ring(pool: list[Anchor], ring: str, centre: tuple[float, float] | None, cfg: dict[str, Any]) -> list[Anchor]:
+    """The places within this slot's ring; the next ring out if there are none."""
+    if centre is None or ring == "anywhere":
+        return pool
+    limits = [float(cfg.get("nearMeters", 700)), float(cfg.get("walkableMeters", 1800))]
+    for limit in limits if ring == "near" else limits[1:]:
+        inside = [a for a in pool if haversine_m(centre[0], centre[1], a.latitude, a.longitude) <= limit]
+        if inside:
+            return inside
+    return pool
+
+
+def _nearness(anchor: Anchor, centre: tuple[float, float] | None, cfg: dict[str, Any]) -> float:
+    """A pull towards the player: most of what spawns should be a walk away, not a day trip."""
+    if centre is None:
+        return 0.0
+    distance = haversine_m(centre[0], centre[1], anchor.latitude, anchor.longitude)
+    if distance <= float(cfg.get("nearMeters", 1200)):
+        return 4.0
+    if distance <= float(cfg.get("walkableMeters", 2500)):
+        return 2.0
+    return 0.0
 
 
 def _appeal(anchor: Anchor, kind: str, frontier: set[str], known: dict[str, str]) -> float:

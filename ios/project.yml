@@ -82,7 +82,7 @@ targets:
           NSAllowsLocalNetworking: true
         NSLocalNetworkUsageDescription: Connects to the Roads & Runes development server on your network.
         MAP_STYLE_MINIMAL: https://tiles.openfreemap.org/styles/positron
-        MAP_STYLE_CYCLING: https://tiles.openfreemap.org/styles/liberty
+        MAP_STYLE_CYCLING: https://tiles.openfreemap.org/styles/positron
         MAP_STYLE_ADVENTURE: https://tiles.openfreemap.org/styles/bright
         MAP_STYLE_DETAILED: https://tiles.openfreemap.org/styles/liberty
         NSLocationWhenInUseUsageDescription: Roads & Runes shows your position on the world map and the quests around you.

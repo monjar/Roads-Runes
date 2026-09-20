@@ -22,7 +22,7 @@ primary_region = "lhr"
   ROUTING_ENGINE = "valhalla"   # no GraphHopper graph on Fly
   POI_IMPORT_ENABLED = "true"
   # party_quests: the party screens are built; strava still needs STRAVA_CLIENT_ID/SECRET set as secrets.
-  FEATURE_FLAGS = "!fog_of_war,party_quests"
+  FEATURE_FLAGS = "!fog_of_war,party_quests,llm_narrative"
 
 [http_service]
   internal_port = 8000

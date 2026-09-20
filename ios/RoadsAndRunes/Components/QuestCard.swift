@@ -26,6 +26,14 @@ struct QuestCard: View {
                     .font(compact ? Theme.Typography.cardTitle : Theme.Typography.voice(18, relativeTo: .title3))
                     .foregroundStyle(Theme.Colors.ink)
                     .lineLimit(2)
+                if !compact, let story = quest.narrative.hook ?? Optional(quest.description), !story.isEmpty {
+                    Text(story)
+                        .font(Theme.Typography.text(12.5, relativeTo: .caption))
+                        .foregroundStyle(Theme.Colors.inkSoft)
+                        .lineLimit(2)
+                        .lineSpacing(1.5)
+                        .padding(.vertical, 1)
+                }
                 Text(facts).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).lineLimit(1)
             }
             Spacer(minLength: 0)

@@ -44,10 +44,11 @@ struct WelcomeView: View {
         VStack(spacing: Theme.Spacing.lg) {
             Spacer()
             ZStack {
-                Circle().fill(Theme.Colors.sage).frame(width: 112, height: 112)
-                Circle().stroke(Theme.Colors.sage.opacity(0.35), lineWidth: 1.5).frame(width: 140, height: 140)
-                Circle().stroke(Theme.Colors.sage.opacity(0.18), lineWidth: 1).frame(width: 172, height: 172)
-                Image(systemName: "sparkle").font(.system(size: 52, weight: .bold)).foregroundStyle(Theme.Colors.cream)
+                Circle().fill(Theme.Colors.surface).frame(width: 196, height: 196)
+                Circle().stroke(Theme.Colors.terracotta.opacity(0.28), lineWidth: 1.5).frame(width: 222, height: 222)
+                Circle().stroke(Theme.Colors.terracotta.opacity(0.14), lineWidth: 1).frame(width: 252, height: 252)
+                Image("Logo").resizable().scaledToFit().frame(width: 150, height: 150)
+                    .accessibilityLabel("Rides and Runes")
             }
             .padding(.bottom, 8)
             Text("Roads & Runes").font(Theme.Typography.voice(40, relativeTo: .largeTitle)).foregroundStyle(Theme.Colors.ink)

@@ -47,6 +47,10 @@ struct NavigationScreen: View {
                     )
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
+                if let claim = recorder.recentClaim {
+                    ClaimToast(object: claim)
+                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                }
                 if let encounter = recorder.encounter {
                     EncounterBanner(status: encounter, formatter: formatter) { note in
                         recorder.complete(encounter: encounter.object, note: note, photoTaken: false)
@@ -368,6 +372,33 @@ struct NearbyStopCard: View {
         .background(Theme.Colors.sage, in: Capsule())
         .shadow(color: Theme.Colors.ink.opacity(0.2), radius: 8, y: 4)
         .accessibilityIdentifier("nearbyStop")
+    }
+}
+
+/// "Beaten: Bog Wraith · +150 AC", for a few seconds, the moment it happens.
+struct ClaimToast: View {
+    let object: WorldObject
+
+    var body: some View {
+        HStack(spacing: 10) {
+            EncounterGlyph(kind: object.kind, bounty: object.isBounty, size: 30)
+            Text("\(verb): \(object.name)").font(Theme.Typography.text(15, .bold)).foregroundStyle(Theme.Colors.ink).lineLimit(1)
+            Spacer(minLength: 6)
+            Text("+\(object.rewardAC) AC").font(Theme.Typography.text(15, .bold).monospacedDigit()).foregroundStyle(Theme.Colors.terracottaDeep)
+        }
+        .padding(.vertical, 9)
+        .padding(.horizontal, 14)
+        .background(Theme.Colors.cream, in: Capsule())
+        .shadow(color: Theme.Colors.ink.opacity(0.22), radius: 8, y: 4)
+        .accessibilityIdentifier("claimToast")
+    }
+
+    private var verb: String {
+        switch object.kind {
+        case .monster: return "Beaten"
+        case .chest: return "Opened"
+        default: return "Found"
+        }
     }
 }
 

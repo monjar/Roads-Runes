@@ -39,6 +39,16 @@ enum Config {
         case cycling = "CYCLING"
         case adventure = "ADVENTURE"
         case detailed = "DETAILED"
+
+        /// What the view draws on top of its base map. Cycling and Adventure used to be
+        /// two hosted styles that looked alike; now each says what it is for.
+        var emphasis: MapEmphasis {
+            switch self {
+            case .cycling: return .cycling
+            case .adventure: return .adventure
+            default: return .none
+            }
+        }
     }
 
     static let appGroup = "group.com.roadsandrunes.app"

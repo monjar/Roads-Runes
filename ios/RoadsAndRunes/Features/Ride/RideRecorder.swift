@@ -287,6 +287,11 @@ final class RideRecorder {
     /// the summary has the last word.
     private func handle(claimed object: WorldObject, at position: Coordinate) {
         recentClaim = object
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(6))
+            if self?.recentClaim?.id == object.id { self?.recentClaim = nil }
+        }
         if var tracker = objectiveTracker, let quest {
             for objective in quest.objectives where !completedObjectiveIDs.contains(objective.id) {
                 let pointsAtIt = objective.extra?["objectId"]?.stringValue == object.id.uuidString

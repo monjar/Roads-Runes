@@ -52,6 +52,7 @@ struct WorldView: View {
                 zoom: 14,
                 cells: model.cells,
                 markers: model.markers,
+                emphasis: styleKey.emphasis,
                 onRegionChanged: { center, _ in Task { await model.load(around: center) } },
                 onMarkerTap: { marker in withAnimation(.snappy) { model.tapMarker(marker) } },
                 camera: model.camera,
@@ -91,6 +92,18 @@ struct WorldView: View {
                     }
                 }
                 .padding(.horizontal, 16)
+                if model.selectedPlace == nil, model.selectedObject == nil, model.resultsTitle == nil {
+                    TodayStrip(
+                        character: container.session.character,
+                        nearest: model.nearestObject?.object,
+                        nearestMeters: model.nearestObject?.meters,
+                        activity: container.session.defaultActivity,
+                        units: model.units,
+                        onNearest: { if let nearest = model.nearestObject?.object { withAnimation(.snappy) { model.open(nearest) } } }
+                    )
+                    .padding(.horizontal, 12)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
                 bottomCard(model)
             }
             .padding(.top, 8)
@@ -171,12 +184,22 @@ struct MapStyleMenu: View {
 
     var body: some View {
         Menu {
-            ForEach([MapStyle.minimal, .cycling, .adventure, .detailed], id: \.self) { style in
-                Button {
-                    container.mapPreferences.mapStyle = style
-                } label: {
-                    Label(style.rawValue.capitalized, systemImage: container.mapPreferences.mapStyle == style ? "checkmark" : "map")
+            Section("Map") {
+                ForEach([MapStyle.minimal, .cycling, .adventure, .detailed], id: \.self) { style in
+                    Button {
+                        container.mapPreferences.mapStyle = style
+                    } label: {
+                        Label(Self.title(for: style), systemImage: container.mapPreferences.mapStyle == style ? "checkmark" : "map")
+                    }
                 }
+            }
+            Section("Show") {
+                Button {
+                    container.mapPreferences.showMysteries.toggle()
+                } label: {
+                    Label("Undiscovered places (?)", systemImage: container.mapPreferences.showMysteries ? "checkmark" : "questionmark.circle")
+                }
+                .accessibilityIdentifier("map.showMysteries")
             }
         } label: {
             Image(systemName: "square.3.layers.3d")
@@ -187,5 +210,16 @@ struct MapStyleMenu: View {
                 .shadow(color: Theme.Colors.ink.opacity(0.14), radius: 2, y: 1)
         }
         .accessibilityLabel("Map style")
+    }
+
+    /// What each view is for, since the names alone did not say.
+    static func title(for style: MapStyle) -> String {
+        switch style {
+        case .minimal: return "Minimal · just the streets"
+        case .cycling: return "Cycling · cycleways in green"
+        case .adventure: return "Adventure · trails and parks"
+        case .detailed: return "Detailed · everything"
+        default: return style.rawValue.capitalized
+        }
     }
 }

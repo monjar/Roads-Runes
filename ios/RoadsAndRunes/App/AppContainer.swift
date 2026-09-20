@@ -20,6 +20,7 @@ final class AppContainer {
     let sync: SyncService
     let rideRecorder: RideRecorder
     let mapPreferences: MapPreferencesStore
+    let nudges: NudgeScheduler
 
     /// Pending Strava OAuth code delivered through the URL scheme.
     var pendingStravaCode: String?
@@ -59,6 +60,7 @@ final class AppContainer {
         self.sync = sync
         self.rideRecorder = recorder
         self.mapPreferences = MapPreferencesStore()
+        self.nudges = NudgeScheduler(active: !inMemory && !uiTesting && !Self.isPreview)
         watch.onCommand = { [weak recorder] command in
             Task { @MainActor in
                 guard let recorder else { return }
@@ -125,7 +127,14 @@ final class MapPreferencesStore {
         didSet { defaults.set(batteryMode.rawValue, forKey: "batteryMode") }
     }
 
+    /// The dashed "?" rings for places not yet found. A city has hundreds; some riders
+    /// want the map for the map.
+    var showMysteries: Bool {
+        didSet { defaults.set(showMysteries, forKey: "showMysteries") }
+    }
+
     init() {
+        showMysteries = defaults.object(forKey: "showMysteries") as? Bool ?? true
         mapStyle = MapStyle(rawValue: defaults.string(forKey: "mapStyle") ?? "") ?? .adventure
         batteryMode = BatteryMode(rawValue: defaults.string(forKey: "batteryMode") ?? "") ?? .balanced
     }

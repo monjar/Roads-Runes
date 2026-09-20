@@ -96,6 +96,8 @@ public struct Character: Codable, Hashable, Identifiable, Sendable {
     /// Days in a row with an outing that counted, and the best run of them.
     public var streakDays: Int?
     public var longestStreakDays: Int?
+    /// True once an outing has counted today: "keep it alive" becomes "done".
+    public var streakActiveToday: Bool?
 
     public init(
         id: UUID, name: String, characterClass: CharacterClass, overallLevel: Int, overallXP: Int,
