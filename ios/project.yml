@@ -20,7 +20,7 @@ settings:
     # One version and one build number for the app and its watch app, both
     # overridable per upload: TestFlight refuses a build number it has seen
     # before, and the two targets have to agree or validation rejects the pair.
-    MARKETING_VERSION: "0.1.0"
+    MARKETING_VERSION: "0.4.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_STRICT_CONCURRENCY: minimal
     ENABLE_USER_SCRIPT_SANDBOXING: YES
