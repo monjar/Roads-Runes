@@ -36,7 +36,14 @@ async def test_one_bounty_a_day_worth_double(explorer_client):
     await set_methods(bounty["id"], PACE_ONLY)
     here = (bounty["latitude"], bounty["longitude"])
     summary = await ride(c, line_trace(destination_point(*here, 180, 800), destination_point(*here, 0, 800), 8.0))
-    assert any(line["kind"] == "BOUNTY" and line["ac"] == bounty["rewardAC"] for line in summary["acBreakdown"])
+    paid = next(line for line in summary["acBreakdown"] if line["kind"] == "BOUNTY")
+    # The grandest bounty is worth a whole ride's cap on its own, so with the
+    # kilometres on top every line is scaled down a little and the sum is the cap.
+    if paid.get("detail", {}).get("capped"):
+        assert summary["acAwarded"] == world_objects.load_ac_rules()["caps"]["perRideTotal"]
+        assert paid["ac"] >= bounty["rewardAC"] * 0.9
+    else:
+        assert paid["ac"] == bounty["rewardAC"]
     world_objects.forget_checks()
     assert not [o for o in await spawned(c) if o["bounty"]]
     assert (await c.get("/world/objects/bounty")).status_code == 404

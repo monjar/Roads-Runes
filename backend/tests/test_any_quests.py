@@ -33,11 +33,15 @@ async def test_every_board_has_a_quest_for_anyone(explorer_client):
         for objective in quest["objectives"]:
             assert "{" not in objective["title"]
 
-    # Asking for the open quests alone gives only those.
+    # A second batch, on foot this time, tops up what the board lacks. It need not
+    # carry an open quest of its own (the board already has one), so what is checked
+    # is the batch's shape and that the board still has a quest for anyone.
     r = await c.post(
         "/quests/generate", json={"latitude": ORIGIN[0], "longitude": ORIGIN[1], "count": 2, "activity": "WALK"}
     )
     assert r.status_code == 200, r.text
+    assert r.json()["items"] and all(q["activity"] == "WALK" for q in r.json()["items"])
+    r = await c.get("/quests", params={"latitude": ORIGIN[0], "longitude": ORIGIN[1], "status": "AVAILABLE"})
     assert any(q["characterClass"] == ANY_CLASS for q in r.json()["items"])
 
 
