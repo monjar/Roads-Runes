@@ -38,7 +38,7 @@ from app.routing.analysis import (
     traffic_exposure,
 )
 from app.routing.custom_models import build_custom_model, strip_internal, valhalla_costing
-from app.routing.engine import PROFILE_FOR_BIKE, EngineRequest, RoutingEngine, RoutingUnavailable
+from app.routing.engine import PROFILE_FOR_BIKE, EngineRequest, EngineRoute, RoutingEngine, RoutingUnavailable
 from app.routing.models import Route
 from app.routing.pois import attach_pois
 from app.routing.preferences import RoutePreferences, parse_request
@@ -130,6 +130,64 @@ def route_out(route: Route, components: dict[str, float] | None = None) -> Route
             "maxLon": route.max_lon,
         },
         createdAt=route.created_at,
+    )
+
+
+def _route_row(
+    *,
+    user: User,
+    quest: QuestInstance | None,
+    bike_id: uuid.UUID | None,
+    label: str,
+    profile: str,
+    activity: str,
+    er: EngineRoute,
+    speed_mps: float,
+    pois: list[dict[str, Any]],
+    request: dict[str, Any],
+    surface: dict[str, Any] | None = None,
+    cycleway: float = 0.0,
+    traffic: float = 0.0,
+    new_fraction: float = 0.0,
+    coverage: float = 0.0,
+) -> Route:
+    """An engine's answer as a stored route: its geometry, its hills and its box."""
+    coords = er.coordinates
+    samples = elevation_samples_from_coordinates(coords)
+    elev = analyse_elevation(samples)
+    min_lat, min_lon, max_lat, max_lon = bounding_box(coords)
+    return Route(
+        user_id=user.id,
+        quest_id=quest.id if quest else None,
+        bike_id=bike_id,
+        label=label,
+        profile=profile,
+        activity=activity,
+        engine=er.engine,
+        distance_meters=round(er.distance_m, 1),
+        estimated_duration_seconds=int(er.distance_m / speed_mps),
+        elevation_gain_meters=elev.total_ascent,
+        elevation_loss_meters=elev.total_descent,
+        highest_point_meters=elev.highest_point,
+        max_gradient_percent=elev.max_gradient_percent,
+        average_climb_gradient_percent=elev.average_climb_gradient_percent,
+        longest_climb=elev.longest_climb.to_dict() if elev.longest_climb else None,
+        surface=surface or {},
+        cycleway_fraction=cycleway,
+        traffic_exposure=traffic,
+        new_territory_fraction=new_fraction,
+        quest_objective_coverage=coverage,
+        coordinates=[[round(c[0], 6), round(c[1], 6), round(c[2], 1)] for c in coords],
+        encoded_polyline=encode_polyline((c[1], c[0]) for c in coords),
+        instructions=er.instructions,
+        elevation_samples=samples,
+        climbs=[c.to_dict() for c in elev.climbs],
+        pois=pois,
+        request=request,
+        min_lat=min_lat,
+        min_lon=min_lon,
+        max_lat=max_lat,
+        max_lon=max_lon,
     )
 
 
@@ -622,7 +680,11 @@ async def generate(
     llm: LLMClient,
     user: User,
     payload: RouteGenerateRequest,
+    *,
+    max_variants: int | None = None,
 ) -> tuple[list[tuple[Route, dict[str, float]]], dict[str, Any] | None]:
+    """`max_variants` is for callers that want one route and not a choice of three:
+    every variant is an engine request, and a quest's own route needs only the first."""
     profile: RiderProfile = await get_rider_profile(db, user.id)
     # How the player moves: asked for, or however they usually do. On foot there is
     # no bike to consult; the pedestrian costing and shorter distances do the work.
@@ -894,7 +956,8 @@ async def generate(
     seen_paths: dict[str, str] = {}
     same_road: list[str] = []
     routing = monotonic()
-    for index, variant in enumerate(_variants(base_prefs, usual_prefs, requested_stops, labels, cfg, asked)):
+    variants = _variants(base_prefs, usual_prefs, requested_stops, labels, cfg, asked)[:max_variants]
+    for index, variant in enumerate(variants):
         label, prefs = variant.label, variant.prefs
         distance_m = target_km * 1000 * variant.distance_factor
         custom_model = None if on_foot else build_custom_model(prefs, bike_type, allow_gravel, allow_trails)
@@ -955,8 +1018,6 @@ async def generate(
             same_road.append(f"{label} and {seen_paths[polyline]} are the same road here")
             continue
         seen_paths[polyline] = label
-        samples = elevation_samples_from_coordinates(coords)
-        elev = analyse_elevation(samples)
         surface = surface_composition(coords, er.details.get("surface"))
         cycle = cycleway_fraction(coords, er.details.get("road_class"), er.details.get("bike_network"))
         traffic = traffic_exposure(coords, er.details.get("road_class"))
@@ -971,10 +1032,27 @@ async def generate(
             preferred_position=(prefs.poi or {}).get("preferredPosition"),
             required_ids={str(stop.id) for stop in variant.stops},
         )
+        route = _route_row(
+            user=user,
+            quest=quest,
+            bike_id=bike.id if bike else None,
+            label=label,
+            profile=request.profile,
+            activity=activity,
+            er=er,
+            speed_mps=speed_mps,
+            pois=[p.to_dict() for p in pois],
+            request={"preferences": prefs.to_dict(), "label": label, "targetKm": target_km, "loop": loop},
+            surface=surface,
+            cycleway=cycle,
+            traffic=traffic,
+            new_fraction=new_fraction,
+            coverage=coverage,
+        )
         metrics = RouteMetrics(
             distance_m=er.distance_m,
-            elevation_gain_m=elev.total_ascent,
-            max_gradient_percent=elev.max_gradient_percent,
+            elevation_gain_m=route.elevation_gain_meters,
+            max_gradient_percent=route.max_gradient_percent,
             surface=surface,
             cycleway_fraction=cycle,
             traffic_exposure=traffic,
@@ -984,47 +1062,8 @@ async def generate(
             scenic_fraction=surface.get("gravel", 0) * 0.5 + surface.get("trail", 0) * 0.5 + cycle * 0.3,
         )
         score, components = score_route(metrics, prefs, rider, target_km * 1000)
-        min_lat, min_lon, max_lat, max_lon = bounding_box(coords)
-        route = Route(
-            user_id=user.id,
-            quest_id=quest.id if quest else None,
-            bike_id=bike.id if bike else None,
-            label=label,
-            profile=request.profile,
-            activity=activity,
-            engine=er.engine,
-            distance_meters=round(er.distance_m, 1),
-            estimated_duration_seconds=int(er.distance_m / speed_mps),
-            elevation_gain_meters=elev.total_ascent,
-            elevation_loss_meters=elev.total_descent,
-            highest_point_meters=elev.highest_point,
-            max_gradient_percent=elev.max_gradient_percent,
-            average_climb_gradient_percent=elev.average_climb_gradient_percent,
-            longest_climb=elev.longest_climb.to_dict() if elev.longest_climb else None,
-            surface=surface,
-            cycleway_fraction=cycle,
-            traffic_exposure=traffic,
-            new_territory_fraction=new_fraction,
-            quest_objective_coverage=coverage,
-            score=score,
-            coordinates=[[round(c[0], 6), round(c[1], 6), round(c[2], 1)] for c in coords],
-            encoded_polyline=polyline,
-            instructions=er.instructions,
-            elevation_samples=samples,
-            climbs=[c.to_dict() for c in elev.climbs],
-            pois=[p.to_dict() for p in pois],
-            request={
-                "preferences": prefs.to_dict(),
-                "label": label,
-                "scoreComponents": components,
-                "targetKm": target_km,
-                "loop": loop,
-            },
-            min_lat=min_lat,
-            min_lon=min_lon,
-            max_lat=max_lat,
-            max_lon=max_lon,
-        )
+        route.score = score
+        route.request = {**route.request, "scoreComponents": components}
         db.add(route)
         results.append((route, components))
     ms_engine = int((monotonic() - routing) * 1000)

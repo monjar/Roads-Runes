@@ -64,6 +64,8 @@ class EngineRequest:
     heading: float | None = None
     costing: dict[str, Any] | None = None  # Valhalla costing options for the same preferences
     activity: str = "RIDE"  # RIDE | RUN | WALK; on foot the costing is pedestrian
+    # Surface and road-class details cost a second request; a reroute mid-ride does without.
+    details: bool = True
 
 
 @dataclass
@@ -374,7 +376,8 @@ async def build_engine(settings: Settings) -> RoutingEngine:
 
     auto: GraphHopper inside its graph and Valhalla elsewhere; Valhalla alone
     when GraphHopper is down; the synthetic router only when neither answers
-    (development; production refuses to start on it).
+    (development; production refuses to start on it). valhalla: Valhalla, whether
+    or not it answered at boot.
     """
     from app.routing.valhalla import ValhallaClient  # valhalla.py imports this module
 
@@ -386,7 +389,13 @@ async def build_engine(settings: Settings) -> RoutingEngine:
     if mode in ("auto", "graphhopper") and await gh.healthy():
         bbox = await gh.bbox() if mode == "auto" else None
         return RegionalRouter(gh, bbox, valhalla) if bbox else gh
-    if mode in ("auto", "valhalla") and await valhalla.healthy():
+    if mode == "valhalla":
+        # Asked for by name: one slow /status at boot must not swap a machine onto
+        # made-up straight lines for as long as it lives. Requests retry on their own.
+        if not await valhalla.healthy():
+            log.warning("valhalla_unhealthy_at_boot", valhalla=settings.valhalla_url)
+        return valhalla
+    if mode == "auto" and await valhalla.healthy():
         return valhalla
     log.warning(
         "routing_unreachable_using_synthetic",

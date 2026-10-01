@@ -15,6 +15,7 @@ scoring stay engine-agnostic.
 
 from __future__ import annotations
 
+import asyncio
 import bisect
 import math
 from typing import Any
@@ -33,6 +34,9 @@ ELEVATION_INTERVAL_M = 30.0
 # Roads wander: a loop through points on a circle rides about this much further than the circle.
 LOOP_DETOUR = 1.25
 LOOP_TOLERANCE = 0.15
+# Waits before the second and third try of a request the server did not answer.
+RETRY_DELAYS_S: tuple[float, ...] = (0.5, 1.5)
+RETRY_AFTER_CAP_S = 5.0
 
 BICYCLE_TYPE_FOR_PROFILE = {"road": "Road", "gravel": "Cross", "mountain": "Mountain", "hybrid": "Hybrid"}
 
@@ -254,7 +258,7 @@ class ValhallaClient:
             except RoutingUnavailable as exc:
                 log.error(EVENT_ROUTE_GENERATION_FAILED, engine="valhalla", error=str(exc)[:300])
                 raise
-            return [await self._build(client, trip, costing, costing_name) for trip in trips]
+            return [await self._build(client, trip, costing, costing_name, request.details) for trip in trips]
 
     async def _loop(
         self,
@@ -306,7 +310,12 @@ class ValhallaClient:
         return [payload["trip"], *(alt["trip"] for alt in payload.get("alternates", []) if "trip" in alt)]
 
     async def _build(
-        self, client: httpx.AsyncClient, trip: dict[str, Any], costing: dict[str, Any], costing_name: str = "bicycle"
+        self,
+        client: httpx.AsyncClient,
+        trip: dict[str, Any],
+        costing: dict[str, Any],
+        costing_name: str = "bicycle",
+        details: bool = True,
     ) -> EngineRoute:
         points: list[tuple[float, float]] = []
         elevation: list[Any] = []
@@ -344,7 +353,7 @@ class ValhallaClient:
             distance_m=round(_length_m(trip), 1),
             duration_s=int(summary.get("time", 0)),
             instructions=instructions,
-            details=await self._details(client, points, costing, costing_name),
+            details=await self._details(client, points, costing, costing_name) if details else {},
             engine="valhalla",
         )
 
@@ -366,21 +375,46 @@ class ValhallaClient:
             "filters": {"attributes": DETAIL_ATTRIBUTES, "action": "include"},
         }
         try:
-            payload = await self._post(client, "trace_attributes", body)
+            payload = await self._post(client, "trace_attributes", body, retry=False)
         except RoutingUnavailable as exc:
             # The route stands without them; analysis falls back to "unknown" surfaces.
             log.warning("valhalla_details_unavailable", error=str(exc)[:300])
             return {}
         return edge_details(payload.get("edges", []), points)
 
-    async def _post(self, client: httpx.AsyncClient, action: str, body: dict[str, Any]) -> dict[str, Any]:
-        try:
-            response = await client.post(f"{self.base_url}/{action}", json=body, params=self._params())
-        except httpx.HTTPError as exc:
-            raise RoutingUnavailable(f"Valhalla {action}: {exc}") from exc
-        if response.status_code != 200:
-            raise RoutingUnavailable(f"Valhalla {action} returned {response.status_code}: {response.text[:200]}")
-        return response.json()
+    async def _post(
+        self, client: httpx.AsyncClient, action: str, body: dict[str, Any], *, retry: bool = True
+    ) -> dict[str, Any]:
+        """A busy shared server answers the second time far more often than not, so a
+        timeout, a 429 or a 5xx is tried again; "no path" (a 400) is an answer."""
+        delays = RETRY_DELAYS_S if retry else ()
+        failure = ""
+        for attempt in range(len(delays) + 1):
+            wait = delays[attempt] if attempt < len(delays) else None
+            try:
+                response = await client.post(f"{self.base_url}/{action}", json=body, params=self._params())
+            except httpx.HTTPError as exc:
+                failure = f"Valhalla {action}: {exc}"
+            else:
+                if response.status_code == 200:
+                    return response.json()
+                failure = f"Valhalla {action} returned {response.status_code}: {response.text[:200]}"
+                if response.status_code != 429 and response.status_code < 500:
+                    break
+                if wait is not None:
+                    wait = max(wait, _retry_after_s(response))
+            if wait is None:
+                break
+            log.warning("valhalla_retry", action=action, attempt=attempt + 1, error=failure[:200])
+            await asyncio.sleep(wait)
+        raise RoutingUnavailable(failure)
+
+
+def _retry_after_s(response: httpx.Response) -> float:
+    try:
+        return min(RETRY_AFTER_CAP_S, float(response.headers.get("Retry-After", 0)))
+    except ValueError:
+        return 0.0
 
 
 def _length_m(trip: dict[str, Any]) -> float:

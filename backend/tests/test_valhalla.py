@@ -208,3 +208,67 @@ def test_the_local_graph_never_routes_feet():
     inside = EngineRequest([(51.5, -0.1), (51.51, -0.11)], "hybrid")
     assert router.covers(inside)
     assert not router.covers(EngineRequest([(51.5, -0.1), (51.51, -0.11)], "foot", activity="RUN"))
+
+
+async def test_a_busy_server_is_asked_again(monkeypatch):
+    """The public server sheds load with a 429 or a 5xx; the second try usually lands."""
+    from app.routing import valhalla
+
+    monkeypatch.setattr(valhalla, "RETRY_DELAYS_S", (0.0, 0.0))
+    answers = iter([httpx.Response(429, text="slow down"), httpx.Response(503, text="busy")])
+    route_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal route_calls
+        if request.url.path != "/route":
+            return httpx.Response(200, json=TRACE)
+        route_calls += 1
+        return next(answers, httpx.Response(200, json=route_payload()))
+
+    [route] = await client_for(handler).route(EngineRequest([(51.5, -0.1), (51.503, -0.102)], "gravel"))
+    assert route.distance_m == 400.0
+    assert route_calls == 3
+
+
+async def test_no_path_is_not_asked_twice(monkeypatch):
+    from app.routing import valhalla
+
+    monkeypatch.setattr(valhalla, "RETRY_DELAYS_S", (0.0, 0.0))
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(400, json={"error_code": 442, "error": "No path could be found for input"})
+
+    with pytest.raises(RoutingUnavailable):
+        await client_for(handler).route(EngineRequest([(51.5, -0.1), (51.6, -0.2)], "road"))
+    assert calls == 1
+
+
+async def test_a_route_without_details_is_one_request():
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        return httpx.Response(200, json=route_payload())
+
+    [route] = await client_for(handler).route(
+        EngineRequest([(51.5, -0.1), (51.503, -0.102)], "gravel", details=False)
+    )
+    assert paths == ["/route"]
+    assert route.details == {}
+
+
+async def test_valhalla_by_name_is_valhalla_even_when_it_was_slow_at_boot(monkeypatch):
+    """One failed /status used to put the whole machine on synthetic straight lines."""
+    from app.core.config import Settings
+    from app.routing import engine
+
+    async def down(self) -> bool:
+        return False
+
+    monkeypatch.setattr(ValhallaClient, "healthy", down)
+    monkeypatch.setattr(engine.GraphHopperClient, "healthy", down)
+    assert (await engine.build_engine(Settings(routing_engine="valhalla"))).name == "valhalla"
+    assert (await engine.build_engine(Settings(routing_engine="auto"))).name == "synthetic"
