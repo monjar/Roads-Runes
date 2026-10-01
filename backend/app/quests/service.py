@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.characters import catalog
 from app.characters.models import Character
 from app.characters.service import ability_map, default_bike, get_rider_profile
-from app.core.activity import comfortable_distance_km, normalise
+from app.core.activity import DISTANCE_SCALE, comfortable_distance_km, normalise
 from app.core.config import Settings
 from app.core.errors import NotFound, QuestGenerationFailed
 from app.core.geo import haversine_m
@@ -33,11 +33,17 @@ from app.quests.state_machine import assert_transition
 from app.quests.templates import ANY_CLASS
 from app.users.models import User
 from app.world_objects import service as world_objects
+from app.world_objects.models import WorldObject
 
 log = get_logger(__name__)
 
 QUEST_TTL_DAYS = 14
 NEARBY_RADIUS_M = 25_000.0
+# How far a quest's furthest target may be from the player before the quest is not
+# theirs to do from here: a little beyond the furthest the generator ever places one
+# (15 km for a ride, scaled for feet), or most of an outing they call comfortable.
+QUEST_REACH_KM = 18.0
+QUEST_REACH_OF_COMFORTABLE = 0.6
 
 
 def objective_out(o: QuestObjective) -> ObjectiveOut:
@@ -215,6 +221,7 @@ async def build_context(
                 o.payload.get("anchorName"),
                 o.latitude,
                 o.longitude,
+                o.expires_at,
             )
             for o in placed
         ],
@@ -318,9 +325,15 @@ async def generate_quests(
     if settings.flags.get("llm_narrative"):
         # All at once: three stories in the time of one.
         generated = list(await asyncio.gather(*(narrative.enrich(llm, g) for g in generated)))
+    object_expiry = {o.id: o.expires_at for o in ctx.world_objects if o.expires_at is not None}
     for g in generated:
         g = narrative.with_story(g)
         quest = _persist(user, g, now)
+        # A quest about something in the world is over when that thing is.
+        for o in g.objectives:
+            gone_at = object_expiry.get(str(o.extra.get("objectId") or ""))
+            if gone_at is not None and quest.expires_at is not None:
+                quest.expires_at = min(quest.expires_at, gone_at)
         db.add(quest)
         quests.append(quest)
     await db.flush()
@@ -377,6 +390,86 @@ async def retire_duplicates(db: AsyncSession, user: User, latitude: float, longi
     return retired
 
 
+def _targets_of(quest: QuestInstance) -> list[tuple[float, float]]:
+    """The places a quest still sends the player to; coming home is not one of them."""
+    points: list[tuple[float, float]] = []
+    for o in quest.objectives:
+        if o.status == "COMPLETED" or o.objective_type == "RETURN_TO_START":
+            continue
+        cells = (o.extra or {}).get("cells")
+        if o.objective_type == "VISIT_MULTIPLE_LOCATIONS" and cells:
+            points.extend((float(c["latitude"]), float(c["longitude"])) for c in cells)
+        elif o.latitude is not None and o.longitude is not None:
+            points.append((o.latitude, o.longitude))
+    return points
+
+
+async def _generated_on_offer(db: AsyncSession, user: User) -> list[QuestInstance]:
+    """The board's own quests: not a story step, which waits, and not a party's."""
+    return list(
+        (
+            await db.execute(
+                select(QuestInstance).where(
+                    QuestInstance.user_id == user.id,
+                    QuestInstance.status == "AVAILABLE",
+                    QuestInstance.story_quest_id.is_(None),
+                    QuestInstance.party_id.is_(None),
+                )
+            )
+        ).scalars()
+    )
+
+
+async def retire_unreachable(db: AsyncSession, user: User, latitude: float, longitude: float) -> int:
+    """A quest drawn up at home is no use from another town.
+
+    A quest starts where the player is, so one whose targets are a day's ride from
+    here is retired and the board is dealt again around them. Nearer than that it
+    stays: the same quest, routed from where they stand.
+    """
+    profile = await get_rider_profile(db, user.id)
+    retired = 0
+    for quest in await _generated_on_offer(db, user):
+        points = _targets_of(quest)
+        if not points:
+            continue
+        activity = normalise(quest.activity)
+        reach_km = max(
+            QUEST_REACH_KM * DISTANCE_SCALE.get(activity, 1.0),
+            QUEST_REACH_OF_COMFORTABLE * comfortable_distance_km(profile, activity),
+        )
+        furthest_m = max(haversine_m(latitude, longitude, lat, lon) for lat, lon in points)
+        if furthest_m > reach_km * 1000:
+            quest.status = "EXPIRED"
+            retired += 1
+    if retired:
+        await db.flush()
+    return retired
+
+
+async def retire_orphaned(db: AsyncSession, user: User) -> int:
+    """A quest to open a chest that has gone, or beat a monster that has left.
+
+    Quests last a fortnight and what they point at lasts days, so an old one could
+    sit on the board with nothing at the end of it.
+    """
+    now = utcnow()
+    retired = 0
+    for quest in await _generated_on_offer(db, user):
+        for o in quest.objectives:
+            wanted = (o.extra or {}).get("objectId")
+            if not wanted or o.status == "COMPLETED":
+                continue
+            obj = await db.get(WorldObject, uuid.UUID(str(wanted)))
+            if obj is None or obj.status != "SPAWNED" or obj.expires_at < now:
+                quest.status = "EXPIRED"
+                retired += 1
+                break
+    if retired:
+        await db.flush()
+    return retired
+
+
 async def ensure_available(
     db: AsyncSession,
     settings: Settings,
@@ -389,6 +482,8 @@ async def ensure_available(
     activity: str | None = None,
 ) -> list[QuestInstance]:
     await retire_duplicates(db, user, latitude, longitude)
+    await retire_unreachable(db, user, latitude, longitude)
+    await retire_orphaned(db, user)
     available = await list_quests(db, user, "AVAILABLE", latitude, longitude, 20)
     if len(available) < minimum:
         await generate_quests(

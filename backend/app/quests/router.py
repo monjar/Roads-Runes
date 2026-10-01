@@ -9,6 +9,7 @@ from app.characters.service import get_character
 from app.core.deps import CurrentUser, DBDep, SettingsDep, get_job_queue, get_llm, get_router_client
 from app.core.feature_flags import require_flag
 from app.core.pagination import Page, clamp_limit
+from app.core.schemas import Coordinate
 from app.quests import service, story
 from app.quests.schemas import (
     QuestCompleteRequest,
@@ -43,9 +44,14 @@ async def list_quests(
         character = await get_character(db, user)
         await service.ensure_available(db, settings, llm, user, character, latitude, longitude, activity=activity)  # type: ignore[arg-type]
     rows = await service.list_quests(db, user, status, latitude, longitude, size)
-    if status in (None, "AVAILABLE"):
-        # The distance on the card is the distance of the route behind it.
-        await routing.settle_quest_routes(db, settings, engine, llm, user, list(rows))  # type: ignore[arg-type]
+    if status in (None, "AVAILABLE", "ACCEPTED"):
+        # The distance on the card is the distance of the route behind it, from here.
+        origin = (
+            Coordinate(latitude=latitude, longitude=longitude)
+            if latitude is not None and longitude is not None
+            else None
+        )
+        await routing.settle_quest_routes(db, settings, engine, llm, user, list(rows), origin=origin)  # type: ignore[arg-type]
     return Page(items=[service.quest_out(q) for q in rows], nextCursor=None)
 
 
@@ -98,9 +104,15 @@ async def route(
     settings: SettingsDep,
     engine: Annotated[object, Depends(get_router_client)],
     llm: Annotated[object, Depends(get_llm)],
+    latitude: float | None = Query(default=None, ge=-90, le=90),
+    longitude: float | None = Query(default=None, ge=-180, le=180),
 ) -> RouteOptionOut:
-    """The quest's fixed route, generated on first request and stable afterwards."""
-    chosen, components = await routing.quest_route(db, settings, engine, llm, user, quest_id)  # type: ignore[arg-type]
+    """The quest's route from where the player is: stable while they stay about
+    there, drawn again once they have moved. Without a position, the stored one."""
+    origin = (
+        Coordinate(latitude=latitude, longitude=longitude) if latitude is not None and longitude is not None else None
+    )
+    chosen, components = await routing.quest_route(db, settings, engine, llm, user, quest_id, origin)  # type: ignore[arg-type]
     return routing.route_out(chosen, components)
 
 

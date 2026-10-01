@@ -306,6 +306,7 @@ async def _clone_quest_for(
         template_id=source.template_id,
         quest_type=source.quest_type,
         character_class=source.character_class,
+        activity=source.activity,
         title=source.title,
         description=source.description,
         narrative=dict(source.narrative),

@@ -19,6 +19,7 @@ import hashlib
 import random
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 import h3
@@ -57,6 +58,7 @@ class WorldObjectCandidate:
     anchor_name: str | None
     latitude: float
     longitude: float
+    expires_at: datetime | None = None
 
 
 @dataclass

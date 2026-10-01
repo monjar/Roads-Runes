@@ -253,9 +253,7 @@ async def test_a_route_without_details_is_one_request():
         paths.append(request.url.path)
         return httpx.Response(200, json=route_payload())
 
-    [route] = await client_for(handler).route(
-        EngineRequest([(51.5, -0.1), (51.503, -0.102)], "gravel", details=False)
-    )
+    [route] = await client_for(handler).route(EngineRequest([(51.5, -0.1), (51.503, -0.102)], "gravel", details=False))
     assert paths == ["/route"]
     assert route.details == {}
 

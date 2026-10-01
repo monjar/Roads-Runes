@@ -61,11 +61,14 @@ class QuestTargets:
 
 
 def _quest_targets(quest: QuestInstance | None) -> QuestTargets:
+    """Where the quest still has to go: an objective already done is not ridden to again."""
     if quest is None:
         return QuestTargets([], False)
     points = []
     rts = False
     for o in quest.objectives:
+        if o.status == "COMPLETED":
+            continue
         if o.objective_type == "RETURN_TO_START":
             rts = True
         elif o.objective_type == "VISIT_MULTIPLE_LOCATIONS" and o.extra.get("cells"):
@@ -1115,6 +1118,28 @@ async def get_route(db: AsyncSession, user: User, route_id: uuid.UUID) -> Route:
     return route
 
 
+# A route is the player's while they are still about where it starts.
+QUEST_ROUTE_REUSE_M = 150.0
+# The board redraws a quest's route once the player has gone further than this from it.
+QUEST_ROUTE_PREFETCH_M = 750.0
+OPEN_QUEST_STATES = ("AVAILABLE", "ACCEPTED", "ACTIVE")
+
+
+def reanchor_quest(quest: QuestInstance, origin: Coordinate) -> None:
+    """The quest starts here now: its origin, its way home and its route move with the player."""
+    quest.latitude, quest.longitude = origin.latitude, origin.longitude
+    for o in quest.objectives:
+        if o.objective_type == "RETURN_TO_START" and o.status != "COMPLETED":
+            o.latitude, o.longitude = origin.latitude, origin.longitude
+    quest.suggested_route_id = None
+
+
+def _moved_from(quest: QuestInstance, origin: Coordinate | None, further_than_m: float) -> bool:
+    if origin is None or quest.status not in OPEN_QUEST_STATES:
+        return False
+    return haversine_m(origin.latitude, origin.longitude, quest.latitude, quest.longitude) > further_than_m
+
+
 async def quest_route(
     db: AsyncSession,
     settings: Settings,
@@ -1122,17 +1147,24 @@ async def quest_route(
     llm: LLMClient,
     user: User,
     quest_id: uuid.UUID,
+    origin: Coordinate | None = None,
 ) -> tuple[Route, dict[str, float]]:
-    """The quest's fixed route (spec §20 "suggested route").
+    """The quest's route (spec §20 "suggested route"), from where the player is.
 
-    Generated once from the quest origin through its objectives with the rider's
+    Generated from `origin` through the objectives still to do with the rider's
     default bike and profile, stored as `suggested_route_id`, and returned
-    unchanged from then on. Tweaking in the planner (POST /routes/generate with
-    the questId) adds alternatives without replacing it.
+    unchanged while the player stays about there. A player who has moved on gets
+    a new one from where they stand: a route that starts three kilometres away
+    is not a route to follow. Without an origin the stored one is returned as it
+    is. Tweaking in the planner (POST /routes/generate with the questId) adds
+    alternatives without replacing it.
     """
     quest = await db.get(QuestInstance, quest_id)
     if quest is None or quest.user_id != user.id:
         raise NotFound("Quest not found")
+    if _moved_from(quest, origin, QUEST_ROUTE_REUSE_M):
+        assert origin is not None
+        reanchor_quest(quest, origin)
     must_cover_m = _must_cover_m(quest)
     if quest.suggested_route_id is not None:
         route = await db.get(Route, quest.suggested_route_id)
@@ -1152,9 +1184,12 @@ async def quest_route(
             questId=quest.id,
             distanceTargetKm=min(400.0, max(1.0, target_km)),
             loop=True,
+            activity=normalise(quest.activity),
         )
         quest.suggested_route_id = None
-        results, _ = await generate(db, settings, engine, llm, user, payload)
+        # One way round, not a choice of three: each is a request to a shared engine,
+        # and the planner is where the rider asks for alternatives.
+        results, _ = await generate(db, settings, engine, llm, user, payload, max_variants=1)
         # The shortest way that still covers what the quest demands; failing that, the longest.
         enough = [r for r in results if r[0].distance_meters >= must_cover_m]
         pick = (
@@ -1210,25 +1245,38 @@ async def settle_quest_routes(
     user: User,
     quests: list[QuestInstance],
     *,
-    limit: int = 3,
+    origin: Coordinate | None = None,
+    limit: int = 5,
 ) -> None:
-    """Routes the quests on offer that have no fixed route yet, so their distance is
-    real before the rider ever sees it. A quest that cannot be routed keeps its guess.
+    """Routes the quests in hand that have no route from about here yet, so their
+    distance is real before the rider ever sees it. A quest that cannot be routed
+    keeps its guess, and is routed again when it is opened.
 
     Bounded by the number of routes, not by a clock: a timeout that cancelled a query
     mid-flight would leave the session unusable, and the engine's own HTTP timeout
     already caps each one.
     """
-    pending = [q for q in quests if q.status == "AVAILABLE" and q.suggested_route_id is None][:limit]
+    pending = [
+        q
+        for q in quests
+        if q.status in ("AVAILABLE", "ACCEPTED")
+        and (q.suggested_route_id is None or _moved_from(q, origin, QUEST_ROUTE_PREFETCH_M))
+    ][:limit]
     for quest in pending:
         started = monotonic()
+        quest_id = quest.id
         try:
             async with db.begin_nested():
-                await quest_route(db, settings, engine, llm, user, quest.id)
+                await quest_route(db, settings, engine, llm, user, quest_id, origin)
         except Exception as exc:  # noqa: BLE001 - the board is more important than one route
-            log.warning("quest_route_prefetch_failed", quest=str(quest.id), error=str(exc)[:200])
+            log.error("quest_route_prefetch_failed", quest=str(quest_id), error=str(exc)[:200])
+            # The rollback expired what the attempt touched; the board is about to
+            # read these rows, and an expired attribute cannot be loaded from there.
+            await db.refresh(quest)
+            for objective in quest.objectives:
+                await db.refresh(objective)
         finally:
-            log.info("quest_route_settled", quest=str(quest.id), ms=int((monotonic() - started) * 1000))
+            log.info("quest_route_settled", quest=str(quest_id), ms=int((monotonic() - started) * 1000))
 
 
 async def package(db: AsyncSession, user: User, route_id: uuid.UUID) -> RoutePackageOut:
