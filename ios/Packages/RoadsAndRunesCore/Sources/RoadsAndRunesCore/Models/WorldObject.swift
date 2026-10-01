@@ -69,8 +69,10 @@ public struct WorldObject: Codable, Hashable, Identifiable, Sendable {
     public var monster: MonsterInfo?
     public var setId: String?
     public var piece: String?
+    /// How close the player must be to open or pick it up; nil for a monster (and from an older server).
+    public var claimRadiusMeters: Double?
 
-    public init(id: UUID, kind: WorldObjectKind, status: WorldObjectStatus = .spawned, tier: Int = 1, latitude: Double, longitude: Double, name: String, anchorName: String? = nil, bounty: Bool? = nil, rewardAC: Int, expiresAt: Date, claimedAt: Date? = nil, monster: MonsterInfo? = nil, setId: String? = nil, piece: String? = nil) {
+    public init(id: UUID, kind: WorldObjectKind, status: WorldObjectStatus = .spawned, tier: Int = 1, latitude: Double, longitude: Double, name: String, anchorName: String? = nil, bounty: Bool? = nil, rewardAC: Int, expiresAt: Date, claimedAt: Date? = nil, monster: MonsterInfo? = nil, setId: String? = nil, piece: String? = nil, claimRadiusMeters: Double? = nil) {
         self.id = id
         self.kind = kind
         self.status = status
@@ -86,10 +88,52 @@ public struct WorldObject: Codable, Hashable, Identifiable, Sendable {
         self.monster = monster
         self.setId = setId
         self.piece = piece
+        self.claimRadiusMeters = claimRadiusMeters
     }
 
     public var coordinate: Coordinate { Coordinate(latitude: latitude, longitude: longitude) }
     public var isBounty: Bool { bounty ?? false }
+
+    /// Radii used when the server does not say (it has since 0.5): the same numbers it holds.
+    public static let defaultClaimRadius: [WorldObjectKind: Double] = [.chest: 40, .collectable: 30]
+
+    /// Within this many metres a chest opens or a piece is picked up; nil for what cannot be taken by hand.
+    public var reachMeters: Double? { claimRadiusMeters ?? Self.defaultClaimRadius[kind] }
+
+    /// Whether someone standing at `position` can reach for it.
+    public func isWithinReach(of position: Coordinate) -> Bool {
+        guard status == .spawned, let reach = reachMeters else { return false }
+        return GeoMath.distance(position, coordinate) <= reach
+    }
+}
+
+/// `POST /world/objects/{id}/claim`: where the phone says the player is standing.
+public struct WorldObjectClaimRequest: Codable, Hashable, Sendable {
+    public var latitude: Double
+    public var longitude: Double
+    public var horizontalAccuracyMeters: Double?
+
+    public init(latitude: Double, longitude: Double, horizontalAccuracyMeters: Double? = nil) {
+        self.latitude = latitude
+        self.longitude = longitude
+        self.horizontalAccuracyMeters = horizontalAccuracyMeters
+    }
+}
+
+/// What opening a chest or picking up a piece gave.
+public struct WorldObjectClaim: Codable, Hashable, Sendable {
+    public var object: WorldObject
+    public var acAwarded: Int
+    public var walletBalance: Int
+    /// The quest this finished, when it was the last thing a quest asked for.
+    public var questCompleted: Quest?
+
+    public init(object: WorldObject, acAwarded: Int, walletBalance: Int, questCompleted: Quest? = nil) {
+        self.object = object
+        self.acAwarded = acAwarded
+        self.walletBalance = walletBalance
+        self.questCompleted = questCompleted
+    }
 }
 
 /// The phone's word that it beat or opened something on the way; the server's trace has the last word.

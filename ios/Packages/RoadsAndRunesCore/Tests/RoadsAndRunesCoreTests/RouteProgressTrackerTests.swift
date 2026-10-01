@@ -8,6 +8,11 @@ final class RouteProgressTrackerTests: XCTestCase {
         RouteProgressTracker(path: loop, instructions: SampleData.sampleInstructions)
     }
 
+    /// The middle of segment `index`: unambiguously on it, where a vertex belongs to two.
+    private func midpoint(_ index: Int) -> Coordinate {
+        Coordinate(latitude: (loop[index].latitude + loop[index + 1].latitude) / 2, longitude: (loop[index].longitude + loop[index + 1].longitude) / 2)
+    }
+
     /// Points along the path: every vertex plus the midpoint of every segment.
     private func ridePositions() -> [Coordinate] {
         var positions: [Coordinate] = []
@@ -102,6 +107,49 @@ final class RouteProgressTrackerTests: XCTestCase {
         XCTAssertFalse(tracker.isOffRoute)
         _ = tracker.update(position: far)
         XCTAssertTrue(tracker.isOffRoute)
+    }
+
+    /// A rider a kilometre away used to "progress": the match crept along the route to
+    /// whatever was nearest, through turns they never took.
+    func testNoProgressIsMadeOffTheRoute() {
+        var tracker = makeTracker()
+        let onRoute = tracker.update(position: midpoint(2))
+        XCTAssertEqual(onRoute.nearestSegmentIndex, 2)
+
+        // Ride away east, across the square and out the far side: nearer and nearer to
+        // the later sides of the loop, never on them.
+        var last = onRoute
+        for meters in stride(from: 100.0, through: 500.0, by: 50) {
+            last = tracker.update(position: GeoMath.destination(from: loop[2], bearingDegrees: 90, distanceMeters: meters))
+        }
+        XCTAssertTrue(last.isOffRoute)
+        XCTAssertEqual(last.nearestSegmentIndex, 2)
+        XCTAssertEqual(last.distanceAlongRoute, onRoute.distanceAlongRoute, accuracy: 0.5)
+        XCTAssertEqual(last.nextInstruction?.coordinateIndex, 5)
+        XCTAssertEqual(tracker.lastDistanceAlong, onRoute.distanceAlongRoute, accuracy: 0.5)
+    }
+
+    func testOffRouteSaysWhereToRejoin() {
+        var tracker = makeTracker()
+        _ = tracker.update(position: loop[1])
+        // 300 m west of the west side, level with vertex 3: the way back is straight east to it.
+        let astray = GeoMath.destination(from: loop[3], bearingDegrees: 270, distanceMeters: 300)
+        var update = tracker.update(position: astray)
+        for _ in 0..<3 { update = tracker.update(position: astray) }
+        XCTAssertTrue(update.isOffRoute)
+        XCTAssertEqual(update.crossTrackDistance, 300, accuracy: 3)
+        XCTAssertLessThan(GeoMath.distance(update.snappedPosition, loop[3]), 3)
+
+        // The part already ridden is not the way back: from beside the start, having got
+        // as far as the north side, the nearest of what is left is what is offered.
+        var later = makeTracker()
+        _ = later.update(position: midpoint(7))
+        let nearStart = GeoMath.destination(from: loop[0], bearingDegrees: 270, distanceMeters: 200)
+        var back = later.update(position: nearStart)
+        for _ in 0..<3 { back = later.update(position: nearStart) }
+        XCTAssertTrue(back.isOffRoute)
+        XCTAssertGreaterThan(GeoMath.distance(back.snappedPosition, loop[2]), 100)
+        XCTAssertEqual(back.nearestSegmentIndex, 7)
     }
 
     func testTrackerFromRouteOption() {

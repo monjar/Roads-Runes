@@ -27,7 +27,8 @@ public struct EncounterStatus: Equatable, Sendable {
 public struct EncounterTracker: Sendable {
     public static let inSightMeters = 400.0
     public static let monsterNearMeters = 150.0
-    public static let claimRadius: [WorldObjectKind: Double] = [.chest: 40, .collectable: 30]
+    /// What the server uses when an object does not carry its own radius.
+    public static let claimRadius = WorldObject.defaultClaimRadius
     public static let bufferMeters = 4000.0
     public static let evaluateEvery = 5
 
@@ -64,7 +65,7 @@ public struct EncounterTracker: Sendable {
             var status = EncounterStatus(object: object, distanceMeters: distance)
             switch object.kind {
             case .chest, .collectable:
-                if distance <= Self.claimRadius[object.kind] ?? 30 {
+                if distance <= object.reachMeters ?? 30 {
                     claim(object, method: "PASS", at: position, timestamp: timestamp)
                     newlyClaimed.append(object)
                     continue

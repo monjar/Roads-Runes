@@ -11,6 +11,10 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     public var latency: TimeInterval = 0
     /// If set, the next call throws this error once.
     public var failNext: APIError?
+    /// Every reroute asked for, in order, so a test can see what the ride sent.
+    public private(set) var rerouteRequests: [RerouteRequest] = []
+    /// While set, reroutes fail with this (a planner that cannot be reached), however many are asked for.
+    public var rerouteFailure: APIError?
 
     let lock = NSLock()
     var user: User
@@ -214,6 +218,27 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     public func bounty() async throws -> WorldObject? {
         try await run { self.storedObjects.values.first { $0.isBounty && $0.status == .spawned } }
     }
+    /// The server's rule: a chest or a piece, still there, and the player within reach of it.
+    public func claimWorldObject(id: UUID, _ request: WorldObjectClaimRequest) async throws -> WorldObjectClaim {
+        try await run {
+            guard var object = self.storedObjects[id] else { throw self.notFound("World object") }
+            guard let reach = object.reachMeters else {
+                throw APIError.server(code: APIErrorCode.objectNotClaimable, message: "A monster has to be beaten on the move", status: 409)
+            }
+            guard object.status == .spawned else {
+                throw APIError.server(code: APIErrorCode.objectGone, message: "It has already gone", status: 409)
+            }
+            let here = Coordinate(latitude: request.latitude, longitude: request.longitude)
+            guard GeoMath.distance(here, object.coordinate) <= reach * 1.25 + min(request.horizontalAccuracyMeters ?? 0, 25) else {
+                throw APIError.server(code: APIErrorCode.objectOutOfRange, message: "Get within \(Int(reach)) m of it", status: 409)
+            }
+            object.status = .claimed
+            object.claimedAt = Date()
+            self.storedObjects[id] = object
+            self.storedCoins += object.rewardAC
+            return WorldObjectClaim(object: object, acAwarded: object.rewardAC, walletBalance: self.storedCoins)
+        }
+    }
     public func lure(at center: Coordinate) async throws -> [WorldObject] {
         try await run {
             if self.storedCoins < 50 {
@@ -398,18 +423,73 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
 
     // MARK: Routes
 
-    public func questRoute(id: UUID) async throws -> RouteOption {
+    public func questRoute(id: UUID, from origin: Coordinate?) async throws -> RouteOption {
         try await run {
             var quest = try self.requireQuest(id)
-            if let routeId = quest.suggestedRouteId, let route = self.storedRoutes[routeId] { return route }
+            // Like the server: the same route while the player stays about where it starts.
+            let moved = origin.map { GeoMath.distance($0, quest.origin) > 150 } ?? false
+            if !moved, let routeId = quest.suggestedRouteId, let route = self.storedRoutes[routeId] { return route }
             var route = SampleData.sampleRoute
             route.id = UUID()
             route.label = "Adventure"
+            if moved, let origin, let start = route.path.first {
+                route = Self.moved(route, byLatitude: origin.latitude - start.latitude, longitude: origin.longitude - start.longitude)
+                quest.origin = origin
+            }
             self.storedRoutes[route.id] = route
             quest.suggestedRouteId = route.id
             self.storedQuests[id] = quest
             return route
         }
+    }
+
+    /// One straight way from the rider to where the route was going: enough to tell a
+    /// new route from the old one, and to follow it.
+    public func reroute(routeId: UUID, _ request: RerouteRequest) async throws -> RouteOption {
+        try await run {
+            self.rerouteRequests.append(request)
+            if let failure = self.rerouteFailure { throw failure }
+            guard let original = self.storedRoutes[routeId], let end = original.path.last else { throw self.notFound("Route") }
+            let steps = 10
+            let path = (0...steps).map { step -> Coordinate in
+                let t = Double(step) / Double(steps)
+                return Coordinate(
+                    latitude: request.origin.latitude + (end.latitude - request.origin.latitude) * t,
+                    longitude: request.origin.longitude + (end.longitude - request.origin.longitude) * t
+                )
+            }
+            var route = original
+            route.id = UUID()
+            route.label = "Rerouted"
+            route.coordinates = path.map { [$0.longitude, $0.latitude, 20] }
+            route.encodedPolyline = Polyline.encode(path)
+            route.distanceMeters = GeoMath.pathLength(path).rounded()
+            route.instructions = [
+                Instruction(index: 0, text: "Head back to the route", streetName: "", sign: .continue, distanceMeters: route.distanceMeters, durationSeconds: 60, coordinateIndex: 0, latitude: path[0].latitude, longitude: path[0].longitude),
+                Instruction(index: 1, text: "Arrive at your destination", streetName: "", sign: .finish, distanceMeters: 0, durationSeconds: 0, coordinateIndex: steps, latitude: end.latitude, longitude: end.longitude),
+            ]
+            route.boundingBox = BoundingBox.enclosing(path)
+            self.storedRoutes[route.id] = route
+            return route
+        }
+    }
+
+    static func moved(_ route: RouteOption, byLatitude dLat: Double, longitude dLon: Double) -> RouteOption {
+        var route = route
+        route.coordinates = route.coordinates.map { point in
+            var point = point
+            if point.count >= 2 { point[0] += dLon; point[1] += dLat }
+            return point
+        }
+        route.instructions = route.instructions.map { instruction in
+            var instruction = instruction
+            instruction.latitude += dLat
+            instruction.longitude += dLon
+            return instruction
+        }
+        route.encodedPolyline = Polyline.encode(route.path)
+        route.boundingBox = BoundingBox.enclosing(route.path)
+        return route
     }
 
     public func generateRoutes(_ request: RouteGenerateRequest) async throws -> RouteGenerateResponse {

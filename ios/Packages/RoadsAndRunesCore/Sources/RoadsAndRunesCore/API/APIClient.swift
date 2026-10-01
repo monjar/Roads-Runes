@@ -258,6 +258,7 @@ public actor APIClient: RoadsAndRunesAPI {
             throw error
         }
     }
+    public func claimWorldObject(id: UUID, _ request: WorldObjectClaimRequest) async throws -> WorldObjectClaim { try await self.request(try Endpoints.claimWorldObject(id: id, request)) }
     public func lure(at center: Coordinate) async throws -> [WorldObject] { try await request(try Endpoints.lure(LureRequest(latitude: center.latitude, longitude: center.longitude))) }
     public func abilities() async throws -> [AbilityState] { try await request(Endpoints.abilities()) }
     public func unlockAbility(id: String) async throws -> Character { try await request(Endpoints.unlockAbility(id: id)) }
@@ -296,7 +297,8 @@ public actor APIClient: RoadsAndRunesAPI {
     public func generateRoutes(_ request: RouteGenerateRequest) async throws -> RouteGenerateResponse { try await self.request(try Endpoints.generateRoutes(request)) }
     public func route(id: UUID) async throws -> RouteOption { try await request(Endpoints.route(id: id)) }
     public func routePackage(id: UUID) async throws -> RoutePackage { try await request(Endpoints.routePackage(id: id)) }
-    public func questRoute(id: UUID) async throws -> RouteOption { try await request(Endpoints.questRoute(id: id)) }
+    public func questRoute(id: UUID, from origin: Coordinate?) async throws -> RouteOption { try await request(Endpoints.questRoute(id: id, from: origin)) }
+    public func reroute(routeId: UUID, _ request: RerouteRequest) async throws -> RouteOption { try await self.request(try Endpoints.reroute(routeId: routeId, request)) }
 
     // MARK: Rides
 

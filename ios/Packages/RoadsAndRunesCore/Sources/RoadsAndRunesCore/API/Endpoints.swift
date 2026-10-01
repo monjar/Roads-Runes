@@ -79,6 +79,9 @@ public enum Endpoints {
     }
     public static func worldObject(id: UUID) -> Endpoint { Endpoint(method: .get, path: "/world/objects/\(id.uuidString)") }
     public static func bounty() -> Endpoint { Endpoint(method: .get, path: "/world/objects/bounty") }
+    public static func claimWorldObject(id: UUID, _ body: WorldObjectClaimRequest) throws -> Endpoint {
+        try .json(.post, "/world/objects/\(id.uuidString)/claim", body: body, timeout: 20)
+    }
     public static func lure(_ body: LureRequest) throws -> Endpoint { try .json(.post, "/world/objects/lure", body: body) }
     public static func walletTransactions(limit: Int?, cursor: String?) -> Endpoint {
         var query: [QueryItem] = []
@@ -136,7 +139,15 @@ public enum Endpoints {
     public static func generateRoutes(_ body: RouteGenerateRequest) throws -> Endpoint { try .json(.post, "/routes/generate", body: body, timeout: 150) }
     public static func route(id: UUID) -> Endpoint { Endpoint(method: .get, path: "/routes/\(id.uuidString)") }
     public static func routePackage(id: UUID) -> Endpoint { Endpoint(method: .get, path: "/routes/\(id.uuidString)/package") }
-    public static func questRoute(id: UUID) -> Endpoint { Endpoint(method: .get, path: "/quests/\(id.uuidString)/route") }
+    /// The route is drawn from `origin` — where the player is — once they have moved from where it last started.
+    public static func questRoute(id: UUID, from origin: Coordinate? = nil) -> Endpoint {
+        let query = origin.map { [QueryItem("latitude", format($0.latitude)), QueryItem("longitude", format($0.longitude))] } ?? []
+        return Endpoint(method: .get, path: "/quests/\(id.uuidString)/route", query: query, timeout: 90)
+    }
+    /// Asked for mid-ride, so it gives up sooner than a plan does: the rider is told and shown the way back instead.
+    public static func reroute(routeId: UUID, _ body: RerouteRequest) throws -> Endpoint {
+        try .json(.post, "/routes/\(routeId.uuidString)/reroute", body: body, timeout: 25)
+    }
 
     // MARK: Rides
     public static func createRide(_ body: RideCreate) throws -> Endpoint { try .json(.post, "/rides", body: body) }

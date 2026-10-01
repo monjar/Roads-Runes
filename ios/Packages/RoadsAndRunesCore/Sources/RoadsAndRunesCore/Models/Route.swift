@@ -213,6 +213,22 @@ public struct RouteGenerateRequest: Codable, Hashable, Sendable {
     }
 }
 
+/// `POST /routes/{id}/reroute`: where the rider is and what of the route they have already done.
+public struct RerouteRequest: Codable, Hashable, Sendable {
+    public var origin: Coordinate
+    /// How far along the route they had got when they left it.
+    public var progressMeters: Double
+    public var completedObjectiveIds: [UUID]
+    public var visitedStopIds: [UUID]
+
+    public init(origin: Coordinate, progressMeters: Double = 0, completedObjectiveIds: [UUID] = [], visitedStopIds: [UUID] = []) {
+        self.origin = origin
+        self.progressMeters = progressMeters
+        self.completedObjectiveIds = completedObjectiveIds
+        self.visitedStopIds = visitedStopIds
+    }
+}
+
 public struct RouteGenerateResponse: Codable, Hashable, Sendable {
     public var alternatives: [RouteOption]
     /// The server returns a loosely-typed dictionary; known keys map onto `RoutePreferences`.

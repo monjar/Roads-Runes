@@ -36,6 +36,13 @@ public struct ProgressUpdate: Hashable, Sendable {
 /// loops that cross or retrace themselves do not jump ahead; only when no
 /// segment in the window is within the off-route threshold does it fall back
 /// to a global search.
+///
+/// Progress is only made on the route. A fix that is far from all of it moves
+/// nothing: the update reports the progress made before leaving, and in
+/// `snappedPosition` the nearest point of what was still to ride — the place to
+/// rejoin. (The match used to creep along the window toward whatever happened
+/// to be nearest, so a rider a kilometre away "progressed" through turns they
+/// never took.)
 public struct RouteProgressTracker: Hashable, Sendable {
     public static let offRouteThresholdMeters = 40.0
     public static let onRouteThresholdMeters = 20.0
@@ -48,6 +55,8 @@ public struct RouteProgressTracker: Hashable, Sendable {
     private let cumulative: [Double]
 
     public private(set) var lastSegmentIndex: Int = 0
+    /// Metres along the route at the last fix that was on it.
+    public private(set) var lastDistanceAlong: Double = 0
     public private(set) var isOffRoute: Bool = false
     public private(set) var lastUpdate: ProgressUpdate?
     private var consecutiveFarFixes = 0
@@ -73,6 +82,7 @@ public struct RouteProgressTracker: Hashable, Sendable {
     /// Restart matching from a segment (e.g. after a reroute replaces the tracker).
     public mutating func reset(toSegment index: Int = 0) {
         lastSegmentIndex = min(max(0, index), max(0, segmentCount - 1))
+        lastDistanceAlong = cumulative.indices.contains(lastSegmentIndex) ? cumulative[lastSegmentIndex] : 0
         consecutiveFarFixes = 0
         isOffRoute = false
         lastUpdate = nil
@@ -96,12 +106,15 @@ public struct RouteProgressTracker: Hashable, Sendable {
             let global = bestMatch(in: 0..<segmentCount, position: position)
             if global.projection.distanceMeters <= Self.offRouteThresholdMeters {
                 match = global
+            } else {
+                // Nowhere near any of it: the way back is to the nearest of what is left.
+                match = bestMatch(in: lastSegmentIndex..<segmentCount, position: position)
             }
         }
 
-        lastSegmentIndex = match.index
         let crossTrack = match.projection.distanceMeters
-        if crossTrack > Self.offRouteThresholdMeters {
+        let far = crossTrack > Self.offRouteThresholdMeters
+        if far {
             consecutiveFarFixes += 1
             if consecutiveFarFixes >= Self.offRouteConsecutiveUpdates {
                 isOffRoute = true
@@ -111,15 +124,17 @@ public struct RouteProgressTracker: Hashable, Sendable {
             if crossTrack < Self.onRouteThresholdMeters {
                 isOffRoute = false
             }
+            lastSegmentIndex = match.index
+            let segmentLength = cumulative[match.index + 1] - cumulative[match.index]
+            lastDistanceAlong = cumulative[match.index] + match.projection.fraction * segmentLength
         }
 
-        let segmentLength = cumulative[match.index + 1] - cumulative[match.index]
-        let along = cumulative[match.index] + match.projection.fraction * segmentLength
+        let along = lastDistanceAlong
         let remaining = max(0, totalDistance - along)
 
         var next: Instruction?
         var distanceToNext: Double?
-        if let instruction = instructions.first(where: { $0.coordinateIndex > match.index }) {
+        if let instruction = instructions.first(where: { $0.coordinateIndex > lastSegmentIndex }) {
             next = instruction
             let vertex = min(max(0, instruction.coordinateIndex), cumulative.count - 1)
             distanceToNext = max(0, cumulative[vertex] - along)
@@ -128,7 +143,7 @@ public struct RouteProgressTracker: Hashable, Sendable {
         let update = ProgressUpdate(
             distanceAlongRoute: along,
             distanceRemaining: remaining,
-            nearestSegmentIndex: match.index,
+            nearestSegmentIndex: lastSegmentIndex,
             crossTrackDistance: crossTrack,
             snappedPosition: match.projection.point,
             nextInstruction: next,

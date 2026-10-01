@@ -28,6 +28,7 @@ final class FlakyAPI: RoadsAndRunesAPI, @unchecked Sendable {
     func worldObject(id: UUID) async throws -> WorldObject { try await inner.worldObject(id: id) }
     func bounty() async throws -> WorldObject? { try await inner.bounty() }
     func lure(at center: Coordinate) async throws -> [WorldObject] { try await inner.lure(at: center) }
+    func claimWorldObject(id: UUID, _ request: WorldObjectClaimRequest) async throws -> WorldObjectClaim { try await inner.claimWorldObject(id: id, request) }
     func abilities() async throws -> [AbilityState] { try await inner.abilities() }
     func unlockAbility(id: String) async throws -> Character { try await inner.unlockAbility(id: id) }
     func bikes() async throws -> [Bike] { try await inner.bikes() }
@@ -50,7 +51,8 @@ final class FlakyAPI: RoadsAndRunesAPI, @unchecked Sendable {
     func generateRoutes(_ request: RouteGenerateRequest) async throws -> RouteGenerateResponse { try await inner.generateRoutes(request) }
     func route(id: UUID) async throws -> RouteOption { try await inner.route(id: id) }
     func routePackage(id: UUID) async throws -> RoutePackage { try await inner.routePackage(id: id) }
-    func questRoute(id: UUID) async throws -> RouteOption { try await inner.questRoute(id: id) }
+    func questRoute(id: UUID, from origin: Coordinate?) async throws -> RouteOption { try await inner.questRoute(id: id, from: origin) }
+    func reroute(routeId: UUID, _ request: RerouteRequest) async throws -> RouteOption { try await inner.reroute(routeId: routeId, request) }
     func rideExportURL(id: UUID, format: RideExportFormat) -> URL { inner.rideExportURL(id: id, format: format) }
     func createRide(_ request: RideCreate) async throws -> Ride { try await inner.createRide(request) }
     func rides(limit: Int?, cursor: String?) async throws -> Page<Ride> { try await inner.rides(limit: limit, cursor: cursor) }

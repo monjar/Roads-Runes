@@ -47,6 +47,11 @@ public enum APIErrorCode {
     public static let questGenerationFailed = "QUEST_GENERATION_FAILED"
     public static let featureDisabled = "FEATURE_DISABLED"
     public static let rateLimited = "RATE_LIMITED"
+    public static let objectOutOfRange = "OBJECT_OUT_OF_RANGE"
+    public static let objectGone = "OBJECT_GONE"
+    public static let objectNotClaimable = "OBJECT_NOT_CLAIMABLE"
+    public static let gpsTooWeak = "GPS_TOO_WEAK"
+    public static let claimTooFast = "CLAIM_TOO_FAST"
 }
 
 public struct StravaStatus: Codable, Hashable, Sendable {

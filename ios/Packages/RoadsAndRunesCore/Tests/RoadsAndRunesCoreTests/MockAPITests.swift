@@ -72,7 +72,87 @@ final class MockAPITests: XCTestCase {
         XCTAssertTrue(url.absoluteString.hasSuffix("/rides/\(SampleData.rideId.uuidString)/export?format=gpx"))
     }
 
+    func testAQuestRouteStartsWhereThePlayerIs() async throws {
+        let api = MockAPI()
+        let home = try await api.questRoute(id: SampleData.questId, from: SampleData.origin)
+        let acrossTheRoad = GeoMath.destination(from: SampleData.origin, bearingDegrees: 90, distanceMeters: 80)
+        let again = try await api.questRoute(id: SampleData.questId, from: acrossTheRoad)
+        XCTAssertEqual(again.id, home.id)
+
+        let elsewhere = GeoMath.destination(from: SampleData.origin, bearingDegrees: 300, distanceMeters: 3000)
+        let moved = try await api.questRoute(id: SampleData.questId, from: elsewhere)
+        XCTAssertNotEqual(moved.id, home.id)
+        XCTAssertLessThan(GeoMath.distance(try XCTUnwrap(moved.path.first), elsewhere), 1)
+        let quest = try await api.quest(id: SampleData.questId)
+        XCTAssertEqual(quest.suggestedRouteId, moved.id)
+        XCTAssertLessThan(GeoMath.distance(quest.origin, elsewhere), 1)
+    }
+
+    func testARerouteStartsAtTheRiderAndEndsWhereTheRouteDid() async throws {
+        let api = MockAPI()
+        let astray = GeoMath.destination(from: SampleData.origin, bearingDegrees: 0, distanceMeters: 900)
+        let request = RerouteRequest(origin: astray, progressMeters: 420, completedObjectiveIds: [SampleData.objectiveVisitId])
+        let route = try await api.reroute(routeId: SampleData.routeId, request)
+        XCTAssertNotEqual(route.id, SampleData.routeId)
+        XCTAssertEqual(route.path.first, astray)
+        XCTAssertEqual(route.path.last, SampleData.sampleRoute.path.last)
+        XCTAssertEqual(api.rerouteRequests, [request])
+
+        api.rerouteFailure = .server(code: APIErrorCode.routeGenerationFailed, message: "No way back could be found from here", status: 502)
+        do {
+            _ = try await api.reroute(routeId: SampleData.routeId, request)
+            XCTFail("expected the planner to be unreachable")
+        } catch let error as APIError {
+            XCTAssertEqual(error.errorCode, APIErrorCode.routeGenerationFailed)
+        }
+        XCTAssertEqual(api.rerouteRequests.count, 2)
+    }
+
+    func testAChestOpensFromBesideItAndNotFromAcrossTheRoad() async throws {
+        let api = MockAPI()
+        let chest = SampleData.sampleChest
+        let before = try await api.wallet().balance
+        let far = GeoMath.destination(from: chest.coordinate, bearingDegrees: 90, distanceMeters: 200)
+        do {
+            _ = try await api.claimWorldObject(id: chest.id, WorldObjectClaimRequest(latitude: far.latitude, longitude: far.longitude, horizontalAccuracyMeters: 8))
+            XCTFail("expected it to be out of reach")
+        } catch let error as APIError {
+            XCTAssertEqual(error.errorCode, APIErrorCode.objectOutOfRange)
+        }
+
+        let beside = GeoMath.destination(from: chest.coordinate, bearingDegrees: 90, distanceMeters: 30)
+        XCTAssertTrue(chest.isWithinReach(of: beside))
+        XCTAssertFalse(chest.isWithinReach(of: far))
+        let claim = try await api.claimWorldObject(id: chest.id, WorldObjectClaimRequest(latitude: beside.latitude, longitude: beside.longitude, horizontalAccuracyMeters: 8))
+        XCTAssertEqual(claim.object.status, .claimed)
+        XCTAssertEqual(claim.acAwarded, chest.rewardAC)
+        XCTAssertEqual(claim.walletBalance, before + chest.rewardAC)
+        let stillThere = try await api.worldObjects(near: chest.coordinate, radiusMeters: 500).map(\.id)
+        XCTAssertFalse(stillThere.contains(chest.id))
+
+        do {
+            _ = try await api.claimWorldObject(id: chest.id, WorldObjectClaimRequest(latitude: beside.latitude, longitude: beside.longitude))
+            XCTFail("expected it to be gone")
+        } catch let error as APIError {
+            XCTAssertEqual(error.errorCode, APIErrorCode.objectGone)
+        }
+        // A monster is beaten on the move, not picked up.
+        XCTAssertNil(SampleData.sampleMonster.reachMeters)
+        XCTAssertFalse(SampleData.sampleMonster.isWithinReach(of: SampleData.sampleMonster.coordinate))
+    }
+
     func testEndpointPaths() throws {
+        let questRoute = Endpoints.questRoute(id: SampleData.questId, from: SampleData.origin)
+        XCTAssertEqual(questRoute.path, "/quests/\(SampleData.questId.uuidString)/route")
+        XCTAssertEqual(questRoute.query.map { $0.name }, ["latitude", "longitude"])
+        XCTAssertTrue(Endpoints.questRoute(id: SampleData.questId).query.isEmpty)
+        let reroute = try Endpoints.reroute(routeId: SampleData.routeId, RerouteRequest(origin: SampleData.origin))
+        XCTAssertEqual(reroute.method, .post)
+        XCTAssertEqual(reroute.path, "/routes/\(SampleData.routeId.uuidString)/reroute")
+        XCTAssertLessThanOrEqual(reroute.timeout ?? 60, 30, "a rider off the route is not kept waiting like a planner is")
+        let claim = try Endpoints.claimWorldObject(id: SampleData.sampleChest.id, WorldObjectClaimRequest(latitude: 51.49, longitude: -0.04))
+        XCTAssertEqual(claim.path, "/world/objects/\(SampleData.sampleChest.id.uuidString)/claim")
+
         let endpoint = Endpoints.quests(near: SampleData.origin, status: .available, limit: 10, cursor: "abc")
         XCTAssertEqual(endpoint.path, "/quests")
         XCTAssertEqual(endpoint.query.map { $0.name }, ["latitude", "longitude", "status", "limit", "cursor"])

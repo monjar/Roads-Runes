@@ -263,4 +263,49 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(ISO8601.string(from: SampleData.referenceDate), "2026-01-01T00:00:00.000Z")
         XCTAssertEqual(ISO8601.parse(ISO8601.string(from: Date(timeIntervalSince1970: 1_000_000_000.25)))?.timeIntervalSince1970 ?? 0, 1_000_000_000.25, accuracy: 1e-3)
     }
+
+    func testWorldObjectClaimFromTheServer() throws {
+        let json = """
+        {
+          "object": {
+            "id": "8a1f0b2c-0000-4000-8000-00000000a002", "kind": "CHEST", "status": "CLAIMED", "tier": 1,
+            "latitude": 51.4881, "longitude": -0.0202, "name": "Old chest", "anchorName": "Wall of the Ancestors",
+            "bounty": false, "rewardAC": 25, "expiresAt": "2026-10-04T09:00:00Z", "claimedAt": "2026-10-01T09:33:00Z",
+            "monster": null, "setId": null, "piece": null, "claimRadiusMeters": 40.0
+          },
+          "acAwarded": 25,
+          "walletBalance": 185,
+          "questCompleted": null
+        }
+        """
+        let claim = try JSONCoding.decode(WorldObjectClaim.self, from: Data(json.utf8))
+        XCTAssertEqual(claim.object.status, .claimed)
+        XCTAssertEqual(claim.object.reachMeters, 40)
+        XCTAssertEqual(claim.acAwarded, 25)
+        XCTAssertEqual(claim.walletBalance, 185)
+        XCTAssertNil(claim.questCompleted)
+    }
+
+    /// An object from a server that does not say its radius yet still has one.
+    func testWorldObjectWithoutARadiusUsesTheKnownOne() throws {
+        let json = """
+        {"id": "8a1f0b2c-0000-4000-8000-00000000a003", "kind": "COLLECTABLE", "status": "SPAWNED", "tier": 1,
+         "latitude": 51.4925, "longitude": -0.034, "name": "Ansuz (Old Runes)", "rewardAC": 10,
+         "expiresAt": "2026-10-04T09:00:00Z"}
+        """
+        let piece = try JSONCoding.decode(WorldObject.self, from: Data(json.utf8))
+        XCTAssertNil(piece.claimRadiusMeters)
+        XCTAssertEqual(piece.reachMeters, 30)
+    }
+
+    func testRerouteRequestIsWhatTheServerReads() throws {
+        let request = RerouteRequest(
+            origin: Coordinate(latitude: 51.5, longitude: -0.03), progressMeters: 1250,
+            completedObjectiveIds: [SampleData.objectiveVisitId], visitedStopIds: [SampleData.discoveryId]
+        )
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONCoding.encode(request)) as? [String: Any])
+        XCTAssertEqual(Set(object.keys), ["origin", "progressMeters", "completedObjectiveIds", "visitedStopIds"])
+        XCTAssertEqual(object["progressMeters"] as? Double, 1250)
+        XCTAssertEqual((object["completedObjectiveIds"] as? [String])?.first?.lowercased(), SampleData.objectiveVisitId.uuidString.lowercased())
+    }
 }

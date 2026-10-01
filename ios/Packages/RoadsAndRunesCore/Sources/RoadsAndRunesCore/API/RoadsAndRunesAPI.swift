@@ -27,6 +27,8 @@ public protocol RoadsAndRunesAPI: Sendable {
     /// Today's bounty; nil until the world has been looked at today, or once it is gone.
     func bounty() async throws -> WorldObject?
     func lure(at center: Coordinate) async throws -> [WorldObject]
+    /// Open a chest or pick up a piece from beside it. Throws `OBJECT_OUT_OF_RANGE` when it is not within reach.
+    func claimWorldObject(id: UUID, _ request: WorldObjectClaimRequest) async throws -> WorldObjectClaim
     func abilities() async throws -> [AbilityState]
     func unlockAbility(id: String) async throws -> Character
     func bikes() async throws -> [Bike]
@@ -57,8 +59,11 @@ public protocol RoadsAndRunesAPI: Sendable {
     func generateRoutes(_ request: RouteGenerateRequest) async throws -> RouteGenerateResponse
     func route(id: UUID) async throws -> RouteOption
     func routePackage(id: UUID) async throws -> RoutePackage
-    /// The quest's fixed route: created on first request, then stable until the rider tweaks it.
-    func questRoute(id: UUID) async throws -> RouteOption
+    /// The quest's route from where the player is: stable while they stay about there,
+    /// drawn again once they have moved. With no origin, whatever route it last had.
+    func questRoute(id: UUID, from origin: Coordinate?) async throws -> RouteOption
+    /// The rest of a ride from where the rider is, when they have left the route.
+    func reroute(routeId: UUID, _ request: RerouteRequest) async throws -> RouteOption
 
     // MARK: Rides
     func createRide(_ request: RideCreate) async throws -> Ride
@@ -127,6 +132,10 @@ public protocol RoadsAndRunesAPI: Sendable {
 extension RoadsAndRunesAPI {
     public func quests(near: Coordinate, status: QuestStatus? = .available) async throws -> Page<Quest> {
         try await quests(near: near, status: status, limit: nil, cursor: nil)
+    }
+
+    public func questRoute(id: UUID) async throws -> RouteOption {
+        try await questRoute(id: id, from: nil)
     }
 
     public func rides() async throws -> Page<Ride> {
