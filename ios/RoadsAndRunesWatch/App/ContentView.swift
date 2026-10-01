@@ -1,5 +1,6 @@
 import RoadsAndRunesCore
 import SwiftUI
+import WatchKit
 
 struct ContentView: View {
     @Environment(RideStore.self) private var store
@@ -21,6 +22,32 @@ struct ContentView: View {
             }
         }
         .animation(isLuminanceReduced ? nil : .easeInOut(duration: 0.2), value: store.pendingObjective)
+        .onChange(of: store.turnCueToken) { _, _ in
+            if let cue = store.turnCue { TurnHaptics.play(cue) }
+        }
+    }
+}
+
+/// A turn, felt: two soft taps as it comes up; when it is here, one for a right
+/// turn and two for a left (design 7a), so the wrist says which way without a look.
+enum TurnHaptics {
+    static func play(_ cue: TurnCue) {
+        let device = WKInterfaceDevice.current()
+        switch cue {
+        case .approaching:
+            device.play(.click)
+            later(0.25) { device.play(.click) }
+        case .now(let side):
+            device.play(side == .left ? .directionDown : .directionUp)
+            if side == .left { later(0.45) { device.play(.directionDown) } }
+        }
+    }
+
+    private static func later(_ seconds: Double, _ body: @escaping @MainActor () -> Void) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(Int(seconds * 1000)))
+            body()
+        }
     }
 }
 

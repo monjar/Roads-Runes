@@ -18,7 +18,7 @@ struct ObjectiveCompleteOverlay: View {
                     .foregroundStyle(WatchTheme.sage)
             }
             .frame(width: 56, height: 56)
-            Text("OBJECTIVE COMPLETE")
+            Text(event.coins == nil ? "OBJECTIVE COMPLETE" : "YOURS")
                 .font(.system(size: 11, weight: .bold))
                 .tracking(1.2)
                 .padding(.top, 6)
@@ -28,9 +28,20 @@ struct ObjectiveCompleteOverlay: View {
                 .lineLimit(2)
                 .minimumScaleFactor(0.7)
                 .padding(.horizontal, 10)
+            if let detail = event.detail {
+                Text(detail)
+                    .font(.system(size: 13, weight: .medium))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                    .padding(.horizontal, 10)
+            }
             Spacer(minLength: 0)
             if let xp = event.xp {
                 Text("+\(xp) XP")
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+            } else if let coins = event.coins, coins > 0 {
+                Text("+\(coins) AC")
                     .font(.system(size: 30, weight: .bold, design: .rounded))
             }
         }

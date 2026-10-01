@@ -20,6 +20,10 @@ final class RideStore {
     private(set) var pendingObjective: WatchObjectiveCompleted?
     /// Incremented for every objective completion so identical titles re-trigger the overlay.
     private(set) var objectiveToken: Int = 0
+    /// The turn to be felt on the wrist, and a count so the same cue twice still taps twice.
+    private(set) var turnCue: TurnCue?
+    private(set) var turnCueToken: Int = 0
+    @ObservationIgnored private var turnCues = TurnCueTracker()
     private(set) var units: Units = .metric
 
     /// The route to draw on the map page, and the stops on it. Both come from the
@@ -125,6 +129,8 @@ final class RideStore {
     // MARK: - Inbound
 
     func apply(summary newSummary: WatchRouteSummary, receivedAt: Date = Date()) {
+        // A new route (a reroute included) numbers its turns from the start again.
+        if newSummary.instructions != summary?.instructions { turnCues.reset() }
         summary = newSummary
         lastUpdateAt = receivedAt
         optimisticPaused = nil
@@ -143,6 +149,10 @@ final class RideStore {
         if let instruction = newUpdate.instruction {
             currentInstruction = instruction
             currentDistanceToInstruction = newUpdate.distanceToInstructionMeters
+        }
+        if newUpdate.state == .active, let cue = turnCues.update(instruction: newUpdate.instruction, distanceMeters: newUpdate.distanceToInstructionMeters) {
+            turnCue = cue
+            turnCueToken += 1
         }
         if newUpdate.state.isTerminal {
             summary = nil

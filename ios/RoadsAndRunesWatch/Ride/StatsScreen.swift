@@ -28,6 +28,12 @@ struct StatsScreen: View {
                 LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], alignment: .leading, spacing: 10) {
                     StatRow(value: store.formatter.duration(seconds: store.elapsedSeconds(at: context.date)), label: "TIME")
                     StatRow(value: "↑ \(store.formatter.elevation(meters: store.update?.elevationGainMeters ?? 0))", label: "CLIMBED")
+                    if let fresh = store.update?.newTerritoryMeters {
+                        StatRow(value: store.formatter.distance(meters: fresh), label: "NEW GROUND", color: WatchTheme.sageLight)
+                    }
+                    if let left = store.update?.remainingMeters {
+                        StatRow(value: store.formatter.distance(meters: left), label: "TO GO")
+                    }
                     StatRow(value: store.heartRate.map { "\($0)" } ?? "--", label: "BPM", color: WatchTheme.heart)
                     if let speed = store.update?.speedMps, !isLuminanceReduced {
                         StatRow(value: store.formatter.speedValue(metersPerSecond: speed).formatted(.number.precision(.fractionLength(1))), label: store.formatter.speedUnitLabel.uppercased(), color: WatchTheme.tertiary)

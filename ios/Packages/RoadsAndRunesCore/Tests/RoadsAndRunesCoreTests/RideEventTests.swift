@@ -208,4 +208,29 @@ final class RideEventTests: XCTestCase {
         XCTAssertEqual(RewardCopy.coins(kind: "RIDE_DISTANCE"), "The distance")
         XCTAssertEqual(RewardCopy.coins(kind: "STORY_ARC"), "An arc finished")
     }
+
+    // MARK: Turns on the wrist
+
+    func testATurnIsCuedAsItComesUpAndAgainWhenItIsHere() {
+        var cues = TurnCueTracker()
+        let left = Instruction(index: 3, text: "Turn left", streetName: "Mill Road", sign: .left, distanceMeters: 400, durationSeconds: 60, coordinateIndex: 30, latitude: 51.5, longitude: -0.04)
+        XCTAssertNil(cues.update(instruction: left, distanceMeters: 380))
+        XCTAssertEqual(cues.update(instruction: left, distanceMeters: 140), .approaching(.left))
+        XCTAssertNil(cues.update(instruction: left, distanceMeters: 90), "once is enough")
+        XCTAssertEqual(cues.update(instruction: left, distanceMeters: 30), .now(.left))
+        XCTAssertNil(cues.update(instruction: left, distanceMeters: 10))
+
+        // Carrying on, and arriving, are not turns.
+        let straight = Instruction(index: 4, text: "Continue", streetName: "Mill Road", sign: .continue, distanceMeters: 300, durationSeconds: 40, coordinateIndex: 40, latitude: 51.5, longitude: -0.04)
+        XCTAssertNil(cues.update(instruction: straight, distanceMeters: 20))
+        XCTAssertNil(cues.update(instruction: nil, distanceMeters: nil))
+
+        // A turn joined at the turn gets the one cue that matters.
+        let right = Instruction(index: 5, text: "Turn right", streetName: "River Path", sign: .sharpRight, distanceMeters: 60, durationSeconds: 10, coordinateIndex: 50, latitude: 51.5, longitude: -0.04)
+        XCTAssertEqual(cues.update(instruction: right, distanceMeters: 20), .now(.right))
+        XCTAssertNil(cues.update(instruction: right, distanceMeters: 100))
+
+        cues.reset()
+        XCTAssertEqual(cues.update(instruction: left, distanceMeters: 120), .approaching(.left), "a new route numbers its turns again")
+    }
 }

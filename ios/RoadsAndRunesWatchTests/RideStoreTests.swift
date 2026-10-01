@@ -62,4 +62,35 @@ final class RideStoreTests: XCTestCase {
         XCTAssertFalse(store.hasRoute)
         XCTAssertNil(store.currentInstruction)
     }
+
+    func testATurnComingUpTapsTheWristOnceAndAgainWhenItIsHere() {
+        let store = RideStore()
+        func near(_ meters: Double) -> WatchNavigationUpdate {
+            WatchNavigationUpdate(state: .active, instruction: instruction(2, sign: .left), distanceToInstructionMeters: meters, distanceMeters: 1000, elapsedSeconds: 100, elevationGainMeters: 0, timestamp: Date())
+        }
+        store.apply(update: near(400))
+        XCTAssertEqual(store.turnCueToken, 0)
+        store.apply(update: near(140))
+        XCTAssertEqual(store.turnCue, .approaching(.left))
+        XCTAssertEqual(store.turnCueToken, 1)
+        store.apply(update: near(100))
+        XCTAssertEqual(store.turnCueToken, 1)
+        store.apply(update: near(25))
+        XCTAssertEqual(store.turnCue, .now(.left))
+        XCTAssertEqual(store.turnCueToken, 2)
+        // Paused at the junction: nothing more to say about it.
+        var paused = near(10)
+        paused.state = .paused
+        store.apply(update: paused)
+        XCTAssertEqual(store.turnCueToken, 2)
+    }
+
+    func testAClaimCarriesItsCoinsAndItsSetToTheWrist() throws {
+        let store = RideStore()
+        let message = try WatchMessages.objectiveCompleted(WatchObjectiveCompleted(title: "Found: Raido (Old Runes)", coins: 10, detail: "Old Runes, 3 of 6"))
+        store.apply(objective: try WatchMessages.objectiveCompleted(from: message))
+        XCTAssertEqual(store.pendingObjective?.coins, 10)
+        XCTAssertEqual(store.pendingObjective?.detail, "Old Runes, 3 of 6")
+        XCTAssertEqual(store.objectiveToken, 1)
+    }
 }
