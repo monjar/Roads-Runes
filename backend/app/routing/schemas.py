@@ -32,6 +32,16 @@ class RouteGenerateRequest(APIModel):
     activity: Activity | None = None
 
 
+class RerouteRequest(APIModel):
+    """Off the route, mid-ride: where the rider is and what they have already done."""
+
+    origin: Coordinate
+    # How far along the route they had got when they left it.
+    progressMeters: float = Field(default=0.0, ge=0)
+    completedObjectiveIds: list[uuid.UUID] = Field(default_factory=list, max_length=50)
+    visitedStopIds: list[uuid.UUID] = Field(default_factory=list, max_length=50)
+
+
 class InstructionOut(APIModel):
     index: int
     text: str

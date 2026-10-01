@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 from app.core.deps import CurrentUser, DBDep, SettingsDep, get_llm, get_router_client
 from app.routing import service
 from app.routing.schemas import (
+    RerouteRequest,
     RouteGenerateRequest,
     RouteGenerateResponse,
     RouteOptionOut,
@@ -42,3 +43,16 @@ async def get(route_id: uuid.UUID, user: CurrentUser, db: DBDep) -> RouteOptionO
 @router.get("/{route_id}/package", response_model=RoutePackageOut)
 async def package(route_id: uuid.UUID, user: CurrentUser, db: DBDep) -> RoutePackageOut:
     return await service.package(db, user, route_id)
+
+
+@router.post("/{route_id}/reroute", response_model=RouteOptionOut)
+async def reroute(
+    route_id: uuid.UUID,
+    payload: RerouteRequest,
+    user: CurrentUser,
+    db: DBDep,
+    engine: Annotated[object, Depends(get_router_client)],
+) -> RouteOptionOut:
+    """One new route from where the rider is, through what the old one still had to
+    do, to where it was going. One engine request: it is asked for mid-ride."""
+    return service.route_out(await service.reroute(db, engine, user, route_id, payload))  # type: ignore[arg-type]

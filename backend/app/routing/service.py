@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import bisect
 import hashlib
 import math
 import uuid
@@ -40,10 +41,11 @@ from app.routing.analysis import (
 from app.routing.custom_models import build_custom_model, strip_internal, valhalla_costing
 from app.routing.engine import PROFILE_FOR_BIKE, EngineRequest, EngineRoute, RoutingEngine, RoutingUnavailable
 from app.routing.models import Route
-from app.routing.pois import attach_pois
+from app.routing.pois import attach_pois, cumulative_distances
 from app.routing.preferences import RoutePreferences, parse_request
 from app.routing.schemas import (
     InstructionOut,
+    RerouteRequest,
     RouteGenerateRequest,
     RouteOptionOut,
     RoutePackageOut,
@@ -60,14 +62,15 @@ class QuestTargets:
     return_to_start: bool
 
 
-def _quest_targets(quest: QuestInstance | None) -> QuestTargets:
-    """Where the quest still has to go: an objective already done is not ridden to again."""
+def _quest_targets(quest: QuestInstance | None, done: set[uuid.UUID] | None = None) -> QuestTargets:
+    """Where the quest still has to go: an objective already done is not ridden to
+    again. `done` is what the phone has seen completed and the server not yet."""
     if quest is None:
         return QuestTargets([], False)
     points = []
     rts = False
     for o in quest.objectives:
-        if o.status == "COMPLETED":
+        if o.status == "COMPLETED" or (done and o.id in done):
             continue
         if o.objective_type == "RETURN_TO_START":
             rts = True
@@ -1277,6 +1280,149 @@ async def settle_quest_routes(
                 await db.refresh(objective)
         finally:
             log.info("quest_route_settled", quest=str(quest_id), ms=int((monotonic() - started) * 1000))
+
+
+REROUTE_LABEL = "Rerouted"
+# A loop with nothing left to visit is still a loop: rejoin it at these fractions of
+# what was left, rather than turning the rest of the outing into a beeline home.
+LOOP_KEEPERS = (1 / 3, 2 / 3)
+LOOP_KEEP_MIN_M = 1500.0
+REROUTE_MAX_VIA = 10
+
+
+def _position_along(coords: list[list[float]], cumulative: list[float], lat: float, lon: float) -> float:
+    """How far along the line its nearest point to (lat, lon) is."""
+    nearest = min(range(len(coords)), key=lambda i: haversine_m(lat, lon, coords[i][1], coords[i][0]))
+    return cumulative[nearest]
+
+
+def _point_at(coords: list[list[float]], cumulative: list[float], distance_m: float) -> tuple[float, float]:
+    index = min(bisect.bisect_left(cumulative, distance_m), len(coords) - 1)
+    return coords[index][1], coords[index][0]
+
+
+def _stops_ahead(route: Route, progress_m: float, visited: set[str]) -> list[dict[str, Any]]:
+    return [
+        poi
+        for poi in route.pois or []
+        if float(poi.get("routePositionMeters", 0)) > progress_m and str(poi.get("discoveryId")) not in visited
+    ]
+
+
+async def reroute(
+    db: AsyncSession,
+    engine: RoutingEngine,
+    user: User,
+    route_id: uuid.UUID,
+    payload: RerouteRequest,
+) -> Route:
+    """The rest of a ride, from where the rider actually is.
+
+    The planner draws three routes and scores them; a rider who has left the route
+    needs one, now. So this is a single engine request: from them, through what the
+    route still had to do — quest objectives not yet done, the stops they asked
+    for and have not reached — to where it was going (home, for a loop). It reads
+    nothing but the route and its quest, and it never becomes the quest's own route.
+    """
+    original = await get_route(db, user, route_id)
+    coords = original.coordinates or []
+    if len(coords) < 2:
+        raise RouteGenerationFailed("This route has nothing left to rejoin")
+    quest = await db.get(QuestInstance, original.quest_id) if original.quest_id else None
+    activity = normalise(original.activity)
+    on_foot = is_foot(activity)
+    bike = await db.get(Bike, original.bike_id) if original.bike_id else None
+    bike_type = bike.bike_type if bike else ("FOOT" if on_foot else "HYBRID")
+    allow_gravel = bike.allow_gravel if bike else True
+    allow_trails = bike.allow_trails if bike else on_foot
+    asked = (original.request or {}).get("preferences") or {}
+    prefs = RoutePreferences(**{k: v for k, v in asked.items() if k in RoutePreferences.__dataclass_fields__})
+
+    cumulative = cumulative_distances(coords)
+    total = cumulative[-1]
+    progress = min(payload.progressMeters, total)
+    started = monotonic()
+
+    # What is still owed, in the order the route would have reached it.
+    owed: list[tuple[float, tuple[float, float]]] = []
+    for lat, lon, _ in _quest_targets(quest, set(payload.completedObjectiveIds)).points:
+        owed.append((_position_along(coords, cumulative, lat, lon), (lat, lon)))
+    ahead = _stops_ahead(original, progress, {str(i) for i in payload.visitedStopIds})
+    for poi in ahead:
+        if poi.get("requested"):
+            owed.append((float(poi["routePositionMeters"]), (float(poi["latitude"]), float(poi["longitude"]))))
+    owed.sort(key=lambda item: item[0])
+    via = [point for _, point in owed][:REROUTE_MAX_VIA]
+
+    start_lat, start_lon = coords[0][1], coords[0][0]
+    end_lat, end_lon = coords[-1][1], coords[-1][0]
+    is_loop = bool((original.request or {}).get("loop")) or haversine_m(start_lat, start_lon, end_lat, end_lon) < 200
+    left = total - progress
+    if not via and is_loop and left > LOOP_KEEP_MIN_M:
+        via = [_point_at(coords, cumulative, progress + left * fraction) for fraction in LOOP_KEEPERS]
+
+    custom_model = None if on_foot else build_custom_model(prefs, bike_type, allow_gravel, allow_trails)
+    request = EngineRequest(
+        points=[(payload.origin.latitude, payload.origin.longitude), *via, (end_lat, end_lon)],
+        profile=original.profile,
+        custom_model=custom_model
+        if (engine.name == "synthetic" or custom_model is None)
+        else strip_internal(custom_model),
+        costing=valhalla_costing(prefs, bike_type, allow_gravel, allow_trails, activity),
+        activity=activity,
+        details=False,
+    )
+    try:
+        engine_routes = await engine.route(request)
+    except RoutingUnavailable as exc:
+        log.error("route_reroute_failed", route=str(original.id), error=str(exc)[:200])
+        raise RouteGenerationFailed("No way back could be found from here") from exc
+    if not engine_routes:
+        raise RouteGenerationFailed("No way back could be found from here")
+    er = engine_routes[0]
+
+    speed_kmh = ASSUMED_SPEED_KMH[activity] if on_foot else scoring_config()["assumedSpeedKmh"].get(bike_type, 15)
+    speed_mps = speed_kmh / 3.6
+    new_cumulative = cumulative_distances(er.coordinates)
+    pois = []
+    for poi in ahead:
+        position = _position_along(er.coordinates, new_cumulative, float(poi["latitude"]), float(poi["longitude"]))
+        pois.append(
+            {**poi, "routePositionMeters": round(position), "estimatedArrivalSeconds": int(position / speed_mps)}
+        )
+    pois.sort(key=lambda poi: poi["routePositionMeters"])
+
+    route = _route_row(
+        user=user,
+        quest=quest,
+        bike_id=original.bike_id,
+        label=REROUTE_LABEL,
+        profile=original.profile,
+        activity=activity,
+        er=er,
+        speed_mps=speed_mps,
+        pois=pois,
+        request={**(original.request or {}), "label": REROUTE_LABEL, "reroutedFrom": str(original.id)},
+        # Not measured again mid-ride (it would be a second request); the road ahead
+        # is taken to be like the road behind.
+        surface=original.surface,
+        cycleway=original.cycleway_fraction,
+        traffic=original.traffic_exposure,
+        new_fraction=original.new_territory_fraction,
+        coverage=original.quest_objective_coverage,
+    )
+    route.score = original.score
+    db.add(route)
+    await db.flush()
+    log.info(
+        "route_rerouted",
+        user=str(user.id),
+        route=str(original.id),
+        via=len(via),
+        engine=er.engine,
+        ms=int((monotonic() - started) * 1000),
+    )
+    return route
 
 
 async def package(db: AsyncSession, user: User, route_id: uuid.UUID) -> RoutePackageOut:
