@@ -43,6 +43,11 @@ ROUTE_GENERATION_FAILED
 QUEST_GENERATION_FAILED
 FEATURE_DISABLED
 RATE_LIMITED
+OBJECT_OUT_OF_RANGE
+OBJECT_GONE
+OBJECT_NOT_CLAIMABLE
+GPS_TOO_WEAK
+CLAIM_TOO_FAST
 ```
 
 ### Pagination
@@ -219,6 +224,44 @@ Cell states: `UNSEEN` (omitted), `DISCOVERED`, `VISITED`, `EXPLORED`.
 }
 ```
 
+### `GET /world/objects?latitude&longitude&radiusMeters=6000` → `[WorldObject]`
+
+The chests, pieces and monsters placed for this player around the position given (placing them if
+today's have not been). `GET /world/objects/{id}` is one of them; `GET /world/objects/bounty` is
+today's bounty (`404 NO_BOUNTY` until the world has been looked at today).
+
+```json
+{
+  "id": "uuid", "kind": "CHEST", "status": "SPAWNED", "tier": 1,
+  "latitude": 51.4881, "longitude": -0.0202, "name": "Old chest", "anchorName": "Wall of the Ancestors",
+  "bounty": false, "rewardAC": 25, "expiresAt": "...", "claimedAt": null,
+  "monster": null, "setId": null, "piece": null, "claimRadiusMeters": 40
+}
+```
+
+`kind` is `CHEST`, `COLLECTABLE` or `MONSTER`; `status` is `SPAWNED`, `CLAIMED` or `EXPIRED`.
+`claimRadiusMeters` is how close the player must be to take it, and null for a monster.
+
+### `POST /world/objects/{id}/claim`
+
+Open a chest or pick up a piece from beside it. (A ride still claims whatever its trace passes; this
+is for a player who has walked up to one.)
+
+```json
+{"latitude": 51.48835, "longitude": -0.0202, "horizontalAccuracyMeters": 8}
+```
+
+→ `{"object": WorldObject, "acAwarded": 25, "walletBalance": 185, "questCompleted": Quest|null}`
+
+The player must be within `claimRadiusMeters × 1.25`, plus the stated accuracy up to 25 m. Opening
+the chest a quest points at completes that objective, and the quest when nothing else was asked
+(`questCompleted`). It is paid once; a ride past it afterwards pays nothing more, though what was
+taken by hand during a ride counts towards that ride's quest.
+
+`409` with one of: `OBJECT_OUT_OF_RANGE` (`details.distanceMeters`, `details.radiusMeters`),
+`OBJECT_GONE` (already claimed or expired), `OBJECT_NOT_CLAIMABLE` (a monster), `GPS_TOO_WEAK`
+(accuracy worse than 65 m), `CLAIM_TOO_FAST` (more than 500 m from the last one, faster than 25 m/s).
+
 ---
 
 ## Quests
@@ -296,7 +339,8 @@ post-processing re-validates.
 - `POST /quests/{id}/complete` `{"rideId": "uuid"}` → `QuestCompletion`
   (ACTIVE→COMPLETED only; otherwise 409 `QUEST_INVALID_TRANSITION`).
 - `POST /quests/{id}/abandon` → `Quest`
-- `GET /quests/{id}/route` → `RouteOption`: the quest's fixed route (spec §20 "suggested route"). Generated on the first request from the quest origin through its objectives with the rider's default bike and profile, stored as the quest's `suggestedRouteId`, and returned unchanged afterwards. `POST /routes/generate` with the `questId` (the planner's "Tweak the route") adds alternatives without replacing it.
+- `GET /quests/{id}/route?latitude&longitude` → `RouteOption`: the quest's route from where the player is (spec §20 "suggested route"). A quest starts where the player stands: the route runs from the given position through the objectives still to do and back, with the rider's default bike and profile, and is stored as the quest's `suggestedRouteId`. It is returned unchanged while the player stays within 150 m of where it starts; further than that it is drawn again from the new position, and the quest's `origin` and any `RETURN_TO_START` objective move with it. Without a position the stored route is returned as it is. A route that cannot be drawn is `502 ROUTE_GENERATION_FAILED`, never a quest with no route and no reason. `POST /routes/generate` with the `questId` (the planner's "Tweak the route") adds alternatives without replacing it.
+- The board (`GET /quests`) routes its `AVAILABLE` and `ACCEPTED` quests from the position it is given, and retires what cannot be done from there: a quest whose furthest target is beyond reach (18 km for a ride, scaled for feet, or 0.6 × the comfortable distance if that is more), and a quest whose chest or monster has gone. A quest about a world object expires when the object does.
 
 `QuestCompletion`:
 
@@ -427,6 +471,27 @@ Response `{"alternatives": [RouteOption], "parsedRequest": RoutePreferences|null
 
 `requested` marks a stop the rider asked for ("with about 5 pubs"): it was routed through as a
 waypoint and is always listed, whatever its detour. The rest are places the route happens to pass.
+
+### `POST /routes/{id}/reroute`
+
+Off the route, mid-ride: one new route from where the rider is.
+
+```json
+{
+  "origin": {"latitude": 51.5031, "longitude": -0.0612},
+  "progressMeters": 2300,
+  "completedObjectiveIds": ["uuid"],
+  "visitedStopIds": ["uuid"]
+}
+```
+
+→ `RouteOption`, labelled `Rerouted`. It runs from `origin`, through the quest objectives not yet done
+(by the server's record or by `completedObjectiveIds`) and the requested stops still ahead of
+`progressMeters` and not in `visitedStopIds`, to where route `{id}` ended: the start for a loop, the
+destination otherwise. A loop with nothing left to visit is rejoined part-way round rather than cut
+short. It is one engine request with no alternatives, no place import and no request reading, so it
+answers in about a second; it never becomes a quest's `suggestedRouteId`. `502 ROUTE_GENERATION_FAILED`
+when no way can be found, `404` for a route that is not the caller's.
 
 - `GET /routes/{id}` → `RouteOption`
 - `GET /routes/{id}/package` → `RoutePackage` (everything needed offline):

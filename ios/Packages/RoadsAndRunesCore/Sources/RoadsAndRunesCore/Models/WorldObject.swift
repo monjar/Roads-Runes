@@ -94,7 +94,7 @@ public struct WorldObject: Codable, Hashable, Identifiable, Sendable {
     public var coordinate: Coordinate { Coordinate(latitude: latitude, longitude: longitude) }
     public var isBounty: Bool { bounty ?? false }
 
-    /// Radii used when the server does not say (it has since 0.5): the same numbers it holds.
+    /// Radii used when the server does not say: the same numbers it holds.
     public static let defaultClaimRadius: [WorldObjectKind: Double] = [.chest: 40, .collectable: 30]
 
     /// Within this many metres a chest opens or a piece is picked up; nil for what cannot be taken by hand.

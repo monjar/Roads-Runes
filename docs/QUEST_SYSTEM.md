@@ -9,8 +9,14 @@
 * **Template** (`backend/app/quests/config/templates.json`) – class, type,
   minimum class level, weight, objective rules and objective specs, narrative
   variants. 13 Explorer templates plus one each for Wizard/Warrior/Scribe.
-* **QuestInstance** – a template instantiated for one user at one origin, with
-  concrete objectives, difficulty, XP, expiry (14 days) and a status.
+* **QuestInstance** – a template instantiated for one user, with concrete
+  objectives, difficulty, XP, expiry (14 days, or when the chest or monster it
+  points at expires) and a status. Its origin is where the player last was when
+  its route was drawn: a quest starts where the player is, so the origin, the
+  route and any RETURN_TO_START move with them (`GET /quests/{id}/route` with a
+  position). The targets stay where they are; a quest whose targets are out of
+  reach from where the player now is, or whose world object has gone, is retired
+  when the board is next loaded.
 * **QuestObjective** – typed objective with location/radius, target metres,
   target cells, target elevation, progress and `provisional` flag.
 * **StoryArc / StoryQuest** – authored chains (schema present, flag-gated,

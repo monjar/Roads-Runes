@@ -167,7 +167,24 @@ it before starting and navigates from it without network.
 
 ## Rerouting
 
-The client detects off-route (> 40 m cross-track for 3 fixes), tries to rejoin
-and, after 30 s (throttled to once a minute), requests a new route from the
-current position with the same quest; quest objectives, not the original
+The client detects off-route (> 40 m cross-track for 3 fixes) and from then on
+shows the way back itself: which way and how far the nearest of the remaining
+route is, drawn as a dashed line. That needs no network.
+
+After 8 s off route, or at once when more than 150 m off, it asks
+`POST /routes/{id}/reroute` for a new route from the current position: through
+the objectives not yet done and the requested stops not yet reached, to where
+the route was going. Requests are at least 15 s apart and back off (30 s, 60 s)
+after failures; the rider can ask by hand at any time. The decision is made on
+a timer as well as on each fix, since fixes are filtered by distance and a
+rider who has stopped sends none.
+
+An answer for somewhere the rider has since left (more than 60 m on, and not on
+the new route) is asked for again; one that arrives after they have rejoined the
+old route is dropped. Off the route no progress is made along it: the reroute
+is told how far they had got when they left. Quest objectives, not the original
 polyline, decide completion.
+
+The reroute is one engine request without the surface-details call. Valhalla
+requests are retried twice (0.5 s, 1.5 s, or `Retry-After`) on a timeout, a 429
+or a 5xx; "no path" is an answer and is not retried.
