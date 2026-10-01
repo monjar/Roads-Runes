@@ -18,10 +18,6 @@ def ends(route: dict) -> tuple[tuple[float, float], tuple[float, float]]:
     return (first[1], first[0]), (last[1], last[0])
 
 
-def passes(route: dict, lat: float, lon: float, within_m: float = 150) -> bool:
-    return any(haversine_m(lat, lon, c[1], c[0]) <= within_m for c in route["coordinates"])
-
-
 async def planned(c: AsyncClient, **body) -> dict:
     r = await c.post("/routes/generate", json={"origin": HERE, **body})
     assert r.status_code == 200, r.text
@@ -66,10 +62,18 @@ async def test_a_loop_is_rejoined_and_ends_at_home(explorer_client: AsyncClient)
 
 
 async def test_a_quest_reroute_goes_on_to_what_is_left_and_not_back_to_what_is_done(
-    explorer_client: AsyncClient, monkeypatch
+    app, explorer_client: AsyncClient, monkeypatch
 ):
     from app.quests import generator
+    from app.routing.engine import SyntheticRouter
     from app.world_objects import service as world_objects
+
+    asked: list[list[tuple[float, float]]] = []
+
+    class Watching(SyntheticRouter):
+        async def route(self, request):
+            asked.append(list(request.points))
+            return await super().route(request)
 
     c = explorer_client
     await seed_discoveries()
@@ -78,20 +82,23 @@ async def test_a_quest_reroute_goes_on_to_what_is_left_and_not_back_to_what_is_d
     monkeypatch.setattr(generator, "templates_for", lambda *a, **k: slay)
     quest = (await c.post("/quests/generate", json={**HERE, "count": 1})).json()["items"][0]
     target = next(o for o in quest["objectives"] if o["objectiveType"] == "SLAY_MONSTER")
+    monster = (target["latitude"], target["longitude"])
     route = (await c.get(f"/quests/{quest['id']}/route", params=HERE)).json()
-    assert passes(route, target["latitude"], target["longitude"])
 
+    app.state.router = Watching()
     astray = destination_point(*ORIGIN, 30, 2000)
     body = {"origin": {"latitude": astray[0], "longitude": astray[1]}, "progressMeters": 200}
-    onward = (await c.post(f"/routes/{route['id']}/reroute", json=body)).json()
-    assert passes(onward, target["latitude"], target["longitude"])
-    assert haversine_m(*ORIGIN, *ends(onward)[1]) < 150
+    r = await c.post(f"/routes/{route['id']}/reroute", json=body)
+    assert r.status_code == 200, r.text
+    # From the rider, by the monster, home.
+    assert asked[-1][0] == astray and monster in asked[-1][1:-1]
+    assert haversine_m(*ORIGIN, *asked[-1][-1]) < 150
+    assert haversine_m(*ORIGIN, *ends(r.json())[1]) < 150
 
     # The phone saw the monster fall before the server heard of it.
-    after = (
-        await c.post(f"/routes/{route['id']}/reroute", json={**body, "completedObjectiveIds": [target["id"]]})
-    ).json()
-    assert after["distanceMeters"] < onward["distanceMeters"]
+    r = await c.post(f"/routes/{route['id']}/reroute", json={**body, "completedObjectiveIds": [target["id"]]})
+    assert r.status_code == 200, r.text
+    assert monster not in asked[-1]
     # And the quest keeps the route it had: a reroute is the ride's, not the quest's.
     assert (await c.get(f"/quests/{quest['id']}")).json()["suggestedRouteId"] == route["id"]
 
