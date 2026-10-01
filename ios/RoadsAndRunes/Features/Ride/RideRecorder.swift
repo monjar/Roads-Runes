@@ -502,11 +502,11 @@ final class RideRecorder {
                 result = .failure(error)
             }
             guard !Task.isCancelled else { return }
-            self?.finishReroute(result)
+            self?.finishReroute(result, askedFrom: position)
         }
     }
 
-    private func finishReroute(_ result: Result<RouteOption, Error>) {
+    private func finishReroute(_ result: Result<RouteOption, Error>, askedFrom origin: Coordinate) {
         rerouteTask = nil
         isRerouting = false
         // Paused, finished or back on the route while it was on its way.
@@ -516,7 +516,10 @@ final class RideRecorder {
             rerouteFailed(error.localizedDescription)
         case .success(let route):
             guard route.path.count >= 2 else { return rerouteFailed("The route that came back was empty") }
-            if let here = lastFix?.coordinate, staleReroutes < Self.maxStaleReroutes {
+            // Only if they have moved: a rider standing in a park is as near to this
+            // route's first road as any other answer would put them.
+            if let here = lastFix?.coordinate, staleReroutes < Self.maxStaleReroutes,
+               GeoMath.distance(here, origin) > Self.staleRerouteMeters {
                 var probe = RouteProgressTracker(route: route)
                 if probe.update(position: here).crossTrackDistance > Self.staleRerouteMeters {
                     // They kept moving while it was drawn: this is the way from where they
