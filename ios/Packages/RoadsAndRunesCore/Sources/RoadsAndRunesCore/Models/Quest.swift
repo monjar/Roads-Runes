@@ -189,6 +189,39 @@ public struct XPBreakdownEntry: Codable, Hashable, Sendable {
     }
 }
 
+/// Where finishing a story step leaves the rider in its arc.
+public struct StoryStanding: Codable, Hashable, Sendable {
+    public struct Reward: Codable, Hashable, Sendable {
+        public var title: String?
+        public var ac: Int?
+
+        public init(title: String? = nil, ac: Int? = nil) {
+            self.title = title
+            self.ac = ac
+        }
+    }
+
+    public var arcSlug: String?
+    public var arcTitle: String
+    public var stepTitle: String?
+    public var stepsDone: Int
+    public var stepsTotal: Int
+    public var arcCompleted: Bool
+    public var nextTitle: String?
+    public var reward: Reward?
+
+    public init(arcSlug: String? = nil, arcTitle: String, stepTitle: String? = nil, stepsDone: Int, stepsTotal: Int, arcCompleted: Bool, nextTitle: String? = nil, reward: Reward? = nil) {
+        self.arcSlug = arcSlug
+        self.arcTitle = arcTitle
+        self.stepTitle = stepTitle
+        self.stepsDone = stepsDone
+        self.stepsTotal = stepsTotal
+        self.arcCompleted = arcCompleted
+        self.nextTitle = nextTitle
+        self.reward = reward
+    }
+}
+
 public struct QuestCompletion: Codable, Hashable, Sendable {
     public var quest: Quest
     public var xpAwarded: Int
@@ -196,9 +229,9 @@ public struct QuestCompletion: Codable, Hashable, Sendable {
     public var levelUps: [LevelUp]
     public var abilitiesUnlocked: [Ability]
     public var titlesUnlocked: [String]
-    public var storyProgress: JSONValue?
+    public var storyProgress: StoryStanding?
 
-    public init(quest: Quest, xpAwarded: Int, xpBreakdown: [XPBreakdownEntry], levelUps: [LevelUp], abilitiesUnlocked: [Ability], titlesUnlocked: [String], storyProgress: JSONValue? = nil) {
+    public init(quest: Quest, xpAwarded: Int, xpBreakdown: [XPBreakdownEntry], levelUps: [LevelUp], abilitiesUnlocked: [Ability], titlesUnlocked: [String], storyProgress: StoryStanding? = nil) {
         self.quest = quest
         self.xpAwarded = xpAwarded
         self.xpBreakdown = xpBreakdown

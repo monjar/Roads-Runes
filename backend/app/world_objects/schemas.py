@@ -42,6 +42,8 @@ class WorldObjectOut(APIModel):
     setName: str | None = None
     setSize: int | None = None
     setOwned: int | None = None
+    # They already hold this very piece: picking it up is coins, not progress.
+    pieceOwned: bool | None = None
     # How close the player must be to open or pick it up; nothing for a monster.
     claimRadiusMeters: float | None = None
 

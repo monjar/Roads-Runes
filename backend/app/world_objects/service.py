@@ -122,7 +122,9 @@ def set_fields(obj: WorldObject, owned: dict[str, set[str]] | None = None) -> di
         "setSize": len(known["pieces"]),
     }
     if owned is not None:
-        fields["setOwned"] = len(owned.get(known["id"], set()))
+        held = owned.get(known["id"], set())
+        fields["setOwned"] = len(held)
+        fields["pieceOwned"] = str(obj.payload.get("piece")) in held
     return fields
 
 
@@ -182,6 +184,7 @@ def to_out(obj: WorldObject, owned: dict[str, set[str]] | None = None) -> WorldO
         setName=in_set.get("setName"),
         setSize=in_set.get("setSize"),
         setOwned=in_set.get("setOwned"),
+        pieceOwned=in_set.get("pieceOwned"),
         claimRadiusMeters=load_config()["claimRadiusMeters"].get(obj.kind),
     )
 

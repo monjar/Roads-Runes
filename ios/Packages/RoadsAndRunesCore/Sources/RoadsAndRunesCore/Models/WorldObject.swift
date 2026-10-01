@@ -71,8 +71,17 @@ public struct WorldObject: Codable, Hashable, Identifiable, Sendable {
     public var piece: String?
     /// How close the player must be to open or pick it up; nil for a monster (and from an older server).
     public var claimRadiusMeters: Double?
+    /// The set a piece belongs to, how many pieces it has, and how many different ones the player holds.
+    public var setName: String?
+    public var setSize: Int?
+    public var setOwned: Int?
+    /// The player already holds this very piece: picking it up is coins, not progress.
+    public var pieceOwned: Bool?
 
-    public init(id: UUID, kind: WorldObjectKind, status: WorldObjectStatus = .spawned, tier: Int = 1, latitude: Double, longitude: Double, name: String, anchorName: String? = nil, bounty: Bool? = nil, rewardAC: Int, expiresAt: Date, claimedAt: Date? = nil, monster: MonsterInfo? = nil, setId: String? = nil, piece: String? = nil, claimRadiusMeters: Double? = nil) {
+    public init(id: UUID, kind: WorldObjectKind, status: WorldObjectStatus = .spawned, tier: Int = 1, latitude: Double, longitude: Double, name: String, anchorName: String? = nil, bounty: Bool? = nil, rewardAC: Int, expiresAt: Date, claimedAt: Date? = nil, monster: MonsterInfo? = nil, setId: String? = nil, piece: String? = nil, claimRadiusMeters: Double? = nil, setName: String? = nil, setSize: Int? = nil, setOwned: Int? = nil) {
+        self.setName = setName
+        self.setSize = setSize
+        self.setOwned = setOwned
         self.id = id
         self.kind = kind
         self.status = status
@@ -93,6 +102,19 @@ public struct WorldObject: Codable, Hashable, Identifiable, Sendable {
 
     public var coordinate: Coordinate { Coordinate(latitude: latitude, longitude: longitude) }
     public var isBounty: Bool { bounty ?? false }
+
+    /// "Old Runes, 3 of 6": where a piece stands in its set, once the player's count is known.
+    public var setStanding: SetStanding? {
+        guard let setName, let setSize, let setOwned else { return nil }
+        return SetStanding(name: setName, owned: setOwned, of: setSize)
+    }
+
+    /// Where the set will stand once this piece is picked up: one more, unless it is a second of the same.
+    public var setStandingOnceTaken: SetStanding? {
+        guard var standing = setStanding else { return nil }
+        if pieceOwned != true { standing.owned = min(standing.of, standing.owned + 1) }
+        return standing
+    }
 
     /// Radii used when the server does not say: the same numbers it holds.
     public static let defaultClaimRadius: [WorldObjectKind: Double] = [.chest: 40, .collectable: 30]
@@ -120,6 +142,36 @@ public struct WorldObjectClaimRequest: Codable, Hashable, Sendable {
     }
 }
 
+/// How many different pieces of a set the player holds.
+public struct SetStanding: Hashable, Sendable {
+    public var name: String
+    public var owned: Int
+    public var of: Int
+
+    public init(name: String, owned: Int, of: Int) {
+        self.name = name
+        self.owned = owned
+        self.of = of
+    }
+
+    public var isComplete: Bool { owned >= of }
+    /// "Old Runes, 3 of 6" / "Old Runes complete".
+    public var line: String { isComplete ? "\(name) complete" : "\(name), \(owned) of \(of)" }
+}
+
+/// A set made whole, and the purse for it.
+public struct CompletedSet: Codable, Hashable, Identifiable, Sendable {
+    public var id: String
+    public var name: String
+    public var bonusAC: Int
+
+    public init(id: String, name: String, bonusAC: Int) {
+        self.id = id
+        self.name = name
+        self.bonusAC = bonusAC
+    }
+}
+
 /// What opening a chest or picking up a piece gave.
 public struct WorldObjectClaim: Codable, Hashable, Sendable {
     public var object: WorldObject
@@ -127,12 +179,19 @@ public struct WorldObjectClaim: Codable, Hashable, Sendable {
     public var walletBalance: Int
     /// The quest this finished, when it was the last thing a quest asked for.
     public var questCompleted: Quest?
+    public var xpAwarded: Int?
+    public var levelUps: [LevelUp]?
+    /// The set this piece finished.
+    public var setCompleted: CompletedSet?
 
-    public init(object: WorldObject, acAwarded: Int, walletBalance: Int, questCompleted: Quest? = nil) {
+    public init(object: WorldObject, acAwarded: Int, walletBalance: Int, questCompleted: Quest? = nil, xpAwarded: Int? = nil, levelUps: [LevelUp]? = nil, setCompleted: CompletedSet? = nil) {
         self.object = object
         self.acAwarded = acAwarded
         self.walletBalance = walletBalance
         self.questCompleted = questCompleted
+        self.xpAwarded = xpAwarded
+        self.levelUps = levelUps
+        self.setCompleted = setCompleted
     }
 }
 
@@ -164,14 +223,55 @@ public struct ClaimedObject: Codable, Hashable, Identifiable, Sendable {
     public var tier: Int?
     public var rewardAC: Int
     public var method: String?
+    public var setId: String?
+    public var piece: String?
+    public var setName: String?
+    public var setSize: Int?
+    public var setOwned: Int?
 
-    public init(id: UUID, kind: WorldObjectKind, name: String, tier: Int? = nil, rewardAC: Int, method: String? = nil) {
+    public init(id: UUID, kind: WorldObjectKind, name: String, tier: Int? = nil, rewardAC: Int, method: String? = nil, setId: String? = nil, piece: String? = nil, setName: String? = nil, setSize: Int? = nil, setOwned: Int? = nil) {
         self.id = id
         self.kind = kind
         self.name = name
         self.tier = tier
         self.rewardAC = rewardAC
         self.method = method
+        self.setId = setId
+        self.piece = piece
+        self.setName = setName
+        self.setSize = setSize
+        self.setOwned = setOwned
+    }
+
+    public var setStanding: SetStanding? {
+        guard let setName, let setSize, let setOwned else { return nil }
+        return SetStanding(name: setName, owned: setOwned, of: setSize)
+    }
+}
+
+/// How near a monster that got away came to being beaten: the nearest of its ways,
+/// with what it wanted and what the ride gave it. `progress` is 1 at the target.
+public struct MissedAttempt: Codable, Hashable, Sendable {
+    public var method: KillMethodKind
+    public var progress: Double?
+    public var paceSecPerKm: Double?
+    public var targetSecPerKm: Double?
+    public var windowMeters: Double?
+    public var gainMeters: Double?
+    public var targetGainMeters: Double?
+    public var cells: Int?
+    public var targetCells: Int?
+
+    public init(method: KillMethodKind, progress: Double? = nil, paceSecPerKm: Double? = nil, targetSecPerKm: Double? = nil, windowMeters: Double? = nil, gainMeters: Double? = nil, targetGainMeters: Double? = nil, cells: Int? = nil, targetCells: Int? = nil) {
+        self.method = method
+        self.progress = progress
+        self.paceSecPerKm = paceSecPerKm
+        self.targetSecPerKm = targetSecPerKm
+        self.windowMeters = windowMeters
+        self.gainMeters = gainMeters
+        self.targetGainMeters = targetGainMeters
+        self.cells = cells
+        self.targetCells = targetCells
     }
 }
 
@@ -180,12 +280,16 @@ public struct MissedObject: Codable, Hashable, Identifiable, Sendable {
     public var kind: WorldObjectKind
     public var name: String
     public var reason: String
+    public var expiresAt: Date?
+    public var attempt: MissedAttempt?
 
-    public init(id: UUID, kind: WorldObjectKind, name: String, reason: String) {
+    public init(id: UUID, kind: WorldObjectKind, name: String, reason: String, expiresAt: Date? = nil, attempt: MissedAttempt? = nil) {
         self.id = id
         self.kind = kind
         self.name = name
         self.reason = reason
+        self.expiresAt = expiresAt
+        self.attempt = attempt
     }
 }
 
@@ -193,10 +297,12 @@ public struct MissedObject: Codable, Hashable, Identifiable, Sendable {
 public struct WorldObjectOutcome: Codable, Hashable, Sendable {
     public var claimed: [ClaimedObject]
     public var missed: [MissedObject]
+    public var setsCompleted: [CompletedSet]?
 
-    public init(claimed: [ClaimedObject] = [], missed: [MissedObject] = []) {
+    public init(claimed: [ClaimedObject] = [], missed: [MissedObject] = [], setsCompleted: [CompletedSet]? = nil) {
         self.claimed = claimed
         self.missed = missed
+        self.setsCompleted = setsCompleted
     }
 }
 

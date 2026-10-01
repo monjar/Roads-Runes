@@ -14,6 +14,61 @@ final class AdventureSummaryDecodingTests: XCTestCase {
         XCTAssertEqual(summary.questCompletion?.quest.status, .completed)
     }
 
+    /// What 0.5 added to the world part of a summary and to a quest's completion:
+    /// sets, a near thing, and where a story step leaves the rider in its arc.
+    func testTheWorldPartSaysSetsAndNearThings() throws {
+        let json = #"""
+        {
+          "claimed": [
+            {"id": "8a1f0b2c-0000-4000-8000-00000000a003", "kind": "COLLECTABLE", "name": "Raido (Old Runes)", "tier": 1,
+             "rewardAC": 10, "method": "PASS", "setId": "RUNES", "piece": "Raido", "setName": "Old Runes", "setSize": 6, "setOwned": 3}
+          ],
+          "missed": [
+            {"id": "8a1f0b2c-0000-4000-8000-00000000a001", "kind": "MONSTER", "name": "Fen Troll", "reason": "UNBEATEN",
+             "expiresAt": "2026-10-04T09:00:00+00:00",
+             "attempt": {"method": "PACE", "paceSecPerKm": 138.2, "targetSecPerKm": 130.0, "windowMeters": 1000.0, "progress": 0.941}}
+          ],
+          "setsCompleted": [{"id": "COINS", "name": "Milled Coins", "bonusAC": 50}]
+        }
+        """#
+        let world = try JSONCoding.makeDecoder().decode(WorldObjectOutcome.self, from: Data(json.utf8))
+        XCTAssertEqual(world.claimed.first?.setStanding?.line, "Old Runes, 3 of 6")
+        XCTAssertEqual(world.missed.first?.attempt?.method, .pace)
+        XCTAssertEqual(world.missed.first?.attempt?.targetSecPerKm, 130)
+        XCTAssertNotNil(world.missed.first?.expiresAt)
+        XCTAssertEqual(world.setsCompleted, [CompletedSet(id: "COINS", name: "Milled Coins", bonusAC: 50)])
+
+        // And the same part from the server before it: nothing new, nothing broken.
+        let before = try JSONCoding.makeDecoder().decode(WorldObjectOutcome.self, from: Data(#"{"claimed": [], "missed": [{"id": "8a1f0b2c-0000-4000-8000-00000000a001", "kind": "MONSTER", "name": "Fen Troll", "reason": "UNBEATEN"}]}"#.utf8))
+        XCTAssertNil(before.missed.first?.attempt)
+        XCTAssertNil(before.setsCompleted)
+    }
+
+    func testAStoryStepSaysWhereItLeavesTheArc() throws {
+        let json = #"""
+        {"arcSlug": "first-light", "arcTitle": "First Light", "stepTitle": "Somewhere to Look From", "stepsDone": 3, "stepsTotal": 3,
+         "arcCompleted": true, "nextTitle": null, "reward": {"title": "Early Riser", "ac": 100}}
+        """#
+        let standing = try JSONCoding.makeDecoder().decode(StoryStanding.self, from: Data(json.utf8))
+        XCTAssertTrue(standing.arcCompleted)
+        XCTAssertEqual(standing.reward?.title, "Early Riser")
+        XCTAssertEqual(standing.reward?.ac, 100)
+        // The summary this file opens with comes from a server that sent null there.
+        let summary = try JSONCoding.makeDecoder().decode(AdventureSummary.self, from: Data(Self.json.utf8))
+        XCTAssertNil(summary.questCompletion?.storyProgress)
+    }
+
+    func testWatchMessagesReadWithAndWithoutWhatIsNew() throws {
+        let old = try JSONCoding.makeDecoder().decode(WatchObjectiveCompleted.self, from: Data(#"{"title": "Opened: Old chest"}"#.utf8))
+        XCTAssertNil(old.coins)
+        let new = WatchObjectiveCompleted(title: "Found: Raido", coins: 10, detail: "Old Runes, 3 of 6")
+        XCTAssertEqual(try JSONCoding.makeDecoder().decode(WatchObjectiveCompleted.self, from: JSONCoding.encode(new)), new)
+        let update = WatchNavigationUpdate(state: .active, distanceMeters: 1200, elapsedSeconds: 300, elevationGainMeters: 10, timestamp: SampleData.referenceDate, newTerritoryMeters: 640, remainingMeters: 4200)
+        let read = try JSONCoding.makeDecoder().decode(WatchNavigationUpdate.self, from: JSONCoding.encode(update))
+        XCTAssertEqual(read.newTerritoryMeters, 640)
+        XCTAssertEqual(read.remainingMeters, 4200)
+    }
+
     static let json = #"""
 {
   "ride": {

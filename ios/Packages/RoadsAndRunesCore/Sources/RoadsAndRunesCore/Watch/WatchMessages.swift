@@ -98,15 +98,21 @@ public struct WatchNavigationUpdate: Codable, Hashable, Sendable {
     public var timestamp: Date
     /// "Bog Wraith · 120 m · pace 60%": the nearest thing in the world, if any.
     public var encounterLine: String?
+    /// Metres ridden on ground new to the rider, so far this ride.
+    public var newTerritoryMeters: Double?
+    /// How far is left of the route.
+    public var remainingMeters: Double?
 
     public init(
         state: NavigationState, instruction: Instruction? = nil, distanceToInstructionMeters: Double? = nil,
         nextInstructionText: String? = nil, objectiveTitle: String? = nil, objectiveDistanceMeters: Double? = nil,
         distanceMeters: Double, elapsedSeconds: Double, elevationGainMeters: Double, heartRate: Int? = nil,
         speedMps: Double? = nil, latitude: Double? = nil, longitude: Double? = nil, timestamp: Date = Date(),
-        encounterLine: String? = nil
+        encounterLine: String? = nil, newTerritoryMeters: Double? = nil, remainingMeters: Double? = nil
     ) {
         self.encounterLine = encounterLine
+        self.newTerritoryMeters = newTerritoryMeters
+        self.remainingMeters = remainingMeters
         self.state = state
         self.instruction = instruction
         self.distanceToInstructionMeters = distanceToInstructionMeters
@@ -133,10 +139,17 @@ public struct WatchNavigationUpdate: Codable, Hashable, Sendable {
 public struct WatchObjectiveCompleted: Codable, Hashable, Sendable {
     public var title: String
     public var xp: Int?
+    /// Coins the thing was worth, for "+60 AC" under the title. Optional so an older
+    /// Watch build still reads the message.
+    public var coins: Int?
+    /// A second line: "Old Runes, 3 of 6".
+    public var detail: String?
 
-    public init(title: String, xp: Int? = nil) {
+    public init(title: String, xp: Int? = nil, coins: Int? = nil, detail: String? = nil) {
         self.title = title
         self.xp = xp
+        self.coins = coins
+        self.detail = detail
     }
 }
 
