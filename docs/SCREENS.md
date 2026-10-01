@@ -37,7 +37,7 @@ nowhere on a primary surface.
 | Objective complete (12b) | Adventure complete (13b) | Journal (14a) |
 |---|---|---|
 | ![Objective complete](screenshots/10-objective-complete.png) | ![Adventure complete](screenshots/07-adventure-complete.png) | ![Journal](screenshots/08-journal.png) |
-| A sage card replaces the instruction for a few seconds with the rising-triplet haptic, then navigation returns. No tap required. | The ride's newly opened territory glows on the ink world first; rewards slide up beneath, cycling stats stay one quiet line (§40). | The month in exploration terms, then completed quests as entries. Statistics is a tab, not the headline (§41–42). |
+| A sage card replaces the instruction for a few seconds with the rising-triplet haptic, then navigation returns. No tap required. | The reckoning: the ride's line draws on the map, then what it earned arrives a part at a time (XP counting up as the level fills, each line of the breakdown, the coins, a level gained as its own card, what was taken and what got away, the quest's last word). One tap shows it all; cycling stats stay one quiet line (§40). Before it, while the server counts, a holding screen of what the phone itself knows. Any ride's reckoning opens again from the Journal. | The month in exploration terms, then completed quests as entries. Statistics is a tab, not the headline (§41–42). |
 
 | Character (11b) | Friends (15b) |
 |---|---|
@@ -50,6 +50,35 @@ nowhere on a primary surface.
 |---|---|---|---|---|
 | ![Watch navigation](screenshots/w1-watch-navigation.png) | ![Watch quest](screenshots/w2-watch-quest.png) | ![Watch stats](screenshots/w3-watch-stats.png) | ![Watch objective](screenshots/w4-watch-objective-complete.png) | ![Watch always-on](screenshots/w5-watch-always-on.png) |
 | Terracotta arrow, huge distance, direction word, street. | Sage diamond, the objective, the distance to it. | Distance first; time, climb, new territory in sage; speed demoted. | Full sage takeover, rising triplet, returns to the arrow. | No seconds, thinner weights, 1 Hz. |
+
+## What a ride says (0.5)
+
+A ride is ridden with the phone in a pocket, so what happens on it is said, not only shown. One stream
+of events (`RideEvent`, in `RoadsAndRunesCore`) feeds the chimes, the voice, the Watch and a line on screen.
+
+| Event | Chime | Said (voice on) | On screen |
+|---|---|---|---|
+| The start | — | "Two chests and the Bog Wraith on this route." | the same, as a pill |
+| Something in sight | two soft notes | "Bog Wraith, 200 metres. It wants a fast kilometre." | the encounter banner |
+| A chest, a piece, a monster beaten | knocks and a bell / two bright notes / a rising four | "Chest opened. 25 coins." · "Raido. Old Runes, 3 of 6." · "Bog Wraith beaten. 60 coins." | the claim toast |
+| A monster left behind unbeaten | two falling notes | "Bog Wraith got away." | a pill |
+| An objective | two notes; a fanfare for the last | "Objective done. One left." · "Quest complete. Head home." | the objective card |
+| New ground | the next note up a scale, for each new cell | — | the new-territory figure |
+| A place not found before | one long note | "New place: Nunhead Reservoir." | a pill |
+| Halfway, the last kilometre, arriving | two notes; a rising five | "Halfway." · "One kilometre to go." · "You are there." | a pill; the progress line |
+| A hill, and its top | two low notes | "A hill ahead: 600 m." · "That was the worst of it." | a pill |
+| Off the route, a new route | two low buzzes; two rising notes | "New route." | the off-route card; a pill |
+
+- The setting is Off / Chimes / Chimes and voice (Settings → Sound on a ride); chimes to begin with. The
+  chimes are synthesised from their notes, so there are no sound files. They mix with music; the voice
+  turns it down for as long as a line takes. Both play with the phone on silent.
+- Spoken lines are spaced (`RideAnnouncer`): the weightier first, and a line that has waited too long to
+  be true is dropped rather than said late.
+- Nothing here needs reading or a tap while moving, and nothing is said about speed against anyone.
+- The ride screen shows how far is left with a line of progress, and draws the chests and monsters still
+  to be had. The Watch taps the wrist for a turn (as it comes up, and when it is here: once for a right,
+  twice for a left), shows "+60 AC" and a piece's set on the overlay, and new ground and distance to go
+  on the ride page.
 
 ## Product states carried into the code (8a–8g)
 

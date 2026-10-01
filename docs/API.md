@@ -235,9 +235,14 @@ today's bounty (`404 NO_BOUNTY` until the world has been looked at today).
   "id": "uuid", "kind": "CHEST", "status": "SPAWNED", "tier": 1,
   "latitude": 51.4881, "longitude": -0.0202, "name": "Old chest", "anchorName": "Wall of the Ancestors",
   "bounty": false, "rewardAC": 25, "expiresAt": "...", "claimedAt": null,
-  "monster": null, "setId": null, "piece": null, "claimRadiusMeters": 40
+  "monster": null, "setId": null, "piece": null, "claimRadiusMeters": 40,
+  "setName": null, "setSize": null, "setOwned": null, "pieceOwned": null
 }
 ```
+
+A piece (`COLLECTABLE`) carries its set: `setId`, `piece`, `setName`, `setSize`, and, in the list for a
+player, `setOwned` (how many different pieces of it they hold) and `pieceOwned` (they already hold this
+one, so it is coins and not progress).
 
 `kind` is `CHEST`, `COLLECTABLE` or `MONSTER`; `status` is `SPAWNED`, `CLAIMED` or `EXPIRED`.
 `claimRadiusMeters` is how close the player must be to take it, and null for a monster.
@@ -251,7 +256,11 @@ is for a player who has walked up to one.)
 {"latitude": 51.48835, "longitude": -0.0202, "horizontalAccuracyMeters": 8}
 ```
 
-→ `{"object": WorldObject, "acAwarded": 25, "walletBalance": 185, "questCompleted": Quest|null}`
+→ `{"object": WorldObject, "acAwarded": 25, "walletBalance": 185, "questCompleted": Quest|null,
+"xpAwarded": 15, "levelUps": [], "setCompleted": {"id", "name", "bonusAC"}|null}`
+
+It is worth the XP a ride past it would have given, and the piece that completes a set pays the set's
+purse and XP there and then (`setCompleted`; `acAwarded` includes it).
 
 The player must be within `claimRadiusMeters × 1.25`, plus the stated accuracy up to 25 m. Opening
 the chest a quest points at completes that objective, and the quest when nothing else was asked
@@ -557,10 +566,39 @@ background job (validation, exploration, XP). Poll:
   "xpBreakdown": [...],
   "newCells": 34, "newTerritoryMeters": 12600, "newRoadsMeters": 9800,
   "discoveries": [DiscoverySummary],
-  "levelUps": [...], "abilitiesUnlocked": [...],
+  "levelUps": [...], "abilitiesUnlocked": [...], "titlesUnlocked": ["Early Riser"],
+  "acAwarded": 96, "acBreakdown": [{"kind": "RIDE_DISTANCE", "ac": 16, "detail": {...}}], "walletBalance": 410,
+  "worldObjects": {
+    "claimed": [{"id": "uuid", "kind": "COLLECTABLE", "name": "Raido (Old Runes)", "tier": 1, "rewardAC": 10, "method": "PASS",
+                 "setId": "RUNES", "piece": "Raido", "setName": "Old Runes", "setSize": 6, "setOwned": 3}],
+    "missed": [{"id": "uuid", "kind": "MONSTER", "name": "Fen Troll", "reason": "UNBEATEN", "expiresAt": "...",
+                "attempt": {"method": "PACE", "paceSecPerKm": 138.2, "targetSecPerKm": 130.0, "windowMeters": 1000.0, "progress": 0.941}}],
+    "setsCompleted": [{"id": "COINS", "name": "Milled Coins", "bonusAC": 50}]
+  },
+  "streak": {"days": 6, "longest": 9, "extended": true, "milestone": null, "bonusAC": 30},
   "flags": []
 }
 ```
+
+What a ride pays:
+
+- **XP** (`xpBreakdown[].source`): `QUEST_COMPLETED`, `STORY_QUEST_COMPLETED`, `STORY_ARC_COMPLETED`,
+  `QUEST_OBJECTIVE_COMPLETED`, `NEW_AREA_EXPLORED`, `NEW_ROAD_EXPLORED`, `DISCOVERY_FOUND`,
+  `LONG_DISTANCE_ADVENTURE`, `CLIMB_COMPLETED`, `CHEST_OPENED`, `COLLECTABLE_FOUND`, `MONSTER_BEATEN`
+  (a bounty half as much again), `SET_COMPLETED`, `KNOWN_GROUND`, `CLASS_BONUS`. `KNOWN_GROUND` is the
+  distance not on new roads: 2 XP a kilometre for a ride, more on foot, from 1 km, capped at 60. A ride on
+  roads already ridden is never worth nothing, and a new kilometre is always worth ten times a known one.
+- **Coins** (`acBreakdown[].kind`): `RIDE_DISTANCE` at the activity's own rate (ride 2, run 5, walk 4 a
+  kilometre), `NEW_CELLS`, `QUEST_COMPLETED`, `CHEST_OPENED`, `COLLECTABLE`, `MONSTER_SLAIN`, `BOUNTY`,
+  `STREAK`, `SET_COMPLETED` (the piece that completes a set), `STORY_ARC` (the last step of an arc).
+- `missed[].attempt` is the nearest of the monster's ways to being satisfied: for `PACE` the pace given
+  and wanted, for `CLIMB` `gainMeters` and `targetGainMeters`, for `EXPLORE` `cells` and `targetCells`.
+  `progress` is 1 at the target. A note not written or a shape not drawn has no attempt.
+- `questCompletion.storyProgress`, for a quest that is a step of an arc:
+  `{"arcSlug", "arcTitle", "stepTitle", "stepsDone", "stepsTotal", "arcCompleted", "nextTitle", "reward"}`.
+  On the last step `reward` is `{"title", "ac"}`: the title is set on the character and listed in
+  `titlesUnlocked`, the purse is the `STORY_ARC` coin line. A title earned this way is kept until a
+  level brings a new one.
 
 - `GET /rides` paginated, newest first. `GET /rides/{id}`. `GET /rides/{id}/geometry` → `{"coordinates": [...], "encodedPolyline": "..."}`.
 - `PATCH /rides/{id}` `{"visibility": "FRIENDS", "title": "...", "notes": "..."}`

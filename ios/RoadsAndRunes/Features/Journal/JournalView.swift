@@ -201,6 +201,7 @@ struct JournalView: View {
                 AdventureRow(entry: entry, units: model.units)
             }
             .buttonStyle(.pressable)
+            .accessibilityIdentifier("adventureRow")
             .contextMenu {
                 Button(role: .destructive) { deleting = entry } label: { Label("Delete adventure", systemImage: "trash") }
             }

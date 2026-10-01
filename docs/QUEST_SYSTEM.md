@@ -19,8 +19,9 @@
   when the board is next loaded.
 * **QuestObjective** – typed objective with location/radius, target metres,
   target cells, target elevation, progress and `provisional` flag.
-* **StoryArc / StoryQuest** – authored chains (schema present, flag-gated,
-  loaded from JSON under `app/quests/story/` in a later phase).
+* **StoryArc / StoryQuest** – authored chains, loaded from
+  `app/quests/config/story_arcs.json` and on in the deployed flags (see "Story
+  arcs" below).
 
 ## State machine
 
@@ -117,6 +118,12 @@ Rules the code keeps:
   ground and a flat city has none, so `story.due()` returns the next step of
   *every* unlocked arc and `offer()` takes the first that can actually be built
   here. The waiting one comes back the day the rider is somewhere it works.
+* **An arc has an ending.** Each arc names a `reward` (a title and a purse). The
+  ride that completes its last step is paid them: the title is set on the
+  character and kept until a level brings a new one, the purse is a `STORY_ARC`
+  coin line, and there is a `STORY_ARC_COMPLETED` XP line. Every completed step
+  says where it leaves the arc (`questCompletion.storyProgress`: steps done, the
+  next step's title, or that the arc is finished).
 
 `GET /quests/story` returns every arc — locked ones included, because what is
 coming is the reason to come back — each step marked COMPLETED, OPEN (on the
