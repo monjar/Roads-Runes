@@ -23,6 +23,7 @@ struct NavigationScreen: View {
                 zoom: 16.5,
                 cells: [],
                 route: recorder.package?.route.path ?? [],
+                guide: guide,
                 markers: markers,
                 followsUser: true,
                 navigationMode: true,
@@ -34,6 +35,11 @@ struct NavigationScreen: View {
             .ignoresSafeArea()
             VStack(spacing: 8) {
                 topCard
+                if recorder.recentReroute {
+                    MapPill(text: "New route from here")
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .accessibilityIdentifier("reroutedPill")
+                }
                 if recorder.recentObjectiveCompletion != nil, let instruction = recorder.progress?.nextInstruction {
                     MapPill(text: "\(TurnArrowView.phrase(for: instruction.sign)) · \(formatter.distance(meters: recorder.progress?.distanceToNextInstruction ?? instruction.distanceMeters))")
                 } else {
@@ -110,11 +116,28 @@ struct NavigationScreen: View {
         if let objective = recorder.recentObjectiveCompletion {
             ObjectiveCompleteCard(objective: objective, remaining: remainingObjectives)
                 .transition(.scale(scale: 0.9).combined(with: .opacity))
-        } else if recorder.state == .offRoute || recorder.state == .rerouting || recorder.isRerouting {
-            OffRouteCard(rerouting: recorder.isRerouting || recorder.state == .rerouting, rejoinMeters: recorder.progress?.crossTrackDistance, formatter: formatter)
+        } else if isOffRoute {
+            OffRouteCard(
+                rerouting: recorder.isRerouting || recorder.state == .rerouting,
+                rejoin: recorder.rejoin,
+                failure: recorder.rerouteError,
+                formatter: formatter,
+                onReroute: { recorder.rerouteNow() }
+            )
         } else {
             TurnCard(progress: recorder.progress, route: recorder.package?.route, state: recorder.state, formatter: formatter)
         }
+    }
+
+    private var isOffRoute: Bool {
+        recorder.state == .offRoute || recorder.state == .rerouting || recorder.isRerouting
+    }
+
+    /// Off the route, a dashed line from the rider to the nearest of what is left of
+    /// it: the way back, drawn, with or without a new route to follow.
+    private var guide: [Coordinate] {
+        guard isOffRoute, let here = recorder.lastFix?.coordinate, let rejoin = recorder.rejoin else { return [] }
+        return [here, rejoin.point]
     }
 
     private var remainingObjectives: Int {
@@ -521,36 +544,69 @@ struct ObjectiveCompleteCard: View {
 }
 
 /// Off route (design 4c): the card changes voice, not colour alone. No dialog.
+///
+/// It says what is being done about it and, always, the way back: which way and
+/// how far to the nearest of the route, which the map draws as a dashed line. A
+/// new route that cannot be fetched is said plainly, with a button to try again.
 struct OffRouteCard: View {
     let rerouting: Bool
-    let rejoinMeters: Double?
+    let rejoin: RejoinGuide?
+    var failure: String?
     let formatter: UnitFormatter
+    var onReroute: () -> Void = {}
 
     var body: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: 16) {
             Image(systemName: "arrow.triangle.swap")
-                .font(.system(size: 40, weight: .bold))
+                .font(.system(size: 36, weight: .bold))
                 .foregroundStyle(Theme.Colors.terracottaLight)
-                .frame(width: 64)
+                .frame(width: 56)
             VStack(alignment: .leading, spacing: 4) {
                 Eyebrow(text: "Off route", color: Theme.Colors.terracottaLight)
-                Text(rerouting ? "Finding a way back…" : "Rejoining route…")
-                    .font(Theme.Typography.text(28, .bold)).foregroundStyle(Theme.Colors.cream).lineLimit(1).minimumScaleFactor(0.7)
-                if let rejoinMeters {
-                    (Text("Keep going · route is ").foregroundStyle(Theme.Colors.line)
-                        + Text(formatter.distance(meters: rejoinMeters)).font(Theme.Typography.text(15, .bold)).foregroundStyle(Theme.Colors.cream)
-                        + Text(" away").foregroundStyle(Theme.Colors.line))
-                        .font(Theme.Typography.text(15))
-                } else {
-                    Text("Keep going · we will pick the route back up").font(Theme.Typography.text(15)).foregroundStyle(Theme.Colors.line)
-                }
+                Text(headline)
+                    .font(Theme.Typography.text(26, .bold)).foregroundStyle(Theme.Colors.cream).lineLimit(1).minimumScaleFactor(0.6)
+                detail.font(Theme.Typography.text(15)).lineLimit(2).minimumScaleFactor(0.8)
             }
             Spacer(minLength: 0)
+            if rerouting {
+                ProgressView().tint(Theme.Colors.cream)
+            } else {
+                Button(action: onReroute) {
+                    VStack(spacing: 3) {
+                        Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 17, weight: .bold))
+                        Text("Reroute").font(Theme.Typography.text(11, .semibold, relativeTo: .caption2))
+                    }
+                    .foregroundStyle(Theme.Colors.ink)
+                    .frame(width: 62, height: 56)
+                    .background(Theme.Colors.cream, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel("Reroute now")
+                .accessibilityIdentifier("offRoute.reroute")
+            }
         }
         .padding(.vertical, 18)
         .padding(.horizontal, 20)
         .background(Theme.Colors.ink, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
         .shadow(color: Theme.Colors.ink.opacity(0.25), radius: 12, y: 6)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("offRouteCard")
         .onAppear { UINotificationFeedbackGenerator().notificationOccurred(.warning) }
+    }
+
+    private var headline: String {
+        if rerouting { return "Finding a new route…" }
+        if let rejoin { return "Head \(rejoin.compass)" }
+        return "Finding the route…"
+    }
+
+    private var detail: Text {
+        let way: Text = {
+            guard let rejoin else { return Text("The way back is on the map").foregroundStyle(Theme.Colors.line) }
+            return Text(formatter.distance(meters: rejoin.distanceMeters)).font(Theme.Typography.text(15, .bold)).foregroundStyle(Theme.Colors.cream)
+                + Text(rerouting ? " \(rejoin.compass) to the old one" : " to the route · dashed on the map").foregroundStyle(Theme.Colors.line)
+        }()
+        guard let failure, !rerouting else { return way }
+        return Text("\(failure) · ").foregroundStyle(Theme.Colors.terracottaLight) + way
     }
 }

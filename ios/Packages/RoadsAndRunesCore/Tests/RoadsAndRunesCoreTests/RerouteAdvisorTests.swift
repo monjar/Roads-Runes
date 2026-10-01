@@ -49,4 +49,16 @@ final class RerouteAdvisorTests: XCTestCase {
         XCTAssertEqual(advisor.consecutiveFailures, 0)
         XCTAssertNil(advisor.offRouteSince)
     }
+
+    func testTheWayBackHasADistanceAndADirection() {
+        let here = SampleData.origin
+        let guide = RejoinGuide(from: here, to: GeoMath.destination(from: here, bearingDegrees: 47, distanceMeters: 420))
+        XCTAssertEqual(guide.distanceMeters, 420, accuracy: 1)
+        XCTAssertEqual(guide.compass, "north-east")
+        XCTAssertEqual(RejoinGuide.compassPoint(for: 350), "north")
+        XCTAssertEqual(RejoinGuide.compassPoint(for: 10), "north")
+        XCTAssertEqual(RejoinGuide.compassPoint(for: 180), "south")
+        XCTAssertEqual(RejoinGuide.compassPoint(for: 292), "west")
+        XCTAssertEqual(RejoinGuide.compassPoint(for: -45), "north-west")
+    }
 }

@@ -1,23 +1,29 @@
 import CoreLocation
 import Foundation
+import Observation
 import RoadsAndRunesCore
 
 /// CoreLocation wrapper. Produces `LocationFix` values; accuracy and distance
 /// filter follow `BatteryPolicy` but never drop below the navigation minimum.
+///
+/// Observable, so a view that reads `lastFix` is drawn again when the player
+/// moves: "30 m away" and "within reach" are only true of where they are now.
+/// (It published through Combine before, which no view subscribed to.)
 @MainActor
-final class LocationService: NSObject, ObservableObject {
+@Observable
+final class LocationService: NSObject {
     enum Authorization { case notDetermined, denied, whenInUse, always }
 
-    @Published private(set) var authorization: Authorization = .notDetermined
-    @Published private(set) var lastFix: LocationFix?
-    @Published private(set) var heading: Double?
-    @Published private(set) var accuracyPoor = false
+    private(set) var authorization: Authorization = .notDetermined
+    private(set) var lastFix: LocationFix?
+    private(set) var heading: Double?
+    private(set) var accuracyPoor = false
 
-    var onFix: ((LocationFix) -> Void)?
+    @ObservationIgnored var onFix: ((LocationFix) -> Void)?
 
-    private let manager = CLLocationManager()
-    private var tracking = false
-    private let analytics: AnalyticsSink
+    @ObservationIgnored private let manager = CLLocationManager()
+    @ObservationIgnored private var tracking = false
+    @ObservationIgnored private let analytics: AnalyticsSink
 
     init(analytics: AnalyticsSink) {
         self.analytics = analytics
@@ -47,11 +53,24 @@ final class LocationService: NSObject, ObservableObject {
     }
 
     func startPassive() {
+        // A ride has the manager: the map behind it must not turn its accuracy down.
+        guard !tracking else { return }
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
         manager.distanceFilter = 25
         manager.allowsBackgroundLocationUpdates = false
         manager.startUpdatingLocation()
         tracking = false
+    }
+
+    /// The World map open in the hand: close enough to tell thirty metres from
+    /// fifty, which the passive hundred-metre fix cannot, and often enough that
+    /// walking up to a chest is seen. Only while the map is on screen.
+    func startBrowsing() {
+        guard !tracking else { return }
+        manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+        manager.distanceFilter = 5
+        manager.allowsBackgroundLocationUpdates = false
+        manager.startUpdatingLocation()
     }
 
     func stop() {

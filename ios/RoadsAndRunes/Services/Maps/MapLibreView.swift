@@ -18,6 +18,14 @@ struct MapMarker: Identifiable, Hashable {
     let title: String
     /// SF Symbol drawn inside the marker, so a stop looks like what it is.
     var symbol: String?
+    /// A chest or a piece the player is standing close enough to take: it wears a gold ring.
+    var inReach = false
+}
+
+/// How far the player can reach from where they stand, drawn as a ring around them.
+struct MapReach: Hashable {
+    var center: Coordinate
+    var meters: Double
 }
 
 /// What a map view draws over its base style: the cycle network, or the trails.
@@ -56,6 +64,10 @@ struct MapLibreView: UIViewRepresentable {
     var zoom: Double = 13
     var cells: [CellRender] = []
     var route: [Coordinate] = []
+    /// A dashed line that is not a route: the way back to one, or the crow's flight
+    /// to where a route will go once it has been drawn.
+    var guide: [Coordinate] = []
+    var reach: MapReach?
     var markers: [MapMarker] = []
     var emphasis: MapEmphasis = .none
     var followsUser = false
@@ -130,6 +142,8 @@ struct MapLibreView: UIViewRepresentable {
         private var markers: [String: (marker: MapMarker, annotation: MLNPointAnnotation)] = [:]
         private var lastCellsHash = 0
         private var lastRouteHash: Int?
+        private var lastGuideHash: Int?
+        private var lastReachHash: Int?
         private var appliedFollowZoom = false
         private var appliedEmphasis: MapEmphasis?
 
@@ -143,6 +157,8 @@ struct MapLibreView: UIViewRepresentable {
             })
             lastCellsHash = 0
             lastRouteHash = nil
+            lastGuideHash = nil
+            lastReachHash = nil
             appliedEmphasis = nil
             apply(to: mapView)
             reportVisibleRegion(mapView)
@@ -165,6 +181,8 @@ struct MapLibreView: UIViewRepresentable {
             applyEmphasis(style)
             applyFog(style)
             applyRoute(style)
+            applyGuide(style)
+            applyReach(style)
             applyMarkers(mapView)
             applyCamera(mapView)
             applyFollowZoom(mapView)
@@ -325,6 +343,64 @@ struct MapLibreView: UIViewRepresentable {
             }
         }
 
+        // MARK: Guide line and reach
+
+        /// Dashed ink, so it cannot be mistaken for the route: it says "that way", not "this road".
+        private func applyGuide(_ style: MLNStyle) {
+            var hasher = Hasher()
+            hasher.combine(parent.guide)
+            let hash = hasher.finalize()
+            guard hash != lastGuideHash else { return }
+            lastGuideHash = hash
+            let source = ensureSource(style, id: "rr-guide")
+            if parent.guide.count >= 2 {
+                var coords = parent.guide.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+                source.shape = MLNPolylineFeature(coordinates: &coords, count: UInt(coords.count))
+            } else {
+                source.shape = nil
+            }
+            if style.layer(withIdentifier: "rr-guide-line") == nil {
+                let casing = MLNLineStyleLayer(identifier: "rr-guide-casing", source: source)
+                casing.lineColor = NSExpression(forConstantValue: UIColor.white.withAlphaComponent(0.9))
+                casing.lineWidth = NSExpression(forConstantValue: 6)
+                style.addLayer(casing)
+                let line = MLNLineStyleLayer(identifier: "rr-guide-line", source: source)
+                line.lineColor = NSExpression(forConstantValue: UIColor(hex: 0x201E1D))
+                line.lineWidth = NSExpression(forConstantValue: 3)
+                line.lineDashPattern = NSExpression(forConstantValue: [2, 1.5])
+                style.addLayer(line)
+            }
+        }
+
+        /// The ring the player can reach within: anything inside it can be opened or picked up.
+        private func applyReach(_ style: MLNStyle) {
+            var hasher = Hasher()
+            hasher.combine(parent.reach)
+            let hash = hasher.finalize()
+            guard hash != lastReachHash else { return }
+            lastReachHash = hash
+            let source = ensureSource(style, id: "rr-reach")
+            if let reach = parent.reach, reach.meters > 0 {
+                var coords = stride(from: 0.0, through: 360.0, by: 7.5).map { bearing -> CLLocationCoordinate2D in
+                    let point = GeoMath.destination(from: reach.center, bearingDegrees: bearing, distanceMeters: reach.meters)
+                    return CLLocationCoordinate2D(latitude: point.latitude, longitude: point.longitude)
+                }
+                source.shape = MLNPolygonFeature(coordinates: &coords, count: UInt(coords.count))
+            } else {
+                source.shape = nil
+            }
+            if style.layer(withIdentifier: "rr-reach-fill") == nil {
+                let fill = MLNFillStyleLayer(identifier: "rr-reach-fill", source: source)
+                fill.fillColor = NSExpression(forConstantValue: UIColor(hex: 0x7A8A5E, alpha: 0.12))
+                style.addLayer(fill)
+                let line = MLNLineStyleLayer(identifier: "rr-reach-line", source: source)
+                line.lineColor = NSExpression(forConstantValue: UIColor(hex: 0x56633F, alpha: 0.7))
+                line.lineWidth = NSExpression(forConstantValue: 1.5)
+                line.lineDashPattern = NSExpression(forConstantValue: [3, 2])
+                style.addLayer(line)
+            }
+        }
+
         /// Two alternatives often have the same number of points, and comparing counts
         /// left the previous route drawn under the one the rider had just picked.
         private func routeHash() -> Int {
@@ -375,9 +451,9 @@ struct MapLibreView: UIViewRepresentable {
                 return RiderLocationView()
             }
             guard let marker = marker(for: annotation) else { return nil }
-            let identifier = "marker-\(marker.kind.rawValue)-\(marker.symbol ?? "plain")"
+            let identifier = "marker-\(marker.kind.rawValue)-\(marker.symbol ?? "plain")\(marker.inReach ? "-reach" : "")"
             return mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
-                ?? MarkerAnnotationView(reuseIdentifier: identifier, kind: marker.kind, symbol: marker.symbol)
+                ?? MarkerAnnotationView(reuseIdentifier: identifier, kind: marker.kind, symbol: marker.symbol, inReach: marker.inReach)
         }
 
         private func marker(for annotation: MLNAnnotation) -> MapMarker? {
@@ -440,7 +516,10 @@ struct MapLibreView: UIViewRepresentable {
 /// Shape carries meaning before colour: quests and objectives are diamonds,
 /// mysteries are dashed "?" circles, stops are small ink dots.
 final class MarkerAnnotationView: MLNAnnotationView {
-    init(reuseIdentifier: String, kind: MapMarker.Kind, symbol: String? = nil) {
+    /// Gold, for the bounty and for what is within reach.
+    private static let gold = UIColor(red: 0.85, green: 0.65, blue: 0.13, alpha: 1)
+
+    init(reuseIdentifier: String, kind: MapMarker.Kind, symbol: String? = nil, inReach: Bool = false) {
         super.init(reuseIdentifier: reuseIdentifier)
         switch kind {
         case .stop, .stopActive:
@@ -465,12 +544,18 @@ final class MarkerAnnotationView: MLNAnnotationView {
         case .chest, .collectable, .monster, .bounty:
             // The world's objects read as what they are: a box, a spark, a flame; the
             // bounty wears a gold ring.
-            let size: CGFloat = kind == .collectable ? 26 : 34
-            frame = CGRect(x: 0, y: 0, width: size, height: size)
-            layer.cornerRadius = size / 2
-            layer.borderWidth = kind == .bounty ? 3.5 : 2.5
-            layer.borderColor = kind == .bounty ? UIColor(red: 0.85, green: 0.65, blue: 0.13, alpha: 1).cgColor : UIColor.white.cgColor
-            backgroundColor = Self.color(for: kind)
+            // Within reach it grows and takes the gold ring too: this one can be had now.
+            let size: CGFloat = (kind == .collectable ? 26 : 34) + (inReach ? 6 : 0)
+            // The disc is small on a map; the thing a thumb has to hit is not.
+            let touch = max(size, 44)
+            frame = CGRect(x: 0, y: 0, width: touch, height: touch)
+            let disc = UIView(frame: bounds.insetBy(dx: (touch - size) / 2, dy: (touch - size) / 2))
+            disc.isUserInteractionEnabled = false
+            disc.layer.cornerRadius = size / 2
+            disc.layer.borderWidth = kind == .bounty || inReach ? 3.5 : 2.5
+            disc.layer.borderColor = kind == .bounty || inReach ? Self.gold.cgColor : UIColor.white.cgColor
+            disc.backgroundColor = Self.color(for: kind)
+            addSubview(disc)
             let name: String = {
                 switch kind {
                 case .chest: return "shippingbox.fill"

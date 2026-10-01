@@ -2,6 +2,7 @@ import Foundation
 import MapKit
 import Observation
 import RoadsAndRunesCore
+import UIKit
 
 /// The World as a maps-app home: fog of war and discoveries from the server,
 /// plus place search, tapped base-map POIs and dropped pins. Quests live on
@@ -23,6 +24,17 @@ final class WorldViewModel {
     private(set) var activeShortcut: PlaceShortcut?
     private(set) var isSearching = false
     var error: String?
+    /// The chest or piece being opened right now, while the server is asked.
+    private(set) var claiming: UUID?
+    /// Why it would not open, said on its card.
+    var claimError: String?
+    /// What was just opened or picked up, for a few seconds.
+    private(set) var recentClaim: WorldObject?
+    /// The quest that opening it finished, if it finished one.
+    private(set) var recentQuestTitle: String?
+    private var claimToast: Task<Void, Never>?
+    /// What has already been pointed out for being within reach, so its card opens once.
+    private var announced: Set<UUID> = []
 
     let search = PlaceSearch()
 
@@ -74,19 +86,110 @@ final class WorldViewModel {
     // MARK: Markers
 
     var markers: [MapMarker] {
-        var out: [MapMarker] = mysteries.map {
-            MapMarker(id: "discovery-\($0.id.uuidString)", coordinate: $0.coordinate, kind: .discovery, title: $0.name)
-        }
+        // A chest sits on the place it is anchored to. Two markers on one spot meant the
+        // tap went to whichever the map picked, and the "?" often won.
+        let objects = worldObjects
+        var out: [MapMarker] = mysteries
+            .filter { place in !objects.contains { GeoMath.distance($0.coordinate, place.coordinate) < 5 } }
+            .map { MapMarker(id: "discovery-\($0.id.uuidString)", coordinate: $0.coordinate, kind: .discovery, title: $0.name) }
         out += results.filter { $0.id != selectedPlace?.id }.map {
             MapMarker(id: "result-\($0.id)", coordinate: $0.coordinate, kind: .result, title: $0.name)
         }
         if let selectedPlace {
             out.append(MapMarker(id: "place-\(selectedPlace.id)", coordinate: selectedPlace.coordinate, kind: .place, title: selectedPlace.name))
         }
-        out += worldObjects.map { object in
-            MapMarker(id: "object-\(object.id.uuidString)", coordinate: object.coordinate, kind: Self.markerKind(for: object), title: object.name)
+        out += objects.map { object in
+            MapMarker(
+                id: "object-\(object.id.uuidString)", coordinate: object.coordinate, kind: Self.markerKind(for: object),
+                title: object.name, inReach: isWithinReach(object)
+            )
         }
         return out
+    }
+
+    // MARK: Reaching for it
+
+    /// Close enough to open it or pick it up from where the player is standing.
+    func isWithinReach(_ object: WorldObject) -> Bool {
+        guard let here = position else { return false }
+        return object.isWithinReach(of: here)
+    }
+
+    /// The ring drawn round the player: how far they can reach, shown once there is
+    /// something near enough to walk up to.
+    static let reachRingWithinMeters = 300.0
+    var reach: MapReach? {
+        guard let here = position else { return nil }
+        let near = worldObjects.filter { $0.reachMeters != nil && GeoMath.distance(here, $0.coordinate) <= Self.reachRingWithinMeters }
+        guard let meters = near.compactMap(\.reachMeters).max() else { return nil }
+        return MapReach(center: here, meters: meters)
+    }
+
+    /// Walking up to a chest should not need the player to find its marker with a
+    /// thumb: the first time one comes within reach, its card opens.
+    /// Returns whether it opened one.
+    @discardableResult
+    func noticeReach() -> Bool {
+        guard let here = position else { return false }
+        let within = worldObjects.filter { $0.isWithinReach(of: here) }
+        announced.formIntersection(within.map(\.id))
+        guard selectedObject == nil, selectedPlace == nil, resultsTitle == nil, claiming == nil else { return false }
+        guard let nearest = within.filter({ !announced.contains($0.id) }).min(by: { GeoMath.distance(here, $0.coordinate) < GeoMath.distance(here, $1.coordinate) }) else { return false }
+        announced.insert(nearest.id)
+        claimError = nil
+        selectedObject = nearest
+        return true
+    }
+
+    /// Open the chest, or pick the piece up. The server has the last word on whether
+    /// the player is close enough; what it says when they are not goes on the card.
+    func claim(_ object: WorldObject) async {
+        guard claiming == nil else { return }
+        guard let fix = container.location.lastFix else {
+            claimError = "Waiting for your location"
+            return
+        }
+        claiming = object.id
+        claimError = nil
+        defer { claiming = nil }
+        do {
+            let result = try await container.api.claimWorldObject(
+                id: object.id,
+                WorldObjectClaimRequest(latitude: fix.coordinate.latitude, longitude: fix.coordinate.longitude, horizontalAccuracyMeters: fix.horizontalAccuracy)
+            )
+            take(result.object)
+            selectedObject = nil
+            show(claimed: result.object, quest: result.questCompleted?.title)
+            container.analytics.track(.worldObjectClaimed, properties: ["kind": object.kind.rawValue, "name": object.name, "method": "TAP"])
+            await container.session.refreshCharacter()
+        } catch let error as APIError where error.errorCode == APIErrorCode.objectGone {
+            // Already opened, on a ride or another phone: it should not still be on the map.
+            var gone = object
+            gone.status = .claimed
+            take(gone)
+            claimError = error.localizedDescription
+        } catch {
+            claimError = error.localizedDescription
+        }
+    }
+
+    /// The object as the server now has it replaces whatever the map was holding.
+    private func take(_ object: WorldObject) {
+        placedObjects.removeAll { $0.id == object.id }
+        placedObjects.append(object)
+    }
+
+    private func show(claimed object: WorldObject, quest: String?) {
+        recentClaim = object
+        recentQuestTitle = quest
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        claimToast?.cancel()
+        claimToast = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled else { return }
+            self?.recentClaim = nil
+            self?.recentQuestTitle = nil
+        }
     }
 
     /// Chests, pieces and monsters around the *player*. The map can be dragged
@@ -128,6 +231,7 @@ final class WorldViewModel {
 
     func open(_ object: WorldObject) {
         selectedPlace = nil
+        claimError = nil
         selectedObject = object
         camera = MapCamera(center: object.coordinate)
     }
@@ -144,6 +248,7 @@ final class WorldViewModel {
     func tapMarker(_ marker: MapMarker) {
         if let object = worldObjects.first(where: { "object-\($0.id.uuidString)" == marker.id }) {
             selectedPlace = nil
+            claimError = nil
             selectedObject = object
             camera = MapCamera(center: object.coordinate)
         } else if let place = results.first(where: { "result-\($0.id)" == marker.id }) {
@@ -182,7 +287,10 @@ final class WorldViewModel {
     }
 
     func closePlace() { selectedPlace = nil }
-    func closeObject() { selectedObject = nil }
+    func closeObject() {
+        selectedObject = nil
+        claimError = nil
+    }
 
     /// A world object as somewhere to go: the planner takes a place.
     static func place(for object: WorldObject) -> Place {

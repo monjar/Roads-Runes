@@ -173,11 +173,11 @@ final class RoutePlannerViewModel {
 
     private static let previewPadding = UIEdgeInsets(top: 26, left: 22, bottom: 46, right: 22)
 
-    /// Quest rides start from the quest's fixed route; everything else plans fresh.
+    /// Quest rides start from the quest's own route, drawn from where the rider is; everything else plans fresh.
     func prepare() async {
         guard let quest else { return await generate() }
         do {
-            let route = try await container.api.questRoute(id: quest.id)
+            let route = try await container.api.questRoute(id: quest.id, from: container.location.lastFix?.coordinate)
             questRoute = route
             alternatives = [route]
             choose(route)

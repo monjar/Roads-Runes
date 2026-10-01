@@ -26,6 +26,13 @@ final class RideRecorder {
     private(set) var recentObjectiveCompletion: Objective?
     private(set) var offRouteSince: Date?
     private(set) var isRerouting = false
+    /// The way back to the route while off it: worked out here, so it is there
+    /// whether or not a new route can be fetched.
+    private(set) var rejoin: RejoinGuide?
+    /// Why the last attempt at a new route came to nothing, for the card to say.
+    private(set) var rerouteError: String?
+    /// A new route was just taken; true for a few seconds, for the card to say so.
+    private(set) var recentReroute = false
     private(set) var lastFix: LocationFix?
     /// A stop the rider asked for that they are near right now, so the ride can say
     /// "your café is 90 m away" rather than leaving them to spot it going past.
@@ -60,6 +67,13 @@ final class RideRecorder {
     @ObservationIgnored private var encounterTracker: EncounterTracker?
     @ObservationIgnored private var exploration: ExplorationRecorder?
     @ObservationIgnored private var rerouteAdvisor = RerouteAdvisor()
+    @ObservationIgnored private var rerouteTask: Task<Void, Never>?
+    @ObservationIgnored private var rerouteTicker: Task<Void, Never>?
+    @ObservationIgnored private var rerouteToastTask: Task<Void, Never>?
+    /// Answers that arrived for a place the rider had already left, in a row.
+    @ObservationIgnored private var staleReroutes = 0
+    /// When the last fix arrived by the wall clock, to tell the fixes' time while none are arriving.
+    @ObservationIgnored private var lastFixReceivedAt = Date()
     @ObservationIgnored private var pendingPoints: [RidePoint] = []
     @ObservationIgnored private var pendingObjectiveEvents: [ObjectiveEvent] = []
     @ObservationIgnored private var sequence = 0
@@ -142,10 +156,17 @@ final class RideRecorder {
         analytics.track(.navigationStarted, properties: ["routeId": package.route.id.uuidString])
         sendWatchSummary()
         persist(force: true)
+        checkStartIsOnRoute()
     }
 
     func pause() {
+        // A new route being fetched is given up: it would be for where they stopped.
+        if state == .rerouting {
+            cancelReroute()
+            _ = transition(to: .offRoute)
+        }
         guard transition(to: .paused) else { return }
+        stopRerouteTicker()
         location.apply(mode: .endurance)
         sendWatchUpdate(force: true)
         persist(force: true)
@@ -160,6 +181,9 @@ final class RideRecorder {
 
     func finish() async {
         guard isActive || state == .recovery else { return }
+        cancelReroute()
+        stopRerouteTicker()
+        if state == .rerouting { _ = transition(to: .offRoute) }
         _ = transition(to: .finishing)
         location.stop()
         let endedAt = Date()
@@ -184,6 +208,8 @@ final class RideRecorder {
     }
 
     func discard() {
+        cancelReroute()
+        stopRerouteTicker()
         location.stop()
         health.discard()
         _ = transition(to: .cancelled)
@@ -208,6 +234,10 @@ final class RideRecorder {
         recentClaim = nil
         exploration = nil
         offRouteSince = nil
+        rejoin = nil
+        rerouteError = nil
+        recentReroute = false
+        isRerouting = false
         recoverableRide = nil
     }
 
@@ -218,6 +248,7 @@ final class RideRecorder {
         var enriched = fix
         enriched.heartRate = lastHeartRate
         lastFix = enriched
+        lastFixReceivedAt = Date()
         updateNearbyStop(from: enriched.coordinate)
         let accepted = statistics.add(fix: enriched)
         stats = statistics.snapshot
@@ -242,7 +273,7 @@ final class RideRecorder {
             let update = tracker.update(position: enriched.coordinate)
             progressTracker = tracker
             progress = update
-            handleOffRoute(update.isOffRoute, at: enriched.timestamp)
+            handleOffRoute(update, from: enriched.coordinate, at: enriched.timestamp)
         }
         if var tracker = objectiveTracker {
             let events = tracker.update(
@@ -385,42 +416,187 @@ final class RideRecorder {
         }
     }
 
-    private func handleOffRoute(_ offRoute: Bool, at now: Date) {
-        rerouteAdvisor.observe(isOffRoute: offRoute, at: now)
-        if offRoute {
-            if state == .active { _ = transition(to: .offRoute) }
-            offRouteSince = rerouteAdvisor.offRouteSince
-            if rerouteAdvisor.shouldReroute(now: now), !isRerouting {
-                Task { await self.reroute(from: lastFix?.coordinate) }
+    // MARK: - Off route and rerouting
+
+    /// Past this far from the first stretch of a new route, the route is for somewhere
+    /// the rider has already left.
+    private static let staleRerouteMeters = 60.0
+    private static let maxStaleReroutes = 2
+
+    private func handleOffRoute(_ update: ProgressUpdate, from position: Coordinate, at now: Date) {
+        rerouteAdvisor.observe(isOffRoute: update.isOffRoute, at: now)
+        if update.isOffRoute {
+            if state == .active {
+                _ = transition(to: .offRoute)
+                AppLog.navigation.info("off_route \(Int(update.crossTrackDistance), privacy: .public) m")
+                startRerouteTicker()
             }
+            offRouteSince = rerouteAdvisor.offRouteSince
+            rejoin = RejoinGuide(from: position, to: update.snappedPosition)
+            considerReroute(now: now)
         } else if state == .offRoute || state == .rerouting {
+            // Back on it under their own steam: a new route still on its way is not wanted.
+            cancelReroute()
+            stopRerouteTicker()
             offRouteSince = nil
+            rejoin = nil
+            rerouteError = nil
             _ = transition(to: .active)
+            AppLog.navigation.info("back_on_route")
         }
     }
 
-    // MARK: - Rerouting
+    /// The rider started somewhere the route is not. Nothing would say so until
+    /// they had moved three fixes' worth, and a rider waiting to be shown the way
+    /// does not move.
+    private func checkStartIsOnRoute() {
+        guard let here = location.lastFix, abs(here.timestamp.timeIntervalSinceNow) < 30, var tracker = progressTracker else { return }
+        var update = tracker.update(position: here.coordinate)
+        guard update.crossTrackDistance >= RerouteAdvisor.farMeters else { return }
+        for _ in 1..<RouteProgressTracker.offRouteConsecutiveUpdates { update = tracker.update(position: here.coordinate) }
+        progressTracker = tracker
+        progress = update
+        lastFix = here
+        lastFixReceivedAt = Date()
+        handleOffRoute(update, from: here.coordinate, at: here.timestamp)
+    }
 
-    private func reroute(from origin: Coordinate?) async {
-        guard let origin, let package, !isRerouting else { return }
+    /// "Now", on the fixes' own clock: the time of the last one plus however long ago it came.
+    private var fixClockNow: Date {
+        guard let lastFix else { return Date() }
+        return lastFix.timestamp.addingTimeInterval(Date().timeIntervalSince(lastFixReceivedAt))
+    }
+
+    private func considerReroute(now: Date) {
+        guard isActive, state == .offRoute, rerouteTask == nil, let position = lastFix?.coordinate else { return }
+        guard rerouteAdvisor.shouldReroute(now: now, crossTrackMeters: progress?.crossTrackDistance ?? 0) else { return }
+        startReroute(from: position, at: now)
+    }
+
+    /// The rider asked for a new route themselves: no waiting on the clock.
+    func rerouteNow() {
+        guard isActive, state == .offRoute, rerouteTask == nil, let position = lastFix?.coordinate else { return }
+        rerouteAdvisor.clearThrottle()
+        startReroute(from: position, at: fixClockNow)
+    }
+
+    private func startReroute(from position: Coordinate, at now: Date) {
+        guard let package, transition(to: .rerouting) else { return }
         isRerouting = true
-        _ = transition(to: .rerouting)
-        rerouteAdvisor.markRerouted(at: Date())
+        rerouteError = nil
+        rerouteAdvisor.markRerouted(at: now)
         analytics.track(.routeReroute, properties: ["routeId": package.route.id.uuidString])
-        defer { isRerouting = false }
-        do {
-            let response = try await api.generateRoutes(RouteGenerateRequest(origin: origin, bikeId: bikeId, questId: quest?.id, distanceTargetKm: max(5, (package.route.distanceMeters - stats.distanceMeters) / 1000), loop: quest != nil))
-            guard let best = response.alternatives.first else { return }
-            let newPackage = RoutePackage(route: best, quest: package.quest, pois: best.pois, mapRegion: best.boundingBox ?? package.mapRegion, generatedAt: Date())
-            try? routePackages.save(newPackage)
-            self.package = newPackage
-            progressTracker = RouteProgressTracker(route: best)
-            sendWatchSummary()
-            _ = transition(to: .active)
-        } catch {
-            AppLog.navigation.warning("reroute_failed \(error.localizedDescription, privacy: .public)")
-            _ = transition(to: .offRoute)
+        let request = RerouteRequest(
+            origin: position,
+            progressMeters: progress?.distanceAlongRoute ?? 0,
+            completedObjectiveIds: Array(completedObjectiveIDs),
+            visitedStopIds: Array(arrivedStops)
+        )
+        let routeId = package.route.id
+        let api = self.api
+        rerouteTask = Task { [weak self] in
+            let result: Result<RouteOption, Error>
+            do {
+                result = .success(try await api.reroute(routeId: routeId, request))
+            } catch {
+                result = .failure(error)
+            }
+            guard !Task.isCancelled else { return }
+            self?.finishReroute(result)
         }
+    }
+
+    private func finishReroute(_ result: Result<RouteOption, Error>) {
+        rerouteTask = nil
+        isRerouting = false
+        // Paused, finished or back on the route while it was on its way.
+        guard isActive, state == .rerouting else { return }
+        switch result {
+        case .failure(let error):
+            rerouteFailed(error.localizedDescription)
+        case .success(let route):
+            guard route.path.count >= 2 else { return rerouteFailed("The route that came back was empty") }
+            if let here = lastFix?.coordinate, staleReroutes < Self.maxStaleReroutes {
+                var probe = RouteProgressTracker(route: route)
+                if probe.update(position: here).crossTrackDistance > Self.staleRerouteMeters {
+                    // They kept moving while it was drawn: this is the way from where they
+                    // were. Ask again from where they are, at once.
+                    staleReroutes += 1
+                    AppLog.navigation.info("reroute_stale")
+                    _ = transition(to: .offRoute)
+                    rerouteAdvisor.clearThrottle()
+                    startReroute(from: here, at: fixClockNow)
+                    return
+                }
+            }
+            adopt(route)
+        }
+    }
+
+    private func rerouteFailed(_ reason: String) {
+        AppLog.navigation.warning("reroute_failed \(reason, privacy: .public)")
+        rerouteAdvisor.markFailed()
+        rerouteError = "Couldn't get a new route"
+        _ = transition(to: .offRoute)
+    }
+
+    private func adopt(_ route: RouteOption) {
+        guard let package else { return }
+        let newPackage = RoutePackage(route: route, quest: package.quest, pois: route.pois, mapRegion: route.boundingBox ?? package.mapRegion, generatedAt: Date())
+        try? routePackages.save(newPackage)
+        self.package = newPackage
+        var tracker = RouteProgressTracker(route: route)
+        if let here = lastFix?.coordinate { progress = tracker.update(position: here) }
+        progressTracker = tracker
+        rerouteAdvisor.markSucceeded()
+        staleReroutes = 0
+        offRouteSince = nil
+        rejoin = nil
+        rerouteError = nil
+        stopRerouteTicker()
+        _ = transition(to: .active)
+        AppLog.navigation.info("rerouted \(Int(route.distanceMeters), privacy: .public) m")
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        recentReroute = true
+        rerouteToastTask?.cancel()
+        rerouteToastTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            self?.recentReroute = false
+        }
+        sendWatchSummary()
+        sendWatchUpdate(force: true)
+        persist(force: true)
+    }
+
+    private func cancelReroute() {
+        rerouteTask?.cancel()
+        rerouteTask = nil
+        isRerouting = false
+        staleReroutes = 0
+    }
+
+    /// Fixes are filtered by distance, so a rider who stops to look at the map sends
+    /// none, and the decision to reroute was only ever made when one arrived. This
+    /// makes it on a clock as well, for as long as they are off the route.
+    private func startRerouteTicker() {
+        guard rerouteTicker == nil else { return }
+        rerouteTicker = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled, let self else { return }
+                guard self.isActive, self.state == .offRoute || self.state == .rerouting else {
+                    self.rerouteTicker = nil
+                    return
+                }
+                self.considerReroute(now: self.fixClockNow)
+            }
+        }
+    }
+
+    private func stopRerouteTicker() {
+        rerouteTicker?.cancel()
+        rerouteTicker = nil
     }
 
     // MARK: - Uploads

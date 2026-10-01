@@ -1,12 +1,18 @@
 import RoadsAndRunesCore
 import SwiftUI
 
-/// A chest, a piece or a monster on the World map: what it is, what it pays, how
-/// to beat it, and one action — plan a route to it.
+/// A chest, a piece or a monster on the World map: what it is, what it pays and
+/// how to get it. Within reach of a chest or a piece the action is to take it;
+/// further off, and for a monster, it is to plan a route there.
 struct EncounterCard: View {
     let object: WorldObject
     var distanceMeters: Double?
     let units: Units
+    /// The player is close enough to open it or pick it up.
+    var inReach = false
+    var claiming = false
+    var claimError: String?
+    var onClaim: () -> Void = {}
     let onPlan: () -> Void
     let onClose: () -> Void
 
@@ -43,25 +49,50 @@ struct EncounterCard: View {
                         }
                     }
                 }
-            } else if object.kind == .chest {
-                Text("Pass within \(Int(EncounterTracker.claimRadius[.chest] ?? 40)) m and it opens.").font(Theme.Typography.text(13)).foregroundStyle(Theme.Colors.inkSoft)
-            } else if object.kind == .collectable {
-                Text("Pass close by to pick it up. Three pieces on one outing is a quest.").font(Theme.Typography.text(13)).foregroundStyle(Theme.Colors.inkSoft)
+            } else if let reach = object.reachMeters {
+                Text(howToTakeIt(reach)).font(Theme.Typography.text(13)).foregroundStyle(Theme.Colors.inkSoft)
+                    .accessibilityIdentifier("encounter.reach")
             }
-            Button(action: onPlan) {
-                HStack(spacing: 10) {
-                    Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
-                    Text("Plan a route here")
+            if let claimError { ErrorLine(text: claimError) }
+            if inReach, object.reachMeters != nil {
+                Button(action: onClaim) {
+                    ZStack {
+                        HStack(spacing: 10) {
+                            Image(systemName: object.kind == .chest ? "shippingbox.fill" : "sparkles")
+                            Text(object.kind == .chest ? "Open chest" : "Pick it up")
+                        }
+                        .opacity(claiming ? 0 : 1)
+                        if claiming { ProgressView().tint(Theme.Colors.cream) }
+                    }
                 }
+                .buttonStyle(.primary)
+                .disabled(claiming)
+                .accessibilityIdentifier("encounter.claim")
+            } else {
+                Button(action: onPlan) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
+                        Text("Plan a route here")
+                    }
+                }
+                .buttonStyle(.primary)
+                .accessibilityIdentifier("encounter.plan")
             }
-            .buttonStyle(.primary)
-            .accessibilityIdentifier("encounter.plan")
         }
         .padding(18)
         .background(Theme.Colors.cream, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
         .shadow(color: Theme.Colors.ink.opacity(0.18), radius: 12, y: 6)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("encounterCard")
+    }
+
+    /// Within reach it says so; out of reach it says how much closer to get.
+    private func howToTakeIt(_ reach: Double) -> String {
+        let piece = object.kind == .collectable
+        if inReach { return piece ? "You are close enough to pick it up." : "You are close enough to open it." }
+        let within = "Get within \(formatter.distance(meters: reach))"
+        guard let distanceMeters, distanceMeters > reach else { return "\(within) to \(piece ? "pick it up" : "open it")." }
+        return "\(within) to \(piece ? "pick it up" : "open it") · \(formatter.distance(meters: distanceMeters - reach)) to go."
     }
 
     private var facts: String {

@@ -68,8 +68,16 @@ final class QuestDetailModel {
     private(set) var quest: Quest
     var error: String?
     private(set) var busy = false
-    /// The quest's fixed route (spec §20), drawn on the detail map; tweakable in the planner.
+    /// Where the quest's route stands: a quest with a bare map and nothing to say
+    /// why looked broken, so the map always says which of these it is.
+    enum RouteState: Equatable {
+        case idle, loading, loaded
+        case failed(String)
+    }
+
+    /// The quest's route from where the player is (spec §20), drawn on the detail map; tweakable in the planner.
     private(set) var route: RouteOption?
+    private(set) var routeState: RouteState = .idle
     private(set) var routeCamera: MapCamera?
     /// A stop on the quest route that the rider tapped on the map.
     private(set) var focusedStop: RoutePOI?
@@ -88,10 +96,53 @@ final class QuestDetailModel {
         if let latest = try? await container.api.quest(id: quest.id) { quest = latest }
     }
 
+    private static let mapPadding = UIEdgeInsets(top: 110, left: 36, bottom: 64, right: 36)
+
+    /// The route starts where the player is standing, so it is asked for with their
+    /// position; the server draws it again if they have moved since it was last drawn.
     func loadRoute() async {
-        guard route == nil, let fixed = try? await container.api.questRoute(id: quest.id) else { return }
-        route = fixed
-        routeCamera = MapCamera(fit: fixed.path, padding: UIEdgeInsets(top: 110, left: 36, bottom: 64, right: 36))
+        guard route == nil, routeState != .loading else { return }
+        routeState = .loading
+        let here = await firstPosition()
+        // Until it arrives the map shows the player and where the quest goes, not an empty square.
+        let overview = (here.map { [$0] } ?? []) + targets
+        if overview.count >= 2 { routeCamera = MapCamera(fit: overview, padding: Self.mapPadding) }
+        do {
+            let fixed = try await container.api.questRoute(id: quest.id, from: here)
+            route = fixed
+            routeCamera = MapCamera(fit: fixed.path, padding: Self.mapPadding)
+            routeState = .loaded
+            // Its distance, and the way home, moved with the route.
+            await refresh()
+        } catch {
+            routeState = .failed(error.localizedDescription)
+        }
+    }
+
+    func retryRoute() async {
+        route = nil
+        routeState = .idle
+        await loadRoute()
+    }
+
+    /// The crow's flight from the player through the quest's places, drawn dashed
+    /// while there is no route to draw.
+    var guide: [Coordinate] {
+        guard route == nil, let position, !targets.isEmpty else { return [] }
+        return [position] + targets
+    }
+
+    private var targets: [Coordinate] {
+        quest.sortedObjectives.filter { $0.objectiveType != .returnToStart }.compactMap(\.coordinate)
+    }
+
+    /// A quest opened the moment the app is may not have a fix yet; a second is worth
+    /// waiting for a route that starts in the right place.
+    private func firstPosition() async -> Coordinate? {
+        for _ in 0..<10 where position == nil {
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        return position
     }
 
     func focus(_ poi: RoutePOI?) { focusedStop = poi }

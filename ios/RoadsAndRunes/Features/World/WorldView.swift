@@ -10,6 +10,7 @@ struct WorldView: View {
     @State private var searching = false
     @State private var directionsTo: Place?
     @State private var planningFreeRide = false
+    @State private var onScreen = false
     var onOpenCharacter: () -> Void = {}
 
     var body: some View {
@@ -29,12 +30,30 @@ struct WorldView: View {
         .task {
             if model == nil { model = WorldViewModel(container: container) }
             container.location.requestWhenInUse()
+        }
+        // The map in the hand needs to know thirty metres from fifty; put away, it
+        // goes back to the coarse fix that costs nothing. Neither touches a ride's GPS.
+        .onAppear {
+            onScreen = true
+            container.location.startBrowsing()
+        }
+        .onDisappear {
+            onScreen = false
             container.location.startPassive()
+        }
+        // A ride stops the location manager when it ends; the map must start it again
+        // or the player's position stays where the ride finished.
+        .onChange(of: container.rideRecorder.isActive) { _, riding in
+            guard !riding else { return }
+            if onScreen { container.location.startBrowsing() } else { container.location.startPassive() }
         }
         .onChange(of: container.location.lastFix) { _, fix in
             guard let fix, let model else { return }
             if model.center == nil { model.center = fix.coordinate }
             Task { await model.load(around: fix.coordinate) }
+            if !container.rideRecorder.isActive, withAnimation(.snappy, { model.noticeReach() }) {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            }
         }
         .onChange(of: container.rideRecorder.localCellStates) { _, _ in model?.rebuildCells() }
         .onChange(of: container.sync.latestSummary) { _, summary in
@@ -51,6 +70,7 @@ struct WorldView: View {
                 center: model.center ?? container.location.lastFix?.coordinate ?? SampleData.origin,
                 zoom: 14,
                 cells: model.cells,
+                reach: model.reach,
                 markers: model.markers,
                 emphasis: styleKey.emphasis,
                 onRegionChanged: { center, _ in Task { await model.load(around: center) } },
@@ -92,6 +112,17 @@ struct WorldView: View {
                     }
                 }
                 .padding(.horizontal, 16)
+                if let claimed = model.recentClaim {
+                    VStack(spacing: 6) {
+                        ClaimToast(object: claimed)
+                        if let quest = model.recentQuestTitle {
+                            MapPill(text: "Quest complete: \(quest)", symbol: "checkmark.seal.fill")
+                                .accessibilityIdentifier("claimQuestComplete")
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+                }
                 if model.selectedPlace == nil, model.selectedObject == nil, model.resultsTitle == nil {
                     TodayStrip(
                         character: container.session.character,
@@ -139,6 +170,10 @@ struct WorldView: View {
                 object: object,
                 distanceMeters: model.position.map { GeoMath.distance($0, object.coordinate) },
                 units: model.units,
+                inReach: model.isWithinReach(object),
+                claiming: model.claiming == object.id,
+                claimError: model.claimError,
+                onClaim: { Task { await model.claim(object) } },
                 onPlan: { directionsTo = WorldViewModel.place(for: object) },
                 onClose: { withAnimation(.snappy) { model.closeObject() } }
             )

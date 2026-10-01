@@ -120,9 +120,16 @@ struct QuestsView: View {
         }
     }
 
+    /// How far the quest's nearest place is. A quest starts where the player is, so
+    /// "how far away is it" is how far to where it goes; one that goes nowhere in
+    /// particular (a distance, new roads) is not away at all.
     private func distance(to quest: Quest) -> Double? {
         guard let position = container.location.lastFix?.coordinate else { return nil }
-        return GeoMath.distance(position, quest.origin)
+        return quest.objectives
+            .filter { $0.objectiveType != .returnToStart }
+            .compactMap(\.coordinate)
+            .map { GeoMath.distance(position, $0) }
+            .min()
     }
 }
 
@@ -167,10 +174,11 @@ struct QuestDetailView: View {
                     ZStack(alignment: .top) {
                         MapLibreView(
                             styleURL: Config.mapStyleURL(for: .adventure),
-                            center: quest.origin,
+                            center: model.position ?? quest.origin,
                             zoom: 12.5,
                             cells: [],
                             route: model.route?.path ?? [],
+                            guide: model.guide,
                             markers: markers(for: quest, route: model.route, focused: model.focusedStop),
                             emphasis: .adventure,
                             onMarkerTap: { marker in
@@ -186,6 +194,10 @@ struct QuestDetailView: View {
                                     .padding(.horizontal, 16)
                                     .padding(.bottom, 44)
                                     .transition(.opacity)
+                            } else {
+                                routeStatus(model)
+                                    .padding(.horizontal, 16)
+                                    .padding(.bottom, 44)
                             }
                         }
                         HStack {
@@ -245,6 +257,37 @@ struct QuestDetailView: View {
         actions(model)
             .padding(.horizontal, 20)
             .padding(.bottom, 8)
+    }
+
+    /// What the map is waiting for, or why it has no route: never a bare map and silence.
+    @ViewBuilder
+    private func routeStatus(_ model: QuestDetailModel) -> some View {
+        switch model.routeState {
+        case .loading:
+            HStack(spacing: 8) {
+                ProgressView().tint(Theme.Colors.ink).controlSize(.small)
+                Text("Drawing the route from where you are…").font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.ink)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(Theme.Colors.cream.opacity(0.94), in: Capsule())
+            .shadow(color: Theme.Colors.ink.opacity(0.14), radius: 2, y: 1)
+            .accessibilityIdentifier("quest.route.loading")
+        case .failed:
+            HStack(spacing: 10) {
+                Text("Couldn't draw the route").font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.ink)
+                Button("Try again") { Task { await model.retryRoute() } }
+                    .font(Theme.Typography.captionStrong)
+                    .foregroundStyle(Theme.Colors.terracottaDeep)
+                    .accessibilityIdentifier("quest.route.retry")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(Theme.Colors.cream.opacity(0.94), in: Capsule())
+            .shadow(color: Theme.Colors.ink.opacity(0.14), radius: 2, y: 1)
+        case .idle, .loaded:
+            EmptyView()
+        }
     }
 
     private func requiredIndex(_ objectives: [Objective], _ offset: Int) -> Int {
