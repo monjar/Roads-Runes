@@ -145,11 +145,11 @@ def evaluate_objectives(
             o.progress_current = 1.0 if slain else 0.0
             done = bool(slain)
         elif t == "OPEN_CHEST":
-            opened = len(claims.claimed_of("CHEST")) if claims else 0
+            opened = len(claims.counted_of("CHEST")) if claims else 0
             o.progress_current = float(min(o.progress_target, opened))
             done = opened >= (o.target_count or 1)
         elif t == "COLLECT":
-            gathered = len(claims.claimed_of("COLLECTABLE")) if claims else 0
+            gathered = len(claims.counted_of("COLLECTABLE")) if claims else 0
             o.progress_current = float(min(o.progress_target, gathered))
             done = gathered >= (o.target_count or 1)
         if done:
@@ -310,6 +310,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             resolution=settings.h3_resolution,
             ended=ended,
         )
+        claims.tapped = await world_objects.tapped_during(db, ride.user_id, ride.started_at, ended)
 
     quest: QuestInstance | None = None
     quest_completed = False

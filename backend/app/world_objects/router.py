@@ -8,8 +8,10 @@ from app.characters.service import get_character, get_rider_profile
 from app.core.deps import CurrentUser, DBDep, SettingsDep
 from app.core.errors import NotFound
 from app.core.schemas import APIModel
+from app.economy import service as economy
+from app.quests import service as quests
 from app.world_objects import service
-from app.world_objects.schemas import WorldObjectOut
+from app.world_objects.schemas import ClaimIn, ClaimResultOut, WorldObjectOut
 
 router = APIRouter(prefix="/world/objects", tags=["world"])
 
@@ -71,3 +73,21 @@ async def bounty(user: CurrentUser, db: DBDep) -> WorldObjectOut:
 @router.get("/{object_id}", response_model=WorldObjectOut)
 async def one(object_id: uuid.UUID, user: CurrentUser, db: DBDep) -> WorldObjectOut:
     return service.to_out(await service.get_object(db, user.id, object_id))
+
+
+@router.post("/{object_id}/claim", response_model=ClaimResultOut)
+async def claim(
+    object_id: uuid.UUID, payload: ClaimIn, user: CurrentUser, db: DBDep, settings: SettingsDep
+) -> ClaimResultOut:
+    """Open a chest or pick up a piece from beside it. 409 when it is out of reach
+    (OBJECT_OUT_OF_RANGE), gone (OBJECT_GONE) or a monster (OBJECT_NOT_CLAIMABLE)."""
+    obj, awarded = await service.claim_by_tap(
+        db, user.id, object_id, payload.latitude, payload.longitude, payload.horizontalAccuracyMeters
+    )
+    finished = await quests.on_object_claimed(db, settings, user, obj)
+    return ClaimResultOut(
+        object=service.to_out(obj),
+        acAwarded=awarded,
+        walletBalance=await economy.balance(db, user.id),
+        questCompleted=quests.quest_out(finished).model_dump(mode="json") if finished else None,
+    )

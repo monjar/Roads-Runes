@@ -23,6 +23,8 @@ from app.core.schemas import Coordinate
 from app.core.security import utcnow
 from app.discoveries import osm_import
 from app.discoveries.service import nearby as discoveries_nearby
+from app.economy import service as economy
+from app.economy.rules import quest_ac
 from app.exploration.cells import cell_for
 from app.exploration.service import known_cells, reveal
 from app.quests import narrative, story
@@ -617,6 +619,59 @@ async def record_progress(
             objective.completed_at = event.occurredAt
     await db.flush()
     return quest
+
+
+async def on_object_claimed(db: AsyncSession, settings: Settings, user: User, obj: WorldObject) -> QuestInstance | None:
+    """A chest opened by hand is the chest a quest asked to be opened.
+
+    The quest that points at it has that objective done, for good and not
+    provisionally: the server itself just checked the player was there. When that
+    was the last thing the quest asked, the quest is finished on the spot, whether
+    or not it had been accepted: they went and did it. Returns the quest finished.
+    """
+    if obj.kind != "CHEST":
+        return None
+    from app.rides.processing import complete_quest_without_ride
+
+    rows = (
+        await db.execute(
+            select(QuestInstance).where(
+                QuestInstance.user_id == user.id,
+                QuestInstance.status.in_(["AVAILABLE", "ACCEPTED", "ACTIVE"]),
+            )
+        )
+    ).scalars()
+    now = utcnow()
+    finished: QuestInstance | None = None
+    for quest in rows:
+        asked = [
+            o
+            for o in quest.objectives
+            if o.objective_type == "OPEN_CHEST"
+            and o.status != "COMPLETED"
+            and str((o.extra or {}).get("objectId") or "") == str(obj.id)
+        ]
+        if not asked:
+            continue
+        for o in asked:
+            o.status = "COMPLETED"
+            o.provisional = False
+            o.completed_at = now
+            o.progress_current = o.progress_target
+        if not all_required_complete(quest) or any(o.provisional for o in quest.objectives if o.required):
+            continue
+        if quest.status == "AVAILABLE":
+            quest.status, quest.accepted_at = "ACCEPTED", now
+        if quest.status == "ACCEPTED":
+            quest.status, quest.started_at = "ACTIVE", now
+        await complete_quest_without_ride(db, settings, user, quest)
+        # The ride that would have paid the quest's purse never happened.
+        await economy.credit(
+            db, user.id, quest_ac(quest.difficulty), "QUEST_COMPLETED", quest_id=quest.id, payload={"method": "TAP"}
+        )
+        finished = finished or quest
+    await db.flush()
+    return finished
 
 
 def all_required_complete(quest: QuestInstance) -> bool:

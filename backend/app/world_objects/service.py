@@ -17,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.activity import SPEED_CAP_MPS, normalise
-from app.core.errors import NotFound
+from app.core.errors import Conflict, NotFound
 from app.core.geo import haversine_m
 from app.core.logging import get_logger
 from app.core.security import utcnow
@@ -56,9 +56,15 @@ def forget_checks() -> None:
 class ClaimOutcome:
     claimed: list[WorldObject] = field(default_factory=list)
     missed: list[tuple[WorldObject, str]] = field(default_factory=list)
+    # Opened or picked up by hand while this ride was under way: already paid for,
+    # so they earn nothing here, but they count towards what the ride's quest asked.
+    tapped: list[WorldObject] = field(default_factory=list)
 
     def claimed_of(self, kind: str) -> list[WorldObject]:
         return [o for o in self.claimed if o.kind == kind]
+
+    def counted_of(self, kind: str) -> list[WorldObject]:
+        return [o for o in [*self.claimed, *self.tapped] if o.kind == kind]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -105,6 +111,7 @@ def to_out(obj: WorldObject) -> WorldObjectOut:
         monster=monster,
         setId=payload.get("setId"),
         piece=payload.get("piece"),
+        claimRadiusMeters=load_config()["claimRadiusMeters"].get(obj.kind),
     )
 
 
@@ -415,11 +422,112 @@ async def claim_from_ride(
     return outcome
 
 
-def _claim(obj: WorldObject, ride: Any, ended: datetime, detail: dict[str, Any]) -> None:
+def _claim(obj: WorldObject, ride: Any | None, ended: datetime, detail: dict[str, Any]) -> None:
     obj.status = "CLAIMED"
     obj.claimed_at = ended
-    obj.claimed_ride_id = ride.id
+    obj.claimed_ride_id = ride.id if ride is not None else None
     obj.claim_payload = detail
+
+
+# The same allowance a ride's trace gets, and a little more for a phone that says it
+# is only sure to within so many metres.
+CLAIM_TOLERANCE = 1.25
+TAP_ACCURACY_ALLOWANCE_M = 25.0
+# Past this the phone does not know where it is well enough to say "I am beside it".
+TAP_MAX_ACCURACY_M = 65.0
+# Two things opened by hand further apart than this, faster than a bike could go.
+TAP_JUMP_MIN_M = 500.0
+TAP_KINDS = {"CHEST": "CHEST_OPENED", "COLLECTABLE": "COLLECTABLE"}
+
+
+async def claim_by_tap(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    object_id: uuid.UUID,
+    latitude: float,
+    longitude: float,
+    accuracy_m: float | None,
+) -> tuple[WorldObject, int]:
+    """A chest opened, or a piece picked up, by a player standing beside it.
+
+    A ride claims what its trace passed; this is the other way, for someone who has
+    walked up to the thing and reached for it. The position is the phone's word, so
+    it is checked for what can be checked: that the phone is sure enough of where it
+    is, that it is within reach, and that it has not crossed town in a few seconds
+    since the last one. A refusal is a refusal and nothing more ("flag, don't ban").
+    """
+    obj = await get_object(db, user_id, object_id)
+    # Two taps at once must not both find it there.
+    await db.refresh(obj, with_for_update=True)
+    now = utcnow()
+    if obj.kind not in TAP_KINDS:
+        raise Conflict("A monster has to be beaten on the move", code="OBJECT_NOT_CLAIMABLE")
+    if obj.status != "SPAWNED" or obj.expires_at < now:
+        raise Conflict("It has already gone", code="OBJECT_GONE", details={"status": obj.status})
+    if accuracy_m is not None and accuracy_m > TAP_MAX_ACCURACY_M:
+        raise Conflict(
+            "GPS is too weak to tell how close you are",
+            code="GPS_TOO_WEAK",
+            details={"accuracyMeters": round(accuracy_m, 1)},
+        )
+    radius = float(load_config()["claimRadiusMeters"][obj.kind])
+    distance = haversine_m(latitude, longitude, obj.latitude, obj.longitude)
+    if distance > radius * CLAIM_TOLERANCE + min(accuracy_m or 0.0, TAP_ACCURACY_ALLOWANCE_M):
+        raise Conflict(
+            f"Get within {int(radius)} m of it",
+            code="OBJECT_OUT_OF_RANGE",
+            details={"distanceMeters": round(distance, 1), "radiusMeters": radius},
+        )
+    last = await db.scalar(
+        select(WorldObject)
+        .where(
+            WorldObject.user_id == user_id,
+            WorldObject.status == "CLAIMED",
+            WorldObject.claimed_ride_id.is_(None),
+            WorldObject.claimed_at.is_not(None),
+        )
+        .order_by(WorldObject.claimed_at.desc())
+        .limit(1)
+    )
+    where = last.claim_payload or {} if last is not None else {}
+    if last is not None and last.claimed_at is not None and "latitude" in where:
+        jump = haversine_m(latitude, longitude, float(where["latitude"]), float(where["longitude"]))
+        seconds = max(1.0, (now - last.claimed_at).total_seconds())
+        if jump > TAP_JUMP_MIN_M and jump / seconds > max(SPEED_CAP_MPS.values()):
+            log.warning("world_object_claim_too_fast", user=str(user_id), meters=int(jump), seconds=int(seconds))
+            raise Conflict("You cannot have got here that fast", code="CLAIM_TOO_FAST")
+    _claim(
+        obj,
+        None,
+        now,
+        {"method": "TAP", "distanceMeters": round(distance, 1), "latitude": latitude, "longitude": longitude},
+    )
+    if obj.reward_ac > 0:
+        await economy.credit(
+            db,
+            user_id,
+            obj.reward_ac,
+            "BOUNTY" if obj.bounty else TAP_KINDS[obj.kind],
+            object_id=obj.id,
+            payload={"objectId": str(obj.id), "name": obj.payload.get("name"), "method": "TAP"},
+        )
+    await db.flush()
+    log.info("world_object_claimed", user=str(user_id), kind=obj.kind, method="TAP", meters=round(distance, 1))
+    return obj, obj.reward_ac
+
+
+async def tapped_during(db: AsyncSession, user_id: uuid.UUID, started: datetime, ended: datetime) -> list[WorldObject]:
+    """What the player opened or picked up by hand between these two moments."""
+    rows = await db.execute(
+        select(WorldObject).where(
+            WorldObject.user_id == user_id,
+            WorldObject.status == "CLAIMED",
+            WorldObject.claimed_ride_id.is_(None),
+            WorldObject.claimed_at >= started,
+            WorldObject.claimed_at <= ended,
+        )
+    )
+    return list(rows.scalars())
 
 
 def _fight(

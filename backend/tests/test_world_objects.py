@@ -261,3 +261,159 @@ def test_spawns_land_in_rings_around_the_player():
     assert len(plans) == 8
     assert sum(1 for d in distances if d <= 700) >= 3, distances
     assert sum(1 for d in distances if d <= 1800) >= 6, distances
+
+
+# --- reaching for it ---------------------------------------------------------
+
+
+def beside(obj: dict, meters: float = 10.0, bearing: float = 90.0, accuracy: float | None = 8.0) -> dict:
+    lat, lon = destination_point(obj["latitude"], obj["longitude"], bearing, meters)
+    body: dict = {"latitude": lat, "longitude": lon}
+    if accuracy is not None:
+        body["horizontalAccuracyMeters"] = accuracy
+    return body
+
+
+async def remake(object_id: str, **fields) -> None:
+    async with get_session_factory()() as db:
+        obj = await db.get(WorldObject, uuid.UUID(object_id))
+        for name, value in fields.items():
+            setattr(obj, name, value)
+        await db.commit()
+
+
+async def test_a_chest_within_reach_opens_to_the_hand(explorer_client):
+    """Thirty metres from a chest, the card said "pass within 40 m" and offered a route."""
+    c = explorer_client
+    await seed_discoveries()
+    world_objects.forget_checks()
+    chest = next(o for o in await spawned(c) if o["kind"] == "CHEST")
+    assert chest["claimRadiusMeters"] == 40
+    before = (await c.get("/wallet")).json()["balance"]
+
+    r = await c.post(f"/world/objects/{chest['id']}/claim", json=beside(chest, 30))
+    assert r.status_code == 200, r.text
+    opened = r.json()
+    assert opened["object"]["status"] == "CLAIMED" and opened["object"]["claimedAt"]
+    assert opened["acAwarded"] == chest["rewardAC"]
+    assert opened["walletBalance"] == before + chest["rewardAC"] == (await c.get("/wallet")).json()["balance"]
+    assert chest["id"] not in {o["id"] for o in await spawned(c)}
+
+    # It opens once.
+    r = await c.post(f"/world/objects/{chest['id']}/claim", json=beside(chest, 30))
+    assert r.status_code == 409 and r.json()["error"]["code"] == "OBJECT_GONE"
+    assert (await c.get("/wallet")).json()["balance"] == before + chest["rewardAC"]
+
+
+async def test_a_chest_out_of_reach_stays_shut(explorer_client):
+    c = explorer_client
+    await seed_discoveries()
+    world_objects.forget_checks()
+    chest = next(o for o in await spawned(c) if o["kind"] == "CHEST")
+    r = await c.post(f"/world/objects/{chest['id']}/claim", json=beside(chest, 200))
+    assert r.status_code == 409, r.text
+    error = r.json()["error"]
+    assert error["code"] == "OBJECT_OUT_OF_RANGE"
+    assert error["details"]["radiusMeters"] == 40 and 190 < error["details"]["distanceMeters"] < 210
+
+    # A phone unsure of itself to 20 m is given 20 m; one unsure to 200 m is not believed at all.
+    assert (await c.post(f"/world/objects/{chest['id']}/claim", json=beside(chest, 62, accuracy=5))).status_code == 409
+    weak = await c.post(f"/world/objects/{chest['id']}/claim", json=beside(chest, 10, accuracy=200))
+    assert weak.status_code == 409 and weak.json()["error"]["code"] == "GPS_TOO_WEAK"
+    assert (await c.post(f"/world/objects/{chest['id']}/claim", json=beside(chest, 62, accuracy=20))).status_code == 200
+
+
+async def test_a_monster_is_not_picked_up(explorer_client):
+    c = explorer_client
+    await seed_discoveries()
+    world_objects.forget_checks()
+    monster = next(o for o in await spawned(c) if o["kind"] == "MONSTER")
+    assert monster["claimRadiusMeters"] is None
+    r = await c.post(f"/world/objects/{monster['id']}/claim", json=beside(monster, 5))
+    assert r.status_code == 409 and r.json()["error"]["code"] == "OBJECT_NOT_CLAIMABLE"
+    assert (await c.post(f"/world/objects/{uuid.uuid4()}/claim", json=beside(monster, 5))).status_code == 404
+
+
+async def test_two_chests_across_town_are_not_opened_in_a_breath(explorer_client):
+    c = explorer_client
+    await seed_discoveries()
+    world_objects.forget_checks()
+    first, second = (await spawned(c))[:2]
+    there = destination_point(first["latitude"], first["longitude"], 45, 3000)
+    await remake(first["id"], kind="CHEST", bounty=False)
+    await remake(second["id"], kind="CHEST", bounty=False, latitude=there[0], longitude=there[1])
+    second = {**second, "latitude": there[0], "longitude": there[1]}
+
+    assert (await c.post(f"/world/objects/{first['id']}/claim", json=beside(first))).status_code == 200
+    r = await c.post(f"/world/objects/{second['id']}/claim", json=beside(second))
+    assert r.status_code == 409 and r.json()["error"]["code"] == "CLAIM_TOO_FAST"
+
+    # Ten minutes later it is a bike ride, and the chest is still there for it.
+    async with get_session_factory()() as db:
+        opened = await db.get(WorldObject, uuid.UUID(first["id"]))
+        opened.claimed_at = opened.claimed_at - timedelta(minutes=10)
+        await db.commit()
+    assert (await c.post(f"/world/objects/{second['id']}/claim", json=beside(second))).status_code == 200
+
+
+async def test_opening_the_chest_a_quest_points_at_finishes_the_quest(explorer_client, monkeypatch):
+    c = explorer_client
+    await seed_discoveries()
+    world_objects.forget_checks()
+    assert any(o["kind"] == "CHEST" for o in await spawned(c))
+    unlock = [t for t in generator.templates_for("EXPLORER", 1) if t["id"] == "ANY_UNLOCK_CHEST"]
+    monkeypatch.setattr(generator, "templates_for", lambda *a, **k: unlock)
+    r = await c.post("/quests/generate", json={"latitude": ORIGIN[0], "longitude": ORIGIN[1], "count": 1})
+    quest = r.json()["items"][0]
+    objective = next(o for o in quest["objectives"] if o["objectiveType"] == "OPEN_CHEST")
+    chest = (await c.get(f"/world/objects/{objective['extra']['objectId']}")).json()
+    xp_before = (await c.get("/character")).json()["overallXP"]
+    before = (await c.get("/wallet")).json()["balance"]
+
+    r = await c.post(f"/world/objects/{chest['id']}/claim", json=beside(chest))
+    assert r.status_code == 200, r.text
+    finished = r.json()["questCompleted"]
+    required_left = [o for o in quest["objectives"] if o["required"] and o["objectiveType"] != "OPEN_CHEST"]
+    if required_left:
+        # The chest is done for good; the rest of the quest is still to ride.
+        assert finished is None
+        now = (await c.get(f"/quests/{quest['id']}")).json()
+        done = next(o for o in now["objectives"] if o["id"] == objective["id"])
+        assert done["status"] == "COMPLETED" and done["provisional"] is False
+        return
+    assert finished["id"] == quest["id"] and finished["status"] == "COMPLETED"
+    assert (await c.get(f"/quests/{quest['id']}")).json()["status"] == "COMPLETED"
+    assert (await c.get("/character")).json()["overallXP"] > xp_before
+    # The chest's coins and the quest's purse, each once.
+    assert r.json()["walletBalance"] > before + chest["rewardAC"]
+    kinds = [t["kind"] for t in (await c.get("/wallet/transactions")).json()["items"]]
+    assert kinds.count("QUEST_COMPLETED") == 1 and kinds.count("CHEST_OPENED") + kinds.count("BOUNTY") == 1
+
+
+async def test_a_chest_opened_by_hand_is_not_paid_again_by_the_ride_past_it(explorer_client):
+    c = explorer_client
+    await seed_discoveries()
+    world_objects.forget_checks()
+    chest = next(o for o in await spawned(c) if o["kind"] == "CHEST")
+    assert (await c.post(f"/world/objects/{chest['id']}/claim", json=beside(chest))).status_code == 200
+    here = (chest["latitude"], chest["longitude"])
+    summary = await ride(c, line_trace(destination_point(*here, 180, 600), here, 5.0))
+    assert chest["id"] not in [o["id"] for o in summary["worldObjects"]["claimed"]]
+    kinds = [t["kind"] for t in (await c.get("/wallet/transactions")).json()["items"]]
+    assert kinds.count("CHEST_OPENED") == 1
+
+
+def test_what_was_picked_up_by_hand_on_a_ride_counts_for_its_quest():
+    from app.quests.models import QuestInstance, QuestObjective
+    from app.rides.processing import evaluate_objectives
+    from app.world_objects.service import ClaimOutcome
+
+    gather = QuestObjective(objective_type="COLLECT", title="Gather two", target_count=2, progress_target=2.0)
+    quest = QuestInstance(objectives=[gather])
+    piece = WorldObject(kind="COLLECTABLE")
+    counted = dict(distance_m=0, duration_s=0, elevation_gain_m=0, new_roads_m=0, new_cells=set(), resolution=9)
+
+    one_each = ClaimOutcome(claimed=[piece], tapped=[WorldObject(kind="COLLECTABLE")])
+    assert evaluate_objectives(quest, [], client_events=[], claims=one_each, **counted) == [gather]
+    # Paid for at the time: the ride's own claims, which are what it pays, do not include it.
+    assert one_each.claimed_of("COLLECTABLE") == [piece]
