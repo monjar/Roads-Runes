@@ -82,7 +82,11 @@ struct MainTabView: View {
 
     var body: some View {
         TabView(selection: $tab) {
-            WorldView { withAnimation(.snappy(duration: 0.25)) { tab = .character } }.tag(AppTab.world).toolbar(.hidden, for: .tabBar)
+            WorldView(
+                onOpenCharacter: { withAnimation(.snappy(duration: 0.25)) { tab = .character } },
+                onOpenQuests: { withAnimation(.snappy(duration: 0.25)) { tab = .quests } }
+            )
+            .tag(AppTab.world).toolbar(.hidden, for: .tabBar)
             QuestsView().tag(AppTab.quests).toolbar(.hidden, for: .tabBar)
             JournalView().tag(AppTab.journal).toolbar(.hidden, for: .tabBar)
             CharacterView().tag(AppTab.character).toolbar(.hidden, for: .tabBar)

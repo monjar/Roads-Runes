@@ -15,7 +15,7 @@ struct RoadsAndRunesApp: App {
         .onChange(of: scenePhase) { _, phase in
             // Leaving the app is when the reminders are set, from what is true right now.
             guard phase == .background else { return }
-            Task { await container.nudges.reschedule(character: container.session.character, activity: container.session.defaultActivity) }
+            Task { await container.nudges.reschedule(character: container.session.character, activity: container.session.defaultActivity, units: container.session.units) }
         }
     }
 }

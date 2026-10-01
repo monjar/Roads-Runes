@@ -233,4 +233,34 @@ final class RideEventTests: XCTestCase {
         cues.reset()
         XCTAssertEqual(cues.update(instruction: left, distanceMeters: 120), .approaching(.left), "a new route numbers its turns again")
     }
+
+    // MARK: Reminders
+
+    func testAReminderNamesWhatIsThereOrSaysNothingOfIt() {
+        let home = SampleData.origin
+        func thing(_ kind: WorldObjectKind, _ name: String, meters: Double, bounty: Bool = false, hours: Double = 48) -> WorldObject {
+            let at = GeoMath.destination(from: home, bearingDegrees: 40, distanceMeters: meters)
+            return WorldObject(id: UUID(), kind: kind, latitude: at.latitude, longitude: at.longitude, name: name, bounty: bounty, rewardAC: 60, expiresAt: t0.addingTimeInterval(hours * 3600))
+        }
+        let evening = t0.addingTimeInterval(4 * 3600)
+        let drake = thing(.monster, "Gutter Drake", meters: 900, bounty: true, hours: 9)
+        let chest = thing(.chest, "Old chest", meters: 400)
+        let gone = thing(.chest, "Iron chest", meters: 100, hours: 2)
+
+        var lures = NudgeCopy.lures(among: [drake, chest, gone], from: home, stillThereAt: evening)
+        XCTAssertEqual(lures.bounty?.name, "Gutter Drake")
+        XCTAssertEqual(lures.nearest?.name, "Old chest", "the nearer chest will have gone by the evening")
+        let withBounty = NudgeCopy.streak(days: 6, activity: .ride, bounty: lures.bounty, nearest: lures.nearest)
+        XCTAssertEqual(withBounty.title, "6-day streak ends tonight")
+        XCTAssertEqual(withBounty.body, "The Gutter Drake is 900 m away and worth double till midnight. One kilometre keeps the streak.")
+
+        lures = NudgeCopy.lures(among: [chest], from: home, stillThereAt: evening)
+        XCTAssertEqual(NudgeCopy.streak(days: 3, activity: .walk, bounty: lures.bounty, nearest: lures.nearest).body, "One kilometre keeps it alive. An Old chest is 400 m away.")
+
+        // Nothing near: nothing is promised.
+        lures = NudgeCopy.lures(among: [thing(.chest, "Old chest", meters: 9000)], from: home, stillThereAt: evening)
+        XCTAssertNil(lures.nearest)
+        XCTAssertEqual(NudgeCopy.streak(days: 3, activity: .run, bounty: nil, nearest: nil).body, "One kilometre keeps it alive. A short run will do.")
+        XCTAssertFalse(NudgeCopy.bountyMorning().body.contains("closer"))
+    }
 }

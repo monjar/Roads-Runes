@@ -12,6 +12,8 @@ struct WorldView: View {
     @State private var planningFreeRide = false
     @State private var onScreen = false
     var onOpenCharacter: () -> Void = {}
+    /// A quest's marker was tapped: quests are read on their own tab.
+    var onOpenQuests: () -> Void = {}
 
     var body: some View {
         NavigationStack {
@@ -56,6 +58,11 @@ struct WorldView: View {
             }
         }
         .onChange(of: container.rideRecorder.localCellStates) { _, _ in model?.rebuildCells() }
+        .onChange(of: model?.openedQuestMarker) { _, quest in
+            guard quest != nil else { return }
+            model?.openedQuestMarker = nil
+            onOpenQuests()
+        }
         .onChange(of: container.sync.latestSummary) { _, summary in
             guard summary == nil, let model, let center = model.center else { return }
             Task { await model.load(around: center, force: true) }
@@ -115,6 +122,9 @@ struct WorldView: View {
                 if let claimed = model.recentClaim {
                     VStack(spacing: 6) {
                         ClaimToast(object: claimed)
+                        if let detail = model.recentClaimDetail {
+                            MapPill(text: detail, symbol: "sparkles").accessibilityIdentifier("claimSet")
+                        }
                         if let quest = model.recentQuestTitle {
                             MapPill(text: "Quest complete: \(quest)", symbol: "checkmark.seal.fill")
                                 .accessibilityIdentifier("claimQuestComplete")

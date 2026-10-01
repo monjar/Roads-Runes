@@ -32,6 +32,10 @@ final class WorldViewModel {
     private(set) var recentClaim: WorldObject?
     /// The quest that opening it finished, if it finished one.
     private(set) var recentQuestTitle: String?
+    /// A second line for the claim: where the piece's set stands, or that it is whole.
+    private(set) var recentClaimDetail: String?
+    /// The quest whose marker was tapped, to be opened where quests live.
+    var openedQuestMarker: UUID?
     private var claimToast: Task<Void, Never>?
     /// What has already been pointed out for being within reach, so its card opens once.
     private var announced: Set<UUID> = []
@@ -98,6 +102,13 @@ final class WorldViewModel {
         if let selectedPlace {
             out.append(MapMarker(id: "place-\(selectedPlace.id)", coordinate: selectedPlace.coordinate, kind: .place, title: selectedPlace.name))
         }
+        // Where the quests in hand go: sent by the server all along, and never drawn.
+        out += (snapshot?.questMarkers ?? []).map { marker in
+            MapMarker(
+                id: "quest-\(marker.questId.uuidString)", coordinate: marker.coordinate,
+                kind: marker.status == .active || marker.status == .accepted ? .questActive : .quest, title: marker.title
+            )
+        }
         out += objects.map { object in
             MapMarker(
                 id: "object-\(object.id.uuidString)", coordinate: object.coordinate, kind: Self.markerKind(for: object),
@@ -159,7 +170,8 @@ final class WorldViewModel {
             )
             take(result.object)
             selectedObject = nil
-            show(claimed: result.object, quest: result.questCompleted?.title)
+            let detail = result.setCompleted.map { "\($0.name) complete · +\($0.bonusAC) AC" } ?? result.object.setStanding?.line
+            show(claimed: result.object, quest: result.questCompleted?.title, detail: detail)
             container.analytics.track(.worldObjectClaimed, properties: ["kind": object.kind.rawValue, "name": object.name, "method": "TAP"])
             await container.session.refreshCharacter()
         } catch let error as APIError where error.errorCode == APIErrorCode.objectGone {
@@ -179,9 +191,10 @@ final class WorldViewModel {
         placedObjects.append(object)
     }
 
-    private func show(claimed object: WorldObject, quest: String?) {
+    private func show(claimed object: WorldObject, quest: String?, detail: String?) {
         recentClaim = object
         recentQuestTitle = quest
+        recentClaimDetail = detail
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         claimToast?.cancel()
         claimToast = Task { [weak self] in
@@ -189,6 +202,7 @@ final class WorldViewModel {
             guard !Task.isCancelled else { return }
             self?.recentClaim = nil
             self?.recentQuestTitle = nil
+            self?.recentClaimDetail = nil
         }
     }
 
@@ -204,6 +218,7 @@ final class WorldViewModel {
         objectsLoadedAt = here
         if let objects = try? await container.api.worldObjects(near: here, radiusMeters: 6000) {
             placedObjects = objects
+            container.nudges.note(objects: objects, around: here)
         } else {
             objectsLoadedAt = nil
         }
@@ -251,6 +266,8 @@ final class WorldViewModel {
             claimError = nil
             selectedObject = object
             camera = MapCamera(center: object.coordinate)
+        } else if marker.id.hasPrefix("quest-"), let questId = UUID(uuidString: String(marker.id.dropFirst(6))) {
+            openedQuestMarker = questId
         } else if let place = results.first(where: { "result-\($0.id)" == marker.id }) {
             select(place, moveCamera: false)
         } else if let discovery = snapshot?.discoveries.first(where: { "discovery-\($0.id.uuidString)" == marker.id }) {

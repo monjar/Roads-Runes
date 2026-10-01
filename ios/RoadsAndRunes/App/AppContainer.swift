@@ -46,8 +46,10 @@ final class AppContainer {
         let pendingURL = inMemory || uiTesting ? nil : directory.appendingPathComponent("pending-reckoning.json")
         let sync = SyncService(api: resolvedAPI, persistence: persistence, session: session, analytics: analytics, pendingURL: pendingURL)
         let preferences = MapPreferencesStore()
-        // Tests, previews and UI runs make no sound and never touch the audio session.
-        let audio = RideAudio(enabled: !inMemory && !uiTesting && !Self.isPreview) { preferences.rideSound }
+        // Tests, previews and UI runs make no sound and never touch the audio session
+        // (a UI run can ask for it, to exercise the engine: RR_RIDE_AUDIO=1).
+        let wantsAudio = !uiTesting || ProcessInfo.processInfo.environment["RR_RIDE_AUDIO"] == "1"
+        let audio = RideAudio(enabled: !inMemory && !Self.isPreview && wantsAudio) { preferences.rideSound }
         let recorder = RideRecorder(
             api: resolvedAPI, location: location, health: health, watch: watch, sync: sync, persistence: persistence,
             cellIndexing: H3CellIndexing(), activeRideStore: activeRideStore, routePackages: routePackages, analytics: analytics, session: session,

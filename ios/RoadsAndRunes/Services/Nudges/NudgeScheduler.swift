@@ -12,6 +12,10 @@ final class NudgeScheduler {
     private static let enabledKey = "nudgesEnabled"
 
     private let defaults = UserDefaults.standard
+    /// What the World map last saw out there and where the player was, so a reminder
+    /// can name something real. Set by the map; nothing is fetched to write a reminder.
+    private var objects: [WorldObject] = []
+    private var position: Coordinate?
     /// False in previews, unit tests and UI tests: a permission sheet would stop them.
     private let active: Bool
 
@@ -36,7 +40,12 @@ final class NudgeScheduler {
         _ = try? await center.requestAuthorization(options: [.alert, .sound])
     }
 
-    func reschedule(character: Character?, activity: Activity, now: Date = Date()) async {
+    func note(objects: [WorldObject], around position: Coordinate) {
+        self.objects = objects
+        self.position = position
+    }
+
+    func reschedule(character: Character?, activity: Activity, units: Units = .metric, now: Date = Date()) async {
         guard active else { return }
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [Self.streakID, Self.bountyID])
@@ -50,8 +59,10 @@ final class NudgeScheduler {
         if days >= 1, character.streakActiveToday != true,
            let evening = calendar.date(bySettingHour: 18, minute: 30, second: 0, of: now), evening > now {
             let content = UNMutableNotificationContent()
-            content.title = "\(days)-day streak ends tonight"
-            content.body = "One kilometre keeps it alive. A short \(activity.noun) will do, and there is a chest on the way."
+            let lures = position.map { NudgeCopy.lures(among: objects, from: $0, stillThereAt: evening) }
+            let copy = NudgeCopy.streak(days: days, activity: activity, bounty: lures?.bounty, nearest: lures?.nearest, units: units)
+            content.title = copy.title
+            content.body = copy.body
             content.sound = .default
             let trigger = UNCalendarNotificationTrigger(dateMatching: calendar.dateComponents([.year, .month, .day, .hour, .minute], from: evening), repeats: false)
             try? await center.add(UNNotificationRequest(identifier: Self.streakID, content: content, trigger: trigger))
@@ -61,8 +72,9 @@ final class NudgeScheduler {
         if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
            let morning = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: tomorrow) {
             let content = UNMutableNotificationContent()
-            content.title = "Today's bounty is out"
-            content.body = "One monster, twice the coins, gone at midnight. It is closer than you think."
+            let copy = NudgeCopy.bountyMorning()
+            content.title = copy.title
+            content.body = copy.body
             content.sound = .default
             let trigger = UNCalendarNotificationTrigger(dateMatching: calendar.dateComponents([.year, .month, .day, .hour, .minute], from: morning), repeats: false)
             try? await center.add(UNNotificationRequest(identifier: Self.bountyID, content: content, trigger: trigger))

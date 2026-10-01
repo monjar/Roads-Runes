@@ -53,6 +53,12 @@ struct EncounterCard: View {
                 Text(howToTakeIt(reach)).font(Theme.Typography.text(13)).foregroundStyle(Theme.Colors.inkSoft)
                     .accessibilityIdentifier("encounter.reach")
             }
+            if let standing = object.setStanding {
+                // Which set, how much of it is held, and whether this piece adds to it.
+                Label(standing.line + (object.pieceOwned == true ? " · you have this one" : ""), systemImage: "sparkles")
+                    .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.sageDeep)
+                    .accessibilityIdentifier("encounter.set")
+            }
             if let claimError { ErrorLine(text: claimError) }
             if inReach, object.reachMeters != nil {
                 Button(action: onClaim) {
