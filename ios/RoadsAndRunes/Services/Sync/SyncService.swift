@@ -3,6 +3,22 @@ import Network
 import Observation
 import RoadsAndRunesCore
 
+/// A ride that has ended and whose summary has not arrived yet: what the phone
+/// itself knows about it, to show while the server counts, and enough to ask for
+/// the summary again after the app has been closed.
+struct PendingReckoning: Codable, Hashable {
+    var rideId: UUID?
+    var clientRideId: UUID
+    var title: String
+    var endedAt: Date
+    var distanceMeters: Double
+    var elapsedSeconds: Double
+    var newTerritoryMeters: Double
+    /// "Opened: Old chest": what the phone saw taken, which the server may yet overrule.
+    var claimed: [String]
+    var objectivesDone: Int
+}
+
 /// Uploads ride data when the network allows and replays anything that
 /// failed. The ride itself never depends on this succeeding (spec §71).
 @MainActor
@@ -20,6 +36,14 @@ final class SyncService {
     }
 
     var latestSummary: AdventureSummary?
+    /// The ride just ended, until its summary comes. Kept on disk: ending a ride
+    /// used to drop the rider on the tabs with nothing, and a summary that arrived
+    /// after the app was closed was never seen at all.
+    private(set) var pending: PendingReckoning?
+    /// The rider chose to carry on while the server counts; the summary still finds them.
+    var holdingHidden = false
+    /// Asked for two minutes and still not there: it will be in the Journal.
+    private(set) var pollTimedOut = false
     private(set) var isOnline = true
     private(set) var pendingCount = 0
     private(set) var isPolling = false
@@ -30,12 +54,23 @@ final class SyncService {
     private let analytics: AnalyticsSink
     private let monitor = NWPathMonitor()
     private var replaying = false
+    /// Where the pending ride is kept between launches; nil in tests and previews.
+    private let pendingURL: URL?
+    /// Older than this, a pending ride is not waited for any more: it is in the Journal.
+    private static let pendingMaxAge: TimeInterval = 3 * 86_400
 
-    init(api: any RoadsAndRunesAPI, persistence: PersistenceService, session: SessionStore, analytics: AnalyticsSink) {
+    init(api: any RoadsAndRunesAPI, persistence: PersistenceService, session: SessionStore, analytics: AnalyticsSink, pendingURL: URL? = nil) {
         self.api = api
         self.persistence = persistence
         self.session = session
         self.analytics = analytics
+        self.pendingURL = pendingURL
+        if let pendingURL, let data = try? Data(contentsOf: pendingURL), let saved = try? JSONCoding.decode(PendingReckoning.self, from: data),
+           Date().timeIntervalSince(saved.endedAt) < Self.pendingMaxAge {
+            pending = saved
+            // Not thrown at them on launch: it arrives as the summary when it is ready.
+            holdingHidden = true
+        }
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in
                 guard let self else { return }
@@ -96,6 +131,10 @@ final class SyncService {
             guard let rideId = envelope.rideId, let completion = envelope.completion else { throw APIError.invalidURL }
             _ = try await api.completeRide(id: rideId, completion)
             analytics.track(.rideCompleted, properties: ["rideId": rideId.uuidString])
+            if pending != nil, pending?.rideId == nil {
+                pending?.rideId = rideId
+                savePending()
+            }
             Task { await self.pollSummary(rideId: rideId) }
         }
     }
@@ -128,13 +167,16 @@ final class SyncService {
     // MARK: Summary polling (spec §40)
 
     func pollSummary(rideId: UUID, maxAttempts: Int = 40) async {
+        guard !isPolling else { return }
         isPolling = true
+        pollTimedOut = false
         defer { isPolling = false }
         var lastFailure: String?
         for _ in 0..<maxAttempts {
             do {
                 if let summary = try await api.rideSummary(id: rideId) {
                     latestSummary = summary
+                    clearPending()
                     await session.refreshCharacter()
                     if !summary.levelUps.isEmpty { analytics.track(.levelUp, properties: ["rideId": rideId.uuidString]) }
                     if summary.newCells > 0 { analytics.track(.newAreaExplored, properties: ["cells": String(summary.newCells)]) }
@@ -152,5 +194,45 @@ final class SyncService {
             try? await Task.sleep(for: .seconds(3))
         }
         AppLog.sync.warning("summary_poll_timeout ride=\(rideId.uuidString, privacy: .public)")
+        pollTimedOut = true
+    }
+
+    // MARK: The ride just ended
+
+    /// A ride has ended: remember it, and show what the phone knows while the server counts.
+    func beginReckoning(_ reckoning: PendingReckoning) {
+        pending = reckoning
+        holdingHidden = false
+        pollTimedOut = false
+        savePending()
+    }
+
+    /// The app has been opened again with a ride still waiting for its summary.
+    func resumeReckoning() async {
+        guard let pending, latestSummary == nil else { return }
+        if let rideId = pending.rideId {
+            await pollSummary(rideId: rideId)
+        } else {
+            // The ride itself has not reached the server yet; sending it starts the asking.
+            await resumePendingUploads()
+        }
+    }
+
+    /// The summary has been read (or the wait given up on): nothing is pending.
+    func dismissReckoning() {
+        latestSummary = nil
+        clearPending()
+    }
+
+    private func clearPending() {
+        pending = nil
+        holdingHidden = false
+        if let pendingURL { try? FileManager.default.removeItem(at: pendingURL) }
+    }
+
+    private func savePending() {
+        guard let pendingURL, let pending, let data = try? JSONCoding.encode(pending) else { return }
+        try? FileManager.default.createDirectory(at: pendingURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: pendingURL, options: .atomic)
     }
 }

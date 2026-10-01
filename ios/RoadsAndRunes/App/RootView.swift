@@ -27,9 +27,20 @@ struct RootView: View {
         .sheet(item: $recorder.recoverableRide) { state in
             RideRecoverySheet(state: state)
         }
-        .fullScreenCover(item: $sync.latestSummary) { summary in
-            AdventureSummaryView(summary: summary, units: container.session.units) {
-                container.sync.latestSummary = nil
+        // One cover for the end of a ride: what the phone knows while the server
+        // counts, then the reckoning in its place when it comes.
+        .fullScreenCover(isPresented: Binding(
+            get: { !recorder.isActive && (sync.latestSummary != nil || (sync.pending != nil && !sync.holdingHidden)) },
+            set: { shown in if !shown { container.sync.holdingHidden = true } }
+        )) {
+            if let summary = container.sync.latestSummary {
+                AdventureSummaryView(summary: summary, units: container.session.units) {
+                    container.sync.dismissReckoning()
+                }
+            } else if let pending = container.sync.pending {
+                RideHoldingView(pending: pending, timedOut: container.sync.pollTimedOut, units: container.session.units) {
+                    container.sync.holdingHidden = true
+                }
             }
         }
         .tint(Theme.Colors.terracotta)

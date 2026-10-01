@@ -43,7 +43,8 @@ final class AppContainer {
         let routePackages = FileRoutePackageStore(directory: directory.appendingPathComponent("routes", isDirectory: true))
         let activeRideStore = FileActiveRideStore(directory: directory)
         if uiTesting { try? activeRideStore.clear() }
-        let sync = SyncService(api: resolvedAPI, persistence: persistence, session: session, analytics: analytics)
+        let pendingURL = inMemory || uiTesting ? nil : directory.appendingPathComponent("pending-reckoning.json")
+        let sync = SyncService(api: resolvedAPI, persistence: persistence, session: session, analytics: analytics, pendingURL: pendingURL)
         let preferences = MapPreferencesStore()
         // Tests, previews and UI runs make no sound and never touch the audio session.
         let audio = RideAudio(enabled: !inMemory && !uiTesting && !Self.isPreview) { preferences.rideSound }
@@ -90,6 +91,8 @@ final class AppContainer {
         await session.bootstrap()
         rideRecorder.recoverIfNeeded()
         await sync.resumePendingUploads()
+        // A ride that ended before the app was last closed may still be owed its summary.
+        Task { await sync.resumeReckoning() }
     }
 
     func handle(url: URL) {

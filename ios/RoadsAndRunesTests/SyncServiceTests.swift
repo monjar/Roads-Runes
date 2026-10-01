@@ -133,4 +133,76 @@ final class SyncServiceTests: XCTestCase {
         }
         XCTAssertNotNil(container.sync.latestSummary)
     }
+
+    /// The summary lived in memory: close the app while the server was still counting
+    /// and it was never seen. The ride is remembered now, and asked about again.
+    func testARideStillWaitingForItsSummaryIsAskedAboutAgainAfterARelaunch() async throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("pending-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let api = MockAPI()
+        api.summaryPollsBeforeReady = 0
+        let first = AppContainer(api: api, inMemory: true)
+        await first.session.bootstrap()
+        let ended = SyncService(api: api, persistence: first.persistence, session: first.session, analytics: first.analytics, pendingURL: file)
+        ended.beginReckoning(PendingReckoning(
+            rideId: SampleData.rideId, clientRideId: SampleData.clientRideId, title: "Beyond the Water", endedAt: Date(),
+            distanceMeters: 8200, elapsedSeconds: 1900, newTerritoryMeters: 2400, claimed: ["Opened: Old chest"], objectivesDone: 1
+        ))
+        XCTAssertNotNil(ended.pending)
+        XCTAssertFalse(ended.holdingHidden, "the ride has just ended: say so")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+
+        // The app is closed here, and opened again.
+        let relaunched = SyncService(api: api, persistence: first.persistence, session: first.session, analytics: first.analytics, pendingURL: file)
+        XCTAssertEqual(relaunched.pending?.title, "Beyond the Water")
+        XCTAssertTrue(relaunched.holdingHidden, "not thrown at them on launch")
+        await relaunched.resumeReckoning()
+        XCTAssertNotNil(relaunched.latestSummary)
+        XCTAssertNil(relaunched.pending)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+
+        // Collected: nothing is owed.
+        relaunched.dismissReckoning()
+        XCTAssertNil(relaunched.latestSummary)
+    }
+
+    func testAnOldPendingRideIsNotWaitedForForEver() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("pending-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let stale = PendingReckoning(
+            rideId: SampleData.rideId, clientRideId: SampleData.clientRideId, title: "Long ago", endedAt: Date().addingTimeInterval(-10 * 86_400),
+            distanceMeters: 1000, elapsedSeconds: 300, newTerritoryMeters: 0, claimed: [], objectivesDone: 0
+        )
+        try JSONCoding.encode(stale).write(to: file)
+        let container = AppContainer(api: MockAPI(), inMemory: true)
+        let sync = SyncService(api: container.api, persistence: container.persistence, session: container.session, analytics: container.analytics, pendingURL: file)
+        XCTAssertNil(sync.pending)
+    }
+
+    func testEndingARideShowsWhatThePhoneKnowsAtOnce() async throws {
+        let api = MockAPI()
+        api.summaryPollsBeforeReady = 0
+        let container = AppContainer(api: api, inMemory: true)
+        await container.session.bootstrap()
+        let package = try await api.routePackage(id: SampleData.routeId)
+        let recorder = container.rideRecorder
+        await recorder.start(package: package, quest: package.quest, bikeId: nil)
+        for (index, point) in package.route.path.prefix(6).enumerated() {
+            recorder.handle(fix: LocationFix(coordinate: point, timestamp: SampleData.referenceDate.addingTimeInterval(Double(index) * 20), altitude: 10, horizontalAccuracy: 5, speed: 5))
+        }
+        api.latency = 0.3  // the server takes its time over the upload
+        let finishing = Task { await recorder.finish() }
+        for _ in 0..<40 where container.sync.pending == nil { try await Task.sleep(for: .milliseconds(10)) }
+        // The ride screen has gone and the holding screen has its numbers, before the server has answered.
+        XCTAssertFalse(recorder.isActive)
+        XCTAssertNil(container.sync.latestSummary)
+        let pending = try XCTUnwrap(container.sync.pending)
+        XCTAssertEqual(pending.title, package.quest?.title)
+        XCTAssertGreaterThan(pending.distanceMeters, 400)
+        await finishing.value
+        api.latency = 0
+        for _ in 0..<100 where container.sync.latestSummary == nil { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertNotNil(container.sync.latestSummary)
+        XCTAssertNil(container.sync.pending, "the summary takes the holding screen's place")
+    }
 }

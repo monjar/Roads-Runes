@@ -413,6 +413,8 @@ struct AdventureDetailView: View {
         }
     }
     @State private var refreshed: Ride?
+    @State private var reckoning: AdventureSummary?
+    @State private var loadingReckoning = false
 
     var body: some View {
         let f = UnitFormatter(units: container.session.units)
@@ -460,6 +462,19 @@ struct AdventureDetailView: View {
                     .lineLimit(3...6)
                     .padding(14)
                     .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.tile, style: .continuous))
+                // The summary was shown once, at the end of the ride, and never again.
+                Button {
+                    loadingReckoning = true
+                    Task {
+                        reckoning = try? await container.api.rideSummary(id: entry.ride.id)
+                        loadingReckoning = false
+                    }
+                } label: {
+                    Label(loadingReckoning ? "Fetching…" : "See the reckoning", systemImage: "scroll")
+                }
+                .buttonStyle(.surfacePill)
+                .disabled(loadingReckoning)
+                .accessibilityIdentifier("journal.reckoning")
                 HStack(spacing: 8) {
                     Button("Save notes") { Task { _ = try? await container.api.updateRide(id: entry.ride.id, RidePatch(notes: notes)) } }.buttonStyle(.inkPill)
                     ShareLink(item: container.api.rideExportURL(id: entry.ride.id, format: .gpx)) { Label("Export GPX", systemImage: "square.and.arrow.up") }.buttonStyle(.surfacePill)
@@ -481,6 +496,9 @@ struct AdventureDetailView: View {
             Button("Keep", role: .cancel) {}
         } message: {
             Text("It leaves the journal and the stats. XP already earned stays.")
+        }
+        .fullScreenCover(item: $reckoning) { summary in
+            AdventureSummaryView(summary: summary, units: container.session.units, animated: false) { reckoning = nil }
         }
         .task {
             notes = entry.notes ?? ""

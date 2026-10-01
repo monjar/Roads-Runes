@@ -231,11 +231,24 @@ final class RideRecorder {
         pendingPoints = []
         pendingObjectiveEvents = []
         await ensureServerRide()
-        await sync.completeRide(rideId: ride?.id, rideClientId: clientRideId, completion: completion)
+        // The ride screen goes now, to a screen of what the phone itself knows, and
+        // the upload follows: it used to sit frozen until the server had answered.
+        let rideId = ride?.id
+        let endedClientId = clientRideId
+        sync.beginReckoning(PendingReckoning(
+            rideId: rideId, clientRideId: endedClientId, title: quest?.title ?? title ?? "Free \(activity.noun)", endedAt: endedAt,
+            distanceMeters: stats.distanceMeters, elapsedSeconds: stats.elapsedSeconds, newTerritoryMeters: newTerritoryMeters,
+            claimed: eventLog.compactMap { event in
+                guard case .claimed(let name, let kind, _, _) = event else { return nil }
+                return "\(kind == .monster ? "Beaten" : (kind == .chest ? "Opened" : "Found")): \(name)"
+            },
+            objectivesDone: completedObjectiveIDs.count
+        ))
         analytics.track(.navigationEnded, properties: ["distance": String(Int(stats.distanceMeters))])
         _ = transition(to: .completed)
         sendWatchUpdate(force: true)
         cleanup()
+        await sync.completeRide(rideId: rideId, rideClientId: endedClientId, completion: completion)
     }
 
     func discard() {
