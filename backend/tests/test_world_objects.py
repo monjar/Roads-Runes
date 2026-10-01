@@ -417,3 +417,119 @@ def test_what_was_picked_up_by_hand_on_a_ride_counts_for_its_quest():
     assert evaluate_objectives(quest, [], client_events=[], claims=one_each, **counted) == [gather]
     # Paid for at the time: the ride's own claims, which are what it pays, do not include it.
     assert one_each.claimed_of("COLLECTABLE") == [piece]
+
+
+# --- sets, near things, and XP ------------------------------------------------
+
+
+async def test_pieces_make_a_set_and_the_last_one_pays(explorer_client):
+    """ "Found: Raido +10 AC" said nothing of what it belonged to or how many were left."""
+    c = explorer_client
+    await seed_discoveries()
+    world_objects.forget_checks()
+    coins = ["Farthing", "Groat", "Shilling", "Crown"]
+    objects = (await spawned(c))[:5]
+    for obj, piece in zip(objects, [*coins[:3], "Farthing", "Crown"], strict=True):
+        await remake(
+            obj["id"],
+            kind="COLLECTABLE",
+            bounty=False,
+            tier=1,
+            reward_ac=10,
+            payload={"name": f"{piece} (Milled Coins)", "setId": "COINS", "piece": piece},
+        )
+    listed = {o["id"]: o for o in await spawned(c)}
+    assert listed[objects[0]["id"]]["setName"] == "Milled Coins"
+    assert (listed[objects[0]["id"]]["setSize"], listed[objects[0]["id"]]["setOwned"]) == (4, 0)
+
+    async def pick(obj: dict) -> dict:
+        # Each from where it lies, ten minutes after the last: this is about sets, not speed.
+        async with get_session_factory()() as db:
+            for row in (await db.execute(select(WorldObject).where(WorldObject.status == "CLAIMED"))).scalars():
+                row.claimed_at = row.claimed_at - timedelta(minutes=10)
+            await db.commit()
+        r = await c.post(f"/world/objects/{obj['id']}/claim", json=beside(obj))
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    for count, obj in enumerate(objects[:3], start=1):
+        found = await pick(obj)
+        assert (found["object"]["setOwned"], found["object"]["setSize"]) == (count, 4)
+        assert found["setCompleted"] is None and found["acAwarded"] == 10 and found["xpAwarded"] == 8
+    # A second Farthing is ten coins and no nearer a set.
+    again = await pick(objects[3])
+    assert again["object"]["setOwned"] == 3 and again["setCompleted"] is None
+
+    last = await pick(objects[4])
+    assert last["object"]["setOwned"] == 4
+    assert last["setCompleted"] == {"id": "COINS", "name": "Milled Coins", "bonusAC": 50}
+    assert last["acAwarded"] == 60 and last["xpAwarded"] == 8 + 150
+    kinds = [t["kind"] for t in (await c.get("/wallet/transactions")).json()["items"]]
+    assert kinds.count("SET_COMPLETED") == 1 and kinds.count("COLLECTABLE") == 5
+
+
+async def test_a_piece_passed_on_a_ride_says_its_set(explorer_client):
+    c = explorer_client
+    await seed_discoveries()
+    world_objects.forget_checks()
+    obj = (await spawned(c))[0]
+    await remake(
+        obj["id"],
+        kind="COLLECTABLE",
+        bounty=False,
+        tier=1,
+        reward_ac=10,
+        payload={"name": "Raido (Old Runes)", "setId": "RUNES", "piece": "Raido"},
+    )
+    here = (obj["latitude"], obj["longitude"])
+    summary = await ride(c, line_trace(destination_point(*here, 180, 600), here, 5.0))
+    found = next(o for o in summary["worldObjects"]["claimed"] if o["id"] == obj["id"])
+    assert (found["setName"], found["piece"], found["setOwned"], found["setSize"]) == ("Old Runes", "Raido", 1, 6)
+    assert summary["worldObjects"]["setsCompleted"] == []
+    assert any(line["source"] == "COLLECTABLE_FOUND" for line in summary["xpBreakdown"])
+
+
+async def test_a_monster_that_got_away_says_how_nearly(explorer_client):
+    """ "X shrugged it off" and nothing else: not what it wanted, nor how close it was."""
+    c = explorer_client
+    await seed_discoveries()
+    world_objects.forget_checks()
+    monster = next(o for o in await spawned(c) if o["kind"] == "MONSTER" and not o["bounty"])
+    await set_methods(monster["id"], PACE_ONLY)
+    here = (monster["latitude"], monster["longitude"])
+    # Past it at five metres a second: 200 s a kilometre, where it wants 150.
+    summary = await ride(c, line_trace(destination_point(*here, 180, 800), destination_point(*here, 0, 800), 5.0))
+    missed = next(o for o in summary["worldObjects"]["missed"] if o["id"] == monster["id"])
+    assert missed["reason"] == "UNBEATEN" and missed["expiresAt"]
+    attempt = missed["attempt"]
+    assert attempt["method"] == "PACE" and attempt["targetSecPerKm"] == 150
+    assert 190 < attempt["paceSecPerKm"] < 210
+    assert 0.7 < attempt["progress"] < 0.8
+    # And one it beat gives XP as well as coins.
+    summary = await ride(c, line_trace(destination_point(*here, 180, 800), destination_point(*here, 0, 800), 8.0))
+    assert any(line["source"] == "MONSTER_BEATEN" and line["xp"] > 0 for line in summary["xpBreakdown"])
+
+
+async def test_a_run_is_paid_as_a_run(explorer_client):
+    """Runs and walks had their own rates in the rules and were paid the ride's."""
+    c = explorer_client
+    pts = line_trace(ORIGIN, destination_point(*ORIGIN, 90, 2000), 3.0)
+    r = await c.post(
+        "/rides", json={"clientRideId": str(uuid.uuid4()), "startedAt": pts[0]["timestamp"], "activity": "RUN"}
+    )
+    ride_id = r.json()["id"]
+    r = await c.post(
+        f"/rides/{ride_id}/complete",
+        json={
+            "endedAt": pts[-1]["timestamp"],
+            "distanceMeters": 4000,
+            "durationSeconds": len(pts) * 5,
+            "elevationGainMeters": 0,
+            "points": pts,
+        },
+    )
+    assert r.status_code == 200, r.text
+    summary = (await c.get(f"/rides/{ride_id}/summary")).json()
+    distance = next(line for line in summary["acBreakdown"] if line["kind"] == "RIDE_DISTANCE")
+    assert distance["detail"]["perKm"] == world_objects.load_ac_rules()["perKm"]["RUN"] == 5
+    assert distance["ac"] == int(distance["detail"]["km"] * 5)

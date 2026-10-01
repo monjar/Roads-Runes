@@ -37,6 +37,11 @@ class WorldObjectOut(APIModel):
     monster: MonsterOut | None = None
     setId: str | None = None
     piece: str | None = None
+    # A piece belongs to a set: its name, how many pieces there are, and (where the
+    # player is known) how many different ones they hold.
+    setName: str | None = None
+    setSize: int | None = None
+    setOwned: int | None = None
     # How close the player must be to open or pick it up; nothing for a monster.
     claimRadiusMeters: float | None = None
 
@@ -55,6 +60,10 @@ class ClaimResultOut(APIModel):
     walletBalance: int
     # The quest this finished, if opening it was the last thing a quest asked for.
     questCompleted: Any | None = None
+    xpAwarded: int = 0
+    levelUps: list[dict[str, Any]] = []
+    # The set this piece finished: {"id", "name", "bonusAC"}.
+    setCompleted: dict[str, Any] | None = None
 
 
 class ClaimedOut(APIModel):

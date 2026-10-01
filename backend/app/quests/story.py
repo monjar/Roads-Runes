@@ -240,6 +240,44 @@ async def due(db: AsyncSession, user: User, character: Character) -> list[StoryQ
     return candidates
 
 
+def arc_reward(slug: str) -> dict[str, Any]:
+    """What finishing an arc gives: a title to wear and a purse."""
+    for arc in load_arcs():
+        if arc["slug"] == slug:
+            return dict(arc.get("reward") or {})
+    return {}
+
+
+async def standing(db: AsyncSession, user: User, quest: QuestInstance) -> dict[str, Any] | None:
+    """Where finishing this step leaves the rider in its arc.
+
+    An arc had no ending: the third step paid like the first and the arc simply
+    stopped. This says how far along they are, what comes next, and — when this
+    was the last step — that the arc is done and what it gave.
+    """
+    if quest.story_quest_id is None:
+        return None
+    step = await db.get(StoryQuest, quest.story_quest_id)
+    arc = await db.get(StoryArc, step.arc_id) if step is not None else None
+    if step is None or arc is None:
+        return None
+    by_step = await _quests_by_step(db, user)
+    done = {s.id for s in arc.quests if (q := by_step.get(s.id)) is not None and q.status == COMPLETED}
+    done.add(step.id)
+    completed = len(done) == len(arc.quests)
+    upcoming = next((s for s in arc.quests if s.id not in done), None)
+    return {
+        "arcSlug": arc.slug,
+        "arcTitle": arc.title,
+        "stepTitle": step.title,
+        "stepsDone": len(done),
+        "stepsTotal": len(arc.quests),
+        "arcCompleted": completed,
+        "nextTitle": upcoming.title if upcoming is not None else None,
+        "reward": arc_reward(arc.slug) if completed else None,
+    }
+
+
 def _authored(text: str, variables: dict[str, Any]) -> str:
     """Authored text may name what the generator found ({poiName}); text that
     names nothing, or names something this template does not produce, is used as

@@ -63,6 +63,14 @@ class ClaimOutcome:
     def claimed_of(self, kind: str) -> list[WorldObject]:
         return [o for o in self.claimed if o.kind == kind]
 
+    # How near an unbeaten monster came to being beaten, by its id: the closest of
+    # the ways it could have fallen, so the summary can say what it would have taken.
+    attempts: dict[uuid.UUID, dict[str, Any]] = field(default_factory=dict)
+    # The pieces of each set the player holds once this ride's are counted.
+    owned: dict[str, set[str]] = field(default_factory=dict)
+    # Sets this ride finished: [{"id", "name", "bonusAC"}].
+    sets_completed: list[dict[str, Any]] = field(default_factory=list)
+
     def counted_of(self, kind: str) -> list[WorldObject]:
         return [o for o in [*self.claimed, *self.tapped] if o.kind == kind]
 
@@ -76,18 +84,78 @@ class ClaimOutcome:
                     "tier": o.tier,
                     "rewardAC": o.reward_ac,
                     "method": (o.claim_payload or {}).get("method"),
+                    **set_fields(o, self.owned),
                 }
                 for o in self.claimed
             ],
             "missed": [
-                {"id": str(o.id), "kind": o.kind, "name": o.payload.get("name", o.kind.title()), "reason": reason}
+                {
+                    "id": str(o.id),
+                    "kind": o.kind,
+                    "name": o.payload.get("name", o.kind.title()),
+                    "reason": reason,
+                    "expiresAt": o.expires_at.isoformat(),
+                    **({"attempt": self.attempts[o.id]} if o.id in self.attempts else {}),
+                }
                 for o, reason in self.missed
             ],
+            "setsCompleted": self.sets_completed,
         }
 
 
-def to_out(obj: WorldObject) -> WorldObjectOut:
+# --- sets --------------------------------------------------------------------
+
+
+def set_catalog() -> dict[str, dict[str, Any]]:
+    return {s["id"]: s for s in load_config().get("collectableSets", [])}
+
+
+def set_fields(obj: WorldObject, owned: dict[str, set[str]] | None = None) -> dict[str, Any]:
+    """A piece's set: its name and size, and how many different pieces are held."""
+    known = set_catalog().get(str((obj.payload or {}).get("setId") or ""))
+    if obj.kind != "COLLECTABLE" or known is None:
+        return {}
+    fields: dict[str, Any] = {
+        "setId": known["id"],
+        "piece": obj.payload.get("piece"),
+        "setName": known["name"],
+        "setSize": len(known["pieces"]),
+    }
+    if owned is not None:
+        fields["setOwned"] = len(owned.get(known["id"], set()))
+    return fields
+
+
+async def pieces_owned(db: AsyncSession, user_id: uuid.UUID) -> dict[str, set[str]]:
+    """The different pieces of each set the player has picked up. A second Raido is
+    ten coins and nothing more: a set is its pieces, not a count of finds."""
+    rows = await db.execute(
+        select(WorldObject.payload).where(
+            WorldObject.user_id == user_id, WorldObject.kind == "COLLECTABLE", WorldObject.status == "CLAIMED"
+        )
+    )
+    owned: dict[str, set[str]] = {}
+    for (payload,) in rows:
+        set_id, piece = (payload or {}).get("setId"), (payload or {}).get("piece")
+        if set_id and piece:
+            owned.setdefault(str(set_id), set()).add(str(piece))
+    return owned
+
+
+def newly_completed(before: dict[str, set[str]], after: dict[str, set[str]]) -> list[dict[str, Any]]:
+    """Sets that were short before and are whole now, with the purse for each."""
+    bonus = int(load_ac_rules().get("collectableSetBonus", 0))
+    done = []
+    for set_id, known in set_catalog().items():
+        size = len(known["pieces"])
+        if len(before.get(set_id, set())) < size <= len(after.get(set_id, set())):
+            done.append({"id": set_id, "name": known["name"], "bonusAC": bonus})
+    return done
+
+
+def to_out(obj: WorldObject, owned: dict[str, set[str]] | None = None) -> WorldObjectOut:
     payload = obj.payload or {}
+    in_set = set_fields(obj, owned)
     monster = None
     if obj.kind == "MONSTER":
         monster = MonsterOut(
@@ -111,6 +179,9 @@ def to_out(obj: WorldObject) -> WorldObjectOut:
         monster=monster,
         setId=payload.get("setId"),
         piece=payload.get("piece"),
+        setName=in_set.get("setName"),
+        setSize=in_set.get("setSize"),
+        setOwned=in_set.get("setOwned"),
         claimRadiusMeters=load_config()["claimRadiusMeters"].get(obj.kind),
     )
 
@@ -403,6 +474,7 @@ async def claim_from_ride(
     live = await live_objects(db, ride.user_id, centre_lat, centre_lon, reach)
     coords = [(p.latitude, p.longitude) for p in points]
     activity = normalise(ride.activity)
+    held = await pieces_owned(db, ride.user_id)
     for obj in live:
         distance = claims.min_distance_to_path_m(obj.latitude, obj.longitude, coords)
         if obj.kind in ("CHEST", "COLLECTABLE"):
@@ -413,12 +485,18 @@ async def claim_from_ride(
         if distance > float(cfg["monsterNearMeters"]):
             outcome.missed.append((obj, "NOT_NEAR"))
             continue
-        verdict = _fight(obj, points, coords, activity, new_cells, encounter_events, resolution)
+        tried: list[dict[str, Any]] = []
+        verdict = _fight(obj, points, coords, activity, new_cells, encounter_events, resolution, tried)
         if verdict is None:
             outcome.missed.append((obj, "UNBEATEN"))
+            if tried:
+                outcome.attempts[obj.id] = max(tried, key=lambda attempt: attempt["progress"])
         else:
             _claim(obj, ride, ended, verdict)
             outcome.claimed.append(obj)
+    await db.flush()
+    outcome.owned = await pieces_owned(db, ride.user_id)
+    outcome.sets_completed = newly_completed(held, outcome.owned)
     return outcome
 
 
@@ -447,7 +525,7 @@ async def claim_by_tap(
     latitude: float,
     longitude: float,
     accuracy_m: float | None,
-) -> tuple[WorldObject, int]:
+) -> tuple[WorldObject, int, dict[str, Any] | None]:
     """A chest opened, or a piece picked up, by a player standing beside it.
 
     A ride claims what its trace passed; this is the other way, for someone who has
@@ -496,12 +574,19 @@ async def claim_by_tap(
         if jump > TAP_JUMP_MIN_M and jump / seconds > max(SPEED_CAP_MPS.values()):
             log.warning("world_object_claim_too_fast", user=str(user_id), meters=int(jump), seconds=int(seconds))
             raise Conflict("You cannot have got here that fast", code="CLAIM_TOO_FAST")
+    held = await pieces_owned(db, user_id)
     _claim(
         obj,
         None,
         now,
         {"method": "TAP", "distanceMeters": round(distance, 1), "latitude": latitude, "longitude": longitude},
     )
+    await db.flush()
+    finished = next(iter(newly_completed(held, await pieces_owned(db, user_id))), None)
+    if finished is not None and finished["bonusAC"] > 0:
+        await economy.credit(
+            db, user_id, finished["bonusAC"], "SET_COMPLETED", object_id=obj.id, payload={"set": finished["name"]}
+        )
     if obj.reward_ac > 0:
         await economy.credit(
             db,
@@ -513,7 +598,7 @@ async def claim_by_tap(
         )
     await db.flush()
     log.info("world_object_claimed", user=str(user_id), kind=obj.kind, method="TAP", meters=round(distance, 1))
-    return obj, obj.reward_ac
+    return obj, obj.reward_ac + (finished["bonusAC"] if finished else 0), finished
 
 
 async def tapped_during(db: AsyncSession, user_id: uuid.UUID, started: datetime, ended: datetime) -> list[WorldObject]:
@@ -538,7 +623,19 @@ def _fight(
     new_cells: set[str],
     events: list[dict[str, Any]],
     resolution: int,
+    tried: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
+    """The first of the monster's ways that the ride satisfied, or None.
+
+    `tried` collects how near each measurable way came (`progress` is 1.0 at the
+    target), so a monster that got away can be told as a near thing and not only
+    as a miss. A note not written, or a shape not drawn, has no "nearly".
+    """
+
+    def nearly(attempt: dict[str, Any], progress: float) -> None:
+        if tried is not None:
+            tried.append({**attempt, "progress": round(max(0.0, min(progress, 0.999)), 3)})
+
     for method in obj.payload.get("killMethods", []):
         name, params = method.get("method"), method.get("params", {})
         if name == "PACE":
@@ -551,6 +648,16 @@ def _fight(
             target = float(params["paceSecPerKm"].get(activity, params["paceSecPerKm"].get("RIDE", 150)))
             if window is not None and window.pace_s_per_km <= target:
                 return {"method": "PACE", "paceSecPerKm": round(window.pace_s_per_km, 1), "targetSecPerKm": target}
+            if window is not None and window.pace_s_per_km > 0:
+                nearly(
+                    {
+                        "method": "PACE",
+                        "paceSecPerKm": round(window.pace_s_per_km, 1),
+                        "targetSecPerKm": target,
+                        "windowMeters": float(params["windowMeters"]),
+                    },
+                    target / window.pace_s_per_km,
+                )
         elif name == "RUNE":
             match = claims.match_rune(
                 coords,
@@ -572,6 +679,10 @@ def _fight(
             gain = claims.elevation_gain_m(altitudes)
             if gain >= float(params["gainMeters"]):
                 return {"method": "CLIMB", "gainMeters": round(gain, 1)}
+            nearly(
+                {"method": "CLIMB", "gainMeters": round(gain, 1), "targetGainMeters": float(params["gainMeters"])},
+                gain / max(1.0, float(params["gainMeters"])),
+            )
         elif name == "LORE":
             radius = float(params.get("radiusMeters", 120)) * 1.5
             required = set(params.get("requires", []))
@@ -601,4 +712,8 @@ def _fight(
                     cleared += 1
             if cleared >= int(params["cells"]):
                 return {"method": "EXPLORE", "cells": cleared}
+            nearly(
+                {"method": "EXPLORE", "cells": cleared, "targetCells": int(params["cells"])},
+                cleared / max(1, int(params["cells"])),
+            )
     return None

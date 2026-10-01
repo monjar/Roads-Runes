@@ -230,3 +230,77 @@ async def test_with_the_flag_off_there_is_no_spine(client, settings, monkeypatch
     await seed_discoveries()
     assert not [q for q in await board(client) if q["storyQuestId"]]
     assert (await client.get("/quests/story")).status_code in (403, 404, 409)
+
+
+@pytest.mark.anyio
+async def test_the_last_step_ends_the_arc_with_a_title_and_a_purse(explorer_client):
+    """An arc had no ending: its third step paid like its first, and then it stopped."""
+    from app.characters.models import Character
+    from app.core.geo import destination_point
+    from tests.test_world_objects import line_trace, ride
+
+    c = explorer_client
+    await seed_discoveries()
+    step = next(q for q in await board(c) if q["storyQuestId"])
+    me = uuid.UUID((await c.get("/users/me")).json()["id"])
+
+    # The other two steps of First Light are behind them.
+    async with get_session_factory()() as db:
+        current = await db.get(StoryQuest, uuid.UUID(step["storyQuestId"]))
+        others = (
+            await db.execute(select(StoryQuest).where(StoryQuest.arc_id == current.arc_id, StoryQuest.id != current.id))
+        ).scalars()
+        for other in others:
+            db.add(
+                QuestInstance(
+                    user_id=me,
+                    template_id=other.template_id,
+                    quest_type="EXPLORE_NEW_ROADS",
+                    character_class="ANY",
+                    title=other.title,
+                    description=other.description,
+                    difficulty="EASY",
+                    recommended_distance_km=8.0,
+                    estimated_duration_minutes=40,
+                    base_xp=150,
+                    status="COMPLETED",
+                    story_quest_id=other.id,
+                    latitude=ORIGIN[0],
+                    longitude=ORIGIN[1],
+                )
+            )
+        await db.commit()
+
+    assert (await c.post(f"/quests/{step['id']}/accept")).status_code == 200
+    # Nine kilometres of road never ridden: more than "Out of the Door" asks for.
+    summary = await ride(c, line_trace(ORIGIN, destination_point(*ORIGIN, 80, 9000), 6.0, and_back=False), step["id"])
+    assert summary["questCompletion"] is not None, summary["flags"]
+    standing = summary["questCompletion"]["storyProgress"]
+    assert standing["arcSlug"] == "first-light" and standing["arcCompleted"] is True
+    assert (standing["stepsDone"], standing["stepsTotal"], standing["nextTitle"]) == (3, 3, None)
+    assert standing["reward"] == {"title": "Early Riser", "ac": 100}
+    assert "Early Riser" in summary["titlesUnlocked"]
+    assert any(line["kind"] == "STORY_ARC" and line["ac"] == 100 for line in summary["acBreakdown"])
+    assert any(line["source"] == "STORY_ARC_COMPLETED" for line in summary["xpBreakdown"])
+    assert (await c.get("/character")).json()["title"] == "Early Riser"
+
+    # A title earned is kept: the next ride's XP does not put "Novice" back.
+    await ride(c, line_trace(ORIGIN, destination_point(*ORIGIN, 200, 3000), 6.0))
+    async with get_session_factory()() as db:
+        character = (await db.execute(select(Character).where(Character.user_id == me))).scalar_one()
+        assert character.title == "Early Riser"
+
+
+@pytest.mark.anyio
+async def test_a_step_in_the_middle_says_what_comes_next(explorer_client):
+    from app.users.models import User
+
+    await seed_discoveries()
+    step = next(q for q in await board(explorer_client) if q["storyQuestId"])
+    me = uuid.UUID((await explorer_client.get("/users/me")).json()["id"])
+    async with get_session_factory()() as db:
+        quest = await db.get(QuestInstance, uuid.UUID(step["id"]))
+        standing = await story.standing(db, await db.get(User, me), quest)
+    assert (standing["stepsDone"], standing["stepsTotal"], standing["arcCompleted"]) == (1, 3, False)
+    assert standing["stepTitle"] == "Out of the Door" and standing["nextTitle"] == "Something Green"
+    assert standing["reward"] is None

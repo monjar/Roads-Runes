@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.characters import catalog
 from app.characters.models import Character
-from app.progression.engine import XPLine, apply_xp, load_xp_rules
+from app.progression.engine import XPLine, apply_xp, load_xp_rules, title_for_level
 from app.progression.models import RewardEvent, XPEvent
 
 
@@ -67,7 +67,9 @@ async def grant(
         character.class_level,
         total,
     )
-    old_title = character.title
+    # The title the level before gave: a title earned another way (finishing an arc)
+    # is kept until a level brings a new one, not replaced on the next grant.
+    old_title = title_for_level(character.overall_level)
     character.overall_xp = result.overall_xp
     character.class_xp = result.class_xp
     character.overall_level = result.overall_level

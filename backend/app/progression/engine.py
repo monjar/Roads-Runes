@@ -11,6 +11,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from app.core.activity import DISTANCE_SCALE, normalise
+
 CONFIG_DIR = Path(__file__).parent / "config"
 
 XP_EVENT_TYPES = (
@@ -100,6 +102,34 @@ class RideRewardInput:
     elevation_gain_meters: float = 0.0
     friends_completed_with: int = 0
     regions_completed: int = 0
+    # How the outing was done: a kilometre on foot is more of an outing than one on a bike.
+    activity: str = "RIDE"
+    # What was beaten, opened or found on the way: (kind, tier, bounty).
+    claims: list[tuple[str, int, bool]] = field(default_factory=list)
+    sets_completed: int = 0
+    story_arc_completed: bool = False
+
+
+CLAIM_SOURCES = {"CHEST": "CHEST_OPENED", "COLLECTABLE": "COLLECTABLE_FOUND", "MONSTER": "MONSTER_BEATEN"}
+
+
+def claim_xp(kind: str, tier: int, bounty: bool = False) -> int:
+    """What one chest, piece or monster is worth in XP."""
+    rules = load_xp_rules()["worldObject"]
+    by_tier = rules.get(kind, {})
+    xp = int(by_tier.get(str(tier), by_tier.get("1", 0)))
+    return int(round(xp * rules["bountyMultiplier"])) if bounty else xp
+
+
+def claim_lines(claims: list[tuple[str, int, bool]]) -> list[XPLine]:
+    """One line per kind of thing, so the breakdown reads "two chests", not a list."""
+    lines: list[XPLine] = []
+    for kind, source in CLAIM_SOURCES.items():
+        mine = [c for c in claims if c[0] == kind]
+        xp = sum(claim_xp(*c) for c in mine)
+        if xp:
+            lines.append(XPLine(source, xp, {"count": len(mine)}))
+    return lines
 
 
 def compute_ride_xp(inp: RideRewardInput) -> list[XPLine]:
@@ -161,6 +191,23 @@ def compute_ride_xp(inp: RideRewardInput) -> list[XPLine]:
         extra = (inp.elevation_gain_meters - cl["thresholdGainMeters"]) / 100.0
         xp = min(cl["xp"] + int(extra * cl["perExtraHundredMeters"]), cl["maxXp"])
         lines.append(XPLine("CLIMB_COMPLETED", xp, {"gainMeters": inp.elevation_gain_meters}))
+
+    lines.extend(claim_lines(inp.claims))
+
+    if inp.sets_completed:
+        lines.append(XPLine("SET_COMPLETED", inp.sets_completed * rules["setCompleted"], {"sets": inp.sets_completed}))
+
+    if inp.story_arc_completed:
+        lines.append(XPLine("STORY_ARC_COMPLETED", rules["storyArcBonus"]))
+
+    # Ground already ridden: not much, and never nothing.
+    kg = rules["knownGround"]
+    known_km = max(0.0, inp.distance_meters - inp.new_roads_meters) / 1000.0
+    if known_km >= kg["minKm"]:
+        scaled_km = known_km / DISTANCE_SCALE.get(normalise(inp.activity), 1.0)
+        xp = min(int(kg["maxXp"]), int(round(scaled_km * kg["perKm"])))
+        if xp:
+            lines.append(XPLine("KNOWN_GROUND", xp, {"km": round(known_km, 1)}))
 
     if inp.friends_completed_with and inp.quest_completed:
         lines.append(XPLine("SOCIAL_QUEST_COMPLETED", inp.friends_completed_with * rules["socialBonusPerFriend"]))

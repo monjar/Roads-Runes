@@ -25,6 +25,21 @@
   "climb": {"thresholdGainMeters": 300, "xp": 100, "perExtraHundredMeters": 40, "maxXp": 400},
   "socialBonusPerFriend": 60,
   "storyQuestBonus": 250,
+  "storyArcBonus": 400,
+  "worldObject": {
+    "_comment": "Beating, opening and finding are worth doing for their own sake, not only for coins. A bounty is worth half as much again.",
+    "CHEST": {"1": 15, "2": 30, "3": 60},
+    "COLLECTABLE": {"1": 8},
+    "MONSTER": {"1": 50, "2": 110, "3": 220},
+    "bountyMultiplier": 1.5
+  },
+  "setCompleted": 150,
+  "knownGround": {
+    "_comment": "A ride on roads already ridden is still a ride. About a tenth of what a new kilometre pays, so new ground stays the better deal; on foot a kilometre counts for more.",
+    "perKm": 2,
+    "minKm": 1,
+    "maxXp": 60
+  },
   "regionCompletedXp": 500,
   "classBonus": {
     "EXPLORER": {"NEW_AREA_EXPLORED": 0.25, "NEW_ROAD_EXPLORED": 0.25, "DISCOVERY_FOUND": 0.0},

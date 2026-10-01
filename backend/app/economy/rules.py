@@ -16,6 +16,8 @@ TRANSACTION_KINDS = (
     "COLLECTABLE",
     "MONSTER_SLAIN",
     "BOUNTY",
+    "SET_COMPLETED",
+    "STORY_ARC",
     "STREAK",
     "CLASS_CHANGE",
     "LURE",

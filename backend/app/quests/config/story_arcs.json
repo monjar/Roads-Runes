@@ -25,7 +25,11 @@
           "description": "Ground you have ridden looks different from above it. Climb to somewhere you can see it from, and the first light of this is done.",
           "templateId": "ANY_HIGH_GROUND"
         }
-      ]
+      ],
+      "reward": {
+        "title": "Early Riser",
+        "ac": 100
+      }
     },
     {
       "slug": "the-edge-of-the-map",
@@ -52,7 +56,11 @@
           "description": "The edge is only moved once you can find your way home from it. Out to the far place, and back under your own navigation.",
           "templateId": "EXPLORER_OUT_AND_BACK"
         }
-      ]
+      ],
+      "reward": {
+        "title": "Edgewalker",
+        "ac": 200
+      }
     },
     {
       "slug": "what-the-stones-remember",
@@ -79,7 +87,11 @@
           "description": "The tarmac is new. What it runs past is not. Find the old ground, and take a way there nobody has mapped for you.",
           "templateId": "WIZARD_OLD_GROUND"
         }
-      ]
+      ],
+      "reward": {
+        "title": "Stone Reader",
+        "ac": 200
+      }
     },
     {
       "slug": "the-iron-hours",
@@ -106,7 +118,11 @@
           "description": "The last one is only time. Stay out in it, keep turning the pedals, and come back having done the unremarkable thing well.",
           "templateId": "WARRIOR_HOUR_OF_IRON"
         }
-      ]
+      ],
+      "reward": {
+        "title": "Ironbound",
+        "ac": 200
+      }
     },
     {
       "slug": "a-record-of-small-things",
@@ -133,7 +149,11 @@
           "description": "Roads you have never travelled, surveyed rather than merely ridden: the photograph, the note, and the distance to earn them.",
           "templateId": "SCRIBE_ROUTE_SURVEY"
         }
-      ]
+      ],
+      "reward": {
+        "title": "Keeper of Small Things",
+        "ac": 200
+      }
     }
   ]
 }

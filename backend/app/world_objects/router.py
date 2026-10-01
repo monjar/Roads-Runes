@@ -9,6 +9,8 @@ from app.core.deps import CurrentUser, DBDep, SettingsDep
 from app.core.errors import NotFound
 from app.core.schemas import APIModel
 from app.economy import service as economy
+from app.progression.engine import XPLine, claim_lines, load_xp_rules
+from app.progression.service import grant
 from app.quests import service as quests
 from app.world_objects import service
 from app.world_objects.schemas import ClaimIn, ClaimResultOut, WorldObjectOut
@@ -42,7 +44,8 @@ async def objects(
         character_class=character.character_class,
         activity=profile.default_activity,
     )
-    return [service.to_out(o) for o in live]
+    owned = await service.pieces_owned(db, user.id)
+    return [service.to_out(o, owned) for o in live]
 
 
 @router.post("/lure", response_model=list[WorldObjectOut])
@@ -81,13 +84,22 @@ async def claim(
 ) -> ClaimResultOut:
     """Open a chest or pick up a piece from beside it. 409 when it is out of reach
     (OBJECT_OUT_OF_RANGE), gone (OBJECT_GONE) or a monster (OBJECT_NOT_CLAIMABLE)."""
-    obj, awarded = await service.claim_by_tap(
+    obj, awarded, set_done = await service.claim_by_tap(
         db, user.id, object_id, payload.latitude, payload.longitude, payload.horizontalAccuracyMeters
     )
+    # Worth doing for its own sake too: the same XP a ride past it would have given.
+    character = await get_character(db, user)
+    lines = claim_lines([(obj.kind, obj.tier, obj.bounty)])
+    if set_done is not None:
+        lines.append(XPLine("SET_COMPLETED", load_xp_rules()["setCompleted"], {"set": set_done["name"]}))
+    reward = await grant(db, character, lines)
     finished = await quests.on_object_claimed(db, settings, user, obj)
     return ClaimResultOut(
-        object=service.to_out(obj),
+        object=service.to_out(obj, await service.pieces_owned(db, user.id)),
         acAwarded=awarded,
         walletBalance=await economy.balance(db, user.id),
         questCompleted=quests.quest_out(finished).model_dump(mode="json") if finished else None,
+        xpAwarded=reward.xp_awarded,
+        levelUps=reward.level_ups,
+        setCompleted=set_done,
     )
