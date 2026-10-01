@@ -20,6 +20,7 @@ final class AppContainer {
     let sync: SyncService
     let rideRecorder: RideRecorder
     let mapPreferences: MapPreferencesStore
+    let rideAudio: RideAudio
     let nudges: NudgeScheduler
 
     /// Pending Strava OAuth code delivered through the URL scheme.
@@ -35,7 +36,7 @@ final class AppContainer {
         let resolvedAPI: any RoadsAndRunesAPI = api ?? (useMock ? MockAPI() : APIClient(baseURL: Config.apiBaseURL, tokenStore: tokenStore))
         let directory = Self.storageDirectory()
         let persistence = PersistenceService(inMemory: inMemory || uiTesting)
-        let location = LocationService(analytics: analytics)
+        let location = LocationService(analytics: analytics, live: !inMemory && !Self.isPreview)
         let health = HealthKitService(enabled: !inMemory && !uiTesting)
         let watch = WatchSessionService()
         let session = SessionStore(api: resolvedAPI)
@@ -43,9 +44,13 @@ final class AppContainer {
         let activeRideStore = FileActiveRideStore(directory: directory)
         if uiTesting { try? activeRideStore.clear() }
         let sync = SyncService(api: resolvedAPI, persistence: persistence, session: session, analytics: analytics)
+        let preferences = MapPreferencesStore()
+        // Tests, previews and UI runs make no sound and never touch the audio session.
+        let audio = RideAudio(enabled: !inMemory && !uiTesting && !Self.isPreview) { preferences.rideSound }
         let recorder = RideRecorder(
             api: resolvedAPI, location: location, health: health, watch: watch, sync: sync, persistence: persistence,
-            cellIndexing: H3CellIndexing(), activeRideStore: activeRideStore, routePackages: routePackages, analytics: analytics, session: session
+            cellIndexing: H3CellIndexing(), activeRideStore: activeRideStore, routePackages: routePackages, analytics: analytics, session: session,
+            audio: audio
         )
         self.api = resolvedAPI
         self.analytics = analytics
@@ -59,7 +64,8 @@ final class AppContainer {
         self.activeRideStore = activeRideStore
         self.sync = sync
         self.rideRecorder = recorder
-        self.mapPreferences = MapPreferencesStore()
+        self.mapPreferences = preferences
+        self.rideAudio = audio
         self.nudges = NudgeScheduler(active: !inMemory && !uiTesting && !Self.isPreview)
         watch.onCommand = { [weak recorder] command in
             Task { @MainActor in
@@ -133,7 +139,14 @@ final class MapPreferencesStore {
         didSet { defaults.set(showMysteries, forKey: "showMysteries") }
     }
 
+    /// How much of a ride is heard: nothing, chimes, or chimes and a voice. Chimes
+    /// to begin with; the voice is something to ask for.
+    var rideSound: RideSound {
+        didSet { defaults.set(rideSound.rawValue, forKey: "rideSound") }
+    }
+
     init() {
+        rideSound = RideSound(rawValue: defaults.string(forKey: "rideSound") ?? "") ?? .chimes
         showMysteries = defaults.object(forKey: "showMysteries") as? Bool ?? true
         mapStyle = MapStyle(rawValue: defaults.string(forKey: "mapStyle") ?? "") ?? .adventure
         batteryMode = BatteryMode(rawValue: defaults.string(forKey: "batteryMode") ?? "") ?? .balanced

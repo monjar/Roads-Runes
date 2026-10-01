@@ -43,6 +43,13 @@ final class RideRecorder {
     private(set) var encounter: EncounterStatus?
     private(set) var recentClaim: WorldObject?
     private(set) var newTerritoryMeters: Double = 0
+    /// A line for the screen about something that otherwise shows nothing there
+    /// (what is on the way, a new place, halfway), for a few seconds.
+    private(set) var notice: String?
+    /// The chests, pieces and monsters still to be had, for the ride map.
+    private(set) var objectsOnMap: [WorldObject] = []
+    /// What has happened on this ride, in order: what the chimes and the voice were given.
+    private(set) var eventLog: [RideEvent] = []
     private(set) var localCellStates: [String: CellState] = [:]
     var recoverableRide: ActiveRideState?
 
@@ -83,10 +90,23 @@ final class RideRecorder {
     @ObservationIgnored private var bikeId: UUID?
     @ObservationIgnored private var knownCells: Set<String> = []
     @ObservationIgnored private var toastTask: Task<Void, Never>?
+    @ObservationIgnored private var noticeTask: Task<Void, Never>?
+    @ObservationIgnored private var announcer = RideAnnouncer()
+    @ObservationIgnored private var milestones: RideMilestones?
+    @ObservationIgnored private var newGround = NewGroundRun()
+    @ObservationIgnored private var sighted: Set<UUID> = []
+    @ObservationIgnored private var metMonsters: Set<UUID> = []
+    /// Pieces picked up on this ride that the player did not already hold, by set.
+    @ObservationIgnored private var piecesTaken: [String: Set<String>] = [:]
+    /// Places near the route the rider has not found yet, and the ones already called out.
+    @ObservationIgnored private var unfoundPlaces: [DiscoverySummary] = []
+    @ObservationIgnored private var announcedPlaces: Set<UUID> = []
+    private let audio: RideAudio
 
     init(api: any RoadsAndRunesAPI, location: LocationService, health: HealthKitService, watch: WatchSessionService, sync: SyncService,
          persistence: PersistenceService, cellIndexing: H3CellIndexing, activeRideStore: FileActiveRideStore, routePackages: FileRoutePackageStore,
-         analytics: AnalyticsSink, session: SessionStore) {
+         analytics: AnalyticsSink, session: SessionStore, audio: RideAudio) {
+        self.audio = audio
         self.api = api
         self.location = location
         self.health = health
@@ -100,6 +120,11 @@ final class RideRecorder {
         self.session = session
         location.onFix = { [weak self] fix in
             Task { @MainActor in self?.handle(fix: fix) }
+        }
+        audio.onFinishedSpeaking = { [weak self] in
+            guard let self else { return }
+            self.announcer.finishedSpeaking(at: self.fixClockNow)
+            self.sayNext()
         }
     }
 
@@ -133,9 +158,13 @@ final class RideRecorder {
         stats = statistics.snapshot
         machine = NavigationStateMachine()
         rerouteAdvisor = RerouteAdvisor()
+        resetEvents()
+        milestones = RideMilestones(route: package.route)
         transition(to: .ready)
         configureTrackers(for: package, start: location.lastFix?.coordinate ?? package.route.path.first ?? package.route.instructions.first?.coordinate)
         await loadEncounters(around: location.lastFix?.coordinate ?? package.route.path.first)
+        await loadUnfoundPlaces(for: package)
+        audio.start()
 
         if location.authorization != .always { location.requestAlways() }
         await health.requestAuthorization()
@@ -156,6 +185,8 @@ final class RideRecorder {
         analytics.track(.navigationStarted, properties: ["routeId": package.route.id.uuidString])
         sendWatchSummary()
         persist(force: true)
+        // What the route has on it, said once before the first turn.
+        emit(.briefing(for: objectsOnMap, along: package.route.path), at: startedAt)
         checkStartIsOnRoute()
     }
 
@@ -233,6 +264,11 @@ final class RideRecorder {
         encounter = nil
         recentClaim = nil
         exploration = nil
+        audio.stop()
+        notice = nil
+        objectsOnMap = []
+        milestones = nil
+        unfoundPlaces = []
         offRouteSince = nil
         rejoin = nil
         rerouteError = nil
@@ -264,6 +300,10 @@ final class RideRecorder {
             if !entered.isEmpty {
                 for cell in entered { localCellStates[cell] = recorder.localState(for: cell) }
                 newTerritoryMeters = recorder.newTerritoryMeters
+                // New ground sings: each cell never ridden is the next note up.
+                for cell in entered where !recorder.knownCells.contains(cell) {
+                    emit(.newGround(run: newGround.entered(at: enriched.timestamp)), at: enriched.timestamp)
+                }
             }
             if let batch = recorder.takePendingBatch(now: enriched.timestamp) {
                 Task { await self.uploadCells(batch, recorder: recorder) }
@@ -274,6 +314,7 @@ final class RideRecorder {
             progressTracker = tracker
             progress = update
             handleOffRoute(update, from: enriched.coordinate, at: enriched.timestamp)
+            for event in milestones?.update(progress: update) ?? [] { emit(event, at: enriched.timestamp) }
         }
         if var tracker = objectiveTracker {
             let events = tracker.update(
@@ -296,7 +337,10 @@ final class RideRecorder {
             encounterTracker = tracker
             encounter = result.status
             for object in result.claimed { handle(claimed: object, at: enriched.coordinate) }
+            noteSightings(result.status, tracker: tracker, from: enriched.coordinate, at: enriched.timestamp)
         }
+        notePlaces(from: enriched.coordinate, at: enriched.timestamp)
+        sayNext()
         if pendingPoints.count >= Config.pointsUploadBatchSize {
             let batch = pendingPoints
             pendingPoints = []
@@ -311,6 +355,95 @@ final class RideRecorder {
         guard let coordinate else { return }
         let objects = (try? await api.worldObjects(near: coordinate, radiusMeters: 8000)) ?? []
         encounterTracker = EncounterTracker(objects: objects, activity: activity)
+        objectsOnMap = objects.filter { $0.status == .spawned }
+    }
+
+    /// Places near the route that the rider has not found, so passing one can be
+    /// said at the time and not only read on the summary afterwards.
+    private func loadUnfoundPlaces(for package: RoutePackage) async {
+        let box = package.mapRegion
+        let centre = Coordinate(latitude: (box.minLat + box.maxLat) / 2, longitude: (box.minLon + box.maxLon) / 2)
+        let reach = GeoMath.distance(centre, Coordinate(latitude: box.maxLat, longitude: box.maxLon)) + 300
+        let asked = Set(package.pois.filter { $0.requested == true }.map(\.discoveryId))
+        let nearby = (try? await api.discoveries(near: centre, radiusMeters: min(20_000, reach), category: nil, limit: 100, cursor: nil))?.items ?? []
+        // The stops the rider asked for have their own card when they come up.
+        unfoundPlaces = nearby.filter { !$0.discoveredByUser && !asked.contains($0.id) }
+    }
+
+    // MARK: - Events: what the ride says
+
+    /// The same reach the server uses to decide a place was found on a ride.
+    private static let placeFoundMeters = 60.0
+
+    private func resetEvents() {
+        eventLog = []
+        announcer = RideAnnouncer()
+        newGround = NewGroundRun()
+        sighted = []
+        metMonsters = []
+        piecesTaken = [:]
+        announcedPlaces = []
+        unfoundPlaces = []
+        notice = nil
+    }
+
+    /// One thing happened: it is chimed, queued to be said, noted on screen if the
+    /// screen would otherwise show nothing, and kept in the log.
+    private func emit(_ event: RideEvent, at now: Date) {
+        if case .briefing(let chests, let pieces, let monsters) = event, chests + pieces + monsters.count == 0 { return }
+        eventLog.append(event)
+        if eventLog.count > 400 { eventLog.removeFirst(eventLog.count - 400) }
+        if let chime = event.chime { audio.play(chime, step: event.chimeStep) }
+        if audio.mode == .voice {
+            announcer.offer(event, units: units, at: now)
+            sayNext()
+        }
+        if let line = event.pill(units: units) { show(notice: line) }
+    }
+
+    private func sayNext() {
+        guard audio.mode == .voice, let line = announcer.nextLine(now: fixClockNow, isSpeaking: audio.isSpeaking) else { return }
+        audio.speak(line)
+    }
+
+    private func show(notice line: String) {
+        notice = line
+        noticeTask?.cancel()
+        noticeTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(7))
+            guard !Task.isCancelled else { return }
+            self?.notice = nil
+        }
+    }
+
+    /// Something coming into sight is said once; a monster met and then left behind
+    /// unbeaten is said too, where it used to vanish from the screen without a word.
+    private func noteSightings(_ nearest: EncounterStatus?, tracker: EncounterTracker, from position: Coordinate, at now: Date) {
+        if let nearest, !nearest.claimed, !sighted.contains(nearest.object.id) {
+            sighted.insert(nearest.object.id)
+            emit(.sighted(name: Self.shortName(nearest.object), kind: nearest.object.kind, meters: nearest.distanceMeters, method: nearest.method ?? nearest.object.monster?.killMethods.first?.method), at: now)
+        }
+        for object in tracker.objects where object.kind == .monster && !tracker.claimedIDs.contains(object.id) {
+            let distance = GeoMath.distance(position, object.coordinate)
+            if distance <= EncounterTracker.monsterNearMeters {
+                metMonsters.insert(object.id)
+            } else if distance > EncounterTracker.inSightMeters, metMonsters.remove(object.id) != nil {
+                emit(.lost(name: object.name), at: now)
+            }
+        }
+        metMonsters.subtract(tracker.claimedIDs)
+    }
+
+    private func notePlaces(from position: Coordinate, at now: Date) {
+        for place in unfoundPlaces where !announcedPlaces.contains(place.id) && GeoMath.distance(position, place.coordinate) <= Self.placeFoundMeters {
+            announcedPlaces.insert(place.id)
+            emit(.newPlace(name: place.name), at: now)
+        }
+    }
+
+    /// "Raido", not "Raido (Old Runes)": the set is said separately.
+    private static func shortName(_ object: WorldObject) -> String {
+        object.kind == .collectable ? (object.piece ?? object.name) : object.name
     }
 
     /// A chest passed or a monster beaten, as far as the phone can tell: the quest
@@ -341,7 +474,16 @@ final class RideRecorder {
             }
         }
         let verb = object.kind == .monster ? "Beaten" : (object.kind == .chest ? "Opened" : "Found")
-        watch.send(objectiveCompleted: WatchObjectiveCompleted(title: "\(verb): \(object.name)", xp: nil))
+        objectsOnMap.removeAll { $0.id == object.id }
+        // A second piece of a set found on the same ride counts on from the first, and
+        // a second of the very same piece counts for nothing.
+        var standing = object.setStanding
+        if let setId = object.setId, let piece = object.piece, let before = standing {
+            if object.pieceOwned != true { piecesTaken[setId, default: []].insert(piece) }
+            standing = SetStanding(name: before.name, owned: min(before.of, before.owned + (piecesTaken[setId]?.count ?? 0)), of: before.of)
+        }
+        emit(.claimed(name: Self.shortName(object), kind: object.kind, coins: object.rewardAC, set: standing), at: lastFix?.timestamp ?? Date())
+        watch.send(objectiveCompleted: WatchObjectiveCompleted(title: "\(verb): \(object.name)", coins: object.rewardAC, detail: standing?.line))
         analytics.track(.worldObjectClaimed, properties: ["kind": object.kind.rawValue, "name": object.name])
     }
 
@@ -399,6 +541,8 @@ final class RideRecorder {
             if let objective = quest.objectives.first(where: { $0.id == event.objectiveId }) {
                 showObjectiveToast(objective)
                 watch.send(objectiveCompleted: WatchObjectiveCompleted(title: objective.title, xp: nil))
+                let left = quest.requiredObjectives.filter { !completedObjectiveIDs.contains($0.id) && $0.status != .completed }.count
+                emit(.objectiveCompleted(title: objective.title, remaining: left), at: event.occurredAt)
             }
         }
         UINotificationFeedbackGenerator().notificationOccurred(.success)
@@ -429,6 +573,7 @@ final class RideRecorder {
             if state == .active {
                 _ = transition(to: .offRoute)
                 AppLog.navigation.info("off_route \(Int(update.crossTrackDistance), privacy: .public) m")
+                emit(.offRoute, at: now)
                 startRerouteTicker()
             }
             offRouteSince = rerouteAdvisor.offRouteSince
@@ -559,6 +704,8 @@ final class RideRecorder {
         stopRerouteTicker()
         _ = transition(to: .active)
         AppLog.navigation.info("rerouted \(Int(route.distanceMeters), privacy: .public) m")
+        milestones?.retarget(route: route)
+        emit(.rerouted, at: lastFix?.timestamp ?? Date())
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         recentReroute = true
         rerouteToastTask?.cancel()
@@ -684,7 +831,8 @@ final class RideRecorder {
             distanceMeters: stats.distanceMeters, elapsedSeconds: stats.elapsedSeconds, elevationGainMeters: stats.elevationGainMeters,
             heartRate: stats.lastHeartRateBpm, speedMps: stats.currentSpeedMps,
             latitude: lastFix?.coordinate.latitude, longitude: lastFix?.coordinate.longitude,
-            encounterLine: encounterLine
+            encounterLine: encounterLine, newTerritoryMeters: newTerritoryMeters,
+            remainingMeters: state == .active ? progress?.distanceRemaining : nil
         )
         watch.send(update: update, force: force)
     }

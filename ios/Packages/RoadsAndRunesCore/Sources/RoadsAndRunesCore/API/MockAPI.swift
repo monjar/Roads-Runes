@@ -57,6 +57,14 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
         exploredCells = SampleData.sampleWorld.cells
     }
 
+    /// Puts something in the world, or replaces what is there, for a test to ride past.
+    public func place(_ objects: [WorldObject], replacing: Bool = false) {
+        lock.lock()
+        defer { lock.unlock() }
+        if replacing { storedObjects = [:] }
+        for object in objects { storedObjects[object.id] = object }
+    }
+
     // MARK: Helpers
 
     func run<T>(_ body: () throws -> T) async throws -> T {

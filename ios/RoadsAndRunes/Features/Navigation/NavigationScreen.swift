@@ -39,6 +39,11 @@ struct NavigationScreen: View {
                     MapPill(text: "New route from here")
                         .transition(.move(edge: .top).combined(with: .opacity))
                         .accessibilityIdentifier("reroutedPill")
+                } else if let notice = recorder.notice {
+                    // What the chime was for, for a rider who happens to be looking.
+                    MapPill(text: notice)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .accessibilityIdentifier("rideNotice")
                 }
                 if recorder.recentObjectiveCompletion != nil, let instruction = recorder.progress?.nextInstruction {
                     MapPill(text: "\(TurnArrowView.phrase(for: instruction.sign)) · \(formatter.distance(meters: recorder.progress?.distanceToNextInstruction ?? instruction.distanceMeters))")
@@ -167,7 +172,37 @@ struct NavigationScreen: View {
         .padding(.vertical, 16)
         .padding(.horizontal, 22)
         .background(Theme.Colors.ink, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+        .overlay(alignment: .top) { routeProgress }
         .shadow(color: Theme.Colors.ink.opacity(0.25), radius: 16, y: 12)
+    }
+
+    /// How much of the route is behind, as a thin line along the top of the pill, and
+    /// how far is left. Only on the route: off it, "to go" is not a number anyone has.
+    @ViewBuilder
+    private var routeProgress: some View {
+        if let progress = recorder.progress, recorder.state == .active, (recorder.package?.route.distanceMeters ?? 0) > 0 {
+            VStack(spacing: 5) {
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Theme.Colors.cream.opacity(0.14))
+                        Capsule().fill(Theme.Colors.sageLight).frame(width: max(4, geometry.size.width * progress.fractionComplete))
+                    }
+                }
+                .frame(height: 3)
+                .padding(.horizontal, 26)
+                Text("\(formatter.distance(meters: progress.distanceRemaining)) to go")
+                    .font(Theme.Typography.text(10.5, .semibold, relativeTo: .caption2))
+                    .foregroundStyle(Theme.Colors.ink)
+                    .padding(.horizontal, 9).padding(.vertical, 2)
+                    .background(Theme.Colors.sageLight, in: Capsule())
+                    .offset(y: -15)
+            }
+            .offset(y: 5)
+            .animation(.easeOut(duration: 0.6), value: progress.fractionComplete)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(formatter.distance(meters: progress.distanceRemaining)) to go")
+            .accessibilityIdentifier("ride.toGo")
+        }
     }
 
     /// Ride paused (design 8d): auto-pause explained, Resume is huge, End beside it.
@@ -220,6 +255,14 @@ struct NavigationScreen: View {
                     out.append(MapMarker(id: objective.id.uuidString, coordinate: coordinate, kind: done ? .objectiveDone : .objective, title: objective.title))
                 }
             }
+        }
+        // What is out there to be had: a chest was only a banner once it was 400 m off,
+        // and the first the rider knew of it was riding past.
+        for object in recorder.objectsOnMap {
+            out.append(MapMarker(
+                id: "object-\(object.id.uuidString)", coordinate: object.coordinate,
+                kind: WorldViewModel.markerKind(for: object), title: object.name
+            ))
         }
         // The cafés, pubs and landmarks on the route, as what they are rather than as
         // anonymous dots, and tappable for their name and detour.

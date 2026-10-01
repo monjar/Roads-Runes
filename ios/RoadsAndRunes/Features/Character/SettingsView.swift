@@ -22,6 +22,20 @@ struct SettingsView: View {
                     Text("Metric").tag(Units.metric); Text("Imperial").tag(Units.imperial)
                 }
             }
+            Section("Sound on a ride") {
+                Picker("Sound", selection: Binding(
+                    get: { container.mapPreferences.rideSound },
+                    set: { sound in
+                        container.mapPreferences.rideSound = sound
+                        container.rideAudio.preview(sound)
+                    }
+                )) {
+                    ForEach(RideSound.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .accessibilityIdentifier("settings.rideSound")
+                Text("A chime for a chest, a monster beaten, a new place, halfway; new ground climbs a scale. The voice says the same things in a few words, and turns your music down while it does. Both play with the phone on silent.")
+                    .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
+            }
             Section("Privacy") {
                 Picker("New rides are", selection: $settings.defaultRideVisibility) {
                     Text("Private").tag(RoadsAndRunesCore.Visibility.privateOnly)

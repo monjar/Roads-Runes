@@ -96,7 +96,7 @@ targets:
         # Location only: the ride records while the phone is locked. Nothing here
         # uses BGTaskScheduler, and declaring `processing` without task identifiers
         # is both a validation failure and a capability the app never exercises.
-        UIBackgroundModes: [location]
+        UIBackgroundModes: [location, audio]
         LSApplicationQueriesSchemes: [strava]
         CFBundleURLTypes:
           - CFBundleURLName: com.roadsandrunes.app

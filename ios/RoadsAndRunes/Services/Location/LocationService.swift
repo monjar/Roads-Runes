@@ -24,10 +24,16 @@ final class LocationService: NSObject {
     @ObservationIgnored private let manager = CLLocationManager()
     @ObservationIgnored private var tracking = false
     @ObservationIgnored private let analytics: AnalyticsSink
+    /// False in tests and previews: the manager is never started, so a simulator's
+    /// own idea of where it is (San Francisco) cannot arrive in the middle of a
+    /// scripted ride. Fixes come only from whoever calls the recorder.
+    @ObservationIgnored private let live: Bool
 
-    init(analytics: AnalyticsSink) {
+    init(analytics: AnalyticsSink, live: Bool = true) {
         self.analytics = analytics
+        self.live = live
         super.init()
+        guard live else { return }
         manager.delegate = self
         manager.activityType = .fitness
         manager.pausesLocationUpdatesAutomatically = false
@@ -36,15 +42,21 @@ final class LocationService: NSObject {
     }
 
     func requestWhenInUse() {
+        guard live else { return }
         manager.requestWhenInUseAuthorization()
     }
 
     /// Requested only when a ride starts (spec §74).
     func requestAlways() {
+        guard live else { return }
         manager.requestAlwaysAuthorization()
     }
 
     func startTracking(mode: BatteryMode) {
+        guard live else {
+            tracking = true
+            return
+        }
         apply(mode: mode)
         manager.allowsBackgroundLocationUpdates = authorization == .always
         manager.startUpdatingLocation()
@@ -54,7 +66,7 @@ final class LocationService: NSObject {
 
     func startPassive() {
         // A ride has the manager: the map behind it must not turn its accuracy down.
-        guard !tracking else { return }
+        guard live, !tracking else { return }
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
         manager.distanceFilter = 25
         manager.allowsBackgroundLocationUpdates = false
@@ -66,7 +78,7 @@ final class LocationService: NSObject {
     /// fifty, which the passive hundred-metre fix cannot, and often enough that
     /// walking up to a chest is seen. Only while the map is on screen.
     func startBrowsing() {
-        guard !tracking else { return }
+        guard live, !tracking else { return }
         manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
         manager.distanceFilter = 5
         manager.allowsBackgroundLocationUpdates = false
@@ -74,6 +86,10 @@ final class LocationService: NSObject {
     }
 
     func stop() {
+        guard live else {
+            tracking = false
+            return
+        }
         manager.stopUpdatingLocation()
         manager.stopUpdatingHeading()
         manager.allowsBackgroundLocationUpdates = false
@@ -81,6 +97,7 @@ final class LocationService: NSObject {
     }
 
     func apply(mode: BatteryMode) {
+        guard live else { return }
         let policy = BatteryPolicy.policy(for: mode)
         manager.desiredAccuracy = min(policy.desiredAccuracyMeters, BatteryPolicy.minimumNavigationAccuracyMeters)
         manager.distanceFilter = policy.distanceFilterMeters
