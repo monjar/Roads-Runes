@@ -47,5 +47,54 @@ async def test_a_streak_older_than_yesterday_is_over(explorer_client):
     assert (card["streakDays"], card["longestStreakDays"], card["streakActiveToday"]) == (0, 9, False)
 
 
-def test_the_model_is_asked_for_a_paragraph():
-    assert "70 to 110 words" in narrative.SYSTEM and "never" in narrative.SYSTEM.lower()
+def test_the_model_is_asked_for_a_plain_paragraph_in_the_world():
+    assert "50 to 80 words" in narrative.SYSTEM and "never" in narrative.SYSTEM.lower()
+    # It is told the premise, so its places sit in the same world as everything else.
+    assert "nobody reads them" in narrative.SYSTEM
+    assert "No exclamation marks" in narrative.SYSTEM
+
+
+async def test_a_model_line_that_breaks_the_voice_is_not_used():
+    from app.quests.generator import GeneratedQuest
+
+    class Loud:
+        enabled = True
+
+        async def complete_json(self, system, user, schema):
+            return {
+                "title": "Onward, Hero",
+                "story": "A grand quest awaits you, traveller! " * 6,
+                "completion": "Done!",
+            }
+
+    quest = GeneratedQuest.__new__(GeneratedQuest)
+    quest.title, quest.description, quest.character_class = "The Green Hour", "A plain line.", "ANY"
+    quest.activity, quest.difficulty, quest.recommended_distance_km = "RIDE", "EASY", 5
+    quest.objectives, quest.variables, quest.narrative = [], {}, {"giver": "ada-pym", "completion": "Authored."}
+    out = await narrative.enrich(Loud(), quest)
+    assert out.title == "The Green Hour"
+    assert out.narrative["completion"] == "Authored."
+
+
+async def test_the_model_never_overwrites_a_giver_or_an_authored_completion():
+    from app.quests.generator import GeneratedQuest
+
+    class Plain:
+        enabled = True
+
+        async def complete_json(self, system, user, schema):
+            return {
+                "title": "The Green Hour",
+                "story": "The park has had a quiet year. Quiet is when things settle. "
+                "Go and stand in it for a while, and come home the way you like. Nobody is counting.",
+                "completion": "The park has been looked at.",
+            }
+
+    quest = GeneratedQuest.__new__(GeneratedQuest)
+    quest.title, quest.description, quest.character_class = "x", "y", "ANY"
+    quest.activity, quest.difficulty, quest.recommended_distance_km = "RIDE", "EASY", 5
+    quest.objectives, quest.variables, quest.narrative = [], {}, {"giver": "ada-pym", "completion": "Authored."}
+    out = await narrative.enrich(Plain(), quest)
+    assert out.narrative["source"] == "llm"
+    assert out.narrative["giver"] == "ada-pym"
+    assert out.narrative["completion"] == "Authored."

@@ -160,6 +160,9 @@ def class_list(settings: Settings) -> list[ClassInfo]:
             tagline=c["tagline"],
             description=c["description"],
             enabled=class_enabled(settings, cid),
+            guild=c.get("guild"),
+            saying=c.get("saying"),
+            crest=c.get("crest"),
         )
         for cid, c in catalog.classes().items()
     ]

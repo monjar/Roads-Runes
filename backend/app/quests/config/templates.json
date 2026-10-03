@@ -1570,7 +1570,7 @@
       "narrative": [
         {
           "title": "The {objectName}",
-          "description": "A {objectName} has settled at {objectPlace}. It has a weakness; the map will tell you which."
+          "description": "A {objectName} has settled at {objectPlace}. It wants something done about it; the map will tell you what."
         },
         {
           "title": "Trouble at {objectPlace}",

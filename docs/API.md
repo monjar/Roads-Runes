@@ -168,6 +168,7 @@ Never includes home location, ride start/end points or live location.
 }
 ```
 
+- `GET /character/classes` → `[ClassInfo]`: `{"id": "WIZARD", "name": "Wizard", "tagline": "Cuts the runes again. Looks twice.", "description": "…", "enabled": true, "guild": "the Cutters", "saying": "Look twice, then once more.", "crest": "wizard"}`. `guild`, `saying` and `crest` are optional (0.6.0); a trade's lore is in `docs/WORLD.md`.
 - `POST /character` `{"name": "Rowan", "characterClass": "EXPLORER"}` → `Character` (409 if exists; 403 `FEATURE_DISABLED` for classes behind flags).
 - `GET /character`
 - `GET /character/abilities` → `[AbilityState]`
@@ -192,6 +193,45 @@ Never includes home location, ride start/end points or live location.
   "trafficTolerance": 0.3, "gravelComfort": 0.6, "technicalTrailComfort": 0.2, "cyclewayPreference": 0.8
 }
 ```
+
+---
+
+## Codex
+
+### `GET /codex` (flag `codex`)
+
+The world in its own words, and what this player has met of it. Nothing is
+stored: "met" is read from the player's own world objects. Pages about
+mechanics the server is not running yet (a page whose `flag` is off) are left
+out.
+
+```json
+{
+  "chapters": [{"id": "WORLD", "title": "The Old Roads"}, {"id": "CREATURES", "title": "Things that settle"}, "…"],
+  "entries": [{"id": "the-fog", "chapter": "WORLD", "title": "The fog", "body": ["Ground you have not read. …"],
+               "by": "enid-sallow", "byName": "Enid Sallow", "characterClass": null}],
+  "creatures": [{
+    "id": "fen-troll", "name": "Fen Troll", "family": "WATER", "flavour": "Sleeps by the water; wakes for footsteps.",
+    "hint": "Keeps to water.", "page": "…", "leaves": "a bridge nail",
+    "wants": ["ROAD", "RUNE"], "minds": ["WORD"], "rune": "dagaz",
+    "elders": [{"tier": 2, "name": "Culvert Troll", "flavour": "…", "seen": true}, {"tier": 3, "name": "Old Arch", "flavour": "…", "seen": false}],
+    "sigil": {"body": "hulk", "feature": "horns", "mark": "water"},
+    "state": "MET", "seenCount": 3, "seenOffCount": 1, "firstSeenAt": "…", "lastSeenOffAt": "…"
+  }],
+  "runes": [{"id": "raido", "name": "Raido", "order": 5, "six": "ROAD", "gloss": "The road-rune. …", "lends": "the road",
+             "roadForm": "LOOP", "state": "HELD", "found": 2}],
+  "sixes": [{"id": "ROAD", "name": "the Road Six", "how": "Found lying anywhere. …"}],
+  "people": [{"id": "ada-pym", "name": "Ada Pym", "role": "Keeps the board", "posts": "ANY", "page": "…", "pageBy": "enid-sallow", "lines": ["…"]}],
+  "counts": {"creaturesSeenOff": 1, "creaturesSeen": 2, "creaturesTotal": 12, "runesHeld": 1, "runesTotal": 24}
+}
+```
+
+`state` for a creature is `UNSEEN` (never placed for this player), `SEEN` (on
+their map at least once) or `MET` (seen off, or loosened). A rune is `HELD` or
+`NOT_FOUND`. `wants`/`minds` are kinds of effort (`ROAD`, `GROUND`, `CLIMB`,
+`RUNE`, `WORD`); the app shows them only when `effort_combat` is on. A monster
+placed from 0.6.0 carries `speciesId` in its payload, and its `name` is its
+elder's name at tiers 2 and 3.
 
 ---
 

@@ -436,10 +436,10 @@ async def test_pieces_make_a_set_and_the_last_one_pays(explorer_client):
             bounty=False,
             tier=1,
             reward_ac=10,
-            payload={"name": f"{piece} (Milled Coins)", "setId": "COINS", "piece": piece},
+            payload={"name": f"{piece} (Odd Coins)", "setId": "COINS", "piece": piece},
         )
     listed = {o["id"]: o for o in await spawned(c)}
-    assert listed[objects[0]["id"]]["setName"] == "Milled Coins"
+    assert listed[objects[0]["id"]]["setName"] == "Odd Coins"
     assert (listed[objects[0]["id"]]["setSize"], listed[objects[0]["id"]]["setOwned"]) == (4, 0)
 
     async def pick(obj: dict) -> dict:
@@ -462,7 +462,7 @@ async def test_pieces_make_a_set_and_the_last_one_pays(explorer_client):
 
     last = await pick(objects[4])
     assert last["object"]["setOwned"] == 4
-    assert last["setCompleted"] == {"id": "COINS", "name": "Milled Coins", "bonusAC": 50}
+    assert last["setCompleted"] == {"id": "COINS", "name": "Odd Coins", "bonusAC": 50}
     assert last["acAwarded"] == 60 and last["xpAwarded"] == 8 + 150
     kinds = [t["kind"] for t in (await c.get("/wallet/transactions")).json()["items"]]
     assert kinds.count("SET_COMPLETED") == 1 and kinds.count("COLLECTABLE") == 5
@@ -479,12 +479,12 @@ async def test_a_piece_passed_on_a_ride_says_its_set(explorer_client):
         bounty=False,
         tier=1,
         reward_ac=10,
-        payload={"name": "Raido (Old Runes)", "setId": "RUNES", "piece": "Raido"},
+        payload={"name": "Raido (Road Six)", "setId": "RUNES", "piece": "Raido"},
     )
     here = (obj["latitude"], obj["longitude"])
     summary = await ride(c, line_trace(destination_point(*here, 180, 600), here, 5.0))
     found = next(o for o in summary["worldObjects"]["claimed"] if o["id"] == obj["id"])
-    assert (found["setName"], found["piece"], found["setOwned"], found["setSize"]) == ("Old Runes", "Raido", 1, 6)
+    assert (found["setName"], found["piece"], found["setOwned"], found["setSize"]) == ("Road Six", "Raido", 1, 6)
     assert summary["worldObjects"]["setsCompleted"] == []
     assert any(line["source"] == "COLLECTABLE_FOUND" for line in summary["xpBreakdown"])
 

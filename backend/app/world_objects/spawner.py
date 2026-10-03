@@ -15,6 +15,7 @@ from typing import Any
 
 from app.core.activity import ACTIVITIES, normalise
 from app.core.geo import haversine_m
+from app.lore.catalog import flavour_at_tier, name_at_tier
 
 MINUTE = 60
 
@@ -164,8 +165,10 @@ def plan_spawns(
             methods = _pick_methods(rng, cfg)
             reward = int(ac_rules["monster"][str(tier)]) * (int(ac_rules["bountyMultiplier"]) if bounty else 1)
             payload = {
-                "name": monster["name"],
-                "flavour": monster["flavour"],
+                # Tier 1 is the thing itself; tiers 2 and 3 are its elders, by name.
+                "name": name_at_tier(monster, tier) if monster.get("elders") else monster["name"],
+                "flavour": flavour_at_tier(monster, tier) if monster.get("elders") else monster["flavour"],
+                "speciesId": monster.get("id"),
                 "anchorName": anchor.name,
                 "hp": tier * 100,
                 "killMethods": [

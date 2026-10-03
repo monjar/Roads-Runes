@@ -78,6 +78,11 @@ class ClassInfo(APIModel):
     tagline: str
     description: str
     enabled: bool
+    # The trade's guild, its saying and its crest id (docs/WORLD.md). Optional:
+    # an older server sends none, and the app draws the class symbol instead.
+    guild: str | None = None
+    saying: str | None = None
+    crest: str | None = None
 
 
 class BikeIn(APIModel):

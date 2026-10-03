@@ -1,26 +1,38 @@
 {
   "EXPLORER": {
     "name": "Explorer",
-    "tagline": "Rewards discovering new territory.",
-    "description": "Cycle new roads, visit new neighbourhoods, discover trails, parks and viewpoints, and connect unexplored regions.",
-    "flag": null
+    "tagline": "Goes first. Moves the edge of the map.",
+    "description": "The Wayfinders went ahead and decided where the road would go. New roads, new ground and places nobody pointed you at pay best. A road you have not taken is only a rumour.",
+    "flag": null,
+    "guild": "the Wayfinders",
+    "saying": "The edge moves.",
+    "crest": "explorer"
   },
   "WIZARD": {
     "name": "Wizard",
-    "tagline": "Hidden knowledge, puzzles and unusual locations.",
-    "description": "Historical landmarks, strange architecture, ancient sites and puzzle chains.",
-    "flag": "wizard_class"
+    "tagline": "Cuts the runes again. Looks twice.",
+    "description": "The Cutters kept the runes legible, which mostly meant cutting them again. Old stones, odd markers and shapes drawn with your own track pay best. There is more to a place than the map admits.",
+    "flag": "wizard_class",
+    "guild": "the Cutters",
+    "saying": "Look twice, then once more.",
+    "crest": "wizard"
   },
   "WARRIOR": {
     "name": "Warrior",
-    "tagline": "Endurance, climbing and a pace you set yourself.",
-    "description": "Long distance, demanding terrain, hilltop destinations, and holding a steady pace over a ride — measured against yourself, never a race with other riders.",
-    "flag": "warrior_class"
+    "tagline": "Keeps the road with the legs. Pays the hill.",
+    "description": "The Menders carried the stone. Distance, height and long hours out pay best, measured against yourself and nobody else. The hill charges everyone the same.",
+    "flag": "warrior_class",
+    "guild": "the Menders",
+    "saying": "The hill does not negotiate.",
+    "crest": "warrior"
   },
   "SCRIBE": {
     "name": "Scribe",
-    "tagline": "Document the world.",
-    "description": "Photograph landmarks, write notes, document trails and record community knowledge.",
-    "flag": "scribe_class"
+    "tagline": "Stops, looks, writes it down.",
+    "description": "The Clerks kept the toll-book and everything else. Notes, photographs and places looked at properly pay best. A thing in the book is harder to forget.",
+    "flag": "scribe_class",
+    "guild": "the Clerks",
+    "saying": "It may as well be you.",
+    "crest": "scribe"
   }
 }

@@ -10,6 +10,7 @@ from app.discoveries.router import router as discoveries_router
 from app.economy.router import router as wallet_router
 from app.exploration.router import router as world_router
 from app.integrations.router import router as integrations_router
+from app.lore.router import router as codex_router
 from app.notifications.router import router as devices_router
 from app.progression.engine import max_level
 from app.quests.router import router as quests_router
@@ -55,5 +56,6 @@ for r in (
     devices_router,
     wallet_router,
     world_objects_router,
+    codex_router,
 ):
     api_router.include_router(r)

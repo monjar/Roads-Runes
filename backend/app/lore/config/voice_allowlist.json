@@ -1,0 +1,7 @@
+{
+  "_comment": "Lines that break the voice on purpose or for now, each with the release that removes it. tests/test_voice.py fails on any line that breaks the voice and is not here, and on any entry here that no longer matches anything, so this list can only shrink.",
+  "allow": [
+    {"file": "app/quests/config/story_arcs.json", "contains": "Not a sprint.", "until": "0.6.1", "why": "The Iron Hours' first step points at the Tempo template; both are replaced when PACE and Tempo are retired."},
+    {"file": "app/quests/config/templates.json", "contains": "Not a race against anyone else", "until": "0.6.1", "why": "WARRIOR_STEADY_TEMPO, retired in 0.6.1."}
+  ]
+}

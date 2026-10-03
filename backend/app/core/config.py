@@ -25,6 +25,8 @@ ALL_FEATURE_FLAGS: tuple[str, ...] = (
     "strava",
     "llm_narrative",
     "nl_route_requests",
+    "codex",
+    "effort_combat",
 )
 
 DEFAULT_FLAGS: dict[str, bool] = {
@@ -37,6 +39,11 @@ DEFAULT_FLAGS: dict[str, bool] = {
     "strava": False,
     "llm_narrative": False,
     "nl_route_requests": True,
+    # The Journal's codex: what the world is, and what this player has met (0.6.0).
+    "codex": True,
+    # Fights decided by effort over an outing instead of one pass/fail check (0.6.1).
+    # Off until the build that understands it is on the phone; see docs/ROADMAP.md.
+    "effort_combat": False,
 }
 
 
