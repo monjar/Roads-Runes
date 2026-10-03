@@ -182,13 +182,21 @@ public struct ClassInfo: Codable, Hashable, Identifiable, Sendable {
     public var tagline: String
     public var description: String
     public var enabled: Bool
+    /// The trade's guild, saying and crest id (docs/WORLD.md); nil from servers before 0.6.0.
+    public var guild: String?
+    public var saying: String?
+    public var crest: String?
 
-    public init(id: String, name: String, tagline: String, description: String, enabled: Bool) {
+    public init(id: String, name: String, tagline: String, description: String, enabled: Bool,
+                guild: String? = nil, saying: String? = nil, crest: String? = nil) {
         self.id = id
         self.name = name
         self.tagline = tagline
         self.description = description
         self.enabled = enabled
+        self.guild = guild
+        self.saying = saying
+        self.crest = crest
     }
 
     public var characterClass: CharacterClass { CharacterClass.lenient(id) }

@@ -139,7 +139,7 @@ public struct WatchNavigationUpdate: Codable, Hashable, Sendable {
 public struct WatchObjectiveCompleted: Codable, Hashable, Sendable {
     public var title: String
     public var xp: Int?
-    /// Coins the thing was worth, for "+60 AC" under the title. Optional so an older
+    /// Coins the thing was worth, for "+60 coins" under the title. Optional so an older
     /// Watch build still reads the message.
     public var coins: Int?
     /// A second line: "Old Runes, 3 of 6".

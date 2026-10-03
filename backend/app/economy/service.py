@@ -76,7 +76,7 @@ async def debit(
     wallet = await get_or_create_wallet(db, user_id)
     if wallet.balance < amount:
         raise Conflict(
-            f"That costs {amount} Active Coins and you have {wallet.balance}",
+            f"That costs {amount} coins and you have {wallet.balance}",
             code="INSUFFICIENT_AC",
             details={"cost": amount, "balance": wallet.balance},
         )

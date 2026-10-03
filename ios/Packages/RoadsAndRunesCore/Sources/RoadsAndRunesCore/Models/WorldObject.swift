@@ -45,11 +45,16 @@ public struct MonsterInfo: Codable, Hashable, Sendable {
     public var hp: Int
     public var flavour: String?
     public var killMethods: [KillMethod]
+    /// Which creature it is and its face; nil from servers before 0.6.0.
+    public var speciesId: String?
+    public var sigil: CreatureSigil?
 
-    public init(hp: Int, flavour: String? = nil, killMethods: [KillMethod] = []) {
+    public init(hp: Int, flavour: String? = nil, killMethods: [KillMethod] = [], speciesId: String? = nil, sigil: CreatureSigil? = nil) {
         self.hp = hp
         self.flavour = flavour
         self.killMethods = killMethods
+        self.speciesId = speciesId
+        self.sigil = sigil
     }
 }
 

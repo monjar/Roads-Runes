@@ -21,7 +21,7 @@ struct ClassChangeSheet: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Eyebrow(text: "Change class", color: Theme.Colors.terracottaDeep)
+                        Eyebrow(text: LoreCopy.changeOfTrade, color: Theme.Colors.terracottaDeep)
                         Spacer()
                         IconCircleButton(symbol: "xmark", background: Theme.Colors.surface) { dismiss() }.accessibilityLabel("Close")
                     }
@@ -85,13 +85,13 @@ struct ClassChangeSheet: View {
         if let next = character.nextClassChangeAt, next > Date() {
             return "You changed class recently. The next change opens \(next.formatted(.relative(presentation: .named)))."
         }
-        let price = cost == 0 ? "This change is free" : "This change costs \(cost) Active Coins (you have \(character.activeCoins ?? 0))"
+        let price = cost == 0 ? "This change is free" : "This change costs \(LoreCopy.purse(cost)) (you have \(character.activeCoins ?? 0))"
         return "\(price). Your level, XP, coins and discoveries stay; each class keeps its own level for when you come back to it."
     }
 
     private var buttonTitle: String {
         guard let selected else { return "Pick a class" }
         let cost = character?.classChangeCostAC ?? 0
-        return cost == 0 ? "Become \(ClassStyle.name(selected))" : "Become \(ClassStyle.name(selected)) for \(cost) AC"
+        return cost == 0 ? "Become \(ClassStyle.name(selected))" : "Become \(ClassStyle.name(selected)) for \(LoreCopy.purse(cost))"
     }
 }

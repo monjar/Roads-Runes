@@ -244,6 +244,7 @@ public actor APIClient: RoadsAndRunesAPI {
     // MARK: Character
 
     public func classes() async throws -> [ClassInfo] { try await request(Endpoints.classes()) }
+    public func codex() async throws -> Codex { try await request(Endpoints.codex()) }
     public func createCharacter(_ request: CharacterCreate) async throws -> Character { try await self.request(try Endpoints.createCharacter(request)) }
     public func character() async throws -> Character { try await request(Endpoints.character()) }
     public func changeClass(_ request: CharacterClassChange) async throws -> Character { try await self.request(try Endpoints.changeClass(request)) }

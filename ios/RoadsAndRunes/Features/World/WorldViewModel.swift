@@ -1,6 +1,7 @@
 import Foundation
 import MapKit
 import Observation
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import UIKit
 
@@ -112,7 +113,7 @@ final class WorldViewModel {
         out += objects.map { object in
             MapMarker(
                 id: "object-\(object.id.uuidString)", coordinate: object.coordinate, kind: Self.markerKind(for: object),
-                title: object.name, inReach: isWithinReach(object)
+                title: object.name, inReach: isWithinReach(object), mark: .of(object)
             )
         }
         return out
@@ -170,7 +171,7 @@ final class WorldViewModel {
             )
             take(result.object)
             selectedObject = nil
-            let detail = result.setCompleted.map { "\($0.name) complete · +\($0.bonusAC) AC" } ?? result.object.setStanding?.line
+            let detail = result.setCompleted.map { "\($0.name) complete · \(LoreCopy.earned($0.bonusAC))" } ?? result.object.setStanding?.line
             show(claimed: result.object, quest: result.questCompleted?.title, detail: detail)
             container.analytics.track(.worldObjectClaimed, properties: ["kind": object.kind.rawValue, "name": object.name, "method": "TAP"])
             await container.session.refreshCharacter()

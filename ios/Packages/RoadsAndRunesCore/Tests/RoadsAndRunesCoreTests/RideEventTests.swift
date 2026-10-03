@@ -251,8 +251,8 @@ final class RideEventTests: XCTestCase {
         XCTAssertEqual(lures.bounty?.name, "Gutter Drake")
         XCTAssertEqual(lures.nearest?.name, "Old chest", "the nearer chest will have gone by the evening")
         let withBounty = NudgeCopy.streak(days: 6, activity: .ride, bounty: lures.bounty, nearest: lures.nearest)
-        XCTAssertEqual(withBounty.title, "6-day streak ends tonight")
-        XCTAssertEqual(withBounty.body, "The Gutter Drake is 900 m away and worth double till midnight. One kilometre keeps the streak.")
+        XCTAssertEqual(withBounty.title, "6 days kept. Today not yet.")
+        XCTAssertEqual(withBounty.body, "The Gutter Drake is 900 m away and worth double till midnight. One kilometre keeps the days.")
 
         lures = NudgeCopy.lures(among: [chest], from: home, stillThereAt: evening)
         XCTAssertEqual(NudgeCopy.streak(days: 3, activity: .walk, bounty: lures.bounty, nearest: lures.nearest).body, "One kilometre keeps it alive. An Old chest is 400 m away.")

@@ -19,6 +19,10 @@ class MonsterOut(APIModel):
     hp: int
     flavour: str | None = None
     killMethods: list[KillMethodOut] = []
+    # Which creature this is, and its face (docs/WORLD.md): set from 0.6.0, and
+    # found by name for anything placed before species had ids.
+    speciesId: str | None = None
+    sigil: dict[str, str] | None = None
 
 
 class WorldObjectOut(APIModel):

@@ -37,7 +37,7 @@ public enum RewardCopy {
         case "COLLECTABLE": return "Pieces"
         case "MONSTER_SLAIN": return "Monsters"
         case "BOUNTY": return "The bounty"
-        case "STREAK": return "Days in a row"
+        case "STREAK": return "Days kept"
         case "SET_COMPLETED": return "A set complete"
         case "STORY_ARC": return "An arc finished"
         default: return humanised(kind)

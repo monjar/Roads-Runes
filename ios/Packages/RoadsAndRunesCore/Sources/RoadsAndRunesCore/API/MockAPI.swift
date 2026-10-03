@@ -155,6 +155,7 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     // MARK: Character
 
     public func classes() async throws -> [ClassInfo] { try await run { SampleData.sampleClasses } }
+    public func codex() async throws -> Codex { try await run { SampleData.sampleCodex } }
     public func createCharacter(_ request: CharacterCreate) async throws -> Character {
         try await run {
             if self.storedCharacter != nil {
@@ -181,7 +182,7 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
             }
             let cost = character.classChangeCostAC ?? 0
             if cost > self.storedCoins {
-                throw APIError.server(code: "INSUFFICIENT_AC", message: "That costs \(cost) Active Coins and you have \(self.storedCoins)", status: 409)
+                throw APIError.server(code: "INSUFFICIENT_AC", message: "That costs \(cost) coins and you have \(self.storedCoins)", status: 409)
             }
             var progress = character.classProgress ?? [:]
             progress[character.characterClass.rawValue] = ClassProgress(classXp: character.classXP, classLevel: character.classLevel)
@@ -250,7 +251,7 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     public func lure(at center: Coordinate) async throws -> [WorldObject] {
         try await run {
             if self.storedCoins < 50 {
-                throw APIError.server(code: "INSUFFICIENT_AC", message: "That costs 50 Active Coins and you have \(self.storedCoins)", status: 409)
+                throw APIError.server(code: "INSUFFICIENT_AC", message: "That costs 50 coins and you have \(self.storedCoins)", status: 409)
             }
             self.storedCoins -= 50
             let lured = WorldObject(

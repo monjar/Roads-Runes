@@ -24,7 +24,7 @@ struct BountyCard: View {
             }
             .padding(16)
             .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Color(red: 0.85, green: 0.65, blue: 0.13).opacity(0.7), lineWidth: 1.5))
+            .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Theme.Colors.gold.opacity(0.7), lineWidth: 1.5))
         }
         .buttonStyle(.pressable)
         .accessibilityIdentifier("bounty")
@@ -34,7 +34,7 @@ struct BountyCard: View {
         var parts: [String] = []
         if let anchor = bounty.anchorName { parts.append("at \(anchor)") }
         if let distanceMeters { parts.append(formatter.distance(meters: distanceMeters)) }
-        parts.append("\(bounty.rewardAC) AC · gone tonight")
+        parts.append("\(LoreCopy.purse(bounty.rewardAC)) · gone tonight")
         if let first = bounty.monster?.killMethods.first { parts.append(first.hint) }
         return parts.joined(separator: " · ")
     }

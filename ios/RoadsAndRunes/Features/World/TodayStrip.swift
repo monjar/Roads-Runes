@@ -20,7 +20,7 @@ struct TodayStrip: View {
                 Divider().frame(height: 26)
                 Button(action: onNearest) {
                     HStack(spacing: 8) {
-                        EncounterGlyph(kind: nearest.kind, bounty: nearest.isBounty, size: 28)
+                        EncounterGlyph(object: nearest, size: 28)
                         VStack(alignment: .leading, spacing: 0) {
                             Text(nearest.name).font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink).lineLimit(1)
                             Text(nearestLine(nearest)).font(Theme.Typography.text(11.5, relativeTo: .caption2)).foregroundStyle(Theme.Colors.muted).lineLimit(1)
@@ -56,7 +56,7 @@ struct TodayStrip: View {
 
     private func streakTitle(days: Int, done: Bool) -> String {
         if done { return "Day \(max(days, 1)) done" }
-        return days == 0 ? "Start a streak" : "\(days)-day streak"
+        return days == 0 ? "Keep a day" : LoreCopy.daysKept(days)
     }
 
     private func streakLine(days: Int, done: Bool) -> String {
@@ -70,7 +70,7 @@ struct TodayStrip: View {
     private func nearestLine(_ object: WorldObject) -> String {
         var parts: [String] = []
         if let nearestMeters { parts.append(formatter.distance(meters: nearestMeters)) }
-        parts.append("\(object.rewardAC) AC")
+        parts.append(LoreCopy.purse(object.rewardAC))
         if let nearestMeters, nearestMeters < 1500 { parts.append("a short \(activity.noun)") }
         return parts.joined(separator: " · ")
     }

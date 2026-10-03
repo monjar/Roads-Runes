@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -21,7 +22,7 @@ struct EncounterCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
-                EncounterGlyph(kind: object.kind, bounty: object.isBounty, size: 48)
+                EncounterGlyph(object: object, size: 48)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text(object.name).font(Theme.Typography.voice(20, relativeTo: .title3)).foregroundStyle(Theme.Colors.ink).lineLimit(2)
@@ -105,7 +106,7 @@ struct EncounterCard: View {
         var parts: [String] = []
         if let anchor = object.anchorName { parts.append("at \(anchor)") }
         if let distanceMeters { parts.append(formatter.distance(meters: distanceMeters)) }
-        parts.append("\(object.rewardAC) AC")
+        parts.append(LoreCopy.purse(object.rewardAC))
         let days = max(0, Int(object.expiresAt.timeIntervalSinceNow / 86_400))
         parts.append(days == 0 ? "gone tonight" : "\(days) day\(days == 1 ? "" : "s") left")
         return parts.joined(separator: " · ")
@@ -123,40 +124,24 @@ struct EncounterCard: View {
     }
 }
 
-/// The world object's mark: a box for a chest, a flame for a monster, sparkles for a piece.
+/// The world object's face (RoadsAndRunesArt): a creature's sigil in its tier's
+/// frame, a chest by tier, a rune-stone or a coin for a piece.
 struct EncounterGlyph: View {
-    let kind: WorldObjectKind
-    var bounty = false
+    let mark: Mark
     var size: CGFloat = 40
 
+    init(object: WorldObject, size: CGFloat = 40) {
+        mark = .of(object)
+        self.size = size
+    }
+
+    /// For a place that has only the kind.
+    init(kind: WorldObjectKind, bounty: Bool = false, size: CGFloat = 40) {
+        mark = .of(kind: kind, bounty: bounty)
+        self.size = size
+    }
+
     var body: some View {
-        ZStack {
-            Circle().fill(color)
-            Image(systemName: symbol)
-                .font(.system(size: size * 0.44, weight: .bold))
-                .foregroundStyle(Theme.Colors.cream)
-            if bounty {
-                Circle().stroke(Color(red: 0.85, green: 0.65, blue: 0.13), lineWidth: 3)
-            }
-        }
-        .frame(width: size, height: size)
-    }
-
-    private var symbol: String {
-        switch kind {
-        case .chest: return "shippingbox.fill"
-        case .monster: return "flame.fill"
-        case .collectable: return "sparkles"
-        case .unknown: return "questionmark"
-        }
-    }
-
-    private var color: Color {
-        switch kind {
-        case .chest: return Theme.Colors.inkSoft
-        case .monster: return Theme.Colors.terracottaDeep
-        case .collectable: return Theme.Colors.sageDeep
-        case .unknown: return Theme.Colors.muted
-        }
+        MarkView(mark).frame(width: size, height: size)
     }
 }

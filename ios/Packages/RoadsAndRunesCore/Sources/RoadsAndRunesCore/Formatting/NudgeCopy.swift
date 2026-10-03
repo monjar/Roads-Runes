@@ -29,12 +29,12 @@ public enum NudgeCopy {
         }
     }
 
-    /// The evening reminder that a streak ends at midnight.
+    /// The evening reminder that today has not been kept yet.
     public static func streak(days: Int, activity: Activity, bounty: Lure?, nearest: Lure?, units: Units = .metric) -> (title: String, body: String) {
         let formatter = UnitFormatter(units: units)
-        let title = "\(days)-day streak ends tonight"
+        let title = "\(LoreCopy.daysKept(days)). Today not yet."
         if let bounty {
-            return (title, "\(bounty.named) is \(formatter.distance(meters: bounty.meters)) away and worth double till midnight. One kilometre keeps the streak.")
+            return (title, "\(bounty.named) is \(formatter.distance(meters: bounty.meters)) away and worth double till midnight. One kilometre keeps the days.")
         }
         if let nearest {
             return (title, "One kilometre keeps it alive. \(nearest.named) is \(formatter.distance(meters: nearest.meters)) away.")

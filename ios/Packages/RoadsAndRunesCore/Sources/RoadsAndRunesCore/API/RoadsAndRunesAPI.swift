@@ -16,6 +16,8 @@ public protocol RoadsAndRunesAPI: Sendable {
 
     // MARK: Character
     func classes() async throws -> [ClassInfo]
+    /// The world's pages and what this player has met (`codex` flag).
+    func codex() async throws -> Codex
     func createCharacter(_ request: CharacterCreate) async throws -> Character
     func character() async throws -> Character
     func changeClass(_ request: CharacterClassChange) async throws -> Character

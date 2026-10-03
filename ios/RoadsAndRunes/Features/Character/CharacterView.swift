@@ -108,7 +108,7 @@ struct CharacterView: View {
                 }
             }
             if let points = character?.unspentAbilityPoints, points > 0 {
-                Text("\(points) ability point\(points == 1 ? "" : "s") to spend · tap an outlined ability")
+                Text("\(LoreCopy.knacksToChoose(points)) · tap an outlined one")
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.terracottaDeep)
             }
 

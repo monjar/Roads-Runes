@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -261,7 +262,7 @@ struct NavigationScreen: View {
         for object in recorder.objectsOnMap {
             out.append(MapMarker(
                 id: "object-\(object.id.uuidString)", coordinate: object.coordinate,
-                kind: WorldViewModel.markerKind(for: object), title: object.name
+                kind: WorldViewModel.markerKind(for: object), title: object.name, mark: .of(object)
             ))
         }
         // The cafés, pubs and landmarks on the route, as what they are rather than as
@@ -441,16 +442,16 @@ struct NearbyStopCard: View {
     }
 }
 
-/// "Beaten: Bog Wraith · +150 AC", for a few seconds, the moment it happens.
+/// "Beaten: Bog Wraith · +150 coins", for a few seconds, the moment it happens.
 struct ClaimToast: View {
     let object: WorldObject
 
     var body: some View {
         HStack(spacing: 10) {
-            EncounterGlyph(kind: object.kind, bounty: object.isBounty, size: 30)
+            EncounterGlyph(object: object, size: 30)
             Text("\(verb): \(object.name)").font(Theme.Typography.text(15, .bold)).foregroundStyle(Theme.Colors.ink).lineLimit(1)
             Spacer(minLength: 6)
-            Text("+\(object.rewardAC) AC").font(Theme.Typography.text(15, .bold).monospacedDigit()).foregroundStyle(Theme.Colors.terracottaDeep)
+            Text(LoreCopy.earned(object.rewardAC)).font(Theme.Typography.text(15, .bold).monospacedDigit()).foregroundStyle(Theme.Colors.terracottaDeep)
         }
         .padding(.vertical, 9)
         .padding(.horizontal, 14)
@@ -481,7 +482,7 @@ struct EncounterBanner: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
-                EncounterGlyph(kind: status.object.kind, bounty: status.object.isBounty, size: 34)
+                EncounterGlyph(object: status.object, size: 34)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(status.object.name).font(Theme.Typography.text(15, .bold)).foregroundStyle(Theme.Colors.cream).lineLimit(1)
                     Text(status.hint ?? (status.object.kind == .chest ? "pass close by to open it" : "pass close by to pick it up"))

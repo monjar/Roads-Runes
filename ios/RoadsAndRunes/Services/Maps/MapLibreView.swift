@@ -1,5 +1,6 @@
 import CoreLocation
 import MapLibre
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -20,6 +21,8 @@ struct MapMarker: Identifiable, Hashable {
     var symbol: String?
     /// A chest or a piece the player is standing close enough to take: it wears a gold ring.
     var inReach = false
+    /// The thing's face (RoadsAndRunesArt), for the world's objects.
+    var mark: Mark?
 }
 
 /// How far the player can reach from where they stand, drawn as a ring around them.
@@ -451,9 +454,9 @@ struct MapLibreView: UIViewRepresentable {
                 return RiderLocationView()
             }
             guard let marker = marker(for: annotation) else { return nil }
-            let identifier = "marker-\(marker.kind.rawValue)-\(marker.symbol ?? "plain")\(marker.inReach ? "-reach" : "")"
+            let identifier = "marker-\(marker.kind.rawValue)-\(marker.symbol ?? "plain")-\(marker.mark?.id ?? "none")\(marker.inReach ? "-reach" : "")"
             return mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
-                ?? MarkerAnnotationView(reuseIdentifier: identifier, kind: marker.kind, symbol: marker.symbol, inReach: marker.inReach)
+                ?? MarkerAnnotationView(reuseIdentifier: identifier, kind: marker.kind, symbol: marker.symbol, inReach: marker.inReach, mark: marker.mark)
         }
 
         private func marker(for annotation: MLNAnnotation) -> MapMarker? {
@@ -517,11 +520,30 @@ struct MapLibreView: UIViewRepresentable {
 /// mysteries are dashed "?" circles, stops are small ink dots.
 final class MarkerAnnotationView: MLNAnnotationView {
     /// Gold, for the bounty and for what is within reach.
-    private static let gold = UIColor(red: 0.85, green: 0.65, blue: 0.13, alpha: 1)
+    private static let gold = UIColor(red: 0xD9 / 255, green: 0xA6 / 255, blue: 0x21 / 255, alpha: 1)
 
-    init(reuseIdentifier: String, kind: MapMarker.Kind, symbol: String? = nil, inReach: Bool = false) {
+    init(reuseIdentifier: String, kind: MapMarker.Kind, symbol: String? = nil, inReach: Bool = false, mark: Mark? = nil) {
         super.init(reuseIdentifier: reuseIdentifier)
         switch kind {
+        case .chest where mark != nil, .collectable where mark != nil, .monster where mark != nil, .bounty where mark != nil:
+            // The world's objects wear their faces: a creature's sigil in its tier's
+            // frame, a chest by tier, a rune-stone or a coin. Within reach a thing
+            // grows and takes a gold ring: this one can be had now.
+            let size: CGFloat = (kind == .collectable ? 30 : 36) + (inReach ? 6 : 0)
+            let touch = max(size, 44)
+            frame = CGRect(x: 0, y: 0, width: touch, height: touch)
+            let face = UIImageView(frame: bounds.insetBy(dx: (touch - size) / 2, dy: (touch - size) / 2))
+            face.image = mark.flatMap { MarkImageCache.shared.image($0, size: size) }
+            face.isUserInteractionEnabled = false
+            addSubview(face)
+            if inReach {
+                let ring = CAShapeLayer()
+                ring.path = UIBezierPath(ovalIn: face.frame.insetBy(dx: -3, dy: -3)).cgPath
+                ring.fillColor = UIColor.clear.cgColor
+                ring.strokeColor = Self.gold.cgColor
+                ring.lineWidth = 3
+                layer.addSublayer(ring)
+            }
         case .stop, .stopActive:
             // A stop on the route reads as what it is — a cup, a mug, a column —
             // and grows while the rider has it open.

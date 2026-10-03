@@ -50,14 +50,14 @@ struct SettingsView: View {
                 }
             }
             Section("Reminders") {
-                Toggle("Streak and bounty reminders", isOn: Binding(
+                Toggle("Days kept and bounty reminders", isOn: Binding(
                     get: { container.nudges.isEnabled },
                     set: { enabled in
                         container.nudges.isEnabled = enabled
                         if enabled { Task { await container.nudges.requestAuthorizationIfNeeded() } }
                     }
                 ))
-                Text("One in the evening if a streak is about to end, one in the morning when the day's bounty is out. Nothing else, and nothing leaves your phone.")
+                Text("One in the evening if a run of days kept is about to end, one in the morning when the day's bounty is out. Nothing else, and nothing leaves your phone.")
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
             }
             Section("Character") {
@@ -65,7 +65,7 @@ struct SettingsView: View {
                     changingClass = true
                 } label: {
                     HStack {
-                        Text("Change class")
+                        Text(LoreCopy.changeOfTrade)
                         Spacer()
                         if let character = container.session.character {
                             Text(ClassStyle.name(character.characterClass)).foregroundStyle(Theme.Colors.textSecondary)
@@ -73,7 +73,7 @@ struct SettingsView: View {
                     }
                 }
                 .accessibilityIdentifier("settings.changeClass")
-                Text("Your level, XP, coins and discoveries stay. The first change is free; after that it costs Active Coins and waits a day.")
+                Text("Your level, XP, coins and discoveries stay. The first change of trade is free; after that it costs coins and waits a day.")
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
                 Button("Start over", role: .destructive) { confirmingReset = true }
                     .disabled(resetting)
@@ -99,7 +99,7 @@ struct SettingsView: View {
             }
             Button("Keep it", role: .cancel) {}
         } message: {
-            Text("Your character, quests, XP and Active Coins are deleted. Your rides stay in the journal.")
+            Text("Your character, quests, XP and coins are deleted. Your rides stay in the journal.")
         }
     }
 }

@@ -75,8 +75,8 @@ description and its codex page.
 
 | Class | Guild | Believes | Saying | Crest | Posts its notices |
 |---|---|---|---|---|---|
-| Explorer | the Wayfinders | A road nobody has taken is a rumour. | "The edge moves." | A ring broken at upper right, one arrow leaving through the gap, three hatch strokes beyond | Nell Foss |
-| Wizard | the Cutters | Every straight line was somebody's idea. | "Look twice, then once more." | A standing stone, one stave cut down its face, three short rays | Enid Sallow |
+| Explorer | the Wayfinders | A road nobody has taken is a rumour. | "The edge moves." | A compass star whose north-east point runs long, two hatch strokes below | Nell Foss |
+| Wizard | the Cutters | Every straight line was somebody's idea. | "Look twice, then once more." | A rough standing stone, one stave cut down its face, three short rays | Enid Sallow |
 | Warrior | the Menders | A road is kept with the legs. | "The hill does not negotiate." | A mattock upright over a single hill line, a notch cut in the slope | Tam Hurdle |
 | Scribe | the Clerks | What is not written down was never there. | "It may as well be you." | An open book, a road drawn across both pages and off the edge | Walter Garth |
 

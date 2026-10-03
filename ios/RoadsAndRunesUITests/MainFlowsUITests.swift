@@ -201,7 +201,7 @@ final class MainFlowsUITests: XCTestCase {
         replaceText(in: waitFor(app.textFields["Developer subject"]), with: "ui-\(UUID().uuidString.prefix(8).lowercased())")
         tapOffCentre(app.buttons["Developer sign in"], dx: 0.5)
         replaceText(in: waitFor(app.textFields["Your name"], 30), with: "Wren")
-        tapOffCentre(waitFor(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Ride as")).firstMatch), dx: 0.1)
+        tapOffCentre(waitFor(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Go out as")).firstMatch), dx: 0.1)
 
         tapOffCentre(waitFor(app.buttons["onboarding.activity.run"], 30), dx: 0.2)
         tapOffCentre(app.buttons["onboarding.activity.continue"], dx: 0.1)
@@ -257,7 +257,7 @@ final class MainFlowsUITests: XCTestCase {
         tapOffCentre(app.buttons["Developer sign in"], dx: 0.5)
 
         replaceText(in: waitFor(app.textFields["Your name"], 30), with: "Wren")
-        tapOffCentre(waitFor(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Ride as")).firstMatch), dx: 0.1)
+        tapOffCentre(waitFor(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Go out as")).firstMatch), dx: 0.1)
 
         // How you move: Ride is chosen already; a rider goes on to a bike.
         tapOffCentre(waitFor(app.buttons["onboarding.activity.continue"], 30), dx: 0.1)

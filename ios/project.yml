@@ -51,6 +51,8 @@ targets:
         excludes: ["Resources/Info.plist", "Resources/Fonts/*.txt"]
     dependencies:
       - package: RoadsAndRunesCore
+      - package: RoadsAndRunesCore
+        product: RoadsAndRunesArt
       - package: MapLibre
         product: MapLibre
       - package: H3
@@ -121,6 +123,8 @@ targets:
         excludes: ["Resources/Info.plist"]
     dependencies:
       - package: RoadsAndRunesCore
+      - package: RoadsAndRunesCore
+        product: RoadsAndRunesArt
     info:
       path: RoadsAndRunesWatch/Resources/Info.plist
       properties:

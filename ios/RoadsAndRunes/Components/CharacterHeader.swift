@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -60,7 +61,7 @@ struct CharacterHeader: View {
                             .foregroundStyle(Theme.Colors.cream)
                             .padding(.horizontal, 10).padding(.vertical, 5)
                             .overlay(Capsule().stroke(Theme.Colors.cream.opacity(0.35), lineWidth: 1))
-                            .accessibilityLabel("\(days) days in a row")
+                            .accessibilityLabel(LoreCopy.daysKept(days))
                             .accessibilityIdentifier("character.streak")
                         }
                     }
@@ -164,19 +165,19 @@ struct AbilityCard: View {
 }
 
 
-/// "◎ 120 AC": the purse, wherever the character is shown.
+/// "◎ 120": the purse, wherever the character is shown.
 struct CoinPill: View {
     let coins: Int
     var foreground: Color = Theme.Colors.ink
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: "circlebadge.2.fill").font(.system(size: 11, weight: .bold))
-            Text("\(coins.formatted()) AC").font(Theme.Typography.text(12, .semibold))
+            MarkView(.coin).frame(width: 14, height: 14)
+            Text(coins.formatted()).font(Theme.Typography.text(12, .semibold))
         }
         .foregroundStyle(foreground)
         .padding(.horizontal, 10).padding(.vertical, 5)
         .overlay(Capsule().stroke(foreground.opacity(0.35), lineWidth: 1))
-        .accessibilityLabel("\(coins) Active Coins")
+        .accessibilityLabel(LoreCopy.purse(coins))
     }
 }

@@ -8,7 +8,7 @@ import SwiftUI
 /// coins, then a level gained (its own card), then what was beaten, opened and
 /// found — and what got away, and by how much — then the quest's last word. It
 /// was one static sheet with a level-up as a small chip among others. One tap
-/// shows everything at once; "Collect rewards" is there from the start. Cycling
+/// shows everything at once; "Close the book" is there from the start. Cycling
 /// stats stay one quiet line (spec §40). Opened again from the Journal it is
 /// simply all there (`animated: false`).
 struct AdventureSummaryView: View {
@@ -94,7 +94,7 @@ struct AdventureSummaryView: View {
                     }
                 }
                 // Read again from the Journal there is nothing left to collect.
-                Button(animated ? "Collect rewards" : "Done") {
+                Button(animated ? LoreCopy.closeTheBook : "Done") {
                     if animated { Task { await container.nudges.requestAuthorizationIfNeeded() } }
                     onDone()
                 }
@@ -198,7 +198,7 @@ struct AdventureSummaryView: View {
     private var header: some View {
         HStack(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 4) {
-                Eyebrow(text: "Adventure complete", color: Theme.Colors.sageDeep)
+                Eyebrow(text: LoreCopy.reckoning, color: Theme.Colors.sageDeep)
                 Text(summary.quest?.title ?? summary.ride.title ?? "Free ride")
                     .font(Theme.Typography.voice(28, relativeTo: .title))
                     .foregroundStyle(Theme.Colors.ink)
@@ -268,7 +268,7 @@ struct AdventureSummaryView: View {
             HStack(spacing: 8) {
                 HStack(spacing: 5) {
                     Image(systemName: "circlebadge.2.fill").font(.system(size: 13, weight: .bold))
-                    CountingText(value: shownCoins, prefix: "+", suffix: " AC").font(Theme.Typography.text(17, .bold))
+                    CountingText(value: shownCoins, prefix: "+", suffix: shownCoins == 1 ? " coin" : " coins").font(Theme.Typography.text(17, .bold))
                 }
                 .foregroundStyle(Theme.Colors.terracottaDeep)
                 Text(summary.walletBalance.map { "\($0.formatted()) in your purse" } ?? "earned")
@@ -314,7 +314,7 @@ struct AdventureSummaryView: View {
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("summary.levelUp")
         }
-        let gains = summary.abilitiesUnlocked.map { "\($0.name) available" } + (summary.titlesUnlocked ?? []).map { "Title: \($0)" }
+        let gains = summary.abilitiesUnlocked.map { LoreCopy.newKnack($0.name) } + (summary.titlesUnlocked ?? []).map { "Title: \($0)" }
         if !gains.isEmpty { chips(gains) }
     }
 
@@ -338,11 +338,11 @@ struct AdventureSummaryView: View {
                         }
                     }
                     Spacer(minLength: 6)
-                    Text("+\(taken.rewardAC) AC").font(Theme.Typography.text(13, .bold).monospacedDigit()).foregroundStyle(Theme.Colors.terracottaDeep)
+                    Text(LoreCopy.earned(taken.rewardAC)).font(Theme.Typography.text(13, .bold).monospacedDigit()).foregroundStyle(Theme.Colors.terracottaDeep)
                 }
             }
             ForEach(summary.worldObjects?.setsCompleted ?? []) { done in
-                Label("\(done.name) complete · +\(done.bonusAC) AC", systemImage: "sparkles")
+                Label("\(done.name) complete · \(LoreCopy.earned(done.bonusAC))", systemImage: "sparkles")
                     .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.sageDeep)
                     .accessibilityIdentifier("summary.setComplete")
             }
@@ -467,10 +467,10 @@ struct AdventureSummaryView: View {
     }
 
     private func streakLine(_ streak: StreakOutcome) -> String {
-        var line = "\(streak.days) day\(streak.days == 1 ? "" : "s") in a row"
+        var line = LoreCopy.daysKept(streak.days)
         if streak.days > 1, streak.days >= streak.longest { line += ", your longest yet" }
         if streak.milestone != nil { line += " · a milestone" }
-        return streak.bonusAC > 0 ? "\(line) · +\(streak.bonusAC) AC" : line
+        return streak.bonusAC > 0 ? "\(line) · \(LoreCopy.earned(streak.bonusAC))" : line
     }
 
     private func storyLine(_ standing: StoryStanding) -> String {
@@ -486,12 +486,12 @@ struct AdventureSummaryView: View {
 
     /// What tomorrow is worth: the next streak purse, or simply the next day.
     private var comeBackLine: String? {
-        guard let streak = summary.streak, streak.days > 0 else { return "Out again tomorrow and a streak begins." }
+        guard let streak = summary.streak, streak.days > 0 else { return "Out again tomorrow and the days start to count." }
         if let next = [7, 30].first(where: { $0 > streak.days }) {
             let left = next - streak.days
-            return "\(left) more day\(left == 1 ? "" : "s") in a row for a \(next == 7 ? 100 : 500) AC purse. A new bounty is out at dawn."
+            return "\(left) more \(left == 1 ? "day" : "days") kept for a purse of \(next == 7 ? 100 : 500). A new bounty is out at dawn."
         }
-        return "\(streak.days) days in a row. A new bounty is out at dawn."
+        return "\(LoreCopy.daysKept(streak.days)). A new bounty is out at dawn."
     }
 }
 

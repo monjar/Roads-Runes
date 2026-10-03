@@ -11,7 +11,7 @@ struct RootView: View {
             if container.session.state == .loading {
                 ZStack {
                     Theme.Colors.cream.ignoresSafeArea()
-                    ProgressView("Loading your world…").font(Theme.Typography.caption).tint(Theme.Colors.terracotta)
+                    ProgressView(LoreCopy.loading).font(Theme.Typography.caption).tint(Theme.Colors.terracotta)
                 }
             } else if container.session.state != .ready || container.session.isOnboarding {
                 // One branch for every onboarding state, so its step survives the character

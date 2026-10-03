@@ -27,6 +27,7 @@ from app.economy import service as economy
 from app.economy.rules import load_ac_rules
 from app.exploration.cells import cell_center, cell_for, frontier_cells
 from app.exploration.service import known_cells
+from app.lore import catalog as lore
 from app.rides.validation import CleanPoint
 from app.world_objects import claims
 from app.world_objects.models import WorldObject
@@ -160,10 +161,14 @@ def to_out(obj: WorldObject, owned: dict[str, set[str]] | None = None) -> WorldO
     in_set = set_fields(obj, owned)
     monster = None
     if obj.kind == "MONSTER":
+        species_id = lore.species_of(payload)
+        species = lore.species_by_id().get(species_id or "")
         monster = MonsterOut(
             hp=int(payload.get("hp", 100)),
             flavour=payload.get("flavour"),
             killMethods=[KillMethodOut(**m) for m in payload.get("killMethods", [])],
+            speciesId=species_id,
+            sigil=dict(species["sigil"]) if species else None,
         )
     return WorldObjectOut(
         id=obj.id,

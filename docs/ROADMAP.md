@@ -607,8 +607,8 @@ Nothing in it compares speed or performance, and nothing exposes live location.
 
 | Class | Guild | Saying | Crest | Poster |
 |---|---|---|---|---|
-| Explorer | the Wayfinders | "The edge moves." | A ring broken at upper right, an arrow leaving through the gap | Nell Foss |
-| Wizard | the Cutters | "Look twice, then once more." | A standing stone, one stave cut down its face | Enid Sallow |
+| Explorer | the Wayfinders | "The edge moves." | A compass star whose north-east point runs long | Nell Foss |
+| Wizard | the Cutters | "Look twice, then once more." | A rough standing stone, one stave cut down its face | Enid Sallow |
 | Warrior | the Menders | "The hill does not negotiate." | A mattock upright over a hill line | Tam Hurdle |
 | Scribe | the Clerks | "It may as well be you." | An open book, a road drawn off the edge | Walter Garth |
 

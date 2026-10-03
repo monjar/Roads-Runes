@@ -533,3 +533,16 @@ async def test_a_run_is_paid_as_a_run(explorer_client):
     distance = next(line for line in summary["acBreakdown"] if line["kind"] == "RIDE_DISTANCE")
     assert distance["detail"]["perKm"] == world_objects.load_ac_rules()["perKm"]["RUN"] == 5
     assert distance["ac"] == int(distance["detail"]["km"] * 5)
+
+
+async def test_every_creature_comes_with_its_species_and_its_face(explorer_client):
+    await seed_discoveries()
+    monsters = [o for o in await spawned(explorer_client) if o["kind"] == "MONSTER"]
+    assert monsters
+    from app.lore import catalog
+
+    for m in monsters:
+        species = catalog.species_by_id()[m["monster"]["speciesId"]]
+        assert m["monster"]["sigil"] == species["sigil"]
+        # Tier 1 is the thing itself; tiers 2 and 3 are its elders, by name.
+        assert m["name"] == catalog.name_at_tier(species, m["tier"])

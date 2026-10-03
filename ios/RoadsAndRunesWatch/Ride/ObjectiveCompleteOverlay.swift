@@ -41,7 +41,7 @@ struct ObjectiveCompleteOverlay: View {
                 Text("+\(xp) XP")
                     .font(.system(size: 30, weight: .bold, design: .rounded))
             } else if let coins = event.coins, coins > 0 {
-                Text("+\(coins) AC")
+                Text(LoreCopy.earned(coins))
                     .font(.system(size: 30, weight: .bold, design: .rounded))
             }
         }

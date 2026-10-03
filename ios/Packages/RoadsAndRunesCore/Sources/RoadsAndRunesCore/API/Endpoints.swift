@@ -66,6 +66,7 @@ public enum Endpoints {
 
     // MARK: Character
     public static func classes() -> Endpoint { Endpoint(method: .get, path: "/character/classes") }
+    public static func codex() -> Endpoint { Endpoint(method: .get, path: "/codex") }
     public static func createCharacter(_ body: CharacterCreate) throws -> Endpoint { try .json(.post, "/character", body: body) }
     public static func character() -> Endpoint { Endpoint(method: .get, path: "/character") }
     public static func changeClass(_ body: CharacterClassChange) throws -> Endpoint { try .json(.patch, "/character", body: body) }

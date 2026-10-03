@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -46,6 +47,8 @@ enum Theme {
         static let scribe = Color(hex: 0x4F6B7A)
         static let scribeLight = Color(hex: 0xA3BCC9)
         static let heartRate = Color(hex: 0xFF8F8F)
+        /// The bounty, and anything within reach: one gold, not three.
+        static let gold = Color(hex: 0xD9A621)
 
         // Semantic aliases
         static let parchment = cream
@@ -430,7 +433,9 @@ struct SheetHandle: View {
     }
 }
 
-/// Class emblem in a circle. `inverted` puts the glyph in class colour on cream.
+/// A trade's crest (RoadsAndRunesArt) in a circle. `inverted` sets it on cream
+/// (for an ink or class-coloured ground); otherwise it sits on its own colour.
+/// The open class and an unknown one keep the old symbol.
 struct ClassEmblem: View {
     let characterClass: CharacterClass
     var size: CGFloat = 32
@@ -438,10 +443,14 @@ struct ClassEmblem: View {
 
     var body: some View {
         ZStack {
-            Circle().fill(inverted ? Theme.Colors.cream : ClassStyle.color(characterClass))
-            Image(systemName: ClassStyle.symbol(characterClass))
-                .font(.system(size: size * 0.44, weight: .bold))
-                .foregroundStyle(inverted ? ClassStyle.color(characterClass) : Theme.Colors.cream)
+            Circle().fill(inverted ? Theme.Colors.cream : ClassStyle.color(characterClass).opacity(0.18))
+            if let crest = Mark.crest(characterClass) {
+                MarkView(crest).padding(size * 0.12)
+            } else {
+                Image(systemName: ClassStyle.symbol(characterClass))
+                    .font(.system(size: size * 0.44, weight: .bold))
+                    .foregroundStyle(inverted ? ClassStyle.color(characterClass) : Theme.Colors.ink)
+            }
         }
         .frame(width: size, height: size)
     }

@@ -147,7 +147,7 @@ struct CharacterCreationView: View {
                     saving = false
                 }
             } label: {
-                Text(saving ? "Creating…" : "Ride as \(article(for: selected)) \(ClassStyle.name(selected))")
+                Text(saving ? "Creating…" : LoreCopy.goOutAs(ClassStyle.name(selected)))
             }
             .buttonStyle(.primary)
             .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || saving)
@@ -159,10 +159,6 @@ struct CharacterCreationView: View {
                 ClassInfo(id: "EXPLORER", name: "Explorer", tagline: "Chart unknown territory.", description: "New roads and unvisited areas earn the most.", enabled: true),
             ]
         }
-    }
-
-    private func article(for characterClass: CharacterClass) -> String {
-        characterClass == .explorer ? "an" : "a"
     }
 }
 
