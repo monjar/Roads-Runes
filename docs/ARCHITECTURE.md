@@ -124,8 +124,10 @@ See `docs/WATCH.md`, `docs/EXPLORATION.md`, `docs/ROUTING.md`,
 ## Feature flags
 
 Resolved in `app/core/config.py` from `FEATURE_FLAGS`; exposed via
-`GET /config` and `GET /world`. Classes other than Explorer, parties, story
-quests, Strava and LLM narrative ship disabled.
+`GET /config` and `GET /world`. The four classes ship enabled; parties, story
+quests, Strava and LLM narrative default off and are switched on per
+environment (`backend/fly.toml` turns on parties, story quests and LLM
+narrative, and turns the fog drawing off).
 
 ## Testing
 

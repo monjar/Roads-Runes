@@ -367,8 +367,6 @@ post-processing re-validates.
 
 ---
 
-## Routes
-
 ### `GET /quests/story`
 
 Every authored arc and where the rider stands in it. Behind the `story_quests`
@@ -392,6 +390,8 @@ flag; 403 when it is off.
 `unlocked` says whether this rider's class and level have reached it. A step is
 put on the board by `GET /quests` (`ensure_available`), one at a time, and never
 expires. See `docs/QUEST_SYSTEM.md` for the rules.
+
+## Routes
 
 ### `POST /routes/generate`
 
@@ -678,4 +678,4 @@ Parties:
 ## Meta
 
 - `GET /health` → `{"status": "ok", "version": "..."}`
-- `GET /config` → `{"featureFlags": {...}, "h3Resolution": 9, "levels": {"max": 50}}`
+- `GET /config` → `{"featureFlags": {...}, "h3Resolution": 9, "levels": {"max": 50, "maxClass": 50}, "environment": "development"}`
