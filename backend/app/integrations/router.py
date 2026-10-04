@@ -71,7 +71,7 @@ async def strava_upload(
     strava._check(settings)
     ride = await get_ride(db, user, ride_id)
     if await strava.connection_for(db, user.id) is None:
-        raise FeatureDisabled("Strava not connected")
+        raise FeatureDisabled("Strava isn't connected. Connect it in Settings first.")
     ride.strava_upload_status = "QUEUED"
     ride.strava_error = None
     await db.commit()  # the job runs in another session/process; make QUEUED visible first

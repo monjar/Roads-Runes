@@ -126,7 +126,7 @@ async def test_a_rune_ride_routes_the_shape_and_keeps_to_its_activity(explorer_c
     r = await c.post("/routes/rune", json={"origin": {"latitude": ORIGIN[0], "longitude": ORIGIN[1]}, "rune": "raido"})
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["roadForm"] == "LOOP" and body["hint"].startswith("Cut Raido here: a loop")
+    assert body["roadForm"] == "LOOP" and body["hint"].startswith("Ride Raido's shape here: a loop")
     assert body["alternatives"] and body["alternatives"][0]["label"].startswith("Raido")
     r = await c.post(
         "/routes/rune",

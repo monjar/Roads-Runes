@@ -62,7 +62,7 @@ def ride_out(ride: Ride) -> RideOut:
 async def get_ride(db: AsyncSession, user: User, ride_id: uuid.UUID) -> Ride:
     ride = await db.get(Ride, ride_id)
     if ride is None or ride.user_id != user.id or ride.status == "DISCARDED":
-        raise NotFound("Ride not found")
+        raise NotFound("We couldn't find that journey. Go back and try again.")
     return ride
 
 
@@ -114,7 +114,7 @@ async def _next_sequence(db: AsyncSession, ride_id: uuid.UUID) -> int:
 
 async def add_points(db: AsyncSession, ride: Ride, points: list[RidePointIn]) -> int:
     if ride.status != "RECORDING":
-        raise RideInvalidState("Ride is not recording")
+        raise RideInvalidState("This journey has already finished. Start a new one to keep recording.")
     if not points:
         return 0
     seq = await _next_sequence(db, ride.id)
@@ -148,7 +148,7 @@ async def add_points(db: AsyncSession, ride: Ride, points: list[RidePointIn]) ->
 
 async def add_cells(db: AsyncSession, ride: Ride, cells: list[str]) -> int:
     if ride.status != "RECORDING":
-        raise RideInvalidState("Ride is not recording")
+        raise RideInvalidState("This journey has already finished. Start a new one to keep recording.")
     merged = list(
         dict.fromkeys(list(ride.client_cells or []) + [c for c in cells if isinstance(c, str) and len(c) <= 16])
     )
@@ -162,7 +162,7 @@ async def complete_ride(db: AsyncSession, ride: Ride, payload: RideCompleteIn) -
     if ride.status != "RECORDING":
         if ride.status in ("UPLOADED", "PROCESSING", "PROCESSED", "FLAGGED"):
             return ride  # idempotent
-        raise RideInvalidState("Ride cannot be completed")
+        raise RideInvalidState("This journey can't be finished now. Start a new one.")
     if payload.points:
         await add_points(db, ride, payload.points)
     if payload.cellsVisited:

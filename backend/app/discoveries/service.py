@@ -95,7 +95,7 @@ def user_discovery_out(ud: UserDiscovery) -> UserDiscoveryOut:
 async def get(db: AsyncSession, user: User, discovery_id: uuid.UUID) -> DiscoveryOut:
     d = await db.get(Discovery, discovery_id)
     if d is None or (d.moderation_status != "APPROVED" and d.created_by_user_id != user.id):
-        raise NotFound("Discovery not found")
+        raise NotFound("We couldn't find that place. Go back and try again.")
     ud = (await user_found(db, user.id, [d.id])).get(d.id)
     return DiscoveryOut(
         id=d.id,
@@ -175,7 +175,7 @@ async def upsert_user_discovery(
 ) -> UserDiscovery:
     d = await db.get(Discovery, discovery_id)
     if d is None:
-        raise NotFound("Discovery not found")
+        raise NotFound("We couldn't find that place. Go back and try again.")
     ud = (await user_found(db, user.id, [d.id])).get(d.id)
     if ud is None:
         ud = UserDiscovery(user_id=user.id, discovery_id=d.id, discovered_at=utcnow())

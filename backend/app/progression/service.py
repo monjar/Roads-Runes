@@ -107,7 +107,7 @@ async def wear_title(db: AsyncSession, character: Character, slug: str | None) -
         if slug not in {t.slug for t in earned}:
             from app.core.errors import Conflict
 
-            raise Conflict("That title has not been earned", code="TITLE_NOT_EARNED")
+            raise Conflict("You haven't earned that title yet. Pick one you have.", code="TITLE_NOT_EARNED")
         character.title = title_catalogue.by_slug()[slug]["name"]
         character.title_pinned = True
     await db.flush()

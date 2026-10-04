@@ -1,8 +1,8 @@
 {
   "EXPLORER": {
     "name": "Explorer",
-    "tagline": "Goes first. Moves the edge of the map.",
-    "description": "The Wayfinders went ahead and decided where the road would go. New roads, new ground and places nobody pointed you at pay best. A road you have not taken is only a rumour.",
+    "tagline": "Goes first and finds the way.",
+    "description": "Earns the most XP for exploring: new roads and new tiles pay best.",
     "flag": null,
     "guild": "the Wayfinders",
     "saying": "The edge moves.",
@@ -10,8 +10,8 @@
   },
   "WIZARD": {
     "name": "Wizard",
-    "tagline": "Cuts the runes again. Looks twice.",
-    "description": "The Cutters kept the runes legible, which mostly meant cutting them again. Old stones, odd markers and shapes drawn with your own track pay best. There is more to a place than the map admits.",
+    "tagline": "Reads the runes and looks twice.",
+    "description": "Earns the most XP for finding places and finishing quests, and is best with runes.",
     "flag": "wizard_class",
     "guild": "the Cutters",
     "saying": "Look twice, then once more.",
@@ -19,8 +19,8 @@
   },
   "WARRIOR": {
     "name": "Warrior",
-    "tagline": "Keeps the road with the legs. Pays the hill.",
-    "description": "The Menders carried the stone. Distance, height and long hours out pay best, measured against yourself and nobody else. The hill charges everyone the same.",
+    "tagline": "Goes the distance and takes the hill.",
+    "description": "Earns the most XP for distance and climbing, measured against yourself and nobody else.",
     "flag": "warrior_class",
     "guild": "the Menders",
     "saying": "The hill does not negotiate.",
@@ -28,8 +28,8 @@
   },
   "SCRIBE": {
     "name": "Scribe",
-    "tagline": "Stops, looks, writes it down.",
-    "description": "The Clerks kept the toll-book and everything else. Notes, photographs and places looked at properly pay best. A thing in the book is harder to forget.",
+    "tagline": "Stops, looks and writes it down.",
+    "description": "Earns the most XP for finding places and quest objectives, and is best with notes.",
     "flag": "scribe_class",
     "guild": "the Clerks",
     "saying": "It may as well be you.",

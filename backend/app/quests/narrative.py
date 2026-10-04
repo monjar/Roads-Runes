@@ -8,6 +8,7 @@ from typing import Any
 
 from app.core.activity import noun, verb
 from app.core.llm import LLMClient
+from app.lore.catalog import articled
 from app.lore.voice import violations
 from app.quests.generator import GeneratedQuest
 
@@ -66,7 +67,8 @@ def compose_story(quest: GeneratedQuest) -> str:
         sentences.append(f"{place} is on every map and in nobody's plans. {fact}")
     thing, where = variables.get("objectName"), variables.get("objectPlace")
     if thing and where and str(thing) not in quest.description:
-        sentences.append(f"The {thing} at {where} will not wait for ever; these things are gone in a few days.")
+        line = f"The {thing} at {where} will not wait for ever; these things are gone in a few days."
+        sentences.append(articled(line, str(thing)))
     sentences.append(CLASS_LINES.get(quest.character_class, CLASS_LINES["ANY"]))
     effort = EFFORT_LINES.get(quest.difficulty, EFFORT_LINES["MODERATE"])
     way = WAYS.get(quest.activity, "by bike")

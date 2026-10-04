@@ -27,7 +27,7 @@
         3.0,
         3.5
       ],
-      "text": "The opening blow, what the outing did before it met something, counts {v}× at contact."
+      "text": "Everything your journey did before you met a creature counts {v}× as your opening blow."
     },
     {
       "id": "sowilo",
@@ -39,7 +39,7 @@
         3000,
         3500
       ],
-      "text": "A rune cut reaches {km} km from where it was cut."
+      "text": "A rune shape reaches creatures up to {km} km from where you rode it."
     },
     {
       "id": "kenaz",
@@ -51,7 +51,7 @@
         3,
         4
       ],
-      "text": "{n} ring{s} of ground read round each place found; things are sighted 600 m out."
+      "text": "{n} ring{s} of tiles explored around each place found, and creatures show up from 600 m away."
     },
     {
       "id": "dagaz",
@@ -63,7 +63,7 @@
         3,
         4
       ],
-      "text": "On your first {n} outing{s} of the day, \"does not mind\" counts as neither."
+      "text": "On your {first} journey{s} of the day, creatures resist nothing."
     },
     {
       "id": "ansuz",
@@ -75,7 +75,7 @@
         2000,
         2500
       ],
-      "text": "The word lands on everything within {km} km of where it was written, not only what is beside you."
+      "text": "A note hits every creature within {km} km of where you wrote it, not only the one beside you."
     },
     {
       "id": "wunjo",
@@ -87,7 +87,7 @@
         180,
         120
       ],
-      "text": "A stop of {min} minutes at a café, a pub or a green place counts as the word."
+      "text": "A stop of {min} minutes at a café, a pub or a green place counts as a note."
     },
     {
       "id": "laguz",
@@ -117,7 +117,7 @@
           ]
         }
       },
-      "text": "Things that keep to water count the road as something they want: the first {n} met on an outing."
+      "text": "Water creatures are weak to distance: the {first} you meet on a journey."
     },
     {
       "id": "berkano",
@@ -146,7 +146,7 @@
           ]
         }
       },
-      "text": "Things of green places count new ground as something they want: the first {n} met on an outing."
+      "text": "Creatures of green places are weak to exploring: the {first} you meet on a journey."
     },
     {
       "id": "eihwaz",
@@ -168,7 +168,7 @@
           ]
         }
       },
-      "text": "Things of old stone count the word as something they want: the first {n} met on an outing."
+      "text": "Creatures of old stone are weak to a note: the {first} you meet on a journey."
     },
     {
       "id": "ehwaz",
@@ -196,7 +196,7 @@
           ]
         }
       },
-      "text": "On a bike, things of the street count the road as something they want: the first {n} met on an outing."
+      "text": "Street creatures are weak to distance on a bike: the {first} you meet on a ride."
     },
     {
       "id": "jera",
@@ -246,7 +246,7 @@
           ]
         }
       },
-      "text": "A bounty you loosen keeps its double purse, and stays {n} day{s} longer."
+      "text": "A bounty you weaken keeps its double coins and stays {n} day{s} longer."
     }
   ]
 }

@@ -109,13 +109,15 @@ async def raise_rank(db: AsyncSession, character: Character, rune_id: str) -> Ru
 
     holding = (await holdings(db, character)).get(rune_id)
     if holding is None:
-        raise NotFound("That rune is not held", code="RUNE_NOT_HELD")
+        raise NotFound("You don't have that rune yet. Pick up one of its rune stones first.", code="RUNE_NOT_HELD")
     if holding.rank >= catalog.MAX_RANK:
-        raise Conflict("That rune is as deep as it goes", code="RUNE_MAX_RANK")
+        raise Conflict("That rune is already at its highest rank. Raise another rune instead.", code="RUNE_MAX_RANK")
     cost = catalog.rank_cost(holding.rank + 1) or {}
     if holding.shards < int(cost.get("shards", 0)):
+        short = int(cost["shards"]) - holding.shards
         raise Conflict(
-            f"Raising it needs {cost['shards']} more stones of it",
+            f"Raising it needs {short} more rune stone{'s' if short != 1 else ''}. "
+            "Find them on your journeys, then try again.",
             code="RUNE_NEEDS_STONES",
             details={"shards": holding.shards, "needed": cost.get("shards")},
         )
@@ -147,16 +149,22 @@ async def inscribe(db: AsyncSession, character: Character, runes: list[str]) -> 
         select(Ride.id).where(Ride.user_id == character.user_id, Ride.status == "RECORDING").limit(1)
     )
     if recording is not None:
-        raise Conflict("Not while you are out. Change them when you are back.", code="LOADOUT_LOCKED")
+        raise Conflict("Runes can't be changed during a journey. Change them when you're back.", code="LOADOUT_LOCKED")
     if len(set(runes)) != len(runes):
-        raise Conflict("A rune goes in one slot", code="RUNE_TWICE")
+        raise Conflict("A rune can only go in one slot. Pick a different rune for the other.", code="RUNE_TWICE")
     slots = catalog.slots_for_level(character.overall_level)
     if len(runes) > slots:
-        raise Conflict(f"{slots} slot{'s' if slots != 1 else ''} open at your level", code="NO_SLOT")
+        later = [at for at in catalog.book()["slotsAtLevel"] if at > character.overall_level]
+        then = f" The next opens at level {later[0]}." if later else ""
+        raise Conflict(f"You have {slots} rune slot{'s' if slots != 1 else ''} at your level.{then}", code="NO_SLOT")
     held = await holdings(db, character)
     missing = [r for r in runes if r not in held]
     if missing:
-        raise Conflict("Only runes you hold can be inscribed", code="RUNE_NOT_HELD", details={"runes": missing})
+        raise Conflict(
+            "You can only inscribe runes you have. Pick up their rune stones first.",
+            code="RUNE_NOT_HELD",
+            details={"runes": missing},
+        )
     row = await loadout(db, character)
     row.inscriptions = list(runes)
     db.add(

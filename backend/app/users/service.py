@@ -49,7 +49,7 @@ async def update_user(db: AsyncSession, user: User, patch: UserUpdate) -> User:
 async def public_profile(db: AsyncSession, viewer: User, user_id: uuid.UUID) -> PublicProfile:
     user = await db.get(User, user_id)
     if user is None or user.deleted_at is not None:
-        raise NotFound("User not found")
+        raise NotFound("We couldn't find that player. They may have left the game.")
     character = await db.scalar(select(Character).where(Character.user_id == user.id))
     quests = await db.scalar(
         select(func.count(QuestInstance.id)).where(

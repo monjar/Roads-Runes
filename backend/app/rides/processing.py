@@ -281,9 +281,13 @@ async def _reward_for_ride(
 async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID) -> dict[str, Any]:
     ride = await db.get(Ride, ride_id)
     if ride is None:
-        raise NotFound("Ride not found")
+        raise NotFound("We couldn't find that journey. Go back and try again.")
     if ride.status not in ("UPLOADED", "PROCESSING"):
-        raise RideInvalidState(f"Ride is {ride.status}, cannot process")
+        raise RideInvalidState(
+            "This journey is still recording. Finish it first."
+            if ride.status == "RECORDING"
+            else "This journey has already been counted."
+        )
     ride.status = "PROCESSING"
     await db.flush()
     character = await db.scalar(select(Character).where(Character.user_id == ride.user_id))
@@ -851,17 +855,19 @@ async def complete_quest_with_ride(
     """Explicit completion call from the client: relies on processed ride data."""
     ride = await db.get(Ride, ride_id)
     if ride is None or ride.user_id != user.id:
-        raise NotFound("Ride not found")
+        raise NotFound("We couldn't find that journey. Go back and try again.")
     if quest.status == "COMPLETED" and ride.processing_result and ride.processing_result.get("questCompletion"):
         return ride.processing_result["questCompletion"]
     if ride.status in ("UPLOADED", "PROCESSING"):
-        raise RideInvalidState("Ride is still processing; poll /rides/{id}/summary", details={"rideId": str(ride.id)})
+        raise RideInvalidState(
+            "Your journey is still being counted. Wait a moment and try again.", details={"rideId": str(ride.id)}
+        )
     if ride.status == "RECORDING":
-        raise RideInvalidState("Complete the ride first")
+        raise RideInvalidState("This journey is still recording. Finish it first.")
     assert_transition(quest.status, "COMPLETED")
     if not all_required_complete(quest):
         raise InvalidTransition(
-            "Required objectives are not complete",
+            "Some of this quest's objectives aren't done yet. Finish them, then try again.",
             code="QUEST_OBJECTIVES_INCOMPLETE",
             details={"pending": [str(o.id) for o in quest.objectives if o.required and o.status != "COMPLETED"]},
         )
@@ -894,7 +900,10 @@ async def complete_quest_without_ride(
     """Allowed only when every required objective was validated by a processed ride."""
     assert_transition(quest.status, "COMPLETED")
     if not all_required_complete(quest) or any(o.provisional for o in quest.objectives if o.required):
-        raise InvalidTransition("Required objectives are not validated yet", code="QUEST_OBJECTIVES_INCOMPLETE")
+        raise InvalidTransition(
+            "Some objectives haven't been checked yet. Wait until your journey has been counted.",
+            code="QUEST_OBJECTIVES_INCOMPLETE",
+        )
     quest.status = "COMPLETED"
     quest.completed_at = utcnow()
     character = await db.scalar(select(Character).where(Character.user_id == user.id))

@@ -15,34 +15,34 @@ from dataclasses import dataclass, field
 WAYS = {"RIDE": "by bike", "RUN": "at a run", "WALK": "on foot"}
 
 OPEN_NEW = (
-    "Out {way}, {distance}, most of it ground you had not read.",
+    "Out {way}, {distance}, most of it unexplored.",
     "{Distance} {way}, and most of it new to you.",
     "{Distance} {way}. The map had little to say about most of it before today.",
     "A new way, mostly: {distance} {way}.",
 )
 OPEN_SOME = (
-    "{Distance} {way}, with {cells} of new ground in it.",
-    "{Distance} {way}. {Cells} of it had not been read before.",
-    "Out {way} for {distance}; {cells} of new ground on the way.",
-    "{Distance} {way}, mostly known, with {cells} that were not.",
+    "{Distance} {way}, with {cells} in it.",
+    "{Distance} {way}, and {tiles} of it unexplored until today.",
+    "Out {way} for {distance}; {cells} on the way.",
+    "{Distance} {way}, mostly known, with {tiles} that were not.",
 )
 OPEN_KNOWN = (
     "{Distance} {way} on ground you know.",
-    "{Distance} {way}, all of it read before. The roads do not mind being read twice.",
+    "{Distance} {way}, all of it explored before. The roads do not mind a second visit.",
     "A known way, {distance} {way}.",
     "{Distance} {way} on familiar roads.",
 )
 CLIMB = (
-    "{Climb} of height on the way.",
+    "{Climb} climbed on the way.",
     "It asked for {climb} of climbing.",
     "{Climb} up, and the same down, more or less.",
 )
 CLOSE = (
-    "It is in the book.",
+    "It is in the Journal.",
     "Nothing else to report, which is its own kind of report.",
     "The roads were where they were left.",
     "Walter Garth has written it down.",
-    "That will do for one outing.",
+    "That will do for one journey.",
 )
 
 
@@ -75,8 +75,14 @@ def _km(meters: float) -> str:
     return f"{km:.1f} km" if km < 10 else f"{km:.0f} km"
 
 
-def _patches(n: int) -> str:
-    return f"{n} patch" if n == 1 else f"{n} patches"
+def _tiles(n: int, new: bool = False) -> str:
+    what = "new tile" if new else "tile"
+    return f"{n} {what}" if n == 1 else f"{n} {what}s"
+
+
+def _the(name: str) -> str:
+    """A name with "the" before it, unless it brings its own ("the Long Cold")."""
+    return name if name[:4].lower() == "the " else f"the {name}"
 
 
 def _and(names: list[str]) -> str:
@@ -96,7 +102,8 @@ def compose(facts: Facts, seed: str) -> str:
     values = {
         "way": WAYS.get(facts.activity.upper(), "out"),
         "distance": _km(facts.distance_m),
-        "cells": _patches(facts.new_cells),
+        "cells": _tiles(facts.new_cells, new=True),
+        "tiles": _tiles(facts.new_cells),
         "climb": f"{facts.climb_m:.0f} m",
     }
     values.update({_cap(k): _cap(v) for k, v in list(values.items())})
@@ -116,18 +123,18 @@ def compose(facts: Facts, seed: str) -> str:
     if facts.quarry:
         # What the outing was for comes first.
         if facts.quarry_seen_off:
-            events.append(f"The {facts.quarry}, which was the point, was seen off.")
+            events.append(f"{_cap(_the(facts.quarry))}, which was the point, was defeated.")
             seen_off = [n for n in seen_off if n != facts.quarry]
         elif facts.quarry in loosened:
-            events.append(f"The {facts.quarry} got away, loosened.")
+            events.append(f"{_cap(_the(facts.quarry))} got away, weakened.")
             loosened = [n for n in loosened if n != facts.quarry]
         else:
-            events.append(f"The {facts.quarry} was not met.")
+            events.append(f"{_cap(_the(facts.quarry))} was not met.")
     if seen_off:
         verb = "was" if len(seen_off) == 1 else "were"
-        events.append(f"{_cap(_and(['the ' + n for n in seen_off[:3]]))} {verb} seen off.")
+        events.append(f"{_cap(_and([_the(n) for n in seen_off[:3]]))} {verb} defeated.")
     if loosened:
-        events.append(f"{_cap(_and(['the ' + n for n in loosened[:2]]))} got away, loosened.")
+        events.append(f"{_cap(_and([_the(n) for n in loosened[:2]]))} got away, weakened.")
     if facts.places:
         shown = facts.places[:2]
         more = len(facts.places) - len(shown)
@@ -135,7 +142,7 @@ def compose(facts: Facts, seed: str) -> str:
         events.append(f"{_and(shown)}{tail}: new to you.")
     found = []
     if facts.chests:
-        found.append("a box opened" if facts.chests == 1 else f"{facts.chests} boxes opened")
+        found.append("a chest opened" if facts.chests == 1 else f"{facts.chests} chests opened")
     if facts.pieces:
         found.append("a piece picked up" if facts.pieces == 1 else f"{facts.pieces} pieces picked up")
     if found:

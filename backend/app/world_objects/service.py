@@ -273,7 +273,7 @@ async def live_objects(
 async def get_object(db: AsyncSession, user_id: uuid.UUID, object_id: uuid.UUID) -> WorldObject:
     obj = await db.get(WorldObject, object_id)
     if obj is None or obj.user_id != user_id:
-        raise NotFound("Nothing like that here")
+        raise NotFound("We couldn't find that on your map. It may have gone.")
     return obj
 
 
@@ -557,7 +557,7 @@ async def lamp_spot(db: AsyncSession, settings: Any, user_id: uuid.UUID, latitud
         return LampSpot(
             None,
             "ALREADY_HERE",
-            f"{standing.payload.get('name', 'Something')} is already at {nearest.name}. No lamp needed.",
+            f"{standing.payload.get('name', 'A creature')} is already at {nearest.name}. No lamp needed.",
         )
     return LampSpot(nearest)
 
@@ -614,7 +614,7 @@ async def lure(
     )
     came = await _persist(db, user_id, plans, utcnow(), float(cfg["expiryDays"]), settings.h3_resolution)
     if not came:
-        raise Conflict("The lamp went out and nothing came. Your coins were not taken.", code="LAMP_WENT_OUT")
+        raise Conflict("The lamp went out and no creature came. Your coins were not taken.", code="LAMP_WENT_OUT")
     await economy.debit(db, user_id, cost, "LURE", payload={"latitude": latitude, "longitude": longitude})
     return came
 
@@ -1332,12 +1332,16 @@ async def claim_by_tap(
     await db.refresh(obj, with_for_update=True)
     now = utcnow()
     if obj.kind not in TAP_KINDS:
-        raise Conflict("A monster has to be beaten on the move", code="OBJECT_NOT_CLAIMABLE")
+        raise Conflict("Creatures can't be tapped. Ride near one to fight it.", code="OBJECT_NOT_CLAIMABLE")
     if obj.status != "SPAWNED" or obj.expires_at < now:
-        raise Conflict("It has already gone", code="OBJECT_GONE", details={"status": obj.status})
+        raise Conflict(
+            "That one has already gone. Look for another on the map.",
+            code="OBJECT_GONE",
+            details={"status": obj.status},
+        )
     if accuracy_m is not None and accuracy_m > TAP_MAX_ACCURACY_M:
         raise Conflict(
-            "GPS is too weak to tell how close you are",
+            "Your GPS is too weak to tell how close you are. Move into the open and try again.",
             code="GPS_TOO_WEAK",
             details={"accuracyMeters": round(accuracy_m, 1)},
         )
@@ -1345,7 +1349,7 @@ async def claim_by_tap(
     distance = haversine_m(latitude, longitude, obj.latitude, obj.longitude)
     if distance > radius * CLAIM_TOLERANCE + min(accuracy_m or 0.0, TAP_ACCURACY_ALLOWANCE_M):
         raise Conflict(
-            f"Get within {int(radius)} m of it",
+            f"You're {round(distance)} m away. Get within {int(radius)} m and try again.",
             code="OBJECT_OUT_OF_RANGE",
             details={"distanceMeters": round(distance, 1), "radiusMeters": radius},
         )
@@ -1366,7 +1370,7 @@ async def claim_by_tap(
         seconds = max(1.0, (now - last.claimed_at).total_seconds())
         if jump > TAP_JUMP_MIN_M and jump / seconds > max(SPEED_CAP_MPS.values()):
             log.warning("world_object_claim_too_fast", user=str(user_id), meters=int(jump), seconds=int(seconds))
-            raise Conflict("You cannot have got here that fast", code="CLAIM_TOO_FAST")
+            raise Conflict("Your location jumped too far, too fast. Wait for a steady GPS fix.", code="CLAIM_TOO_FAST")
     held = await pieces_owned(db, user_id)
     _claim(
         obj,

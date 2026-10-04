@@ -59,7 +59,7 @@ async def sign_in_with_apple(db: AsyncSession, settings: Settings, payload: Appl
 
 async def dev_sign_in(db: AsyncSession, settings: Settings, subject: str, display_name: str) -> TokenResponse:
     if not settings.dev_auth_enabled or settings.is_production:
-        raise Forbidden("Dev auth is disabled")
+        raise Forbidden("Developer sign-in is off on this server. Sign in with Apple instead.")
     user, is_new = await _get_or_create_user(db, f"dev:{subject}", display_name, None)
     return await _issue_tokens(db, settings, user, is_new)
 
@@ -67,10 +67,10 @@ async def dev_sign_in(db: AsyncSession, settings: Settings, subject: str, displa
 async def refresh_tokens(db: AsyncSession, settings: Settings, refresh_token: str) -> TokenResponse:
     row = await db.scalar(select(RefreshToken).where(RefreshToken.token_hash == hash_token(refresh_token)))
     if row is None or row.revoked_at is not None or row.expires_at < utcnow():
-        raise Unauthenticated("Refresh token invalid")
+        raise Unauthenticated("Your sign-in has run out. Please sign in again.")
     user = await db.get(User, row.user_id)
     if user is None or user.deleted_at is not None:
-        raise Unauthenticated("User not found")
+        raise Unauthenticated("We couldn't find your account. Please sign in again.")
     row.revoked_at = utcnow()  # rotation
     return await _issue_tokens(db, settings, user, False)
 

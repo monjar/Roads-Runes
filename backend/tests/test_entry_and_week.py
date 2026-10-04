@@ -48,10 +48,10 @@ def test_the_same_outing_reads_the_same_and_thirty_do_not_read_alike():
 
 
 def test_an_entry_keeps_the_voice_and_names_only_what_it_was_given():
-    allowed = {"Walter", "Garth", "The", "A", "Out", "It", "Nothing", "That", "Two", "Three"}
+    allowed = {"Walter", "Garth", "Journal", "The", "A", "Out", "It", "Nothing", "That", "Two", "Three"}
     for facts, seed in varied(60):
         entry = compose(facts, seed)
-        assert not violations(entry), entry
+        assert not violations(entry, glossary=True), entry
         given = " ".join(facts.places + facts.seen_off + facts.loosened)
         for word in re.findall(r"\b[A-Z][a-z]+", entry):
             assert word in given or word in allowed or re.search(rf"(^|[.:] ){word}\b", entry), (word, entry)
@@ -81,7 +81,7 @@ def test_the_week_has_one_notice_with_a_fixed_target():
     assert week.notice_for(someone, monday)["kind"] == week.notice_for(someone, sunday)["kind"]
     assert week.notice_for(someone, next_monday)["week"] == "2026-W42"
     for n in week.NOTICES:
-        assert n["target"] > 0 and not violations(n["title"])
+        assert n["target"] > 0 and not violations(n["title"], glossary=True)
 
 
 async def test_an_outing_writes_its_entry_and_meets_the_week_once(explorer_client, monkeypatch):
@@ -89,7 +89,7 @@ async def test_an_outing_writes_its_entry_and_meets_the_week_once(explorer_clien
     from tests.test_effort_combat import past
 
     monkeypatch.setattr(
-        week, "NOTICES", ({"kind": "OUTINGS", "title": "One outing this week.", "target": 1, "unit": "outings"},)
+        week, "NOTICES", ({"kind": "OUTINGS", "title": "Go on 1 journey this week.", "target": 1, "unit": "journeys"},)
     )
     first = await ride(explorer_client, past(1500, 3000))
     assert first["entry"], "an outing of a few kilometres leaves an entry"

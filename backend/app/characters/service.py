@@ -34,11 +34,20 @@ from app.economy.models import UserStreak, Wallet, WalletTransaction
 from app.economy.rules import class_change_terms
 from app.economy.streaks import get_streak
 from app.exploration.models import UserExplorationCell
+from app.lore.catalog import with_article
 from app.progression.engine import ability_points_between, level_bounds
 from app.progression.models import CharacterTitle, RewardEvent, XPEvent
 from app.quests.models import QuestInstance, QuestObjective, QuestProgressEvent
 from app.users.models import User
 from app.world_objects.models import WorldObject
+
+UNKNOWN_CLASS = "That class doesn't exist. Pick Explorer, Wizard, Warrior or Scribe."
+BIKE_NOT_FOUND = "That bike isn't in your list. Pick one of your bikes and try again."
+
+
+def not_open_yet(class_id: str) -> str:
+    return f"The {catalog.classes()[class_id]['name']} class isn't open yet. Pick another class for now."
+
 
 BIKE_DEFAULTS = {
     "ROAD": (False, False, 0),
@@ -53,7 +62,7 @@ BIKE_DEFAULTS = {
 async def get_character(db: AsyncSession, user: User) -> Character:
     character = await db.scalar(select(Character).where(Character.user_id == user.id))
     if character is None:
-        raise NotFound("Create a character first", code="NO_CHARACTER")
+        raise NotFound("You have no character yet. Create one first.", code="NO_CHARACTER")
     return character
 
 
@@ -215,11 +224,11 @@ def class_list(settings: Settings) -> list[ClassInfo]:
 
 async def create_character(db: AsyncSession, settings: Settings, user: User, payload: CharacterCreate) -> Character:
     if await maybe_character(db, user.id) is not None:
-        raise Conflict("Character already exists")
+        raise Conflict("You already have a character. You can change its class instead.")
     if payload.characterClass not in catalog.classes():
-        raise NotFound("Unknown class")
+        raise NotFound(UNKNOWN_CLASS)
     if not class_enabled(settings, payload.characterClass):
-        raise FeatureDisabled(f"Class {payload.characterClass} is not available yet")
+        raise FeatureDisabled(not_open_yet(payload.characterClass))
     character = Character(
         user_id=user.id,
         name=payload.name.strip(),
@@ -247,16 +256,19 @@ async def change_class(db: AsyncSession, settings: Settings, character: Characte
     class are withdrawn; accepted and active ones are the rider's to finish.
     """
     if new_class not in catalog.classes():
-        raise NotFound("Unknown class")
+        raise NotFound(UNKNOWN_CLASS)
     if not class_enabled(settings, new_class):
-        raise FeatureDisabled(f"Class {new_class} is not available yet")
+        raise FeatureDisabled(not_open_yet(new_class))
     old_class = character.character_class
     if new_class == old_class:
-        raise Conflict(f"Already a {catalog.classes()[new_class]['name']}", code="SAME_CLASS")
+        raise Conflict(
+            f"You're already {with_article(catalog.classes()[new_class]['name'])}. Pick a different class.",
+            code="SAME_CLASS",
+        )
     cost, next_at = class_change_offer(character)
     if next_at is not None:
         raise Conflict(
-            "You changed class recently; try again tomorrow",
+            "You changed class less than a day ago. Try again tomorrow.",
             code="CLASS_CHANGE_COOLDOWN",
             details={"retryAt": next_at.isoformat()},
         )
@@ -294,7 +306,7 @@ async def reset_character(db: AsyncSession, user: User) -> None:
     """
     character = await maybe_character(db, user.id)
     if character is None:
-        raise NotFound("Create a character first", code="NO_CHARACTER")
+        raise NotFound("You have no character yet. Create one first.", code="NO_CHARACTER")
     quest_ids = select(QuestInstance.id).where(QuestInstance.user_id == user.id)
     await db.execute(delete(QuestProgressEvent).where(QuestProgressEvent.quest_id.in_(quest_ids)))
     await db.execute(delete(QuestObjective).where(QuestObjective.quest_id.in_(quest_ids)))
@@ -325,14 +337,23 @@ async def reset_character(db: AsyncSession, user: User) -> None:
 async def unlock_ability(db: AsyncSession, character: Character, ability_id: str) -> Character:
     ability = catalog.abilities_by_id().get(ability_id)
     if ability is None or ability["characterClass"] != character.character_class:
-        raise NotFound("Ability not available for this class")
+        raise NotFound("That skill belongs to another class. Pick one of your own class's skills.")
     if character.class_level < ability["requiredClassLevel"]:
-        raise Conflict("Class level too low", code="ABILITY_LOCKED")
+        class_name = catalog.classes()[character.character_class]["name"]
+        raise Conflict(
+            f"{ability['name']} opens at {class_name} level {ability['requiredClassLevel']}. "
+            "Earn class XP on your journeys to reach it.",
+            code="ABILITY_LOCKED",
+        )
     if knacks_to_choose(character) <= 0:
-        raise Conflict("No knack to choose yet", code="NO_ABILITY_POINTS")
+        raise Conflict(
+            "You have no skill points to spend. Your class earns them as it levels up.", code="NO_ABILITY_POINTS"
+        )
     existing = next((a for a in character.abilities if a.ability_id == ability_id), None)
     if existing and existing.rank >= ability["maxRank"]:
-        raise Conflict("Ability already at max rank", code="ABILITY_MAX_RANK")
+        raise Conflict(
+            "That skill is already at its highest rank. Spend your point on another skill.", code="ABILITY_MAX_RANK"
+        )
     if existing:
         existing.rank += 1
     else:
@@ -396,7 +417,7 @@ async def create_bike(db: AsyncSession, user: User, payload: BikeIn) -> Bike:
 async def update_bike(db: AsyncSession, user: User, bike_id: uuid.UUID, patch: BikePatch) -> Bike:
     bike = await db.get(Bike, bike_id)
     if bike is None or bike.user_id != user.id or bike.archived:
-        raise NotFound("Bike not found")
+        raise NotFound(BIKE_NOT_FOUND)
     if patch.name is not None:
         bike.name = patch.name.strip()
     if patch.bikeType is not None:
@@ -417,7 +438,7 @@ async def update_bike(db: AsyncSession, user: User, bike_id: uuid.UUID, patch: B
 async def delete_bike(db: AsyncSession, user: User, bike_id: uuid.UUID) -> None:
     bike = await db.get(Bike, bike_id)
     if bike is None or bike.user_id != user.id:
-        raise NotFound("Bike not found")
+        raise NotFound(BIKE_NOT_FOUND)
     bike.archived = True
     bike.is_default = False
     await db.flush()

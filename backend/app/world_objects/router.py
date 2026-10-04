@@ -100,7 +100,7 @@ async def bounty(user: CurrentUser, db: DBDep) -> WorldObjectOut:
     """Today's bounty, spawned on the first look at the world today; 404 until then, or once it is gone."""
     found = await service.todays_bounty(db, user.id)
     if found is None:
-        raise NotFound("No bounty today yet", code="NO_BOUNTY")
+        raise NotFound("No bounty right now. A new one comes each day when you open the map.", code="NO_BOUNTY")
     return service.to_out(found)
 
 

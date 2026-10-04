@@ -113,7 +113,7 @@ def quest_out(q: QuestInstance) -> QuestOut:
 async def get_quest(db: AsyncSession, user: User, quest_id: uuid.UUID) -> QuestInstance:
     quest = await db.get(QuestInstance, quest_id)
     if quest is None or quest.user_id != user.id:
-        raise NotFound("Quest not found")
+        raise NotFound("We couldn't find that quest. It may have ended, so check the quest board.")
     return quest
 
 
@@ -321,7 +321,7 @@ async def generate_quests(
         )
     except Exception as exc:  # noqa: BLE001
         log.error(EVENT_QUEST_GENERATION_FAILED, error=str(exc))
-        raise QuestGenerationFailed("Quest generation failed") from exc
+        raise QuestGenerationFailed("We couldn't make quests here just now. Try again in a moment.") from exc
     # A quest the rider already has open is never dealt twice. This used to fall
     # back to generating without the exclusions "rather than returning nothing",
     # and a rider who had been offered every template got the whole board again:

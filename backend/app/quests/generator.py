@@ -29,6 +29,7 @@ from app.core.geo import destination_point, haversine_m
 from app.core.logging import get_logger
 from app.economy.rules import quest_ac
 from app.exploration.cells import cell_center, cell_for, frontier_cells
+from app.lore.catalog import articled
 from app.quests.templates import ANY_CLASS, DIFFICULTIES, template_by_id, templates_for
 
 REGION_RADIUS_M = 250.0  # radius around a cell centre that counts as "entered"
@@ -274,6 +275,12 @@ def _fact_for(poi: POICandidate) -> str:
     return "The map says almost nothing about it."
 
 
+def _fill(text: str, variables: dict[str, Any]) -> str:
+    """A template line with its variables in, and the article before a world
+    object's name made to fit it ("an Old chest", "the Long Cold")."""
+    return articled(text.format(**variables), str(variables.get("objectName") or ""))
+
+
 def _difficulty(distance_km: float, ctx: GenerationContext, elevation_m: float = 0.0) -> str:
     ratio = distance_km / max(ctx.comfortable_distance_km, 5)
     if elevation_m > ctx.comfortable_elevation_gain * 1.5:
@@ -402,7 +409,7 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
     for spec in template["objectives"]:
         order += 1
         otype = spec["type"]
-        title = spec["title"].format(**{k: v for k, v in variables.items()}) if variables else spec["title"]
+        title = _fill(spec["title"], variables) if variables else spec["title"]
         obj = GeneratedObjective(objective_type=otype, title=title, required=spec.get("required", True), order=order)
 
         if otype == "VISIT_POI" and poi is not None:
@@ -524,10 +531,10 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
     speed_kmh = ASSUMED_SPEED_KMH.get(ctx.activity, 15.0)
     duration = int(distance_km / speed_kmh * 60 + 10)
     narrative = rng.choice(template["narrative"])
-    title = narrative["title"].format(**variables)
-    description = narrative["description"].format(**variables)
+    title = _fill(narrative["title"], variables)
+    description = _fill(narrative["description"], variables)
     try:
-        completion = str(template.get("completion") or "").format(**variables) or None
+        completion = _fill(str(template.get("completion") or ""), variables) or None
     except (KeyError, IndexError, ValueError):
         completion = None
     return GeneratedQuest(

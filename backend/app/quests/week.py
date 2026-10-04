@@ -16,10 +16,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 NOTICES: tuple[dict[str, Any], ...] = (
-    {"kind": "OUTINGS", "title": "Three outings this week.", "target": 3, "unit": "outings"},
-    {"kind": "NEW_GROUND", "title": "Forty patches of new ground this week.", "target": 40, "unit": "patches"},
-    {"kind": "PLACES", "title": "Three places you have not found, this week.", "target": 3, "unit": "places"},
-    {"kind": "SEEN_OFF", "title": "Two things seen off this week.", "target": 2, "unit": "things"},
+    {"kind": "OUTINGS", "title": "Go on 3 journeys this week.", "target": 3, "unit": "journeys"},
+    {"kind": "NEW_GROUND", "title": "Explore 40 new tiles this week.", "target": 40, "unit": "tiles"},
+    {"kind": "PLACES", "title": "Find 3 new places this week.", "target": 3, "unit": "places"},
+    {"kind": "SEEN_OFF", "title": "Defeat 2 creatures this week.", "target": 2, "unit": "creatures"},
 )
 PAY_COINS = 150
 PAY_XP = 200

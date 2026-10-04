@@ -58,7 +58,11 @@ def rule_text(rune_id: str, rank: int) -> str:
     v = value(rune_id, rank)
     km = v / 1000
     n = int(v)
-    return by_id()[rune_id]["text"].format(v=f"{v:g}", km=f"{km:g}", n=n, s="" if n == 1 else "s", min=f"{v / 60:g}")
+    # {first} reads "first" for one and "first 3" for more, so rank I is not "the first 1".
+    first = "first" if n == 1 else f"first {n}"
+    return by_id()[rune_id]["text"].format(
+        v=f"{v:g}", km=f"{km:g}", n=n, s="" if n == 1 else "s", min=f"{v / 60:g}", first=first
+    )
 
 
 def rules_for(inscribed: dict[str, int]) -> dict[str, float]:

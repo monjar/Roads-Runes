@@ -99,7 +99,7 @@ def install_error_handlers(app: FastAPI) -> None:
             content={
                 "error": {
                     "code": "VALIDATION_ERROR",
-                    "message": "Request validation failed",
+                    "message": "Something in that request wasn't right. Check it and try again.",
                     "details": {"errors": exc.errors()},
                 }
             },

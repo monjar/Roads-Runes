@@ -1,9 +1,9 @@
 {
   "_comment": "The 24 Elder Futhark runes as the game reads them. `order` is the futhark position (three eights); `six` is the game's grouping on top. `roadForm` is what a rune comes out as when the knife is a road: a shape the matcher knows, a note, a stop, or nothing yet. One gloss per rune; docs/WORLD.md has the rules for drawing them.",
   "sixes": {
-    "ROAD": {"name": "the Road Six", "how": "Found lying anywhere. Rune-stones work loose."},
+    "ROAD": {"name": "the Road Six", "how": "Found anywhere, as rune stones on the map."},
     "GROUND": {"name": "the Ground Six", "how": "Found only on their own kind of ground."},
-    "TRADE": {"name": "the Trade Six", "how": "Given by the trades, at the end of a chapter."},
+    "TRADE": {"name": "the Trade Six", "how": "Given by your class at the end of a chapter."},
     "HARD": {"name": "the Hard Six", "how": "Taken from the old ones and the elders."}
   },
   "runes": [

@@ -35,7 +35,7 @@ async def balance(db: AsyncSession, user_id: uuid.UUID) -> int:
 def _refuse_short(balance: int, amount: int) -> None:
     if balance < amount:
         raise Conflict(
-            f"That costs {amount} coins and you have {balance}",
+            f"That costs {amount} coins and you have {balance}. Open chests and defeat creatures to earn more.",
             code="INSUFFICIENT_AC",
             details={"cost": amount, "balance": balance},
         )

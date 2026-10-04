@@ -61,3 +61,16 @@ def test_every_trade_has_somebody_to_post_for_it():
     for cid in ("EXPLORER", "WIZARD", "WARRIOR", "SCRIBE", None):
         assert catalog.poster_for(cid)["name"]
     assert catalog.poster_for(None)["id"] == "ada-pym"
+
+
+def test_the_article_follows_the_name():
+    """Templates say "a {objectName}"; the name decides whether that is a, an or the."""
+    assert catalog.articled("Somebody hid a Old chest at the Crown.", "Old chest") == (
+        "Somebody hid an Old chest at the Crown."
+    )
+    assert catalog.articled("There is a Iron chest here.", "Iron chest") == "There is an Iron chest here."
+    assert catalog.articled("There is a Gilded chest here.", "Gilded chest") == "There is a Gilded chest here."
+    assert catalog.articled("A Ash Warden has settled.", "Ash Warden") == "An Ash Warden has settled."
+    assert catalog.articled("A the Long Cold has settled.", "the Long Cold") == "The Long Cold has settled."
+    assert catalog.articled("See off the the Long Cold.", "the Long Cold") == "See off the Long Cold."
+    assert catalog.with_article("Explorer") == "an Explorer" and catalog.with_article("Wizard") == "a Wizard"

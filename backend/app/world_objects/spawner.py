@@ -101,7 +101,7 @@ def resolve_method(
                 "minLengthMeters": rules["minLengthMeters"],
                 "maxLengthMeters": rules["maxLengthMeters"],
             },
-            "hint": f"Trace a {shape.lower()} with your track, within a kilometre of it.",
+            "hint": f"Ride a {shape.lower()} shape within 1 km of it.",
         }
     if method == "CLIMB":
         ease = float(rules.get("classEase", {}).get(character_class, 1.0))
@@ -125,7 +125,7 @@ def resolve_method(
         return {
             "method": "EXPLORE",
             "params": {"cells": cells, "withinMeters": rules["withinMeters"]},
-            "hint": f"Clear {cells} new areas within {rules['withinMeters'] / 1000:.1f} km of it.",
+            "hint": f"Explore {cells} new tile{'s' if cells != 1 else ''} within {rules['withinMeters'] / 1000:g} km of it.",
         }
     raise ValueError(method)
 

@@ -41,12 +41,12 @@ async def verify_identity_token(settings: Settings, identity_token: str) -> dict
     try:
         header = jwt.get_unverified_header(identity_token)
     except JWTError as exc:
-        raise Unauthenticated("Malformed Apple identity token") from exc
+        raise Unauthenticated("Apple sign-in sent something we couldn't read. Please try again.") from exc
     keys = await _cache.keys()
     key = next((k for k in keys if k.get("kid") == header.get("kid")), None)
     if key is None:
         _cache._fetched_at = 0.0  # force refresh next time (key rotation)
-        raise Unauthenticated("Unknown Apple signing key")
+        raise Unauthenticated("Apple sign-in couldn't be checked just now. Please try again.")
     try:
         claims = jwt.decode(
             identity_token,
@@ -56,7 +56,7 @@ async def verify_identity_token(settings: Settings, identity_token: str) -> dict
             issuer=settings.apple_issuer,
         )
     except JWTError as exc:
-        raise Unauthenticated("Apple identity token rejected") from exc
+        raise Unauthenticated("Apple sign-in wasn't accepted. Please try again.") from exc
     if not claims.get("sub"):
-        raise Unauthenticated("Apple identity token has no subject")
+        raise Unauthenticated("Apple sign-in didn't say who you are. Please try again.")
     return claims

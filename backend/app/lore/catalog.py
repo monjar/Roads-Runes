@@ -9,6 +9,7 @@ their numbers live, so a creature's lore and its mechanics are one entry.
 from __future__ import annotations
 
 import json
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -201,6 +202,31 @@ def name_at_tier(species_entry: dict[str, Any], tier: int) -> str:
         if elder["tier"] == tier:
             return str(elder["name"])
     return str(species_entry["name"])
+
+
+def with_article(name: str) -> str:
+    """A name as it reads after "is" or "hid": "an Old chest", "a Fen Troll", and
+    an elder that brings its own article, "the Long Cold", as it is."""
+    if name[:4].lower() == "the ":
+        return name
+    return f"{'an' if name[:1].lower() in 'aeiou' else 'a'} {name}"
+
+
+def articled(text: str, name: str) -> str:
+    """Text written as "a {name}" or "the {name}", put right for this name:
+    "a Old chest" reads "an Old chest", "the the Long Cold" reads "the Long Cold"."""
+    if not name:
+        return text
+
+    def fix(match: re.Match[str]) -> str:
+        article = match.group(1)
+        if article.lower() in ("a", "an"):
+            fixed = with_article(name)
+        else:
+            fixed = name if name[:4].lower() == "the " else f"the {name}"
+        return fixed[:1].upper() + fixed[1:] if article[:1].isupper() else fixed
+
+    return re.sub(rf"\b(an?|An?|the|The) {re.escape(name)}", fix, text)
 
 
 def flavour_at_tier(species_entry: dict[str, Any], tier: int) -> str:

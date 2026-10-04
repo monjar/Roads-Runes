@@ -34,13 +34,13 @@ def decode_access_token(settings: Settings, token: str) -> uuid.UUID:
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
     except JWTError as exc:
-        raise Unauthenticated("Invalid or expired token") from exc
+        raise Unauthenticated("Your sign-in has run out. Please sign in again.") from exc
     if payload.get("type") != "access":
-        raise Unauthenticated("Wrong token type")
+        raise Unauthenticated("Your sign-in couldn't be used here. Please sign in again.")
     try:
         return uuid.UUID(payload["sub"])
     except (KeyError, ValueError) as exc:
-        raise Unauthenticated("Malformed token subject") from exc
+        raise Unauthenticated("Your sign-in couldn't be read. Please sign in again.") from exc
 
 
 def generate_refresh_token() -> str:

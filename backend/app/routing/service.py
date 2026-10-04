@@ -356,7 +356,7 @@ def _understood(prefs: RoutePreferences, usual: RoutePreferences, wanted: int, c
 CANNOT_READ = "couldn't read that — try 'through 2 cafes' or 'mostly gravel'"
 # There is no keyword parser behind the model any more, so "no provider" means a
 # typed request goes unread. Saying so beats a ride that ignores the sentence.
-NO_READER = "free-text needs an AI provider — planned from your profile instead"
+NO_READER = "typed requests can't be read here yet — planned from your profile instead"
 # The corridor import runs only when stops were asked for and none were found, and
 # only for tiles never fetched, so a known area costs nothing.
 CORRIDOR_IMPORT_BUDGET_S = 25.0
@@ -702,7 +702,7 @@ async def generate(
         if payload.bikeId is not None:
             bike = await db.get(Bike, payload.bikeId)
             if bike is None or bike.user_id != user.id:
-                raise NotFound("Bike not found")
+                raise NotFound("That bike isn't in your list. Pick one of your bikes and try again.")
         else:
             bike = await default_bike(db, user.id)
     bike_type = bike.bike_type if bike else ("FOOT" if on_foot else "HYBRID")
@@ -713,7 +713,7 @@ async def generate(
     if payload.questId is not None:
         quest = await db.get(QuestInstance, payload.questId)
         if quest is None or quest.user_id != user.id:
-            raise NotFound("Quest not found")
+            raise NotFound("We couldn't find that quest. It may have ended, so check the quest board.")
     targets = _quest_targets(quest)
 
     base_prefs = RoutePreferences(
@@ -1075,7 +1075,7 @@ async def generate(
         results.append((route, components))
     ms_engine = int((monotonic() - routing) * 1000)
     if not results:
-        raise RouteGenerationFailed("No route could be generated for this request")
+        raise RouteGenerationFailed("We couldn't plan a route for that. Try a different distance or starting point.")
     if parsed_dict is not None:
         parsed_dict["understood"] = _understood(base_prefs, usual_prefs, wanted, categories)
         notes = _shortfalls(base_prefs, requested_stops, wanted, [route for route, _ in results])
@@ -1118,7 +1118,7 @@ async def generate(
 async def get_route(db: AsyncSession, user: User, route_id: uuid.UUID) -> Route:
     route = await db.get(Route, route_id)
     if route is None or route.user_id != user.id:
-        raise NotFound("Route not found")
+        raise NotFound("We couldn't find that route. Plan a new one.")
     return route
 
 
@@ -1165,7 +1165,7 @@ async def quest_route(
     """
     quest = await db.get(QuestInstance, quest_id)
     if quest is None or quest.user_id != user.id:
-        raise NotFound("Quest not found")
+        raise NotFound("We couldn't find that quest. It may have ended, so check the quest board.")
     if _moved_from(quest, origin, QUEST_ROUTE_REUSE_M):
         assert origin is not None
         reanchor_quest(quest, origin)
@@ -1328,7 +1328,7 @@ async def reroute(
     original = await get_route(db, user, route_id)
     coords = original.coordinates or []
     if len(coords) < 2:
-        raise RouteGenerationFailed("This route has nothing left to rejoin")
+        raise RouteGenerationFailed("This route has no path left to rejoin. Plan a new route from here.")
     quest = await db.get(QuestInstance, original.quest_id) if original.quest_id else None
     activity = normalise(original.activity)
     on_foot = is_foot(activity)
@@ -1377,9 +1377,9 @@ async def reroute(
         engine_routes = await engine.route(request)
     except RoutingUnavailable as exc:
         log.error("route_reroute_failed", route=str(original.id), error=str(exc)[:200])
-        raise RouteGenerationFailed("No way back could be found from here") from exc
+        raise RouteGenerationFailed("We couldn't find a way back from here. Try again from a nearby road.") from exc
     if not engine_routes:
-        raise RouteGenerationFailed("No way back could be found from here")
+        raise RouteGenerationFailed("We couldn't find a way back from here. Try again from a nearby road.")
     er = engine_routes[0]
 
     speed_kmh = ASSUMED_SPEED_KMH[activity] if on_foot else scoring_config()["assumedSpeedKmh"].get(bike_type, 15)

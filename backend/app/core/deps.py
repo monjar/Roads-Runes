@@ -28,11 +28,11 @@ async def get_current_user(
     db: DBDep,
 ) -> User:
     if credentials is None:
-        raise Unauthenticated("Missing bearer token")
+        raise Unauthenticated("You're not signed in. Please sign in.")
     user_id = decode_access_token(settings, credentials.credentials)
     user = await db.get(User, user_id)
     if user is None or user.deleted_at is not None:
-        raise Unauthenticated("User not found")
+        raise Unauthenticated("We couldn't find your account. Please sign in again.")
     limiter = getattr(request.app.state, "rate_limiter", None)
     if limiter is not None:
         await limiter.check(str(user_id))
@@ -60,4 +60,4 @@ def parse_uuid(value: str) -> uuid.UUID:
     except ValueError as exc:
         from app.core.errors import NotFound
 
-        raise NotFound("Invalid identifier") from exc
+        raise NotFound("We couldn't find that. Go back and try again.") from exc

@@ -79,17 +79,20 @@ async def plan(
     bike_id: Any = None,
 ) -> tuple[list[tuple[Route, dict[str, float]]], str, str]:
     """Up to three ways to cut a rune from here, each heading off a different way.
-    Returns the routes, the road form and the line to show ("Cut Raido here: a 2.4 km loop.")."""
+    Returns the routes, the road form and the line to show ("Ride Raido's shape here: a loop, about 2.4 km.")."""
     from app.characters.service import get_rider_profile
     from app.routing import service
 
     form = runes.road_form(rune_id)
     if form not in runes.CUT_FORMS:
-        raise Conflict("That rune is not cut with a track", code="RUNE_NOT_A_SHAPE")
+        raise Conflict("That rune has no shape to ride. Pick a rune with a shape.", code="RUNE_NOT_A_SHAPE")
     moving = normalise(activity or (await get_rider_profile(db, user.id)).default_activity)
     if form not in forms_for(moving):
-        where = "on foot" if form in FOOT_FORMS else "on a bike"
-        raise Conflict(f"{runes.name(rune_id)} is cut {where}", code="RUNE_NOT_FOR_ACTIVITY")
+        where = "on foot" if form in FOOT_FORMS else "by bike"
+        raise Conflict(
+            f"{runes.name(rune_id)}'s shape is made {where}. Change how you're going and try again.",
+            code="RUNE_NOT_FOR_ACTIVITY",
+        )
     outline = OUTLINE_M.get(moving, OUTLINE_M["RIDE"])
     seed = int(
         hashlib.sha256(
@@ -119,8 +122,8 @@ async def plan(
             route.request = {**(route.request or {}), "rune": rune_id, "roadForm": form}
             results.append((route, components))
     if not results:
-        raise RouteGenerationFailed("No way to cut it from here")
+        raise RouteGenerationFailed("No rune ride fits the roads here. Try again from somewhere else.")
     await db.flush()
     km = results[0][0].distance_meters / 1000
     article = {"LOOP": "a loop", "TRIANGLE": "a triangle", "SQUARE": "a square", "ZIGZAG": "a zigzag"}[form]
-    return results, form, f"Cut {runes.name(rune_id)} here: {article}, about {km:.1f} km."
+    return results, form, f"Ride {runes.name(rune_id)}'s shape here: {article}, about {km:.1f} km."
