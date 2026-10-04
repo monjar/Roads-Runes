@@ -48,14 +48,36 @@ public struct MonsterInfo: Codable, Hashable, Sendable {
     /// Which creature it is and its face; nil from servers before 0.6.0.
     public var speciesId: String?
     public var sigil: CreatureSigil?
+    /// Effort is damage (0.6.1, `effort_combat`): its hold, what it wants and shrugs
+    /// at (ROAD, GROUND, CLIMB, RUNE, WORD), and its rune and that rune's road form.
+    public var holdMax: Int?
+    public var holdLeft: Int?
+    public var wants: [String]?
+    public var minds: [String]?
+    public var rune: String?
+    public var roadForm: String?
+    /// Days since the player last passed its place, when it has been a while.
+    public var unpassedDays: Int?
 
-    public init(hp: Int, flavour: String? = nil, killMethods: [KillMethod] = [], speciesId: String? = nil, sigil: CreatureSigil? = nil) {
+    public init(hp: Int, flavour: String? = nil, killMethods: [KillMethod] = [], speciesId: String? = nil, sigil: CreatureSigil? = nil,
+                holdMax: Int? = nil, holdLeft: Int? = nil, wants: [String]? = nil, minds: [String]? = nil,
+                rune: String? = nil, roadForm: String? = nil, unpassedDays: Int? = nil) {
         self.hp = hp
         self.flavour = flavour
         self.killMethods = killMethods
         self.speciesId = speciesId
         self.sigil = sigil
+        self.holdMax = holdMax
+        self.holdLeft = holdLeft
+        self.wants = wants
+        self.minds = minds
+        self.rune = rune
+        self.roadForm = roadForm
+        self.unpassedDays = unpassedDays
     }
+
+    /// Fought by effort: the server sent its hold.
+    public var foughtByEffort: Bool { holdMax != nil }
 }
 
 public struct WorldObject: Codable, Hashable, Identifiable, Sendable {
@@ -303,11 +325,14 @@ public struct WorldObjectOutcome: Codable, Hashable, Sendable {
     public var claimed: [ClaimedObject]
     public var missed: [MissedObject]
     public var setsCompleted: [CompletedSet]?
+    /// Effort is damage (0.6.1): one report per thing this outing came near.
+    public var fights: [FightReport]?
 
-    public init(claimed: [ClaimedObject] = [], missed: [MissedObject] = [], setsCompleted: [CompletedSet]? = nil) {
+    public init(claimed: [ClaimedObject] = [], missed: [MissedObject] = [], setsCompleted: [CompletedSet]? = nil, fights: [FightReport]? = nil) {
         self.claimed = claimed
         self.missed = missed
         self.setsCompleted = setsCompleted
+        self.fights = fights
     }
 }
 

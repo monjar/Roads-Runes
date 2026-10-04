@@ -88,8 +88,9 @@ board does not repeat quests from home.
 ### 9. Sound in a pocket
 **Question:** can the ride be followed by ear without missing the road?
 Phone in a pocket, one earbud or none, sound set to chimes (and, once, to
-chimes and voice). Before setting off, play the scripted fight from Settings
-(debug builds only) so you know what each sound means. Check: could traffic
+chimes and voice). Before setting off, press "Hear a fight" in Settings (under
+Sound on a ride) so you know what each sound means; with the Watch on, it
+taps the wrist too. Check: could traffic
 always be heard; roughly how many sounds a minute on a busy stretch and on a
 quiet one; which chimes you could name without looking; whether any sound
 arrived late enough to be confusing; whether the voice should stay off. This

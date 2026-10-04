@@ -241,8 +241,14 @@ With `effort_combat` on (0.6.1) a monster's `monster` block gains `holdMax`,
 and its `killMethods` is empty, so a phone from before 0.6.1 never judges a
 fight. A ride summary's `worldObjects.fights[]` reports each fight
 (`outcome` SEEN_OFF / LOOSENED / UNTOUCHED, `holdBefore`, `holdAfter`,
-`damage` by kind, `finisher`, `wouldHaveDone`), `missed[].reason` gains
+`damage` by kind, `finisher`, `wouldHaveDone`, and the thing's `latitude` and
+`longitude` for the reckoning's ink mark), `missed[].reason` gains
 `LOOSENED` and `UNTOUCHED`, and the XP breakdown gains `BLOWS_LANDED`.
+
+A note sent as an encounter event (`method: LORE`, with `note`) is, with the
+flag on, the word: the server places it on the trace at the fix nearest its
+`occurredAt` and it lands on anything within 120 m. No event is sent for a
+creature seen off by effort; the server reads the trace.
 
 ---
 
@@ -321,6 +327,18 @@ taken by hand during a ride counts towards that ride's quest.
 `409` with one of: `OBJECT_OUT_OF_RANGE` (`details.distanceMeters`, `details.radiusMeters`),
 `OBJECT_GONE` (already claimed or expired), `OBJECT_NOT_CLAIMABLE` (a monster), `GPS_TOO_WEAK`
 (accuracy worse than 65 m), `CLAIM_TOO_FAST` (more than 500 m from the last one, faster than 25 m/s).
+
+### `POST /world/objects/lure`
+
+A lamp left out: one creature comes to the nearest named place within 250 m of the spot, quota
+aside, and the player's purse pays 50 coins only if something comes.
+
+```json
+{"latitude": 51.4990, "longitude": -0.0480}
+```
+
+→ `[WorldObject]` (the one that came). `409 NOTHING_TO_LURE` when there is no place to come to
+(no charge); `409 INSUFFICIENT_AC` when the purse is short.
 
 ---
 
@@ -559,6 +577,10 @@ when no way can be found, `404` for a route that is not the caller's.
 ```json
 {"route": RouteOption, "quest": Quest|null, "pois": [RoutePOI], "mapRegion": {"minLat":..,"minLon":..,"maxLat":..,"maxLon":..}, "generatedAt": "..."}
 ```
+
+With `effort_combat` on, fetching the package of the route chosen to ride places one creature at a
+real place beside its far half (from halfway to nine tenths of the way), once per route, unless one is
+already waiting there. Fetch the world objects after the package to see it.
 
 ---
 

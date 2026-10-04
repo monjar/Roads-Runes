@@ -81,6 +81,11 @@ struct PlaceCard: View {
     let units: Units
     let onDirections: () -> Void
     let onClose: () -> Void
+    /// A lamp left out here: what it costs, what is in the purse, and what happened last time.
+    var lampCost: Int?
+    var leavingLamp = false
+    var lampError: String?
+    var onLamp: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -107,6 +112,26 @@ struct PlaceCard: View {
                 }
             }
             .buttonStyle(.primary)
+            if let lampCost {
+                let purse = container.session.character?.activeCoins ?? 0
+                Button(action: onLamp) {
+                    HStack(spacing: 8) {
+                        if leavingLamp { ProgressView().tint(Theme.Colors.ink) } else { Image(systemName: "lamp.desk") }
+                        Text("Leave a lamp out · \(LoreCopy.purse(lampCost))")
+                    }
+                    .font(Theme.Typography.text(14, .semibold)).foregroundStyle(Theme.Colors.ink)
+                    .frame(maxWidth: .infinity).frame(height: 40)
+                    .background(Theme.Colors.surface, in: Capsule())
+                }
+                .buttonStyle(.pressable)
+                .disabled(leavingLamp || purse < lampCost)
+                .accessibilityIdentifier("place.lamp")
+                Text(purse < lampCost
+                     ? "You have \(LoreCopy.purse(purse)). A lamp is \(lampCost)."
+                     : "Something comes to the nearest named place within 250 m. The coins go only if it does.")
+                    .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                if let lampError { ErrorLine(text: lampError) }
+            }
         }
         .padding(18)
         .background(Theme.Colors.cream, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))

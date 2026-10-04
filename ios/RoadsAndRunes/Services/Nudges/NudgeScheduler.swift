@@ -68,7 +68,7 @@ final class NudgeScheduler {
             try? await center.add(UNNotificationRequest(identifier: Self.streakID, content: content, trigger: trigger))
         }
 
-        // A new bounty every morning, worth double until midnight.
+        // A new bounty every morning, worth double for a day or so.
         if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
            let morning = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: tomorrow) {
             let content = UNMutableNotificationContent()

@@ -34,7 +34,7 @@ public enum NudgeCopy {
         let formatter = UnitFormatter(units: units)
         let title = "\(LoreCopy.daysKept(days)). Today not yet."
         if let bounty {
-            return (title, "\(bounty.named) is \(formatter.distance(meters: bounty.meters)) away and worth double till midnight. One kilometre keeps the days.")
+            return (title, "\(bounty.named) is \(formatter.distance(meters: bounty.meters)) away and pays double. One kilometre keeps the days.")
         }
         if let nearest {
             return (title, "One kilometre keeps it alive. \(nearest.named) is \(formatter.distance(meters: nearest.meters)) away.")
@@ -44,7 +44,7 @@ public enum NudgeCopy {
 
     /// The morning reminder: tomorrow's bounty is not placed until the world is looked at, so nothing is said of where.
     public static func bountyMorning() -> (title: String, body: String) {
-        ("Today's bounty is out", "One monster, twice the coins, gone at midnight.")
+        ("Today's bounty is out", "One thing, twice the coins, out for a day or so.")
     }
 
     /// The things worth naming in tonight's reminder: today's bounty if it is still

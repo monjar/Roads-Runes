@@ -136,7 +136,7 @@ final class MockAPITests: XCTestCase {
         } catch let error as APIError {
             XCTAssertEqual(error.errorCode, APIErrorCode.objectGone)
         }
-        // A monster is beaten on the move, not picked up.
+        // A thing is seen off on the move, not picked up.
         XCTAssertNil(SampleData.sampleMonster.reachMeters)
         XCTAssertFalse(SampleData.sampleMonster.isWithinReach(of: SampleData.sampleMonster.coordinate))
     }

@@ -257,7 +257,8 @@ final class RoutePlannerViewModel {
             let package = try await container.api.routePackage(id: selected.id)
             container.analytics.track(.routeSelected, properties: ["routeId": selected.id.uuidString, "label": selected.label])
             if let quest { container.analytics.track(.questStarted, properties: ["questId": quest.id.uuidString]) }
-            await container.rideRecorder.start(package: package, quest: quest ?? package.quest, bikeId: activity == .ride ? selectedBike?.id : nil, title: adventureTitle, activity: activity)
+            await container.rideRecorder.start(package: package, quest: quest ?? package.quest, bikeId: activity == .ride ? selectedBike?.id : nil, title: adventureTitle, activity: activity,
+                                                 quarryId: destination?.quarryId)
             return true
         } catch {
             self.error = error.localizedDescription

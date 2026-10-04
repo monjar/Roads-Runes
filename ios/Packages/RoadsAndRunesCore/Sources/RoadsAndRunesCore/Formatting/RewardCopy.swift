@@ -18,7 +18,8 @@ public enum RewardCopy {
         case "CLIMB_COMPLETED": return "The climbing"
         case "CHEST_OPENED": return "Chests"
         case "COLLECTABLE_FOUND": return "Pieces"
-        case "MONSTER_BEATEN": return "Monsters"
+        case "MONSTER_BEATEN": return "Things seen off"
+        case "BLOWS_LANDED": return "Things loosened"
         case "SET_COMPLETED": return "A set complete"
         case "SOCIAL_QUEST_COMPLETED": return "Ridden together"
         case "REGION_COMPLETED": return "A region complete"
@@ -35,7 +36,7 @@ public enum RewardCopy {
         case "QUEST_COMPLETED": return "The quest's purse"
         case "CHEST_OPENED": return "Chests"
         case "COLLECTABLE": return "Pieces"
-        case "MONSTER_SLAIN": return "Monsters"
+        case "MONSTER_SLAIN": return "Things seen off"
         case "BOUNTY": return "The bounty"
         case "STREAK": return "Days kept"
         case "SET_COMPLETED": return "A set complete"
@@ -65,11 +66,11 @@ public enum RewardCopy {
         }
     }
 
-    /// "It is there two more days." / "It is gone tonight."
+    /// "It is there two more days." / "It is there less than a day more."
     public static func staying(until expiry: Date, now: Date = Date()) -> String {
         let days = Int(expiry.timeIntervalSince(now) / 86_400)
         switch days {
-        case ..<1: return expiry > now ? "It is gone tonight." : "It has gone."
+        case ..<1: return expiry > now ? "It is there less than a day more." : "It has gone."
         case 1: return "It is there one more day."
         default: return "It is there \(spelled(days)) more days."
         }

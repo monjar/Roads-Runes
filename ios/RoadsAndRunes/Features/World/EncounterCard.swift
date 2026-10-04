@@ -11,6 +11,8 @@ struct EncounterCard: View {
     let units: Units
     /// The player is close enough to open it or pick it up.
     var inReach = false
+    /// How much of the ground round it is new to the player, once known.
+    var groundRound: WorldViewModel.GroundRound?
     var claiming = false
     var claimError: String?
     var onClaim: () -> Void = {}
@@ -37,9 +39,11 @@ struct EncounterCard: View {
                 IconCircleButton(symbol: "xmark", background: Theme.Colors.surface, size: 34, action: onClose)
                     .accessibilityLabel("Close")
             }
-            if let monster = object.monster, !monster.killMethods.isEmpty {
+            if let monster = object.monster, monster.foughtByEffort {
+                wantsSection(monster)
+            } else if let monster = object.monster, !monster.killMethods.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("How to beat it").font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink)
+                    Text("What it wants").font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink)
                     ForEach(Array(monster.killMethods.enumerated()), id: \.offset) { _, method in
                         HStack(alignment: .top, spacing: 10) {
                             Image(systemName: Self.symbol(for: method.method))
@@ -93,6 +97,55 @@ struct EncounterCard: View {
         .accessibilityIdentifier("encounterCard")
     }
 
+    /// Effort is damage: what it wants and shrugs at, its hold, its rune and the
+    /// rune's road form, how long since anyone read the place, and how much of the
+    /// ground round it is new. Numbers are fine here: the card is read at rest.
+    @ViewBuilder
+    private func wantsSection(_ monster: MonsterInfo) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("What it wants").font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink)
+            row("scope", LoreCopy.wants(monster.wants ?? [], rune: Self.runeName(monster.rune), runeForm: monster.roadForm))
+                .accessibilityIdentifier("encounter.wants")
+            if let minds = monster.minds, !minds.isEmpty {
+                row("hand.raised", LoreCopy.doesNotMind(minds)).accessibilityIdentifier("encounter.minds")
+            }
+            if let holdMax = monster.holdMax {
+                let left = monster.holdLeft ?? holdMax
+                row("circle.dashed", left < holdMax ? "Its hold: \(left) of \(holdMax). Loosened." : "Its hold: \(holdMax).")
+                    .accessibilityIdentifier("encounter.hold")
+            }
+            if let rune = Self.runeName(monster.rune), let form = LoreCopy.roadForm(monster.roadForm) {
+                row("signpost.right", "\(rune). On the road, \(form).")
+            }
+            if let days = monster.unpassedDays, days >= 30 {
+                row("clock", "You have not passed here in \(days) days.")
+            }
+            if let groundRound, groundRound.of > 0 {
+                row("map", groundRound.unread == 0
+                    ? "You have read all the ground round it."
+                    : "\(groundRound.unread) of the \(groundRound.of) patches round it are new ground to you.")
+                    .accessibilityIdentifier("encounter.ground")
+            }
+        }
+    }
+
+    private func row(_ symbol: String, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Theme.Colors.terracottaDeep)
+                .frame(width: 22)
+            Text(text).font(Theme.Typography.text(13)).foregroundStyle(Theme.Colors.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// "kenaz" → "Kenaz".
+    static func runeName(_ id: String?) -> String? {
+        guard let id, !id.isEmpty else { return nil }
+        return id.prefix(1).uppercased() + id.dropFirst()
+    }
+
     /// Within reach it says so; out of reach it says how much closer to get.
     private func howToTakeIt(_ reach: Double) -> String {
         let piece = object.kind == .collectable
@@ -108,7 +161,7 @@ struct EncounterCard: View {
         if let distanceMeters { parts.append(formatter.distance(meters: distanceMeters)) }
         parts.append(LoreCopy.purse(object.rewardAC))
         let days = max(0, Int(object.expiresAt.timeIntervalSinceNow / 86_400))
-        parts.append(days == 0 ? "gone tonight" : "\(days) day\(days == 1 ? "" : "s") left")
+        parts.append(days == 0 ? "its last day" : "\(days) day\(days == 1 ? "" : "s") left")
         return parts.joined(separator: " · ")
     }
 

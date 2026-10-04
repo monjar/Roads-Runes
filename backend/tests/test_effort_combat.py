@@ -98,6 +98,8 @@ async def test_passing_by_loosens_it_and_it_stays_longer(explorer_client):
     report = fights[0]
     assert report["outcome"] == "LOOSENED"
     assert report["holdBefore"] == 220 and report["holdAfter"] < 220
+    # Where it stood, for the reckoning's ink mark.
+    assert report["latitude"] == pytest.approx(ORIGIN[0]) and report["longitude"] == pytest.approx(ORIGIN[1])
     after = await row(object_id)
     # A second session reads the wound: it was written, not edited in place.
     assert after.payload["wounds"]["rides"]
@@ -209,3 +211,32 @@ async def test_the_ride_carries_the_sheet_it_started_with(explorer_client):
     assert loadout["damagePct"] == {"GROUND": 0.3}
     character = (await explorer_client.get("/character")).json()
     assert character["sheet"]["damagePct"] == {"GROUND": 0.3}
+
+
+async def test_a_planned_route_places_one_thing_on_its_far_half(explorer_client, settings):
+    """Placement, so effort lands on something: the route chosen to ride has one
+    thing waiting along its far half, once, at a real place beside it."""
+    from tests.test_first_playable_journey import seed_discoveries
+
+    await seed_discoveries()
+    # Out east from Rotherhithe past the Thames Path and back towards Stave Hill.
+    route = [[-0.0700, 51.4985], [-0.0500, 51.4985], [-0.0300, 51.4985], [-0.0480, 51.4990]]
+    async with get_session_factory()() as db:
+        user = await db.scalar(select(User).where(User.apple_subject == "dev:tester"))
+        route_id = uuid.uuid4()
+        placed = await world_objects.place_on_route(
+            db, settings, user.id, route_id, route, character_class="EXPLORER", activity="RIDE"
+        )
+        await db.commit()
+        assert placed is not None and placed.kind == "MONSTER"
+        assert placed.payload.get("speciesId")
+        far = world_objects._far_half(route)
+        assert (
+            min(world_objects.haversine_m(placed.latitude, placed.longitude, p[0], p[1]) for p in far)
+            <= world_objects.ROUTE_REACH_M
+        )
+        # Asked again for the same route, nothing more comes.
+        again = await world_objects.place_on_route(
+            db, settings, user.id, route_id, route, character_class="EXPLORER", activity="RIDE"
+        )
+        assert again is None

@@ -1,7 +1,7 @@
 import Foundation
 
 /// What the ride is doing about the nearest thing in the world: how far the chest
-/// is, how much of the fast kilometre is done, how much of the rune is drawn.
+/// is, how much of the rune is drawn, how much of its hold is left.
 public struct EncounterStatus: Equatable, Sendable {
     public var object: WorldObject
     public var distanceMeters: Double
@@ -10,20 +10,31 @@ public struct EncounterStatus: Equatable, Sendable {
     /// 0…1 towards the method being attempted; nil for a chest or a piece.
     public var progress: Double?
     public var claimed: Bool
+    /// Effort is damage: what is left of its hold, 0…1, once the outing has reached
+    /// it. The ride screen draws it in tenths, with no numbers.
+    public var hold: Double?
 
-    public init(object: WorldObject, distanceMeters: Double, method: KillMethodKind? = nil, hint: String? = nil, progress: Double? = nil, claimed: Bool = false) {
+    public init(object: WorldObject, distanceMeters: Double, method: KillMethodKind? = nil, hint: String? = nil, progress: Double? = nil,
+                claimed: Bool = false, hold: Double? = nil) {
         self.object = object
         self.distanceMeters = distanceMeters
         self.method = method
         self.hint = hint
         self.progress = progress
         self.claimed = claimed
+        self.hold = hold
     }
+
+    /// The hold in tenths, so the ring only redraws when it has moved a tenth.
+    public var holdTenths: Int? { hold.map { Int((max(0, min(1, $0)) * 10).rounded(.up)) } }
 }
 
 /// Runs the encounter arithmetic live, on the phone, for feedback: the same pace
 /// window and rune matcher the server verifies with (world_objects/claims.py), on a
 /// trailing buffer of the ride. Claims here are provisional; the summary says.
+///
+/// With `fights` (effort is damage, 0.6.1), a creature that carries a hold is
+/// fought by `FightTracker` instead, and the old check is never run on it.
 public struct EncounterTracker: Sendable {
     public static let inSightMeters = 400.0
     public static let monsterNearMeters = 150.0
@@ -42,23 +53,38 @@ public struct EncounterTracker: Sendable {
     private var fixes = 0
     private var lastStatus: [UUID: EncounterStatus] = [:]
     private let activity: Activity
+    public private(set) var fights: FightTracker?
 
-    public init(objects: [WorldObject], activity: Activity) {
+    public init(objects: [WorldObject], activity: Activity, fights: FightTracker.Setup? = nil) {
         self.objects = objects.filter { $0.status == .spawned }
         self.activity = activity
+        if let fights {
+            let tracker = FightTracker(objects: self.objects, setup: fights)
+            self.fights = tracker.isEmpty ? nil : tracker
+        }
     }
 
     /// The events the phone will send with the ride, in order.
     public var pendingEvents: [EncounterEvent] { events }
 
     public mutating func update(
-        position: Coordinate, timestamp: Date, altitude: Double?, elevationGainMeters: Double, newCellCentres: [Coordinate] = []
-    ) -> (status: EncounterStatus?, claimed: [WorldObject]) {
+        position: Coordinate, timestamp: Date, altitude: Double?, elevationGainMeters: Double, newCellCentres: [Coordinate] = [],
+        accuracy: Double? = nil
+    ) -> (status: EncounterStatus?, claimed: [WorldObject], news: [FightNews]) {
         fixes += 1
         buffer.append(TimedPoint(t: timestamp.timeIntervalSince1970, coordinate: position))
         altitudes.append(altitude)
         trimBuffer()
         var newlyClaimed: [WorldObject] = []
+        var news: [FightNews] = []
+        if var tracker = fights {
+            news = tracker.add(position: position, altitude: altitude, accuracy: accuracy)
+            fights = tracker
+            for case .seenOff(let object) in news where claimedIDs.insert(object.id).inserted {
+                // No event: the server judges the whole trace and needs none.
+                newlyClaimed.append(object)
+            }
+        }
         var nearest: EncounterStatus?
         for object in objects where !claimedIDs.contains(object.id) {
             let distance = GeoMath.distance(position, object.coordinate)
@@ -70,6 +96,8 @@ public struct EncounterTracker: Sendable {
                     newlyClaimed.append(object)
                     continue
                 }
+            case .monster where fights?.fights(object.id) == true:
+                status.hold = fights?.holdFraction(of: object.id)
             case .monster:
                 if distance <= Self.monsterNearMeters, !met.contains(object.id) {
                     met.insert(object.id)
@@ -101,17 +129,25 @@ public struct EncounterTracker: Sendable {
                 nearest = status
             }
         }
-        return (nearest, newlyClaimed)
+        return (nearest, newlyClaimed, news)
     }
 
     /// The Scribe's way in: a note (and, for anyone else, a photo) within reach of it.
-    public mutating func markLore(_ objectId: UUID, at position: Coordinate?, timestamp: Date, note: String?, photoTaken: Bool) -> EncounterEvent? {
-        guard let object = objects.first(where: { $0.id == objectId }), !claimedIDs.contains(objectId) else { return nil }
-        claimedIDs.insert(objectId)
+    /// Fought by effort, a note is the word: it is sent with the ride for the server
+    /// to place on the trace, lands on whatever is near, and claims nothing by itself.
+    public mutating func markLore(_ objectId: UUID, at position: Coordinate?, timestamp: Date, note: String?, photoTaken: Bool)
+        -> (event: EncounterEvent, news: [FightNews])? {
+        guard objects.contains(where: { $0.id == objectId }), !claimedIDs.contains(objectId) else { return nil }
         let event = EncounterEvent(objectId: objectId, method: KillMethodKind.lore.rawValue, occurredAt: timestamp, latitude: position?.latitude, longitude: position?.longitude, note: note, photoTaken: photoTaken)
         events.append(event)
-        _ = object
-        return event
+        if var tracker = fights, tracker.fights(objectId) {
+            let news = tracker.wrote(note: note ?? "")
+            fights = tracker
+            for case .seenOff(let object) in news { claimedIDs.insert(object.id) }
+            return (event, news)
+        }
+        claimedIDs.insert(objectId)
+        return (event, [])
     }
 
     // MARK: - Internals

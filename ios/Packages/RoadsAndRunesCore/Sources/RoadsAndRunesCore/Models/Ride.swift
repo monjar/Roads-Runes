@@ -29,6 +29,10 @@ public struct Ride: Codable, Hashable, Identifiable, Sendable {
     public var stravaUploadStatus: String?
     public var stravaActivityId: String?
     public var stravaError: String?
+    /// The character sheet frozen when the ride was created (0.6.1); the fight folds over it.
+    public var loadout: CharacterSheet? = nil
+    /// The thing the outing was planned for.
+    public var quarryId: UUID? = nil
 
     public init(
         id: UUID, clientRideId: UUID, status: RideStatus, title: String? = nil, startedAt: Date, endedAt: Date? = nil,
@@ -107,8 +111,11 @@ public struct RideCreate: Codable, Hashable, Sendable {
     public var title: String?
     /// Ride, run or walk; nil lets the server assume a ride.
     public var activity: Activity?
+    /// The world object this outing was planned for ("Plan a route here"), if any.
+    public var quarryId: UUID?
 
-    public init(clientRideId: UUID, startedAt: Date, questId: UUID? = nil, bikeId: UUID? = nil, routeId: UUID? = nil, title: String? = nil, activity: Activity? = nil) {
+    public init(clientRideId: UUID, startedAt: Date, questId: UUID? = nil, bikeId: UUID? = nil, routeId: UUID? = nil, title: String? = nil, activity: Activity? = nil, quarryId: UUID? = nil) {
+        self.quarryId = quarryId
         self.clientRideId = clientRideId
         self.startedAt = startedAt
         self.questId = questId
@@ -232,6 +239,8 @@ public struct AdventureSummary: Codable, Hashable, Sendable {
     /// What the ride took from the world, and what it walked past.
     public var worldObjects: WorldObjectOutcome?
     public var streak: StreakOutcome?
+    /// The thing the outing was planned for; its fight leads the reckoning.
+    public var quarryId: String? = nil
 
     public init(ride: Ride, quest: Quest? = nil, questCompletion: QuestCompletion? = nil, xpAwarded: Int, xpBreakdown: [XPBreakdownEntry], newCells: Int, newTerritoryMeters: Double, newRoadsMeters: Double, discoveries: [DiscoverySummary], levelUps: [LevelUp], abilitiesUnlocked: [Ability], titlesUnlocked: [String]? = nil, flags: [String], acAwarded: Int? = nil, acBreakdown: [ACBreakdownEntry]? = nil, walletBalance: Int? = nil, worldObjects: WorldObjectOutcome? = nil, streak: StreakOutcome? = nil) {
         self.streak = streak

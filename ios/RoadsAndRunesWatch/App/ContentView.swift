@@ -30,16 +30,34 @@ struct ContentView: View {
 
 /// A turn, felt: two soft taps as it comes up; when it is here, one for a right
 /// turn and two for a left (design 7a), so the wrist says which way without a look.
+/// Every tap is named in Core (`WristTap`), where a test keeps a fight's taps
+/// apart from these.
 enum TurnHaptics {
     static func play(_ cue: TurnCue) {
-        let device = WKInterfaceDevice.current()
         switch cue {
         case .approaching:
-            device.play(.click)
-            later(0.25) { device.play(.click) }
+            tap(.click)
+            later(0.25) { tap(.click) }
         case .now(let side):
-            device.play(side == .left ? .directionDown : .directionUp)
-            if side == .left { later(0.45) { device.play(.directionDown) } }
+            tap(side == .left ? .directionDown : .directionUp)
+            if side == .left { later(0.45) { tap(.directionDown) } }
+        }
+    }
+
+    /// A fight beat: one tap, never one a turn uses.
+    static func play(_ beat: FightBeat) {
+        tap(beat.tap)
+    }
+
+    static func tap(_ tap: WristTap) {
+        let device = WKInterfaceDevice.current()
+        switch tap {
+        case .click: device.play(.click)
+        case .directionUp: device.play(.directionUp)
+        case .directionDown: device.play(.directionDown)
+        case .start: device.play(.start)
+        case .success: device.play(.success)
+        case .failure: device.play(.failure)
         }
     }
 

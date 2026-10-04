@@ -76,6 +76,8 @@ The summary carries `worldObjects.fights[]` (one report per creature met:
 * Nothing is placed at a memorial, grave, place of worship, hospital or
   anywhere private (`backend/app/discoveries/sensitivity.py`).
 * Creature rings widen for riders (×1.6) and runners (×1.25).
+* The route chosen to ride has one creature waiting beside its far half, unless
+  one is already there (`place_on_route`, when the package is fetched).
 * Places not passed in 30 days are favoured, and the card says so.
 * The bounty lives 36 to 48 hours, not until midnight.
 * A lamp left out (`POST /world/objects/lure`) brings one creature to the
@@ -101,5 +103,29 @@ never announce a win the server will not give. A phone that understands effort
 gets `holdMax`, `holdLeft`, `wants`, `minds`, `rune` and `roadForm` on each
 monster, the frozen sheet on the ride (`loadout`) and on the character
 (`sheet`), and the constants on `/config`. It folds the same fight for
-provisional feedback, under-claiming by 5%, and the reckoning tells the
-server's verdict.
+provisional feedback (`Core/Encounters/FightTracker.swift`), under-claiming by
+5%, and the reckoning tells the server's verdict.
+
+The phone follows a fight only when it has the constants, a sheet and the
+ground already read round the route (`GET /world/exploration`, fetched at the
+start whether or not the fog is drawn). Missing any, it says nothing of
+fights. It does not know about a rune or word that landed on an earlier
+outing the same day, so on a second outing it can be early by that much.
+
+While moving it is small on purpose:
+
+* **Three sounds.** It has noticed you; a rune or the word landed; it is gone
+  (or, leaving its ground loosened, it got away). Only the quarry speaks, or
+  else the nearest thing being fought.
+* **Never over the road.** A fight sound is dropped, not queued, if anything
+  is playing, inside a turn's cue window (150 m) or while off the route.
+* **Two wrist taps**, `start` when it notices you and `failure` when it gets
+  away, from a vocabulary kept apart from the turn taps by test. Seen off
+  shows the Watch's GONE card.
+* **The ride screen** shows its sigil in a ring of hold, redrawn in tenths,
+  with no numbers and no animation. What it wants, and the button to write the
+  word, show only at a standstill (under 0.7 m/s for five seconds; an unknown
+  speed counts as moving).
+
+"Plan a route here" on a creature makes it the outing's quarry
+(`RideCreate.quarryId`); the reckoning's fight stage leads with it.

@@ -191,3 +191,26 @@ def test_a_thing_left_standing_says_what_would_have_done_it():
     report = run(line(start, 0, 400, 10, climb=30), f)
     assert report.outcome == "LOOSENED"
     assert report.would_have_done is not None
+
+
+def test_the_shared_fixtures_are_current():
+    """The phone's port is held to tests/fixtures/fight_tracks.json; it must say
+    what the server says now. Regenerate with scripts/gen_fight_fixtures.py."""
+    import json
+    from pathlib import Path
+
+    stored = json.loads((Path(__file__).parent / "fixtures" / "fight_tracks.json").read_text())
+    assert {k: v for k, v in CFG.items() if not k.startswith("_")} == stored["combat"], "combat constants changed"
+    for case in stored["cases"]:
+        f = case["foe"]
+        pts = [FightPoint(lat, lon, alt, ok) for lat, lon, alt, ok, _ in case["points"]]
+        foe = Foe(
+            f["latitude"], f["longitude"], f["hold"], f["hold"], tuple(f["wants"]), tuple(f["minds"]), f["roadForm"]
+        )
+        hit = RuneHit(*case["runeHit"]) if case["runeHit"] else None
+        report = fight.resolve(
+            pts, foe, activity=case["activity"], damage_pct=case["pct"], cfg=CFG,
+            new_cell_indices=case["newCellIndices"], rune_hit=hit, word_indices=case["wordIndices"],
+        )  # fmt: skip
+        assert report.outcome == case["expect"]["outcome"], case["name"]
+        assert abs(report.hold_after - case["expect"]["holdAfter"]) < 0.01, case["name"]

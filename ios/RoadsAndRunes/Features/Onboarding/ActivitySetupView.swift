@@ -50,7 +50,7 @@ struct ActivityCard: View {
 
     private var line: String {
         switch activity {
-        case .run: return "Quests a run long, and monsters that fall to a fast kilometre."
+        case .run: return "Quests a run long, and things to see off on the way."
         case .walk: return "Short loops, parks and places worth a wander."
         default: return "The whole map, and the bike that decides which roads."
         }

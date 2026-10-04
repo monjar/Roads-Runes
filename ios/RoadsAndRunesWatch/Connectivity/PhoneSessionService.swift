@@ -67,6 +67,9 @@ final class PhoneSessionService: NSObject, WCSessionDelegate {
             case .objectiveCompleted:
                 let event = try WatchMessages.objectiveCompleted(from: message)
                 Task { @MainActor in self.store.apply(objective: event, receivedAt: receivedAt) }
+            case .encounterBeat:
+                let beat = try WatchMessages.encounterBeat(from: message)
+                Task { @MainActor in TurnHaptics.play(beat.beat) }
             case .command, .heartRate:
                 break
             }

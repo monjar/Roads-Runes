@@ -42,6 +42,11 @@ final class RideRecorder {
     /// provisional until the summary says.
     private(set) var encounter: EncounterStatus?
     private(set) var recentClaim: WorldObject?
+    /// The creature this outing was planned for, if any: it is the one that speaks,
+    /// and the reckoning leads with it.
+    private(set) var quarryId: UUID?
+    /// Still enough to read (Core `Stillness`): words and the note button show only then.
+    private(set) var isStill = false
     private(set) var newTerritoryMeters: Double = 0
     /// A line for the screen about something that otherwise shows nothing there
     /// (what is on the way, a new place, halfway), for a few seconds.
@@ -89,6 +94,7 @@ final class RideRecorder {
     @ObservationIgnored private var startedAt = Date()
     @ObservationIgnored private var bikeId: UUID?
     @ObservationIgnored private var knownCells: Set<String> = []
+    @ObservationIgnored private var stillness = Stillness()
     @ObservationIgnored private var toastTask: Task<Void, Never>?
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
     @ObservationIgnored private var announcer = RideAnnouncer()
@@ -138,8 +144,9 @@ final class RideRecorder {
 
     // MARK: - Lifecycle
 
-    func start(package: RoutePackage, quest: Quest?, bikeId: UUID?, title: String? = nil, activity: Activity = .ride) async {
+    func start(package: RoutePackage, quest: Quest?, bikeId: UUID?, title: String? = nil, activity: Activity = .ride, quarryId: UUID? = nil) async {
         guard !isActive else { return }
+        self.quarryId = quarryId
         self.activity = activity == .unknown ? .ride : activity
         try? routePackages.save(package)
         self.package = package
@@ -175,9 +182,10 @@ final class RideRecorder {
         persistence.upsertActiveRide(clientRideId: clientRideId, serverRideId: nil, questId: self.quest?.id, routeId: package.route.id, bikeId: bikeId, startedAt: startedAt, state: .active)
         ride = try? await api.createRide(RideCreate(
             clientRideId: clientRideId, startedAt: startedAt, questId: self.quest?.id, bikeId: bikeId, routeId: package.route.id, title: self.title,
-            activity: self.activity
+            activity: self.activity, quarryId: quarryId
         ))
         if let ride { persistence.upsertActiveRide(clientRideId: clientRideId, serverRideId: ride.id, questId: self.quest?.id, routeId: package.route.id, bikeId: bikeId, startedAt: startedAt, state: .active) }
+        await armFights(for: package, start: location.lastFix?.coordinate ?? package.route.path.first)
 
         transition(to: .active)
         isActive = true
@@ -240,7 +248,7 @@ final class RideRecorder {
             distanceMeters: stats.distanceMeters, elapsedSeconds: stats.elapsedSeconds, newTerritoryMeters: newTerritoryMeters,
             claimed: eventLog.compactMap { event in
                 guard case .claimed(let name, let kind, _, _) = event else { return nil }
-                return "\(kind == .monster ? "Beaten" : (kind == .chest ? "Opened" : "Found")): \(name)"
+                return "\(kind == .monster ? "Seen off" : (kind == .chest ? "Opened" : "Found")): \(name)"
             },
             objectivesDone: completedObjectiveIDs.count
         ))
@@ -276,6 +284,9 @@ final class RideRecorder {
         encounterTracker = nil
         encounter = nil
         recentClaim = nil
+        quarryId = nil
+        isStill = false
+        stillness = Stillness()
         exploration = nil
         audio.stop()
         notice = nil
@@ -298,6 +309,8 @@ final class RideRecorder {
         enriched.heartRate = lastHeartRate
         lastFix = enriched
         lastFixReceivedAt = Date()
+        let still = stillness.update(speedMps: enriched.speed, at: enriched.timestamp)
+        if still != isStill { isStill = still }
         updateNearbyStop(from: enriched.coordinate)
         let accepted = statistics.add(fix: enriched)
         stats = statistics.snapshot
@@ -345,11 +358,12 @@ final class RideRecorder {
         if var tracker = encounterTracker {
             let result = tracker.update(
                 position: enriched.coordinate, timestamp: enriched.timestamp, altitude: enriched.altitude,
-                elevationGainMeters: stats.elevationGainMeters
+                elevationGainMeters: stats.elevationGainMeters, accuracy: enriched.horizontalAccuracy
             )
             encounterTracker = tracker
-            encounter = result.status
+            if result.status != encounter { encounter = result.status }
             for object in result.claimed { handle(claimed: object, at: enriched.coordinate) }
+            handle(fightNews: result.news, from: enriched.coordinate, at: enriched.timestamp)
             noteSightings(result.status, tracker: tracker, from: enriched.coordinate, at: enriched.timestamp)
         }
         notePlaces(from: enriched.coordinate, at: enriched.timestamp)
@@ -369,6 +383,77 @@ final class RideRecorder {
         let objects = (try? await api.worldObjects(near: coordinate, radiusMeters: 8000)) ?? []
         encounterTracker = EncounterTracker(objects: objects, activity: activity)
         objectsOnMap = objects.filter { $0.status == .spawned }
+    }
+
+    /// Effort is damage: the phone follows a fight only when it has all it needs to
+    /// be fair to it — the constants, the sheet the ride was started with, and the
+    /// ground already read round the route. Missing any, the ride says nothing of
+    /// fights and the reckoning tells the server's verdict.
+    private func armFights(for package: RoutePackage, start: Coordinate?) async {
+        guard let tracker = encounterTracker, tracker.objects.contains(where: { $0.monster?.foughtByEffort == true }),
+              let constants = session.config?.combat, let sheet = ride?.loadout ?? session.character?.sheet else { return }
+        let resolution = session.config?.h3Resolution ?? ExplorationDefaults.h3Resolution
+        var box = package.mapRegion
+        if let start {
+            box.minLat = min(box.minLat, start.latitude); box.maxLat = max(box.maxLat, start.latitude)
+            box.minLon = min(box.minLon, start.longitude); box.maxLon = max(box.maxLon, start.longitude)
+        }
+        // Its ground reaches a kilometre round anything on the way; a little more is read.
+        let pad = constants.breakOffMeters
+        let dLat = pad / 111_195
+        let dLon = pad / (111_195 * max(0.2, cos(((box.minLat + box.maxLat) / 2) * .pi / 180)))
+        let fetched = BoundingBox(minLat: box.minLat - dLat, minLon: box.minLon - dLon, maxLat: box.maxLat + dLat, maxLon: box.maxLon + dLon)
+        guard let read = try? await api.exploration(in: fetched), read.h3Resolution == resolution else { return }
+        let known = Set(read.cells.filter { $0.state == .visited || $0.state == .explored }.map(\.h3))
+        // Cells are fetched by their centres: stay a cell's width inside the box.
+        let inset = 400.0 / 111_195
+        let bounds = BoundingBox(minLat: fetched.minLat + inset, minLon: fetched.minLon + inset * 1.6,
+                                 maxLat: fetched.maxLat - inset, maxLon: fetched.maxLon - inset * 1.6)
+        encounterTracker = EncounterTracker(objects: tracker.objects, activity: activity, fights: FightTracker.Setup(
+            constants: constants, sheet: sheet, activity: activity, knownCells: known, groundResolution: resolution,
+            indexing: cellIndexing, readBounds: bounds
+        ))
+    }
+
+    /// What a fight said. Only the quarry speaks, or else the nearest thing being
+    /// fought; never inside a turn's window, never while off the route, and a fight
+    /// sound is dropped rather than queued behind anything already playing.
+    private func handle(fightNews news: [FightNews], from position: Coordinate, at now: Date) {
+        guard !news.isEmpty, let tracker = encounterTracker else { return }
+        let speaker = fightSpeaker(tracker, from: position)
+        for item in news where item.object.id == speaker {
+            let event: RideEvent
+            let beat: FightBeat?
+            switch item {
+            case .engaged(let object):
+                event = .engaged(name: object.name, wants: object.monster?.wants ?? [])
+                beat = .engaged
+            case .landed(let object, let kind):
+                event = .landed(name: object.name, kind: kind)
+                beat = nil
+            case .loosened(let object):
+                event = .loosened(name: object.name)
+                beat = .loosened
+            case .seenOff:
+                continue // said as a claim, with what it paid
+            }
+            guard fightMayBeHeard else { continue }
+            emit(event, at: now)
+            if let beat { watch.send(encounterBeat: WatchEncounterBeat(beat: beat, name: item.object.name)) }
+        }
+    }
+
+    private func fightSpeaker(_ tracker: EncounterTracker, from position: Coordinate) -> UUID? {
+        guard let fights = tracker.fights else { return nil }
+        if let quarryId, fights.fights(quarryId), !tracker.claimedIDs.contains(quarryId) { return quarryId }
+        return tracker.objects
+            .filter { fights.fights($0.id) && !tracker.claimedIDs.contains($0.id) }
+            .min { GeoMath.distance(position, $0.coordinate) < GeoMath.distance(position, $1.coordinate) }?.id
+    }
+
+    private var fightMayBeHeard: Bool {
+        guard state == .active, !audio.isBusy else { return false }
+        return TurnWindow.isClear(distanceToInstructionMeters: progress?.distanceToNextInstruction)
     }
 
     /// Places near the route that the rider has not found, so passing one can be
@@ -436,7 +521,8 @@ final class RideRecorder {
             sighted.insert(nearest.object.id)
             emit(.sighted(name: Self.shortName(nearest.object), kind: nearest.object.kind, meters: nearest.distanceMeters, method: nearest.method ?? nearest.object.monster?.killMethods.first?.method), at: now)
         }
-        for object in tracker.objects where object.kind == .monster && !tracker.claimedIDs.contains(object.id) {
+        // A thing being fought by effort says it got away itself, when the outing leaves its ground.
+        for object in tracker.objects where object.kind == .monster && !tracker.claimedIDs.contains(object.id) && tracker.fights?.fights(object.id) != true {
             let distance = GeoMath.distance(position, object.coordinate)
             if distance <= EncounterTracker.monsterNearMeters {
                 metMonsters.insert(object.id)
@@ -486,7 +572,7 @@ final class RideRecorder {
                 handle(objectiveEvents: [event])
             }
         }
-        let verb = object.kind == .monster ? "Beaten" : (object.kind == .chest ? "Opened" : "Found")
+        let outcome = object.kind == .monster ? "GONE" : (object.kind == .chest ? "OPENED" : "FOUND")
         objectsOnMap.removeAll { $0.id == object.id }
         // A second piece of a set found on the same ride counts on from the first, and
         // a second of the very same piece counts for nothing.
@@ -496,23 +582,33 @@ final class RideRecorder {
             standing = SetStanding(name: before.name, owned: min(before.of, before.owned + (piecesTaken[setId]?.count ?? 0)), of: before.of)
         }
         emit(.claimed(name: Self.shortName(object), kind: object.kind, coins: object.rewardAC, set: standing), at: lastFix?.timestamp ?? Date())
-        watch.send(objectiveCompleted: WatchObjectiveCompleted(title: "\(verb): \(object.name)", coins: object.rewardAC, detail: standing?.line))
+        watch.send(objectiveCompleted: WatchObjectiveCompleted(title: object.name, coins: object.rewardAC, detail: standing?.line, outcome: outcome))
         analytics.track(.worldObjectClaimed, properties: ["kind": object.kind.rawValue, "name": object.name])
     }
 
-    /// The Scribe's way past a monster: a note (and, for anyone else, a photo) within reach of it.
+    /// A note near a monster. The old way, it is the Scribe's way past it; fought
+    /// by effort, it is the word, and lands on whatever is near.
     func complete(encounter object: WorldObject, note: String?, photoTaken: Bool) {
         guard var tracker = encounterTracker else { return }
-        guard tracker.markLore(object.id, at: location.lastFix?.coordinate, timestamp: Date(), note: note, photoTaken: photoTaken) != nil else { return }
+        let here = location.lastFix?.coordinate ?? object.coordinate
+        guard let result = tracker.markLore(object.id, at: location.lastFix?.coordinate, timestamp: Date(), note: note, photoTaken: photoTaken) else { return }
         encounterTracker = tracker
-        handle(claimed: object, at: location.lastFix?.coordinate ?? object.coordinate)
-        encounter = nil
+        guard tracker.fights?.fights(object.id) == true else {
+            handle(claimed: object, at: here)
+            encounter = nil
+            return
+        }
+        for case .seenOff(let gone) in result.news { handle(claimed: gone, at: here) }
+        // Written at a standstill, so the screen says it, not the voice.
+        if result.news.contains(where: { if case .landed = $0 { return true }; return false }) { show(notice: "The word landed.") }
+        persist(force: true)
     }
 
+    /// The Watch's line: a name and how far; the hold is not put into numbers.
     private var encounterLine: String? {
         guard let encounter else { return nil }
         let distance = Int(encounter.distanceMeters.rounded())
-        if let progress = encounter.progress, let method = encounter.method {
+        if encounter.hold == nil, let progress = encounter.progress, let method = encounter.method {
             return "\(encounter.object.name) · \(distance) m · \(method.rawValue.lowercased()) \(Int(progress * 100))%"
         }
         return "\(encounter.object.name) · \(distance) m"
@@ -553,7 +649,7 @@ final class RideRecorder {
             completedObjectiveIDs.insert(event.objectiveId)
             if let objective = quest.objectives.first(where: { $0.id == event.objectiveId }) {
                 showObjectiveToast(objective)
-                watch.send(objectiveCompleted: WatchObjectiveCompleted(title: objective.title, xp: nil))
+                watch.send(objectiveCompleted: WatchObjectiveCompleted(title: objective.title, xp: nil, outcome: "DONE"))
                 let left = quest.requiredObjectives.filter { !completedObjectiveIDs.contains($0.id) && $0.status != .completed }.count
                 emit(.objectiveCompleted(title: objective.title, remaining: left), at: event.occurredAt)
             }

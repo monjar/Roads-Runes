@@ -13,10 +13,11 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.characters.models import Bike, RiderProfile
-from app.characters.service import default_bike, get_rider_profile
+from app.characters.service import default_bike, get_rider_profile, maybe_character
 from app.core.activity import ASSUMED_SPEED_KMH, DISTANCE_SCALE, comfortable_distance_km, is_foot, normalise
 from app.core.config import Settings
 from app.core.errors import NotFound, RouteGenerationFailed
+from app.core.feature_flags import is_enabled
 from app.core.geo import bearing_deg, encode_polyline, haversine_m
 from app.core.llm import LLMClient
 from app.core.logging import EVENT_ROUTE_GENERATED, EVENT_ROUTE_GENERATION_FAILED, get_logger
@@ -1425,9 +1426,26 @@ async def reroute(
     return route
 
 
-async def package(db: AsyncSession, user: User, route_id: uuid.UUID) -> RoutePackageOut:
+async def package(
+    db: AsyncSession, user: User, route_id: uuid.UUID, settings: Settings | None = None
+) -> RoutePackageOut:
     route = await get_route(db, user, route_id)
     quest = await db.get(QuestInstance, route.quest_id) if route.quest_id else None
+    if settings is not None and is_enabled(settings, "effort_combat"):
+        # The route chosen to ride: one thing waits along its far half.
+        from app.world_objects import service as world_objects
+
+        character = await maybe_character(db, user.id)
+        if character is not None:
+            await world_objects.place_on_route(
+                db,
+                settings,
+                user.id,
+                route.id,
+                list(route.coordinates or []),
+                character_class=character.character_class,
+                activity=route.activity,
+            )
     return RoutePackageOut(
         route=route_out(route),
         quest=quest_out(quest).model_dump(mode="json") if quest else None,

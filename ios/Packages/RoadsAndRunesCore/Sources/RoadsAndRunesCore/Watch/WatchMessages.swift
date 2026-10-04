@@ -142,14 +142,18 @@ public struct WatchObjectiveCompleted: Codable, Hashable, Sendable {
     /// Coins the thing was worth, for "+60 coins" under the title. Optional so an older
     /// Watch build still reads the message.
     public var coins: Int?
-    /// A second line: "Old Runes, 3 of 6".
+    /// A second line: "Road Six, 3 of 6".
     public var detail: String?
+    /// What happened, for the overlay's heading: GONE, OPENED, FOUND or DONE.
+    /// Optional: an older phone sends none and the Watch falls back.
+    public var outcome: String?
 
-    public init(title: String, xp: Int? = nil, coins: Int? = nil, detail: String? = nil) {
+    public init(title: String, xp: Int? = nil, coins: Int? = nil, detail: String? = nil, outcome: String? = nil) {
         self.title = title
         self.xp = xp
         self.coins = coins
         self.detail = detail
+        self.outcome = outcome
     }
 }
 
@@ -178,6 +182,8 @@ public enum WatchMessageKind: String, Codable, CaseIterable, Hashable, Sendable 
     case objectiveCompleted
     case command
     case heartRate
+    /// A fight beat to feel on the wrist (0.6.1). Older Watch builds ignore it.
+    case encounterBeat
 
     /// Dictionary key holding the kind's raw value.
     public static let kindKey = "kind"
@@ -235,6 +241,10 @@ public enum WatchMessages {
         try encode(.heartRate, sample)
     }
 
+    public static func encounterBeat(_ beat: WatchEncounterBeat) throws -> [String: Any] {
+        try encode(.encounterBeat, beat)
+    }
+
     public static func routeSummary(from message: [String: Any]) throws -> WatchRouteSummary {
         try decode(WatchRouteSummary.self, as: .routeSummary, from: message)
     }
@@ -253,5 +263,9 @@ public enum WatchMessages {
 
     public static func heartRate(from message: [String: Any]) throws -> WatchHeartRateSample {
         try decode(WatchHeartRateSample.self, as: .heartRate, from: message)
+    }
+
+    public static func encounterBeat(from message: [String: Any]) throws -> WatchEncounterBeat {
+        try decode(WatchEncounterBeat.self, as: .encounterBeat, from: message)
     }
 }

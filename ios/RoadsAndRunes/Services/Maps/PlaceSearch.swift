@@ -7,7 +7,8 @@ import RoadsAndRunesCore
 /// the game's discoveries or a dropped pin. The World's place card and
 /// Directions only need this much.
 struct Place: Identifiable, Hashable {
-    enum Source: Hashable { case search, map, pin, discovery(UUID) }
+    /// `quarry`: a creature on the World map, which an outing planned to it is for.
+    enum Source: Hashable { case search, map, pin, discovery(UUID), quarry(UUID) }
 
     let id: String
     var name: String
@@ -16,6 +17,11 @@ struct Place: Identifiable, Hashable {
     var symbol: String
     let coordinate: Coordinate
     let source: Source
+
+    var quarryId: UUID? {
+        if case .quarry(let id) = source { return id }
+        return nil
+    }
 }
 
 /// One-tap searches under the World's search bar: the stops a cyclist looks for.

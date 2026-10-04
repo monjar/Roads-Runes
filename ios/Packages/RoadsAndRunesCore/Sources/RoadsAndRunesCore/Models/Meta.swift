@@ -122,12 +122,15 @@ public struct AppConfig: Codable, Hashable, Sendable {
     public var h3Resolution: Int
     public var levels: LevelLimits
     public var environment: String?
+    /// The fight's constants (0.6.1); nil from an older server.
+    public var combat: CombatConstants?
 
-    public init(featureFlags: [String: Bool], h3Resolution: Int, levels: LevelLimits, environment: String? = nil) {
+    public init(featureFlags: [String: Bool], h3Resolution: Int, levels: LevelLimits, environment: String? = nil, combat: CombatConstants? = nil) {
         self.featureFlags = featureFlags
         self.h3Resolution = h3Resolution
         self.levels = levels
         self.environment = environment
+        self.combat = combat
     }
 
     public func isEnabled(_ flag: String) -> Bool { featureFlags[flag] ?? false }

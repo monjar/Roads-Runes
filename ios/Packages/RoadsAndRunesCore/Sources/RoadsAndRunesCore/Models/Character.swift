@@ -102,6 +102,8 @@ public struct Character: Codable, Hashable, Identifiable, Sendable {
     public var longestStreakDays: Int?
     /// True once an outing has counted today: "keep it alive" becomes "done".
     public var streakActiveToday: Bool?
+    /// The sheet a ride started now would carry (0.6.1), for an outing started offline.
+    public var sheet: CharacterSheet? = nil
 
     public init(
         id: UUID, name: String, characterClass: CharacterClass, overallLevel: Int, overallXP: Int,

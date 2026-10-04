@@ -232,7 +232,7 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
         try await run {
             guard var object = self.storedObjects[id] else { throw self.notFound("World object") }
             guard let reach = object.reachMeters else {
-                throw APIError.server(code: APIErrorCode.objectNotClaimable, message: "A monster has to be beaten on the move", status: 409)
+                throw APIError.server(code: APIErrorCode.objectNotClaimable, message: "A thing is seen off on the move, not from here", status: 409)
             }
             guard object.status == .spawned else {
                 throw APIError.server(code: APIErrorCode.objectGone, message: "It has already gone", status: 409)

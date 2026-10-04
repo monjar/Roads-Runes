@@ -33,8 +33,16 @@ struct SettingsView: View {
                     ForEach(RideSound.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
                 .accessibilityIdentifier("settings.rideSound")
-                Text("A chime for a chest, a monster beaten, a new place, halfway; new ground climbs a scale. The voice says the same things in a few words, and turns your music down while it does. Both play with the phone on silent.")
+                Text("A chime for a chest, a thing seen off, a new place, halfway; new ground climbs a scale. The voice says the same things in a few words, and turns your music down while it does. Both play with the phone on silent.")
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
+                // For the road test: hear a fight, and feel it on the Watch, before meeting one.
+                Button("Hear a fight") {
+                    container.rideAudio.playScriptedFight { beat in
+                        container.watch.send(encounterBeat: WatchEncounterBeat(beat: beat, name: "Grey Stag"))
+                    }
+                }
+                .disabled(container.mapPreferences.rideSound == .off)
+                .accessibilityIdentifier("settings.hearAFight")
             }
             Section("Privacy") {
                 Picker("New rides are", selection: $settings.defaultRideVisibility) {

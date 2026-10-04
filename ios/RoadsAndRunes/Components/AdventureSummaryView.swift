@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -5,8 +6,9 @@ import SwiftUI
 ///
 /// The ride's line draws itself on the map, then what it earned arrives a part at
 /// a time: the XP counts up and the level fills, each line of it lands, then the
-/// coins, then a level gained (its own card), then what was beaten, opened and
-/// found — and what got away, and by how much — then the quest's last word. It
+/// coins, then a level gained (its own card), then what was seen off, opened and
+/// found — and what got away, and by how much — then the quest's last word.
+/// With fights decided by effort, the fights come first, the quarry leading. It
 /// was one static sheet with a level-up as a small chip among others. One tap
 /// shows everything at once; "Close the book" is there from the start. Cycling
 /// stats stay one quiet line (spec §40). Opened again from the Journal it is
@@ -34,7 +36,7 @@ struct AdventureSummaryView: View {
 
     /// The order things arrive in.
     private enum Stage: Int, Comparable {
-        case trace, xp, lines, coins, levels, world, quest, rest
+        case trace, fight, xp, lines, coins, levels, world, quest, rest
 
         static func < (lhs: Stage, rhs: Stage) -> Bool { lhs.rawValue < rhs.rawValue }
     }
@@ -74,6 +76,7 @@ struct AdventureSummaryView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             SheetHandle().frame(maxWidth: .infinity)
                             header
+                            if stage >= .fight, !fights.isEmpty { fightSection.id(Stage.fight) }
                             if stage >= .xp, animated, let character { levelBar(character) }
                             if stage >= .lines, !xpLines.isEmpty { breakdown(xpLines.map { (RewardCopy.xp(source: $0.source, className: className), "+\($0.xp)") }).id(Stage.lines) }
                             if stage >= .coins, coins > 0 { coinSection.id(Stage.coins) }
@@ -137,6 +140,16 @@ struct AdventureSummaryView: View {
             try? await Task.sleep(for: .milliseconds(55))
             guard !Task.isCancelled else { return }
             traceShown = Double(step) / 24
+        }
+        if !fights.isEmpty {
+            await arrive(at: .fight, after: 0.2)
+            // Felt, not tapped on the wrist: a swell for something seen off, a knock for one that got away.
+            if fights.contains(where: \.seenOff) {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            } else {
+                UIImpactFeedbackGenerator(style: .rigid).impactOccurred(intensity: 0.7)
+            }
+            try? await Task.sleep(for: .milliseconds(900))
         }
         await arrive(at: .xp, after: 0.1) {
             withAnimation(.easeOut(duration: 1.1)) {
@@ -323,7 +336,30 @@ struct AdventureSummaryView: View {
         return !world.claimed.isEmpty || world.missed.contains { $0.reason == "UNBEATEN" } || summary.streak?.extended == true
     }
 
-    /// What was beaten, opened and found; what got away and how nearly; the days in a row.
+    /// Effort is damage: one report per thing the outing reached, the quarry first.
+    private var fights: [FightReport] {
+        FightCopy.ordered(summary.worldObjects?.fights ?? [], quarryId: summary.quarryId)
+    }
+
+    private var fightSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(fights) { report in
+                HStack(alignment: .top, spacing: 10) {
+                    EncounterGlyph(kind: .monster, bounty: report.bounty == true, size: 30)
+                    Text(FightCopy.line(report, units: units))
+                        .font(Theme.Typography.text(14, report.seenOff ? .semibold : .regular))
+                        .foregroundStyle(report.seenOff ? Theme.Colors.ink : Theme.Colors.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("summary.fight")
+            }
+        }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    /// What was seen off, opened and found; what got away and how nearly; the days kept.
     @ViewBuilder
     private var worldSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -331,7 +367,7 @@ struct AdventureSummaryView: View {
                 HStack(spacing: 10) {
                     EncounterGlyph(kind: taken.kind, size: 30)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("\(taken.kind == .monster ? "Beat" : (taken.kind == .chest ? "Opened" : "Found")) \(taken.name)")
+                        Text("\(taken.kind == .monster ? "Saw off" : (taken.kind == .chest ? "Opened" : "Found")) \(taken.name)")
                             .font(Theme.Typography.text(14, .semibold)).foregroundStyle(Theme.Colors.ink).lineLimit(1)
                         if let standing = taken.setStanding {
                             Text(standing.line).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.sageDeep)
@@ -456,8 +492,17 @@ struct AdventureSummaryView: View {
 
     private var className: String { ClassStyle.name(character?.characterClass ?? .explorer) }
 
+    /// The places found, and an ink mark where something was seen off: the mark of
+    /// what did it.
     private var markers: [MapMarker] {
-        summary.discoveries.map { MapMarker(id: $0.id.uuidString, coordinate: $0.coordinate, kind: .discovery, title: $0.name) }
+        let places = summary.discoveries.map { MapMarker(id: $0.id.uuidString, coordinate: $0.coordinate, kind: .discovery, title: $0.name) }
+        let gone = fights.filter(\.seenOff).compactMap { report in
+            report.coordinate.map {
+                MapMarker(id: "fight-\(report.id.uuidString)", coordinate: $0, kind: .monster, title: report.name ?? "",
+                          mark: .kind(report.finisher ?? "ROAD"))
+            }
+        }
+        return places + (stage >= .fight ? gone : [])
     }
 
     private var revealLine: String {

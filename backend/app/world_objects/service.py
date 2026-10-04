@@ -543,6 +543,90 @@ async def lure(
     return await _persist(db, user_id, plans, utcnow(), float(cfg["expiryDays"]), settings.h3_resolution)
 
 
+ROUTE_REACH_M = 150.0
+
+
+def _far_half(coordinates: list[Any], every_m: float = 200.0) -> list[tuple[float, float]]:
+    """Points every 200 m along the route from halfway to nine tenths of the way,
+    interpolated, so a route with few vertices is sampled as finely as a dense one."""
+    pts = [(float(c[1]), float(c[0])) for c in coordinates if len(c) >= 2]
+    if len(pts) < 2:
+        return []
+    legs = [haversine_m(a[0], a[1], b[0], b[1]) for a, b in zip(pts, pts[1:], strict=False)]
+    total = sum(legs)
+    out: list[tuple[float, float]] = []
+    want = 0.5 * total
+    walked = 0.0
+    for (a, b), leg in zip(zip(pts, pts[1:], strict=False), legs, strict=True):
+        while leg > 0 and want <= walked + leg and want <= 0.9 * total:
+            f = (want - walked) / leg
+            out.append((a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f))
+            want += every_m
+        walked += leg
+    return out
+
+
+async def place_on_route(
+    db: AsyncSession,
+    settings: Any,
+    user_id: uuid.UUID,
+    route_id: uuid.UUID,
+    coordinates: list[Any],
+    *,
+    character_class: str,
+    activity: str,
+) -> WorldObject | None:
+    """A planned route places one thing along its far half, so an outing that goes
+    somewhere meets something there (docs/ROADMAP.md, 0.6.1). Once per route, and
+    none if something is already waiting on that half (a route planned to a
+    creature has its quarry)."""
+    cfg = load_config()
+    seed = f"route:{route_id}"
+    if await _seeds_like(db, user_id, seed):
+        return None
+    far = _far_half(coordinates)
+    if len(far) < 3:
+        return None
+    centre = far[len(far) // 2]
+    radius = max(haversine_m(centre[0], centre[1], lat, lon) for lat, lon in far) + ROUTE_REACH_M
+
+    def beside(lat: float, lon: float) -> bool:
+        return any(haversine_m(lat, lon, p[0], p[1]) <= ROUTE_REACH_M for p in far)
+
+    live = await live_objects(db, user_id, centre[0], centre[1], radius)
+    if any(o.kind == "MONSTER" and beside(o.latitude, o.longitude) for o in live):
+        return None
+    spacing = float(cfg["minSpacingMeters"])
+    anchors = [
+        Anchor(str(d.id), d.name, d.category, d.latitude, d.longitude, d.h3_index, tags=dict(d.tags or {}))
+        for d in await discoveries_nearby(db, centre[0], centre[1], radius, limit=400)
+        if not is_sensitive(d.name, d.tags)
+        and beside(d.latitude, d.longitude)
+        and all(haversine_m(d.latitude, d.longitude, o.latitude, o.longitude) >= spacing for o in live)
+    ]
+    if not anchors:
+        return None
+    plans = plan_spawns(
+        seed=seed,
+        kind="MONSTER",
+        indices=[0],
+        anchors=anchors,
+        taken_anchor_ids={str(o.anchor_discovery_id) for o in live if o.anchor_discovery_id},
+        occupied=[(o.latitude, o.longitude) for o in live],
+        cfg=cfg,
+        ac_rules=load_ac_rules(),
+        frontier=set(),
+        known={},
+        character_class=character_class,
+        activity=normalise(activity),
+        centre=None,
+    )
+    placed = await _persist(db, user_id, plans, utcnow(), float(cfg["expiryDays"]), settings.h3_resolution)
+    if placed:
+        log.info("world_object_on_route", route_id=str(route_id), object_id=str(placed[0].id))
+    return placed[0] if placed else None
+
+
 # --- effort is damage -----------------------------------------------------------
 
 
@@ -831,6 +915,8 @@ async def _fight_by_effort(
                 "speciesId": lore.species_of(obj.payload),
                 "tier": obj.tier,
                 "bounty": bool(obj.bounty),
+                "latitude": obj.latitude,
+                "longitude": obj.longitude,
                 **report.to_dict(),
                 "expiresAt": obj.expires_at.isoformat(),
             }

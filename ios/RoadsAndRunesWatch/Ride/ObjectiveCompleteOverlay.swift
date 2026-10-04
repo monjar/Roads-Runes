@@ -18,7 +18,8 @@ struct ObjectiveCompleteOverlay: View {
                     .foregroundStyle(WatchTheme.sage)
             }
             .frame(width: 56, height: 56)
-            Text(event.coins == nil ? "OBJECTIVE COMPLETE" : "YOURS")
+            // GONE, OPENED, FOUND or DONE; an older phone sends none.
+            Text(event.outcome ?? "DONE")
                 .font(.system(size: 11, weight: .bold))
                 .tracking(1.2)
                 .padding(.top, 6)
@@ -52,7 +53,7 @@ struct ObjectiveCompleteOverlay: View {
         .background(WatchTheme.sage)
         .ignoresSafeArea()
         .task(id: token) {
-            WKInterfaceDevice.current().play(.success)
+            TurnHaptics.tap(.success)
             try? await Task.sleep(for: .seconds(4))
             dismiss()
         }

@@ -26,13 +26,13 @@ final class RideEventTests: XCTestCase {
     }
 
     func testASightingSaysHowFarAndWhatItWants() {
-        XCTAssertEqual(RideEvent.sighted(name: "Bog Wraith", kind: .monster, meters: 212, method: .pace).spoken(), "Bog Wraith, 200 metres. It wants a fast kilometre.")
+        XCTAssertEqual(RideEvent.sighted(name: "Bog Wraith", kind: .monster, meters: 212, method: .pace).spoken(), "Bog Wraith, 200 metres. It wants the road used.")
         XCTAssertEqual(RideEvent.sighted(name: "Old chest", kind: .chest, meters: 140, method: nil).spoken(), "A chest, 150 metres.")
         XCTAssertEqual(RideEvent.sighted(name: "Raido", kind: .collectable, meters: 12, method: nil).spoken(), "A piece, 50 metres.")
     }
 
     func testAClaimSaysWhatItPaidAndAPieceSaysItsSet() {
-        XCTAssertEqual(RideEvent.claimed(name: "Bog Wraith", kind: .monster, coins: 60, set: nil).spoken(), "Bog Wraith beaten. 60 coins.")
+        XCTAssertEqual(RideEvent.claimed(name: "Bog Wraith", kind: .monster, coins: 60, set: nil).spoken(), "Bog Wraith, gone. 60 coins.")
         XCTAssertEqual(RideEvent.claimed(name: "Old chest", kind: .chest, coins: 25, set: nil).spoken(), "Chest opened. 25 coins.")
         let third = RideEvent.claimed(name: "Raido", kind: .collectable, coins: 10, set: SetStanding(name: "Old Runes", owned: 3, of: 6))
         XCTAssertEqual(third.spoken(), "Raido. Old Runes, 3 of 6.")
@@ -104,7 +104,7 @@ final class RideEventTests: XCTestCase {
         var announcer = RideAnnouncer(minimumGap: 4)
         announcer.offer(.milestone(.halfway, remainingMeters: 4000), at: t0)
         announcer.offer(.claimed(name: "Bog Wraith", kind: .monster, coins: 60, set: nil), at: t0.addingTimeInterval(1))
-        XCTAssertEqual(announcer.nextLine(now: t0.addingTimeInterval(1)), "Bog Wraith beaten. 60 coins.")
+        XCTAssertEqual(announcer.nextLine(now: t0.addingTimeInterval(1)), "Bog Wraith, gone. 60 coins.")
         XCTAssertNil(announcer.nextLine(now: t0.addingTimeInterval(2)), "too soon after the last line")
         XCTAssertNil(announcer.nextLine(now: t0.addingTimeInterval(6), isSpeaking: true), "never over itself")
         XCTAssertEqual(announcer.nextLine(now: t0.addingTimeInterval(6)), "Halfway.")
@@ -126,7 +126,7 @@ final class RideEventTests: XCTestCase {
         announcer.offer(.sighted(name: "Old chest", kind: .chest, meters: 350, method: nil), at: t0)
         announcer.offer(.sighted(name: "Fen Troll", kind: .monster, meters: 200, method: .pace), at: t0.addingTimeInterval(1))
         XCTAssertEqual(announcer.waiting, 1)
-        XCTAssertEqual(announcer.nextLine(now: t0.addingTimeInterval(1)), "Fen Troll, 200 metres. It wants a fast kilometre.")
+        XCTAssertEqual(announcer.nextLine(now: t0.addingTimeInterval(1)), "Fen Troll, 200 metres. It wants the road used.")
     }
 
     func testTheGapRunsFromTheEndOfALine() {
@@ -196,7 +196,7 @@ final class RideEventTests: XCTestCase {
         XCTAssertEqual(RewardCopy.nearMiss(climb), "You climbed 28 m beside it; it wanted 40 m.")
         XCTAssertEqual(RewardCopy.nearMiss(MissedAttempt(method: .explore, cells: 1, targetCells: 3)), "You cleared 1 new area round it; it wanted 3.")
         XCTAssertNil(RewardCopy.nearMiss(MissedAttempt(method: .lore)))
-        XCTAssertEqual(RewardCopy.staying(until: t0.addingTimeInterval(3_600), now: t0), "It is gone tonight.")
+        XCTAssertEqual(RewardCopy.staying(until: t0.addingTimeInterval(3_600), now: t0), "It is there less than a day more.")
         // An older server says only that it got away.
         XCTAssertEqual(RewardCopy.shruggedOff(MissedObject(id: UUID(), kind: .monster, name: "Mire Hag", reason: "UNBEATEN")), "Mire Hag shrugged it off.")
     }
@@ -252,7 +252,7 @@ final class RideEventTests: XCTestCase {
         XCTAssertEqual(lures.nearest?.name, "Old chest", "the nearer chest will have gone by the evening")
         let withBounty = NudgeCopy.streak(days: 6, activity: .ride, bounty: lures.bounty, nearest: lures.nearest)
         XCTAssertEqual(withBounty.title, "6 days kept. Today not yet.")
-        XCTAssertEqual(withBounty.body, "The Gutter Drake is 900 m away and worth double till midnight. One kilometre keeps the days.")
+        XCTAssertEqual(withBounty.body, "The Gutter Drake is 900 m away and pays double. One kilometre keeps the days.")
 
         lures = NudgeCopy.lures(among: [chest], from: home, stillThereAt: evening)
         XCTAssertEqual(NudgeCopy.streak(days: 3, activity: .walk, bounty: lures.bounty, nearest: lures.nearest).body, "One kilometre keeps it alive. An Old chest is 400 m away.")
@@ -262,5 +262,21 @@ final class RideEventTests: XCTestCase {
         XCTAssertNil(lures.nearest)
         XCTAssertEqual(NudgeCopy.streak(days: 3, activity: .run, bounty: nil, nearest: nil).body, "One kilometre keeps it alive. A short run will do.")
         XCTAssertFalse(NudgeCopy.bountyMorning().body.contains("closer"))
+    }
+
+    func testAFightIsSaidInFiveWordsAtMostNameFirst() {
+        let lines = [
+            RideEvent.engaged(name: "Grey Stag", wants: ["CLIMB", "RUNE"]).spoken(),
+            RideEvent.landed(name: "Grey Stag", kind: "RUNE").spoken(),
+            RideEvent.landed(name: "Grey Stag", kind: "WORD").spoken(),
+            RideEvent.loosened(name: "Grey Stag").spoken(),
+        ].compactMap { $0 }
+        XCTAssertEqual(lines, ["Grey Stag. Wants height.", "Rune landed.", "Word landed.", "Grey Stag, loosened."])
+        for line in lines {
+            XCTAssertLessThanOrEqual(line.split(separator: " ").count, 5, line)
+        }
+        XCTAssertEqual(RideEvent.engaged(name: "x", wants: []).chime, .engaged)
+        XCTAssertEqual(RideEvent.landed(name: "x", kind: "RUNE").chime, .landed)
+        XCTAssertEqual(RideEvent.loosened(name: "x").chime, .lost, "it got away sounds like it got away")
     }
 }

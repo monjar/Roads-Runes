@@ -12,9 +12,17 @@ iPhone RideRecorder ──WCSession.sendMessage / updateApplicationContext──
    • NavigationUpdate throttled (1 s FULL / 3 s BALANCED / 10 s ENDURANCE, `BatteryPolicy`):
        nextInstruction, distanceToTurn, streetName, objectiveTitle,
        objectiveDistance, stats snapshot, navigationState
-   • ObjectiveCompleted events (haptic .success on watch)
+   • ObjectiveCompleted events (haptic .success on watch), with an optional
+       `outcome` for the overlay's heading: GONE, OPENED, FOUND or DONE
+   • EncounterBeat (0.6.1): ENGAGED or LOOSENED, felt as one tap and never
+       shown. Sent only while the Watch is reachable, never inside a turn's
+       window and never while off route. A Watch build before 0.6.1 ignores it
 Watch ──► iPhone: pause / resume / end commands, heart-rate samples
 ```
+
+Every tap the Watch gives is named in Core (`WristTap`). Turns own `click`,
+`directionUp` and `directionDown`; a fight may only use `start`, `success` and
+`failure`, and `WristTapTests` keeps the two sets apart.
 
 The watch runs its own `HKWorkoutSession` (cycling, outdoor) so heart rate
 streams and the workout continues if the phone connection drops. It keeps the

@@ -57,6 +57,15 @@ final class WatchSessionService: NSObject, WCSessionDelegate {
         }
     }
 
+    /// A fight beat, felt on the wrist: dropped if the Watch is not there now. It
+    /// is only true for a moment.
+    func send(encounterBeat beat: WatchEncounterBeat) {
+        guard let message = try? WatchMessages.encounterBeat(beat) else { return }
+        let session = WCSession.default
+        guard session.activationState == .activated, session.isReachable else { return }
+        session.sendMessage(message, replyHandler: nil, errorHandler: nil)
+    }
+
     private func handle(_ message: [String: Any]) {
         guard let kind = WatchMessages.kind(of: message) else { return }
         switch kind {

@@ -18,8 +18,18 @@ final class WorldViewModel {
     private(set) var visibleBox: BoundingBox?
 
     var selectedPlace: Place?
-    /// A chest, piece or monster the rider tapped; the card says how to beat it.
-    var selectedObject: WorldObject?
+    /// A chest, piece or monster the rider tapped; the card says what it wants.
+    var selectedObject: WorldObject? {
+        didSet { if selectedObject?.id != oldValue?.id { readGround(round: selectedObject) } }
+    }
+    /// How much of the ground round the selected creature is new to the player, for its card.
+    private(set) var groundRound: GroundRound?
+
+    struct GroundRound: Equatable {
+        let objectId: UUID
+        let unread: Int
+        let of: Int
+    }
     private(set) var results: [Place] = []
     private(set) var resultsTitle: String?
     private(set) var activeShortcut: PlaceShortcut?
@@ -186,6 +196,31 @@ final class WorldViewModel {
         }
     }
 
+    /// A lamp left out (docs/COMBAT.md): one thing comes to the nearest named place
+    /// within 250 m of the spot, and the coins go only if something comes.
+    static let lampCost = 50
+    private(set) var leavingLamp = false
+    var lampError: String?
+
+    func leaveLamp(at place: Place) async {
+        guard !leavingLamp else { return }
+        leavingLamp = true
+        lampError = nil
+        defer { leavingLamp = false }
+        do {
+            let came = try await container.api.lure(at: place.coordinate)
+            for object in came { take(object) }
+            if let first = came.first {
+                selectedPlace = nil
+                open(first)
+            }
+            container.analytics.track(.worldObjectClaimed, properties: ["kind": "LAMP", "name": place.name, "method": "LAMP"])
+            await container.session.refreshCharacter()
+        } catch {
+            lampError = error.localizedDescription
+        }
+    }
+
     /// The object as the server now has it replaces whatever the map was holding.
     private func take(_ object: WorldObject) {
         placedObjects.removeAll { $0.id == object.id }
@@ -281,6 +316,7 @@ final class WorldViewModel {
     func select(_ place: Place, moveCamera: Bool = true) {
         selectedObject = nil
         selectedPlace = place
+        lampError = nil
         if moveCamera { camera = MapCamera(center: place.coordinate) }
         if place.address == nil { Task { await fillAddress(for: place) } }
     }
@@ -315,8 +351,47 @@ final class WorldViewModel {
         Place(
             id: "object-\(object.id.uuidString)", name: object.name, category: object.anchorName, address: nil,
             symbol: object.kind == .monster ? "flame.fill" : (object.kind == .chest ? "shippingbox.fill" : "sparkles"),
-            coordinate: object.coordinate, source: .pin
+            coordinate: object.coordinate, source: object.kind == .monster ? .quarry(object.id) : .pin
         )
+    }
+
+    /// New ground counts against a creature inside its ground: the card says how
+    /// much of the ground round it is still unread. Asked of the server each time,
+    /// whether or not the fog is drawn.
+    private func readGround(round object: WorldObject?) {
+        groundRound = nil
+        guard let object, object.monster?.foughtByEffort == true else { return }
+        let reach = container.session.config?.combat?.groundMeters ?? 1000
+        let resolution = container.session.config?.h3Resolution ?? ExplorationDefaults.h3Resolution
+        let indexing = container.cellIndexing
+        Task { [weak self] in
+            let dLat = reach / 111_195, dLon = reach / (111_195 * max(0.2, cos(object.latitude * .pi / 180)))
+            let box = BoundingBox(minLat: object.latitude - dLat, minLon: object.longitude - dLon,
+                                  maxLat: object.latitude + dLat, maxLon: object.longitude + dLon)
+            guard let self, let read = try? await self.container.api.exploration(in: box), read.h3Resolution == resolution else { return }
+            let known = Set(read.cells.filter { $0.state == .visited || $0.state == .explored }.map(\.h3))
+            let round = Self.cells(round: object.coordinate, within: reach, resolution: resolution, indexing: indexing)
+            guard !round.isEmpty, self.selectedObject?.id == object.id else { return }
+            self.groundRound = GroundRound(objectId: object.id, unread: round.subtracting(known).count, of: round.count)
+        }
+    }
+
+    /// The cells whose centres lie within `meters` of a point, grown ring by ring.
+    static func cells(round centre: Coordinate, within meters: Double, resolution: Int, indexing: any CellIndexing) -> Set<String> {
+        let first = indexing.cell(latitude: centre.latitude, longitude: centre.longitude, resolution: resolution)
+        var inside: Set<String> = [first]
+        var frontier = [first]
+        while !frontier.isEmpty, inside.count < 2000 {
+            var next: [String] = []
+            for cell in frontier {
+                for n in indexing.neighbours(of: cell) where !inside.contains(n) && GeoMath.distance(indexing.center(of: n), centre) <= meters {
+                    inside.insert(n)
+                    next.append(n)
+                }
+            }
+            frontier = next
+        }
+        return inside
     }
 
     func locateMe() {

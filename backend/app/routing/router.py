@@ -41,8 +41,8 @@ async def get(route_id: uuid.UUID, user: CurrentUser, db: DBDep) -> RouteOptionO
 
 
 @router.get("/{route_id}/package", response_model=RoutePackageOut)
-async def package(route_id: uuid.UUID, user: CurrentUser, db: DBDep) -> RoutePackageOut:
-    return await service.package(db, user, route_id)
+async def package(route_id: uuid.UUID, user: CurrentUser, db: DBDep, settings: SettingsDep) -> RoutePackageOut:
+    return await service.package(db, user, route_id, settings)
 
 
 @router.post("/{route_id}/reroute", response_model=RouteOptionOut)

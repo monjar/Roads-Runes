@@ -181,6 +181,7 @@ struct WorldView: View {
                 distanceMeters: model.position.map { GeoMath.distance($0, object.coordinate) },
                 units: model.units,
                 inReach: model.isWithinReach(object),
+                groundRound: model.groundRound?.objectId == object.id ? model.groundRound : nil,
                 claiming: model.claiming == object.id,
                 claimError: model.claimError,
                 onClaim: { Task { await model.claim(object) } },
@@ -195,7 +196,11 @@ struct WorldView: View {
                 distanceMeters: model.position.map { GeoMath.distance($0, place.coordinate) },
                 units: model.units,
                 onDirections: { directionsTo = place },
-                onClose: { withAnimation(.snappy) { model.closePlace() } }
+                onClose: { withAnimation(.snappy) { model.closePlace() } },
+                lampCost: WorldViewModel.lampCost,
+                leavingLamp: model.leavingLamp,
+                lampError: model.lampError,
+                onLamp: { Task { await model.leaveLamp(at: place) } }
             )
             .padding(.horizontal, 12)
             .transition(.move(edge: .bottom).combined(with: .opacity))

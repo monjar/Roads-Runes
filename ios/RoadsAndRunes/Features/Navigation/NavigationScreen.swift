@@ -64,7 +64,8 @@ struct NavigationScreen: View {
                         .transition(.scale(scale: 0.9).combined(with: .opacity))
                 }
                 if let encounter = recorder.encounter {
-                    EncounterBanner(status: encounter, formatter: formatter) { note in
+                    EncounterBanner(status: encounter, formatter: formatter, isStill: recorder.isStill,
+                                    wordReach: container.session.config?.combat?.wordRadiusMeters ?? 120) { note in
                         recorder.complete(encounter: encounter.object, note: note, photoTaken: false)
                     }
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -442,7 +443,7 @@ struct NearbyStopCard: View {
     }
 }
 
-/// "Beaten: Bog Wraith · +150 coins", for a few seconds, the moment it happens.
+/// "Seen off: Bog Wraith · +150 coins", for a few seconds, the moment it happens.
 struct ClaimToast: View {
     let object: WorldObject
 
@@ -462,45 +463,73 @@ struct ClaimToast: View {
 
     private var verb: String {
         switch object.kind {
-        case .monster: return "Beaten"
+        case .monster: return "Seen off"
         case .chest: return "Opened"
         default: return "Found"
         }
     }
 }
 
-/// The nearest thing in the world and how the fight is going: "Bog Wraith · 120 m",
-/// the way in, and a bar that fills as the fast kilometre or the rune comes together.
+/// The nearest thing in the world and how the fight is going: "Bog Wraith · 120 m".
+/// A thing fought by effort sits in a ring of its hold, redrawn in tenths with no
+/// numbers and no animation. Words under the name, and the note button, show
+/// only at a standstill (Core `Stillness`): nothing to read while moving.
 struct EncounterBanner: View {
     let status: EncounterStatus
     let formatter: UnitFormatter
+    var isStill = false
+    /// How near a note has to be written for the word to land.
+    var wordReach: Double = 120
     var onNote: (String) -> Void = { _ in }
     @State private var writingNote = false
 
     private var loreMethod: KillMethod? { status.object.monster?.killMethods.first { $0.method == .lore } }
 
+    /// The note button: the word, near a thing fought by effort; the old way, the Scribe's way past it.
+    private var noteLabel: String? {
+        guard isStill, status.object.kind == .monster else { return nil }
+        if status.object.monster?.foughtByEffort == true {
+            return status.distanceMeters <= wordReach ? "Write the word" : nil
+        }
+        guard let lore = loreMethod else { return nil }
+        return lore.params["requires"]?.arrayValue?.contains(.string("photo")) == true ? "Write a note (and take a photo)" : "Write a note"
+    }
+
+    private var line: String {
+        if let wants = status.object.monster?.wants, status.object.monster?.foughtByEffort == true {
+            return LoreCopy.wants(wants)
+        }
+        return status.hint ?? (status.object.kind == .chest ? "pass close by to open it" : "pass close by to pick it up")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
-                EncounterGlyph(object: status.object, size: 34)
+                if let tenths = status.holdTenths {
+                    HoldRing(tenths: tenths) { EncounterGlyph(object: status.object, size: 30) }
+                } else {
+                    EncounterGlyph(object: status.object, size: 34)
+                }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(status.object.name).font(Theme.Typography.text(15, .bold)).foregroundStyle(Theme.Colors.cream).lineLimit(1)
-                    Text(status.hint ?? (status.object.kind == .chest ? "pass close by to open it" : "pass close by to pick it up"))
-                        .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.cream.opacity(0.85)).lineLimit(2)
+                    if isStill {
+                        Text(line)
+                            .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.cream.opacity(0.85)).lineLimit(2)
+                    }
                 }
                 Spacer(minLength: 8)
                 Text(formatter.distance(meters: status.distanceMeters))
                     .font(Theme.Typography.text(17, .bold).monospacedDigit()).foregroundStyle(Theme.Colors.cream)
             }
-            if let progress = status.progress {
+            if let progress = status.progress, status.hold == nil {
                 ProgressView(value: min(1, max(0, progress))).tint(Theme.Colors.cream)
                     .accessibilityIdentifier("encounter.progress")
             }
-            if let lore = loreMethod, status.object.kind == .monster {
+            if let noteLabel {
                 Button {
                     writingNote = true
                 } label: {
-                    Label(lore.params["requires"]?.arrayValue?.contains(.string("photo")) == true ? "Write a note (and take a photo)" : "Write a note", systemImage: "square.and.pencil")
+                    Label(noteLabel, systemImage: "square.and.pencil")
                         .font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink)
                         .padding(.horizontal, 12).frame(height: 34).background(Theme.Colors.cream, in: Capsule())
                 }
@@ -519,6 +548,30 @@ struct EncounterBanner: View {
         .shadow(color: Theme.Colors.ink.opacity(0.2), radius: 8, y: 4)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("encounter")
+    }
+}
+
+/// Its hold, as a ring round its face: whole when untouched, drawn in tenths, with
+/// no numbers and no animation (docs/ROADMAP.md, 0.6.1).
+struct HoldRing<Content: View>: View {
+    let tenths: Int
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(Theme.Colors.cream.opacity(0.25), lineWidth: 3)
+            Circle()
+                .trim(from: 0, to: CGFloat(max(0, min(10, tenths))) / 10)
+                .stroke(Theme.Colors.cream, style: StrokeStyle(lineWidth: 3, lineCap: .butt))
+                .rotationEffect(.degrees(-90))
+            content
+        }
+        .frame(width: 40, height: 40)
+        .transaction { $0.animation = nil }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Its hold")
+        .accessibilityValue("\(tenths) tenths left")
+        .accessibilityIdentifier("encounter.hold")
     }
 }
 
