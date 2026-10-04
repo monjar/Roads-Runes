@@ -1,5 +1,10 @@
 # The world: The Old Roads
 
+> **Superseded in part (2026-10-04).** How the app talks (buttons, labels,
+> errors, the Watch, the ride's voice) is now `docs/VOICE.md`: simple, warm
+> fantasy, not the dry understatement below. Its glossary replaces the Lexicon
+> here. Quest text and lore are the game author's to rewrite.
+
 The fiction every player-facing line in Roads & Runes belongs to, and the
 rules for writing more of it. The plan it serves is `docs/ROADMAP.md`; the
 longer drafts it was cut from are in `docs/design/rpg/drafts/` (superseded

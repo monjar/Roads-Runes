@@ -2,7 +2,7 @@
 
 ## Where it stands (2026-10-04)
 
-Built on the `feat/old-roads` branch, not merged, deployed or sent to TestFlight:
+Built on the `feat/old-roads` branch, not merged to master. 0.7.0 went to TestFlight (internal) and its backend to Fly on 2026-10-04:
 
 | Release | Built | Still yours |
 |---|---|---|
@@ -11,6 +11,7 @@ Built on the `feat/old-roads` branch, not merged, deployed or sent to TestFlight
 | 0.6.1 Hold | server, phone and wrist; `effort_combat` off | the replay with real outings; protocols 3 and 5 with a fight; then the flag on |
 | 0.6.2 The Board | titles (migration 0009), working knacks, arcs settled once, Act I, posters, the entry, the week's notice | the gate outing on an Act I step; a snapshot before 0009 runs on Fly; `story_quests` on |
 | 0.7.0 Runes and the fog | runes held, ranked, inscribed and woken (migration 0010), deeds, rune rides, `INSCRIBE_RUNE` and `CARRY`, Act II, the ink fog on the Journal map and behind `ink_fog` on the World tab | a rune ride planned, ridden and woken; the wash seen over your own cells |
+| 0.7.1 Plain sight | in progress: the lamp fixed on the server and the phone, one icon set (game-icons.net) across the app and the Watch, docs/VOICE.md | the wording read-through; the gate below |
 
 Not built from 0.7.0's list: the World tab's ink fog is behind its flag and unseen on a device; the
 phone folds neither waking nor Wunjo's stops (the server does, and the reckoning says so).
@@ -55,12 +56,12 @@ Standing rules (`docs/PRODUCT_SPEC.md`): never reward speed; nothing to read or 
 **Seven pillars**, and the release that delivers each:
 
 1. **A world.** A world bible with one lexicon, five people who post notices and sign the codex, a bestiary, 24 runes with meanings. *0.6.0*
-2. **Faces.** A woodcut art system drawn in SwiftUI; later an ink-and-parchment map and fog as unpainted paper. *0.6.0, 0.7.0, 0.7.2*
+2. **Faces.** A woodcut art system drawn in SwiftUI; later an ink-and-parchment map and fog as unpainted paper. *0.6.0, 0.7.0, 0.7.3*
 3. **Fights.** Every creature has hold, a habitat, two wants and one thing it does not mind; effort near it and on the way loosens it; later, persistent old ones that take several outings. *0.6.1, 0.8.0*
-4. **A character.** Titles, working abilities, then runes inscribed as a build, deeds, gear, and something at every level. *0.6.2, 0.7.0, 0.7.1*
+4. **A character.** Titles, working abilities, then runes inscribed as a build, deeds, gear, and something at every level. *0.6.2, 0.7.0, 0.7.2*
 5. **A campaign.** "The Old Roads": five acts and an ending on the existing arc machinery, so it works in any city. *0.6.2 to 1.0*
 6. **A rhythm and a record.** A codex, a written entry per outing, a weekly notice, seasons, named districts and ground you keep, an atlas of everything. *0.6.2, 0.9.0*
-7. **Reach.** The game on the lock screen, the wrist and the home screen; quick starts; a card to share; later, other people. *0.7.2, Beyond 1.0*
+7. **Reach.** The game on the lock screen, the wrist and the home screen; quick starts; a card to share; later, other people. *0.7.3, Beyond 1.0*
 
 ## Decisions
 
@@ -83,9 +84,9 @@ Mine. Change any.
 | One `CharacterSheet`, built on the server and frozen onto the ride, is all the fight maths reads | Phone and server cannot disagree |
 | The bounty lives 36 to 48 hours, not until midnight | Midnight pays for riding after dark, and the server's midnight is UTC |
 | The Codex is a segment of the Journal, not a fifth tab | No room in the tab bar |
-| No server push. No notification is added beyond today's two reminders and an opt-in pledge (0.7.2) | "Few notifications"; everything else can be found on opening the app |
+| No server push. No notification is added beyond today's two reminders and an opt-in pledge (0.7.3) | "Few notifications"; everything else can be found on opening the app |
 | Voice-dependent ideas (a familiar that speaks, audio adventures, hot and cold) wait for the road test of 0.5.0's voice | Memory and the review both say: do not build on unproven sound |
-| Nothing before 0.7.1 needs a language model; when one is used it gets categories, never place names, and never overwrites an authored line | The key may not be set on Fly; privacy |
+| Nothing before 0.7.2 needs a language model; when one is used it gets categories, never place names, and never overwrites an authored line | The key may not be set on Fly; privacy |
 
 ## The roadmap
 
@@ -98,14 +99,15 @@ Sizes are relative to 0.5.0, which was 3,126 lines in 53 files. Each release is 
 | 2 | **0.6.1 Hold** | Fights over an outing, habitats, a lamp to summon, a quarry to go out for | L | `0008` | protocol 3 again with a fight; protocol 5 (Watch) |
 | 3 | **0.6.2 The Board** | Titles, working abilities, Act I with a finale, a poster on every notice, a written entry, a weekly notice | L | `0009` | protocol 2 on an Act I step |
 | 4 | **0.7.0 Runes and the fog** | Runes inscribed and woken, rune rides, deeds, the fog back as ink, Act II | XL | `0010` | a rune ride |
-| 5 | **0.7.1 What you carry** | Gear, loot, a stall and the book, every level pays, grudges, twelve more creatures | L | `0011` | protocol 6 (battery) |
-| 6 | **0.7.2 Between rides** | Lock screen, wrist and home screen; quick starts; a sealed notice; the pledge; letters to yourself; a card to share | L | `0012` | a quick-started outing |
-| 7 | **0.8.0 The old ones** | Bosses that take weeks, lairs, treasure maps, Act III | XL | `0013` | protocol 8 (somewhere new) |
-| 8 | **0.9.0 The parish** | Named districts, kept ground, an atlas, seasons, Act IV, cosmetics | XL | `0014` | protocol 7 (typed request) |
-| 9 | **1.0 The long way round** | Act V and an ending, a familiar, the board after the ending, a dark palette | L | `0015` | a full season |
-| 10 | **Beyond 1.0** | Only if you open it up: other players, the App Store, history import | — | — | — |
+| 5 | **0.7.1 Plain sight** | One look (an open fantasy icon set everywhere), plain words (docs/VOICE.md), a lamp that says what it will do, a "Next up" card, a map legend, how to play | L | none | someone new plays without asking |
+| 6 | **0.7.2 What you carry** | Gear, loot, a stall and the book, every level pays, grudges, twelve more creatures | L | `0011` | protocol 6 (battery) |
+| 7 | **0.7.3 Between rides** | Lock screen, wrist and home screen; quick starts; a sealed notice; the pledge; letters to yourself; a card to share | L | `0012` | a quick-started outing |
+| 8 | **0.8.0 The old ones** | Bosses that take weeks, lairs, treasure maps, Act III | XL | `0013` | protocol 8 (somewhere new) |
+| 9 | **0.9.0 The parish** | Named districts, kept ground, an atlas, seasons, Act IV, cosmetics | XL | `0014` | protocol 7 (typed request) |
+| 10 | **1.0 The long way round** | Act V and an ending, a familiar, the board after the ending, a dark palette | L | `0015` | a full season |
+| 11 | **Beyond 1.0** | Only if you open it up: other players, the App Store, history import | — | — | — |
 
-Releases 4 to 9 are written here in enough detail to build. Each still starts with a short design check against what the release before taught, because several of their numbers depend on what you do on the road.
+Releases 4 to 10 are written here in enough detail to build. Each still starts with a short design check against what the release before taught, because several of their numbers depend on what you do on the road.
 
 ## What gets built on approval
 
@@ -285,7 +287,7 @@ Migration `0009`: `character_titles`, `characters.title_pinned`. Two separate pi
 
 ## 0.7.0 Runes and the fog
 
-Migration `0010`: `rune_holdings`, `character_deeds`, `loadouts` (inscriptions now, gear in 0.7.1). The release where the title is earned: runes become the build, and the roads become something you cut them into.
+Migration `0010`: `rune_holdings`, `character_deeds`, `loadouts` (inscriptions now, gear in 0.7.2). The release where the title is earned: runes become the build, and the roads become something you cut them into.
 
 **Runes as the build** (Appendix H)
 - **Holdings and ranks:**
@@ -327,7 +329,50 @@ Migration `0010`: `rune_holdings`, `character_deeds`, `loadouts` (inscriptions n
 
 ---
 
-## 0.7.1 What you carry
+## 0.7.1 Plain sight
+
+Added on 2026-10-04 after the first rides of 0.7.0, which found three things no
+release had planned for: the art came from two worlds (woodcut marks beside
+SF Symbols in coloured discs, and two symbols for each class), the words were
+jargon and often eerie ("the reckoning", "a knack", "loosened", "read ground"),
+and nothing said what to do (the lamp refused almost everywhere, and its
+refusal named the wrong reason). No migration.
+
+**The lamp** (already fixed). The server refused any named place with a chest
+or piece on it, which on a normal day is nearly all of them near the player;
+two lamps a second apart took coins for nothing. Now only a creature at the
+place stops it, and says so by name; coins go only after it comes; a free check
+(`GET /world/objects/lure`) lets the place card say what will happen before
+anything is spent.
+
+**One look.** The user chose an open icon set over redrawing in code:
+game-icons.net (CC BY 3.0, credited in Settings and `GAME_ICONS.md`), converted
+to paths the art package already draws, so the Watch and the contact sheets get
+them too. A thing in the world is a paper token with an ink ring and its icon;
+a class is its icon on a shield in the class colour; system actions stay SF
+Symbols. Every map marker, class tile, place icon, streak, reckoning line, the
+tab bar and the Watch.
+
+**Plain words.** `docs/VOICE.md` replaces the dry voice and lexicon for
+everything but quest text and lore, which the game's author will write: one
+word per idea (creature, defeated, health, weak to / resists, class, skill,
+streak, journey), buttons a verb and a noun, errors that say what to do. The
+server's messages and labels and the voice check follow it.
+
+**Knowing what to do.**
+- A "Next up" card on the World map: one sentence, one button (your first ride;
+  a chest in reach; a skill point; the nearest creature or chest; the board).
+- The main button says "Plan a ride".
+- A map legend drawn with the real marks, from a "?" among the map's buttons.
+- Every marker does something when tapped.
+- How to play, in five pages, in place of the premise plates; shown once to
+  players who already have a character.
+- Settings, the Codex and story arcs where they can be found.
+
+**Done when** someone who has never seen the app plays an outing without asking
+what anything is, and the user has read the new words in one sitting.
+
+## 0.7.2 What you carry
 
 Migration `0011`: `inventory_items`, gear in `loadouts`.
 
@@ -372,7 +417,7 @@ Migration `0011`: `inventory_items`, gear in `loadouts`.
 
 ---
 
-## 0.7.2 Between rides
+## 0.7.3 Between rides
 
 Migration `0012`: `pledges`, `letters`. The 2026-10-01 "Between rides" release, rebuilt on the art and the world.
 
@@ -688,7 +733,7 @@ Rules the catalogue test enforces:
 - no species shrugs off the road while both its wants depend on terrain;
 - on a ride, a wanted rune is a loop, square or triangle.
 
-The twelve added in 0.7.1 are in the world draft. The Churchyard Grim becomes the Gate Grim, and none of them is placed at a sensitive place.
+The twelve added in 0.7.2 are in the world draft. The Churchyard Grim becomes the Gate Grim, and none of them is placed at a sensitive place.
 
 **The 24 runes in four sixes,** shown in the Codex in futhark order, each with one fixed gloss:
 
@@ -739,7 +784,7 @@ class CharacterSheet:
     xp_pct: dict[str, float]
     rules: list[str]                  # 0.7.0: rule ids from inscribed runes and gear
     reveal_rings: int                 # 0.7.0
-    loot_find_pct: float              # 0.7.1
+    loot_find_pct: float              # 0.7.2
 ```
 
 Trade bases keep today's eases:
@@ -762,7 +807,7 @@ Trade bases keep today's eases:
 | Endurance | +10% on the long-distance XP line | `progression/engine.py:183` | 0.6.2 |
 | Vanguard R | +10% against elders and bounties | sheet | 0.6.2 |
 | Archivist R | the word +8% | sheet | 0.6.2 |
-| Rumour R | +5% box coins; better finds in 0.7.1 | sheet | 0.6.2 |
+| Rumour R | +5% box coins; better finds in 0.7.2 | sheet | 0.6.2 |
 | Footnote R (was Chronicler) | discovery XP +20% on an outing with a note | `progression/engine.py` | 0.6.2 |
 | Historian | the word +15% at historical and cultural places that are not sensitive | sheet | 0.6.2 |
 | Cartographer | one more reveal ring round new cells | `rides/processing.py` → `exploration.reveal` | 0.7.0 |
@@ -817,15 +862,15 @@ Chapters are gated by level and by deeds the database already counts. All text i
 | 0.6.1 | fight-card phrases; wants and does-not-mind hints; five spoken lines; lamp and quarry copy; the rewritten Iron Hours step | 45 |
 | 0.6.2 | template completion lines (39); cast pools (30); entry pools (sized by the replay); ability texts (16); title sources (14); arc rewrites (10); level lines | 175 |
 | 0.7.0 | rune glosses and rule texts (24); deed titles (25); Act II (20 steps); rune-ride copy | 150 |
-| 0.7.1 | 15 items; 4 consumables; 12 creatures and their elders; variants; grudge epithets; stall lines; 50 level lines | 160 |
-| 0.7.2 | sealed notices; pledge lines; letter framing; widget and Live Activity text; share-card lines | 60 |
+| 0.7.2 | 15 items; 4 consumables; 12 creatures and their elders; variants; grudge epithets; stall lines; 50 level lines | 160 |
+| 0.7.3 | sealed notices; pledge lines; letter framing; widget and Live Activity text; share-card lines | 60 |
 | 0.8.0 | five old ones (rumour, three phases, quiet week, seen off); lair lines; treasure-map riddles; Act III | 140 |
 | 0.9.0 | epithet alternates; district page lines; four season arcs; Act IV; cosmetics | 120 |
 | 1.0 | Act V and the ending; four familiars' grammars; second-board lines | 90 |
 
 Each release ends with you reading its new lines in one sitting.
 
-## Appendix H. The build in 0.7.0 and 0.7.1
+## Appendix H. The build in 0.7.0 and 0.7.2
 
 **Road Six rules when inscribed.** Ranks widen the numbers; they never add a damage percentage.
 
@@ -905,9 +950,9 @@ Overrides:
 | Phase 4 navigation and 5 Watch, written but never ridden | Ground truth and the gate outings (protocols 3 to 8) |
 | Phase 7 social (backend done, flag off) | Beyond 1.0, Fellowship |
 | Phase 9 regional events | Seasons in 0.9.0; shared events beyond 1.0 |
-| Map modes MINIMAL / CYCLING / ADVENTURE / DETAILED | ADVENTURE becomes the parchment style in 0.7.2 |
+| Map modes MINIMAL / CYCLING / ADVENTURE / DETAILED | ADVENTURE becomes the parchment style in 0.7.3 |
 | Push notifications (APNs stub) | Not building |
-| Home masking, purge job, account deletion | Home masking in 0.7.2; the rest before anyone else |
+| Home masking, purge job, account deletion | Home masking in 0.7.3; the rest before anyone else |
 | Product analytics | `play_report.py` in Ground truth |
 
 **From "the ride talks back" menu (2026-10-01)**
@@ -922,31 +967,31 @@ Overrides:
 | Signature haptics | Reckoning in 0.6.1; full set in 0.8.0 |
 | Fog on the map, frontier arrow | 0.7.0 (World tab; never the ride map) |
 | The Week | 0.6.2, the week's notice |
-| A streak that allows a rest day | 0.7.1, the rest token |
+| A streak that allows a rest day | 0.7.2, the rest token |
 | Records that are not speed | Deeds in 0.7.0, the atlas year page in 0.9.0 |
-| A ride card to share | 0.7.2, with home masking |
-| Things to buy | The lamp in 0.6.1, the stall in 0.7.1 |
+| A ride card to share | 0.7.3, with home masking |
+| Things to buy | The lamp in 0.6.1, the stall in 0.7.2 |
 | Abilities that do something | 0.6.2 and 0.7.0 |
-| Live Activity, widget, complication; quick start | 0.7.2 |
-| The Chronicler | Composed in 0.6.2, model-written in 0.7.1 |
+| Live Activity, widget, complication; quick start | 0.7.3 |
+| The Chronicler | Composed in 0.6.2, model-written in 0.7.2 |
 | Audio adventure | 1.0, with the familiar, only if voice passed |
 | Named regions, held ground, the Journal as an atlas | 0.9.0 |
-| A world that changes | Grudges and variants in 0.7.1; dawn chests and dusk creatures not built |
+| A world that changes | Grudges and variants in 0.7.2; dawn chests and dusk creatures not built |
 | Bosses with real HP | The old ones, 0.8.0 |
-| Items | 0.7.1 |
+| Items | 0.7.2 |
 | Parties that work | Beyond 1.0 |
 | Weather is a monster | Not building |
 | Hot and cold | 0.8.0, only if sound passed |
-| Fate's errand | 0.7.2, the sealed notice |
-| The sealed chest | 0.7.1 consumable |
+| Fate's errand | 0.7.3, the sealed notice |
+| The sealed chest | 0.7.2 consumable |
 | Treasure maps | 0.8.0 |
-| Letters to yourself | 0.7.2 |
+| Letters to yourself | 0.7.3 |
 | The Cartographer rival | Not building |
 | A familiar | 1.0 |
 | Dungeons | Lairs, 0.8.0 |
 | Rune rides | 0.7.0 |
-| The pledge | 0.7.2 |
-| Your own treasury | 0.7.2 |
+| The pledge | 0.7.3 |
+| Your own treasury | 0.7.3 |
 | Cairns | Beyond 1.0 |
 | Seasons | 0.9.0, quarter days |
 
@@ -955,7 +1000,7 @@ Overrides:
 | Item | Now |
 |---|---|
 | "31% of Southwark explored" | 0.9.0 district percentage |
-| Rune Fragment, Map Fragment rewards | Rune shards in 0.7.0; map fragment in 0.7.1 |
+| Rune Fragment, Map Fragment rewards | Rune shards in 0.7.0; map fragment in 0.7.2 |
 | "Keeper of the South" | 0.9.0 district titles, with no real place names in titles |
 | "Traveller encounter, +10 XP each"; a friend's marker on the map | Beyond 1.0, crossing paths |
 | "Riddles, ruins, ley lines" | 0.6.0 trade text |
