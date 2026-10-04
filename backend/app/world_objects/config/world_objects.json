@@ -28,7 +28,8 @@
   ],
   "collectableSets": [
     {"id": "RUNES", "name": "Road Six", "formerly": ["Old Runes"], "pieces": ["Ansuz", "Raido", "Kenaz", "Wunjo", "Sowilo", "Dagaz"]},
-    {"id": "COINS", "name": "Odd Coins", "formerly": ["Milled Coins"], "pieces": ["Farthing", "Groat", "Shilling", "Crown"]}
+    {"id": "COINS", "name": "Odd Coins", "formerly": ["Milled Coins"], "pieces": ["Farthing", "Groat", "Shilling", "Crown"]},
+    {"id": "GROUND", "name": "Ground Six", "onGround": true, "pieces": ["Laguz", "Berkano", "Eihwaz", "Ehwaz", "Jera", "Algiz"]}
   ],
   "combat": {
     "_comment": "Effort is damage (app/world_objects/fight.py, docs/ROADMAP.md Appendix C). Starting values, to be tuned by backend/scripts/replay_fights.py against real outings. Nothing here is a time or a speed.",

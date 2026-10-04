@@ -19,7 +19,7 @@ from typing import Any
 
 from app.characters.models import Character
 
-SHEET_VERSION = 2
+SHEET_VERSION = 3
 KINDS = ("ROAD", "GROUND", "CLIMB", "RUNE", "WORD")
 
 # Today's class eases, as effort: a Warrior climbs and keeps going, an Explorer
@@ -54,6 +54,9 @@ class CharacterSheet:
     late_road_pct: float = 0.0
     late_road_after_m: float = 10_000.0
     word_old_places_pct: float = 0.0
+    # 0.7.0: the runes inscribed, by rank, and the rules they make (inventory/catalog.py).
+    inscribed: dict[str, int] = field(default_factory=dict)
+    rules: dict[str, float] = field(default_factory=dict)
 
     @classmethod
     def neutral(cls) -> CharacterSheet:
@@ -75,6 +78,8 @@ class CharacterSheet:
             "lateRoadPct": out["late_road_pct"],
             "lateRoadAfterMeters": out["late_road_after_m"],
             "wordOldPlacesPct": out["word_old_places_pct"],
+            "inscribed": out["inscribed"],
+            "rules": out["rules"],
         }
 
     @classmethod
@@ -95,7 +100,35 @@ class CharacterSheet:
             late_road_pct=float(data.get("lateRoadPct", 0.0)),
             late_road_after_m=float(data.get("lateRoadAfterMeters", 10_000.0)),
             word_old_places_pct=float(data.get("wordOldPlacesPct", 0.0)),
+            inscribed={k: int(v) for k, v in (data.get("inscribed") or {}).items()},
+            rules={k: float(v) for k, v in (data.get("rules") or {}).items()},
         )
+
+    def woken(self, rune_id: str) -> CharacterSheet:
+        """The sheet with one inscribed rune a rank deeper, for the outing that woke it."""
+        from dataclasses import replace
+
+        from app.inventory import catalog as runes
+
+        if rune_id not in self.inscribed:
+            return self
+        deeper = {**self.inscribed, rune_id: self.inscribed[rune_id] + 1}
+        rules = runes.rules_for(deeper)
+        reach = max(self.rune_reach_m, rules.get("RUNE_REACH_M", 0.0))
+        return replace(self, inscribed=deeper, rules=rules, rune_reach_m=reach)
+
+    def fight_cfg(self, cfg: dict[str, Any], *, first_outings_today: int = 1) -> dict[str, Any]:
+        """The combat constants with what the inscribed runes change: the opening
+        blow (Raido), how far the word reaches (Ansuz), and "does not mind" on the
+        first outings of the day (Dagaz)."""
+        out = dict(cfg)
+        if self.rules.get("CARRIED_SCALE"):
+            out["carriedFraction"] = float(cfg["carriedFraction"]) * self.rules["CARRIED_SCALE"]
+        if self.rules.get("WORD_RADIUS_M"):
+            out["wordRadiusMeters"] = max(float(cfg["wordRadiusMeters"]), self.rules["WORD_RADIUS_M"])
+        if self.rules.get("MINDS_NEUTRAL_FIRST") and first_outings_today <= self.rules["MINDS_NEUTRAL_FIRST"]:
+            out["minds"] = 1.0
+        return out
 
     def pct_against(self, *, elder: bool, old_place: bool, made_good_m: float, foot: bool) -> dict[str, float]:
         """The build against one thing on one outing: the sheet's own percentages,
@@ -112,10 +145,13 @@ class CharacterSheet:
         return pct
 
 
-def build_sheet(character: Character | None) -> CharacterSheet:
+def build_sheet(character: Character | None, inscribed: dict[str, int] | None = None) -> CharacterSheet:
+    """The sheet from the character's trade, knacks and inscribed runes (`inscribed`,
+    from inventory.service.inscribed, by rank)."""
     if character is None:
         return CharacterSheet.neutral()
     from app.characters import catalog
+    from app.inventory import catalog as runes
 
     trade = character.character_class
     # The current trade's knacks only; another trade's stay learned and wait.
@@ -130,6 +166,9 @@ def build_sheet(character: Character | None) -> CharacterSheet:
         "LONG_DISTANCE": catalog.effect_total(knacks, "XP_BONUS_LONG_DISTANCE"),
         "DISCOVERY_WITH_NOTE": catalog.effect_total(knacks, "XP_BONUS_DISCOVERY_WITH_NOTE"),
     }
+    inscribed = dict(inscribed or {})
+    rules = runes.rules_for(inscribed)
+    reach = DEFAULT_RUNE_REACH_M + catalog.effect_total(knacks, "RUNE_REACH_M")
     return CharacterSheet(
         version=SHEET_VERSION,
         character_class=trade,
@@ -137,7 +176,10 @@ def build_sheet(character: Character | None) -> CharacterSheet:
         class_level=character.class_level,
         damage_pct=damage,
         rune_threshold=RUNE_THRESHOLD.get(trade, DEFAULT_RUNE_THRESHOLD),
-        rune_reach_m=DEFAULT_RUNE_REACH_M + catalog.effect_total(knacks, "RUNE_REACH_M"),
+        # Sowilo sets how far a cut reaches; the knacks' reach is the floor.
+        rune_reach_m=max(reach, rules.get("RUNE_REACH_M", 0.0)),
+        inscribed=inscribed,
+        rules=rules,
         coin_pct=catalog.effects_by_kind(knacks, "COIN_PCT"),
         xp_pct={k: round(v, 4) for k, v in xp.items() if v},
         vs_elders_pct=catalog.effect_total(knacks, "VS_ELDERS_PCT"),

@@ -10,6 +10,7 @@ from app.core.deps import CurrentUser, DBDep, SettingsDep
 from app.core.errors import NotFound
 from app.core.schemas import APIModel
 from app.economy import service as economy
+from app.inventory import service as inventory
 from app.progression.engine import XPLine, cap_to_day, claim_lines, load_xp_rules
 from app.progression.service import grant, xp_today
 from app.quests import service as quests
@@ -102,6 +103,10 @@ async def claim(
         lines.append(XPLine("SET_COMPLETED", load_xp_rules()["setCompleted"], {"set": set_done["name"]}))
     lines = cap_to_day(lines, await xp_today(db, character))
     reward = await grant(db, character, lines)
+    # A rune stone picked up by hand is held, or a stone towards the next rank.
+    rune_id = inventory.rune_of_piece(obj.payload) if obj.kind == "COLLECTABLE" else None
+    if rune_id:
+        await inventory.add_stone(db, character, rune_id, key=f"stone:{obj.id}")
     finished = await quests.on_object_claimed(db, settings, user, obj)
     return ClaimResultOut(
         object=service.to_out(obj, await service.pieces_owned(db, user.id)),

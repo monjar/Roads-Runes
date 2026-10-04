@@ -105,7 +105,9 @@ async def standing(db: AsyncSession, user_id: uuid.UUID, day: date) -> dict[str,
     return {**notice, "progress": min(progress, notice["target"]), "done": progress >= notice["target"], "paid": paid}
 
 
-async def settle(db: AsyncSession, user_id: uuid.UUID, day: date, *, ride_id: uuid.UUID | None = None) -> dict | None:
+async def settle(
+    db: AsyncSession, user_id: uuid.UUID, day: date, *, ride_id: uuid.UUID | None = None, scale: float = 1.0
+) -> dict | None:
     """Pays the week's notice once, the first time its target is met. Returns
     the notice when this call paid it."""
     from app.characters.service import maybe_character
@@ -129,7 +131,9 @@ async def settle(db: AsyncSession, user_id: uuid.UUID, day: date, *, ride_id: uu
             payload={"week": state["week"], "kind": state["kind"]},
         )
     )
-    await economy.credit(db, user_id, PAY_COINS, "WEEK_NOTICE", ride_id=ride_id, payload={"week": state["week"]})
-    await grant(db, character, [XPLine("WEEK_NOTICE", PAY_XP, {"week": state["week"]})], ride_id=ride_id)
+    # Jera, inscribed, makes the notice pay more.
+    coins, xp = int(round(PAY_COINS * scale)), int(round(PAY_XP * scale))
+    await economy.credit(db, user_id, coins, "WEEK_NOTICE", ride_id=ride_id, payload={"week": state["week"]})
+    await grant(db, character, [XPLine("WEEK_NOTICE", xp, {"week": state["week"]})], ride_id=ride_id)
     await db.flush()
-    return {**state, "paid": True}
+    return {**state, "paid": True, "coins": coins, "xp": xp}

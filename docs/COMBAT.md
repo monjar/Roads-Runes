@@ -49,6 +49,29 @@ that wander without aiming at anything meet few creatures (one or two of five
 placed round home), which is what the quarry and placing a creature on a
 planned route are for. Rerun it with real outings before trusting a number.
 
+## Runes inscribed (0.7.0)
+
+Inscribed runes change the fight's rules, never its percentages
+(`backend/app/inventory/config/runes.json`; the sheet's `rules`):
+
+| Rune | Rule (rank I) |
+|---|---|
+| Raido | the opening blow counts double |
+| Sowilo | a rune cut reaches 2 km |
+| Kenaz | a ring of ground read round each place found; things sighted 600 m out |
+| Dagaz | on the first outing of the day, "does not mind" counts as neither |
+| Ansuz | the word lands on everything within 1 km |
+| Wunjo | a five-minute stop at a café, a pub or a green place is the word |
+| Laguz, Berkano, Eihwaz, Ehwaz | the first thing of their family met counts the road, new ground, the word, or (on a bike) the road as wanted |
+| Jera | the week's notice pays half again |
+| Algiz | a loosened bounty keeps its double purse, a day longer |
+
+**Waking.** Cutting an inscribed rune's road form anywhere on an outing wakes
+it, once: it counts a rank deeper for that outing and lands a rune blow on
+every creature within reach of where it was cut (`fight.WOKEN`), as well as
+on those whose own form it is. The phone does not fold waking, Wunjo's stops,
+Dagaz or the Ground Six, so it is early, never late.
+
 ## Afterwards
 
 * **Seen off**: claimed; coins pay now (the bounty's purse if it was one). XP:

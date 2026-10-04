@@ -1,20 +1,20 @@
 [
   {"id": "explorer_trail_sense", "characterClass": "EXPLORER", "name": "Trail Sense", "description": "Quest stops are looked for 15% further out, and new ground does 5% more against things, per rank.", "requiredClassLevel": 2, "maxRank": 3,
    "effects": [{"type": "QUEST_POI_VISIBILITY", "perRank": 0.15}, {"type": "DAMAGE_PCT", "kind": "GROUND", "perRank": 0.05}]},
-  {"id": "explorer_cartographer", "characterClass": "EXPLORER", "name": "Cartographer", "description": "One more ring of ground read round every new cell, per rank. Works once the fog is back on the map.", "requiredClassLevel": 5, "maxRank": 3,
+  {"id": "explorer_cartographer", "characterClass": "EXPLORER", "name": "Cartographer", "description": "1 more ring of ground read round every new cell, per rank.", "requiredClassLevel": 5, "maxRank": 3,
    "effects": [{"type": "FOG_REVEAL_RADIUS_CELLS", "perRank": 1}]},
   {"id": "explorer_pathfinder", "characterClass": "EXPLORER", "name": "Pathfinder", "description": "The first 10 new cells of an outing pay double XP, per rank (10, then 20).", "requiredClassLevel": 8, "maxRank": 2,
    "effects": [{"type": "XP_DOUBLE_FIRST_CELLS", "perRank": 10}]},
   {"id": "explorer_far_wanderer", "characterClass": "EXPLORER", "name": "Far Wanderer", "description": "New cells more than 5 km from where the outing began pay 10% more XP, per rank.", "requiredClassLevel": 12, "maxRank": 3,
    "effects": [{"type": "XP_BONUS_FAR_CELLS", "perRank": 0.10}]},
 
-  {"id": "wizard_arcane_sight", "characterClass": "WIZARD", "name": "Arcane Sight", "description": "A placed piece is 20% more likely to be a rune stone, per rank. Works once runes can be held.", "requiredClassLevel": 2, "maxRank": 3,
+  {"id": "wizard_arcane_sight", "characterClass": "WIZARD", "name": "Arcane Sight", "description": "A placed piece is 20% more likely to be a rune stone, per rank.", "requiredClassLevel": 2, "maxRank": 3,
    "effects": [{"type": "RUNE_STONE_CHANCE", "perRank": 0.2}]},
   {"id": "wizard_foresight", "characterClass": "WIZARD", "name": "Foresight", "description": "A rune does 6% more against things, per rank.", "requiredClassLevel": 5, "maxRank": 2,
    "effects": [{"type": "DAMAGE_PCT", "kind": "RUNE", "perRank": 0.06}]},
   {"id": "wizard_ley_finder", "characterClass": "WIZARD", "name": "Ley Finder", "description": "A rune reaches 500 m further, per rank: 1.5 km, then 2 km.", "requiredClassLevel": 8, "maxRank": 2,
    "effects": [{"type": "RUNE_REACH_M", "perRank": 500}]},
-  {"id": "wizard_second_chance", "characterClass": "WIZARD", "name": "Second Chance", "description": "One missed optional objective of a quest counts as done. Works from 0.7.0.", "requiredClassLevel": 12, "maxRank": 1,
+  {"id": "wizard_second_chance", "characterClass": "WIZARD", "name": "Second Chance", "description": "1 missed optional objective of a finished quest counts as done.", "requiredClassLevel": 12, "maxRank": 1,
    "effects": [{"type": "FORGIVE_OPTIONAL_OBJECTIVE", "perRank": 1}]},
 
   {"id": "warrior_second_wind", "characterClass": "WARRIOR", "name": "Second Wind", "description": "Once an outing passes 10 km (5 km on foot), the road does 10% more against things, per rank.", "requiredClassLevel": 2, "maxRank": 2,

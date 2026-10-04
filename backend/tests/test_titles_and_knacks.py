@@ -47,7 +47,7 @@ def test_the_catalogue_has_seven_degrees_of_being_known_and_says_how_each_is_ear
         "Old Hand",
         "Known to the Roads",
     ]
-    assert len(titles.catalogue()) == 14
+    assert len(titles.catalogue()) == 39, "7 level, 7 arc and 25 deed titles"
     assert set(titles.renamed().values()) == {t["name"] for t in level}
     assert titles.level_title(7)["name"] == "Familiar Face"
 
@@ -55,7 +55,7 @@ def test_the_catalogue_has_seven_degrees_of_being_known_and_says_how_each_is_ear
 async def test_a_new_character_is_a_passer_by_and_can_see_every_title(explorer_client):
     assert (await explorer_client.get("/character")).json()["title"] == "Passer-by"
     listed = (await explorer_client.get("/character/titles")).json()
-    assert len(listed) == 14
+    assert len(listed) == 39
     assert listed[0]["slug"] == "level-1" and listed[0]["earned"] and listed[0]["worn"]
     unearned = next(t for t in listed if t["slug"] == "level-5")
     assert not unearned["earned"] and unearned["how"] == "Reach level 5."
@@ -101,14 +101,10 @@ async def test_a_title_is_earned_once(explorer_client):
 # --- knacks --------------------------------------------------------------------
 
 
-def test_thirteen_knacks_work_and_say_their_numbers():
+def test_every_knack_works_and_says_its_numbers():
+    """Thirteen worked from 0.6.2; Cartographer, Arcane Sight and Second Chance from 0.7.0."""
     working = [a for a in catalog.abilities() if catalog.is_working(a)]
-    assert len(working) == 13
-    assert {a["id"] for a in catalog.abilities() if not catalog.is_working(a)} == {
-        "explorer_cartographer",
-        "wizard_arcane_sight",
-        "wizard_second_chance",
-    }
+    assert len(working) == len(catalog.abilities()) == 16
     for a in working:
         assert any(ch.isdigit() for ch in a["description"]), a["id"]
 

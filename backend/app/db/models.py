@@ -12,8 +12,9 @@ from app.discoveries.models import Discovery, PoiImportArea, UserDiscovery  # no
 from app.economy.models import UserStreak, Wallet, WalletTransaction  # noqa: F401
 from app.exploration.models import UserExplorationCell  # noqa: F401
 from app.integrations.models import StravaConnection  # noqa: F401
+from app.inventory.models import CharacterDeed, ItemEvent, Loadout, RuneCut, RuneHolding  # noqa: F401
 from app.notifications.models import DeviceToken  # noqa: F401
-from app.progression.models import RewardEvent, XPEvent  # noqa: F401
+from app.progression.models import CharacterTitle, RewardEvent, XPEvent  # noqa: F401
 from app.quests.models import (  # noqa: F401
     QuestInstance,
     QuestObjective,

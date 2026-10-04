@@ -10,6 +10,7 @@ import Foundation
 public enum FightResolver {
     public static let kinds = ["ROAD", "GROUND", "CLIMB", "RUNE", "WORD"]
     public static let carried = "CARRIED"
+    public static let woken = "WOKEN"
     static let deliberate: Set<String> = ["RUNE", "WORD"]
 
     public struct Point: Hashable, Sendable {
@@ -189,7 +190,8 @@ public enum FightResolver {
             }
         }
 
-        if let hit = runeHit, let form = foe.roadForm, !foe.runeToday, hit.shape == form {
+        // Its own rune's road form lands on it; a woken rune (0.7.0) lands on anything in reach.
+        if let hit = runeHit, !foe.runeToday, hit.shape == Self.woken || (foe.roadForm != nil && hit.shape == foe.roadForm) {
             blows.append(Blow(kind: "RUNE", index: max(hit.index, contact), units: 1))
         }
         if !foe.wordToday {

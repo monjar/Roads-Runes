@@ -119,6 +119,8 @@ class FightReport:
 
 
 DELIBERATE = ("RUNE", "WORD")
+# A rune hit from an inscribed rune woken on the outing: it lands on any creature in reach.
+WOKEN = "WOKEN"
 
 
 def finishes(kind: str, foe: Foe) -> bool:
@@ -249,7 +251,12 @@ def resolve(
                         blows.append(Blow("CLIMB", i, band_m))
             last_band = band
 
-    if rune_hit is not None and foe.road_form and not foe.rune_today and rune_hit.shape == foe.road_form:
+    # Its own rune's road form lands on it; a woken rune (0.7.0) lands on anything in reach.
+    if (
+        rune_hit is not None
+        and not foe.rune_today
+        and (rune_hit.shape == WOKEN or (foe.road_form and rune_hit.shape == foe.road_form))
+    ):
         blows.append(Blow("RUNE", max(rune_hit.index, contact), 1.0))
     if not foe.word_today:
         radius = float(cfg["wordRadiusMeters"])

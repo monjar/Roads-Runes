@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.characters.service import maybe_character
-from app.characters.sheet import build_sheet
+from app.characters.sheet import CharacterSheet, build_sheet
 from app.core.activity import normalise
 from app.core.errors import NotFound, RideInvalidState
 from app.core.pagination import decode_cursor, encode_cursor
@@ -66,6 +66,14 @@ async def get_ride(db: AsyncSession, user: User, ride_id: uuid.UUID) -> Ride:
     return ride
 
 
+async def _sheet_now(db: AsyncSession, user_id: uuid.UUID) -> CharacterSheet:
+    """The character as it is now, inscribed runes and all, for freezing onto a ride."""
+    from app.inventory.service import inscribed
+
+    character = await maybe_character(db, user_id)
+    return build_sheet(character, await inscribed(db, character))
+
+
 async def create_ride(db: AsyncSession, user: User, payload: RideCreate) -> Ride:
     existing = await db.scalar(select(Ride).where(Ride.user_id == user.id, Ride.client_ride_id == payload.clientRideId))
     if existing is not None:
@@ -85,7 +93,7 @@ async def create_ride(db: AsyncSession, user: User, payload: RideCreate) -> Ride
         visibility=visibility,
         # What the character was as the ride began: the fight is judged against
         # this, on the server and on the phone, whatever changes mid-ride.
-        loadout_snapshot=build_sheet(await maybe_character(db, user.id)).to_dict(),
+        loadout_snapshot=(await _sheet_now(db, user.id)).to_dict(),
     )
     db.add(ride)
     await db.flush()

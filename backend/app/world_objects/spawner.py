@@ -146,6 +146,7 @@ def plan_spawns(
     activity: str,
     bounty: bool = False,
     centre: tuple[float, float] | None = None,
+    runes: dict[str, Any] | None = None,
 ) -> list[SpawnPlan]:
     """One new object of `kind` per index, each at a real place nobody is using yet.
 
@@ -211,8 +212,7 @@ def plan_spawns(
             reward = int(ac_rules["chest"][str(tier)])
             payload = {"name": ("Old", "Iron", "Gilded")[tier - 1] + " chest", "anchorName": anchor.name}
         else:
-            collectable_set = rng.choice(cfg["collectableSets"])
-            piece = rng.choice(collectable_set["pieces"])
+            collectable_set, piece = _pick_piece(rng, anchor, cfg, runes)
             reward = int(ac_rules["collectable"])
             payload = {
                 "name": f"{piece} ({collectable_set['name']})",
@@ -222,6 +222,37 @@ def plan_spawns(
             }
         plans.append(SpawnPlan(kind, object_seed, tier, anchor, reward, payload, bounty))
     return plans
+
+
+RUNE_SETS = ("RUNES", "GROUND")
+
+
+def _pick_piece(
+    rng: random.Random, anchor: Anchor, cfg: dict[str, Any], runes: dict[str, Any] | None
+) -> tuple[dict[str, Any], str]:
+    """Which piece a place holds (0.7.0). The Ground Six only on their own kind of
+    ground; rune stones a little likelier with Arcane Sight; and after enough
+    stones of runes already held, one the player does not hold, if there is one."""
+    from app.inventory import catalog as rune_book
+    from app.lore.catalog import rune_by_name, runes_by_id
+
+    runes = runes or {}
+    ground_here = {runes_by_id()[r]["name"] for r in rune_book.ground_runes_at(anchor.category, anchor.tags)}
+    options: list[tuple[dict[str, Any], list[str]]] = []
+    for collectable_set in cfg["collectableSets"]:
+        pieces = list(collectable_set["pieces"])
+        if collectable_set.get("onGround"):
+            pieces = [p for p in pieces if p in ground_here]
+        if pieces:
+            options.append((collectable_set, pieces))
+    weights = [(1.0 + float(runes.get("arcaneSight", 0.0))) if s["id"] in RUNE_SETS else 1.0 for s, _ in options]
+    collectable_set, pieces = rng.choices(options, weights=weights, k=1)[0]
+    if collectable_set["id"] in RUNE_SETS and runes.get("pity"):
+        held = set(runes.get("held") or ())
+        unheld = [p for p in pieces if (rune_by_name(p) or {}).get("id") not in held]
+        if unheld:
+            pieces = unheld
+    return collectable_set, rng.choice(pieces)
 
 
 # Speed is never asked for (docs/PRODUCT_SPEC.md): PACE is no longer dealt.

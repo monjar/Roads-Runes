@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta
+from typing import Any
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -111,9 +112,12 @@ def class_change_offer(character: Character) -> tuple[int, datetime | None]:
 
 
 async def character_out(db: AsyncSession, character: Character) -> CharacterOut:
+    from app.inventory.service import inscribed
+
     streak = await get_streak(db, character.user_id)
     return to_character_out(
         character,
+        sheet=build_sheet(character, await inscribed(db, character)).to_dict(),
         active_coins=await economy.balance(db, character.user_id),
         streak_days=_live_streak_days(streak),
         longest_streak_days=streak.longest_days if streak else 0,
@@ -135,6 +139,7 @@ def to_character_out(
     streak_days: int = 0,
     longest_streak_days: int = 0,
     streak_active_today: bool = False,
+    sheet: dict[str, Any] | None = None,
 ) -> CharacterOut:
     o_floor, o_next = level_bounds(character.overall_level, "overall")
     c_floor, c_next = level_bounds(character.class_level, "class")
@@ -166,7 +171,7 @@ def to_character_out(
         streakDays=streak_days,
         longestStreakDays=longest_streak_days,
         streakActiveToday=streak_active_today,
-        sheet=build_sheet(character).to_dict(),
+        sheet=sheet if sheet is not None else build_sheet(character).to_dict(),
         titlePinned=bool(character.title_pinned),
     )
 
@@ -294,8 +299,15 @@ async def reset_character(db: AsyncSession, user: User) -> None:
     await db.execute(delete(QuestProgressEvent).where(QuestProgressEvent.quest_id.in_(quest_ids)))
     await db.execute(delete(QuestObjective).where(QuestObjective.quest_id.in_(quest_ids)))
     await db.execute(delete(QuestInstance).where(QuestInstance.user_id == user.id))
+    from app.inventory.models import CharacterDeed, ItemEvent, Loadout, RuneCut, RuneHolding
+
     for model in (
         CharacterTitle,
+        RuneHolding,
+        Loadout,
+        RuneCut,
+        ItemEvent,
+        CharacterDeed,
         XPEvent,
         RewardEvent,
         WalletTransaction,

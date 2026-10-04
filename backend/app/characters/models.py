@@ -29,6 +29,9 @@ class Character(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     title_pinned: Mapped[bool] = mapped_column(default=False, server_default=sa_false(), nullable=False)
     # Story steps that could not be placed where the player is, and why, by step slug.
     story_waiting: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict, nullable=False)
+    # Things the player did that later notices remember (0.7.0): set by an optional
+    # objective done, read by a later step's wording. Nothing is ever locked out.
+    story_flags: Mapped[list[Any]] = mapped_column(JSONType, default=list, nullable=False)
     # Class XP and level of the classes this character has been, keyed by class id,
     # so switching back restores them: {"WIZARD": {"classXp": 1200, "classLevel": 4}}.
     class_progress: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict, nullable=False)

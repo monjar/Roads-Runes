@@ -44,6 +44,10 @@ READ_EFFECTS = frozenset(
         "XP_BONUS_LONG_DISTANCE",
         "XP_BONUS_DISCOVERY_WITH_NOTE",
         "COIN_PCT",
+        # 0.7.0: ground read round new cells, rune stones placed, a missed objective forgiven.
+        "FOG_REVEAL_RADIUS_CELLS",
+        "RUNE_STONE_CHANCE",
+        "FORGIVE_OPTIONAL_OBJECTIVE",
     }
 )
 

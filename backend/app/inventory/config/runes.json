@@ -1,0 +1,252 @@
+{
+  "_comment": "Runes as the build (docs/ROADMAP.md, 0.7.0 and Appendix H). A rune is held from its first stone; two more stones and some coins raise it a rank, I to III. Only inscribed runes act, each changing one rule; a rank widens the rule's number and never adds a damage percentage. `values` are by rank (I, II, III); a woken rune counts one rank higher for that outing, so a fourth value is its rank III woken. The Ground Six are only found on their own kind of ground (`ground`). Ids are lore/config/runes.json's.",
+  "slotsAtLevel": [
+    1,
+    10,
+    25
+  ],
+  "rankCost": {
+    "2": {
+      "shards": 2,
+      "coins": 100
+    },
+    "3": {
+      "shards": 2,
+      "coins": 250
+    }
+  },
+  "pityAfterRepeats": 4,
+  "runes": [
+    {
+      "id": "raido",
+      "six": "ROAD",
+      "rule": "CARRIED_SCALE",
+      "values": [
+        2.0,
+        2.5,
+        3.0,
+        3.5
+      ],
+      "text": "The opening blow, what the outing did before it met something, counts {v}× at contact."
+    },
+    {
+      "id": "sowilo",
+      "six": "ROAD",
+      "rule": "RUNE_REACH_M",
+      "values": [
+        2000,
+        2500,
+        3000,
+        3500
+      ],
+      "text": "A rune cut reaches {km} km from where it was cut."
+    },
+    {
+      "id": "kenaz",
+      "six": "ROAD",
+      "rule": "REVEAL_RINGS",
+      "values": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "text": "{n} ring{s} of ground read round each place found; things are sighted 600 m out."
+    },
+    {
+      "id": "dagaz",
+      "six": "ROAD",
+      "rule": "MINDS_NEUTRAL_FIRST",
+      "values": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "text": "On your first {n} outing{s} of the day, \"does not mind\" counts as neither."
+    },
+    {
+      "id": "ansuz",
+      "six": "ROAD",
+      "rule": "WORD_RADIUS_M",
+      "values": [
+        1000,
+        1500,
+        2000,
+        2500
+      ],
+      "text": "The word lands on everything within {km} km of where it was written, not only what is beside you."
+    },
+    {
+      "id": "wunjo",
+      "six": "ROAD",
+      "rule": "STOP_IS_WORD_S",
+      "values": [
+        300,
+        240,
+        180,
+        120
+      ],
+      "text": "A stop of {min} minutes at a café, a pub or a green place counts as the word."
+    },
+    {
+      "id": "laguz",
+      "six": "GROUND",
+      "rule": "WANTS_ROAD_AT_WATER",
+      "values": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "ground": {
+        "categories": [],
+        "tags": {
+          "natural": [
+            "water",
+            "wetland"
+          ],
+          "water": [
+            "*"
+          ],
+          "waterway": [
+            "*"
+          ],
+          "leisure": [
+            "marina"
+          ]
+        }
+      },
+      "text": "Things that keep to water count the road as something they want: the first {n} met on an outing."
+    },
+    {
+      "id": "berkano",
+      "six": "GROUND",
+      "rule": "WANTS_GROUND_AT_GREEN",
+      "values": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "ground": {
+        "categories": [
+          "NATURE"
+        ],
+        "tags": {
+          "leisure": [
+            "park",
+            "garden",
+            "nature_reserve"
+          ],
+          "landuse": [
+            "forest",
+            "meadow",
+            "grass"
+          ]
+        }
+      },
+      "text": "Things of green places count new ground as something they want: the first {n} met on an outing."
+    },
+    {
+      "id": "eihwaz",
+      "six": "GROUND",
+      "rule": "WANTS_WORD_AT_STONE",
+      "values": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "ground": {
+        "categories": [
+          "HISTORICAL"
+        ],
+        "tags": {
+          "historic": [
+            "*"
+          ]
+        }
+      },
+      "text": "Things of old stone count the word as something they want: the first {n} met on an outing."
+    },
+    {
+      "id": "ehwaz",
+      "six": "GROUND",
+      "rule": "WANTS_ROAD_ON_STREET_BY_BIKE",
+      "values": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "ground": {
+        "categories": [
+          "CYCLING"
+        ],
+        "tags": {
+          "highway": [
+            "cycleway"
+          ],
+          "route": [
+            "bicycle"
+          ],
+          "shop": [
+            "bicycle"
+          ]
+        }
+      },
+      "text": "On a bike, things of the street count the road as something they want: the first {n} met on an outing."
+    },
+    {
+      "id": "jera",
+      "six": "GROUND",
+      "rule": "WEEK_NOTICE_SCALE",
+      "values": [
+        1.5,
+        1.75,
+        2.0,
+        2.0
+      ],
+      "ground": {
+        "categories": [
+          "NATURE"
+        ],
+        "tags": {
+          "landuse": [
+            "farmland",
+            "orchard",
+            "allotments"
+          ]
+        }
+      },
+      "text": "The week's notice pays {v}× what it says."
+    },
+    {
+      "id": "algiz",
+      "six": "GROUND",
+      "rule": "BOUNTY_KEEPS_PURSE",
+      "values": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "ground": {
+        "categories": [
+          "VIEWPOINT"
+        ],
+        "tags": {
+          "natural": [
+            "peak",
+            "ridge"
+          ],
+          "tourism": [
+            "viewpoint"
+          ]
+        }
+      },
+      "text": "A bounty you loosen keeps its double purse, and stays {n} day{s} longer."
+    }
+  ]
+}

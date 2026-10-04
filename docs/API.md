@@ -502,6 +502,38 @@ The week's notice: one goal an ISO week, a fixed target, paid once (150 coins an
  "progress": 1, "done": false, "paid": false, "coins": 150, "xp": 200, "endsAt": "..."}
 ```
 
+## Runes and deeds (0.7.0)
+
+Runes are the build. A rune is held from its first stone (picked up on an outing or by
+hand, from the Road Six set anywhere and the Ground Six only on their own kind of ground);
+after that each stone is a shard towards the next rank. Only inscribed runes act, each
+changing one rule (`backend/app/inventory/config/runes.json`); a rank widens the rule's
+number, never a damage percentage. Slots open at levels 1, 10 and 25.
+
+- `GET /runes` → `{"runes": [Rune], "inscribed": ["raido"], "slots": 1, "slotsAtLevel": [1, 10, 25]}`,
+  `Rune` = `{"id", "name", "six": "ROAD|GROUND", "gloss", "roadForm", "held", "rank", "shards", "inscribed",
+  "rule" (what it does at its rank, or rank I), "nextRank": {"shards": 2, "coins": 100}|null}`
+- `POST /runes/{id}/rank` → `Runes`: two stones and coins take it a rank deeper (409 `RUNE_NOT_HELD`,
+  `RUNE_NEEDS_STONES`, `RUNE_MAX_RANK`, `INSUFFICIENT_AC`)
+- `PUT /runes/inscribed` `{"runes": ["raido", "kenaz"]}` → `Runes` (409 `NO_SLOT`, `RUNE_NOT_HELD`,
+  `RUNE_TWICE`, `LOADOUT_LOCKED` while a ride is recording)
+- `GET /runes/cuts` → `[{"runeId", "name", "latitude", "longitude", "woke", "source": "WAKING|FIGHT|QUEST",
+  "placeName", "cutAt", "rideId"}]`, for the marks on the maps
+- `GET /character/deeds` → `{"deeds": [{"id": "LEGS|LUNGS|EYES|HAND|INK", "name", "what", "unit", "value",
+  "tier", "next", "title", "frame"}], "records": [{"id": "RECORD_FURTHEST|RECORD_NEW_GROUND|RECORD_HIGHEST",
+  "name", "unit", "value"}]}`
+
+The sheet (`Character.sheet`, `Ride.loadout`) gains `inscribed` (`{"raido": 1}`) and `rules`
+(`{"CARRIED_SCALE": 2.0}`). Cutting an inscribed rune's road form anywhere on an outing wakes it:
+it counts a rank deeper for that outing and lands a rune blow on every creature within reach
+(`worldObjects.woken`). A ride summary gains `runesFound` (stones picked up) and `deeds`
+(`{"reached": [{"deed", "name", "tier", "title", "frame"}], "records": [...]}`). Deed titles
+join `GET /character/titles` (`source: DEED`).
+
+Cartographer, Arcane Sight and Second Chance work from 0.7.0: a ring of ground read round
+new cells (`discovered_via: CARTOGRAPHER`), rune stones likelier, and one missed optional
+objective of a finished quest counting (`extra.forgiven`).
+
 ## Routes
 
 ### `POST /routes/generate`

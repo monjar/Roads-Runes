@@ -22,6 +22,7 @@ TRANSACTION_KINDS = (
     "CLASS_CHANGE",
     "LURE",
     "WEEK_NOTICE",
+    "RUNE_RANK",
     "ADJUSTMENT",
 )
 

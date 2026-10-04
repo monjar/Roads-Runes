@@ -30,6 +30,8 @@ from app.economy.rules import ACLine, compute_ride_ac
 from app.economy.streaks import StreakOutcome, streak_lines, update_streak
 from app.exploration.cells import cell_for, traverse
 from app.exploration.service import ExplorationOutcome, record_traversal
+from app.inventory import deeds
+from app.inventory import service as inventory
 from app.lore.service import creature_tallies
 from app.progression.engine import RideRewardInput, compute_ride_xp
 from app.progression.service import grant
@@ -319,7 +321,12 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         )
 
     # The character as the ride began, not as it is now (characters/sheet.py).
-    sheet = CharacterSheet.from_dict(ride.loadout_snapshot) if ride.loadout_snapshot else build_sheet(character)
+    if ride.loadout_snapshot:
+        sheet = CharacterSheet.from_dict(ride.loadout_snapshot)
+    else:
+        from app.inventory.service import inscribed
+
+        sheet = build_sheet(character, await inscribed(db, character))
 
     # What the player had met before this outing, for the codex stamp after it.
     met_before = {
@@ -354,6 +361,24 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         flags.extend(f for f in claims.flags if f not in flags)
         claims.tapped = await world_objects.tapped_during(db, ride.user_id, ride.started_at, ended)
 
+    # Rune stones picked up on the way: the rune is held, or a stone towards its next rank.
+    runes_found: list[dict[str, Any]] = []
+    if character is not None:
+        for obj in claims.claimed:
+            rune_id = inventory.rune_of_piece(obj.payload) if obj.kind == "COLLECTABLE" else None
+            if rune_id:
+                found = await inventory.add_stone(db, character, rune_id, key=f"stone:{obj.id}", ride_id=ride.id)
+                if found:
+                    runes_found.append(found)
+
+    # Ground read without being passed: a ring round each new cell (Cartographer),
+    # and round each place found (Kenaz, inscribed).
+    if character is not None and not validation.suspicious:
+        try:
+            await _reveal_rings(db, settings, character, sheet, exploration, discoveries)
+        except Exception as exc:  # noqa: BLE001
+            log.error("reveal_failed", ride_id=str(ride.id), error=str(exc)[:200])
+
     quest: QuestInstance | None = None
     quest_completed = False
     objectives_completed: list[QuestObjective] = []
@@ -384,6 +409,11 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
                         ud = await mark_found(db, ride.user_id, d, ride.id, ended)
                         if ud is not None:
                             discoveries.append(d)
+            # Second Chance: one optional objective missed counts as done.
+            if character is not None and all_required_complete(quest):
+                forgiven = _forgive_one(quest, character)
+                if forgiven is not None:
+                    objectives_completed.append(forgiven)
             if all_required_complete(quest):
                 assert_transition(quest.status, "COMPLETED")
                 quest.status = "COMPLETED"
@@ -498,6 +528,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         "worldObjects": claims.to_dict(),
         "quarryId": str(ride.quarry_id) if ride.quarry_id else None,
         "codexFirsts": first_meetings(claims, met_before),
+        "runesFound": runes_found,
         "streak": streak.to_dict(),
         "newCells": len(exploration.new_cells),
         "upgradedCells": len(exploration.upgraded_cells),
@@ -531,10 +562,29 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
     ride.status = "FLAGGED" if validation.suspicious else "PROCESSED"
     await db.flush()
 
+    # Deeds, now this outing is processed and counts: the five counts, any threshold
+    # newly reached (a deed title), and records beaten. A failure here is an outing
+    # without deeds, never a lost outing.
+    if character is not None and not validation.suspicious:
+        try:
+            done = await deeds.update(db, character, ride=ride, points=points, new_cells=len(exploration.new_cells))
+            titles = [r["title"] for r in done["reached"] if r.get("title")]
+            summary = {**summary, "deeds": done, "titlesUnlocked": [*summary["titlesUnlocked"], *titles]}
+            ride.processing_result = summary
+            await db.flush()
+        except Exception as exc:  # noqa: BLE001
+            log.error("deeds_failed", ride_id=str(ride.id), error=str(exc)[:200])
+
     # The week's notice counts this outing now that it is processed, and pays once.
     if character is not None and not validation.suspicious:
         try:
-            paid = await week.settle(db, ride.user_id, (ride.started_at or ended).date(), ride_id=ride.id)
+            paid = await week.settle(
+                db,
+                ride.user_id,
+                (ride.started_at or ended).date(),
+                ride_id=ride.id,
+                scale=float(sheet.rules.get("WEEK_NOTICE_SCALE", 1.0)),
+            )
         except Exception as exc:  # noqa: BLE001
             log.error("week_notice_failed", ride_id=str(ride.id), error=str(exc)[:200])
             paid = None
@@ -542,15 +592,57 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             summary = {
                 **summary,
                 "weekNotice": {k: v for k, v in paid.items() if k not in ("startsAt", "endsAt")},
-                "xpAwarded": summary["xpAwarded"] + week.PAY_XP,
-                "xpBreakdown": [*summary["xpBreakdown"], {"source": "WEEK_NOTICE", "xp": week.PAY_XP}],
-                "acAwarded": summary["acAwarded"] + week.PAY_COINS,
-                "acBreakdown": [*summary["acBreakdown"], {"kind": "WEEK_NOTICE", "ac": week.PAY_COINS}],
+                "xpAwarded": summary["xpAwarded"] + paid["xp"],
+                "xpBreakdown": [*summary["xpBreakdown"], {"source": "WEEK_NOTICE", "xp": paid["xp"]}],
+                "acAwarded": summary["acAwarded"] + paid["coins"],
+                "acBreakdown": [*summary["acBreakdown"], {"kind": "WEEK_NOTICE", "ac": paid["coins"]}],
                 "walletBalance": await economy.balance(db, ride.user_id),
             }
             ride.processing_result = summary
             await db.flush()
     return summary
+
+
+async def _reveal_rings(
+    db: AsyncSession,
+    settings: Settings,
+    character: Character,
+    sheet: CharacterSheet,
+    exploration: ExplorationOutcome,
+    discoveries: list[Discovery],
+) -> None:
+    import h3
+
+    from app.characters import catalog as abilities
+    from app.characters.service import ability_map
+    from app.exploration.service import reveal
+
+    rings = int(abilities.effect_total(ability_map(character), "FOG_REVEAL_RADIUS_CELLS"))
+    if rings and exploration.new_cells:
+        around = {n for cell in exploration.new_cells for n in h3.grid_disk(cell, rings)} - set(exploration.new_cells)
+        await reveal(db, character.user_id, sorted(around), settings.h3_resolution, via="CARTOGRAPHER")
+    kenaz = int(sheet.rules.get("REVEAL_RINGS", 0))
+    if kenaz and discoveries:
+        cells = {cell_for(d.latitude, d.longitude, settings.h3_resolution) for d in discoveries}
+        around = {n for cell in cells for n in h3.grid_disk(cell, kenaz)}
+        await reveal(db, character.user_id, sorted(around), settings.h3_resolution, via="KENAZ")
+
+
+def _forgive_one(quest: QuestInstance, character: Character) -> QuestObjective | None:
+    """Second Chance: one optional objective of a finished quest counts as done."""
+    from app.characters import catalog as abilities
+    from app.characters.service import ability_map
+
+    if not abilities.effect_total(ability_map(character), "FORGIVE_OPTIONAL_OBJECTIVE"):
+        return None
+    missed = next((o for o in quest.objectives if not o.required and o.status != "COMPLETED"), None)
+    if missed is None:
+        return None
+    missed.status = "COMPLETED"
+    missed.provisional = False
+    missed.completed_at = utcnow()
+    missed.extra = {**(missed.extra or {}), "forgiven": True}
+    return missed
 
 
 def first_meetings(claims: ClaimOutcome, met_before: set[str]) -> list[dict[str, Any]]:

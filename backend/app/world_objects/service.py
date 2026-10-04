@@ -30,6 +30,8 @@ from app.economy import service as economy
 from app.economy.rules import load_ac_rules
 from app.exploration.cells import cell_center, cell_for, frontier_cells
 from app.exploration.service import cells_last_passed, known_cells
+from app.inventory import catalog as runes_catalog
+from app.inventory import service as inventory
 from app.lore import catalog as lore
 from app.rides.validation import CleanPoint
 from app.world_objects import claims, fight
@@ -80,6 +82,8 @@ class ClaimOutcome:
     fights: list[dict[str, Any]] = field(default_factory=list)
     blows: list[tuple[int, bool, float]] = field(default_factory=list)
     flags: list[str] = field(default_factory=list)
+    # Inscribed runes woken on the outing (0.7.0).
+    woken: list[str] = field(default_factory=list)
 
     def counted_of(self, kind: str) -> list[WorldObject]:
         return [o for o in [*self.claimed, *self.tapped] if o.kind == kind]
@@ -110,7 +114,7 @@ class ClaimOutcome:
                 for o, reason in self.missed
             ],
             "setsCompleted": self.sets_completed,
-            **({"fights": self.fights} if self.effort else {}),
+            **({"fights": self.fights, "woken": self.woken} if self.effort else {}),
         }
 
 
@@ -432,8 +436,8 @@ async def _ensure_spawned(
         # Slots already used today (claimed, expired or live) so a replacement gets a
         # fresh seed; at most twice the quota a day, so a chest is not a chest factory.
         used_seeds = await _seeds_like(db, user_id, seed)
-        # The day's bounty: the first monster placed, twice the purse, gone at midnight. One a
-        # day whatever happens to it, so its seed carries no slot.
+        # The day's bounty: the first monster placed, twice the purse, out for a day and a
+        # half or two. One a day whatever happens to it, so its seed carries no slot.
         bounty_seed = day_seed(user_id, day, "bounty", seed_suffix)
         if not seed_suffix and f"{bounty_seed}:MONSTER:0" not in await _seeds_like(db, user_id, bounty_seed):
             taken = {str(o.anchor_discovery_id) for o in live if o.anchor_discovery_id}
@@ -471,6 +475,8 @@ async def _ensure_spawned(
         total_owed = sum(owed.values())
         if total_owed > places > 0:
             owed = {k: (max(1, v * places // total_owed) if v else 0) for k, v in owed.items()}
+        # Rune stones by ground, pity and Arcane Sight (0.7.0).
+        rune_hint = await inventory.spawn_hint(db, user_id)
         for kind in cfg["quota"]:
             deficit = min(room, owed[kind])
             if deficit <= 0:
@@ -492,6 +498,7 @@ async def _ensure_spawned(
                 character_class=character_class,
                 activity=normalise(activity),
                 centre=(latitude, longitude),
+                runes=rune_hint,
             )
             plans.extend(batch)
             room -= len(batch)
@@ -842,7 +849,9 @@ async def _overlaps_another(db: AsyncSession, ride: Any) -> bool:
     return other is not None
 
 
-def _wound(obj: WorldObject, ride_id: str, day: str, report: fight.FightReport, ended: datetime) -> None:
+def _wound(
+    obj: WorldObject, ride_id: str, day: str, report: fight.FightReport, ended: datetime, *, bounty_keeps_days: int = 0
+) -> None:
     """Writes what this ride took off it. Keyed by ride, so a rerun replaces rather
     than adds, and reassigned, because the JSON column does not see edits in place."""
     cfg = combat_config()
@@ -860,7 +869,10 @@ def _wound(obj: WorldObject, ride_id: str, day: str, report: fight.FightReport, 
     stays = ended + timedelta(days=float(cfg["loosenedStaysDays"]))
     cap = obj.spawned_at + timedelta(days=float(cfg["maxLifeDays"]))
     obj.expires_at = max(obj.expires_at, min(stays, cap))
-    if obj.bounty:
+    if obj.bounty and bounty_keeps_days:
+        # Algiz: a loosened bounty keeps its double purse, and stays a little longer.
+        obj.expires_at = min(obj.expires_at + timedelta(days=bounty_keeps_days), cap)
+    elif obj.bounty:
         # A loosened bounty stays on as an ordinary thing at the ordinary purse.
         obj.bounty = False
         obj.reward_ac = int(load_ac_rules()["monster"][str(obj.tier)])
@@ -960,22 +972,58 @@ async def _fight_by_effort(
 ) -> None:
     from app.characters.sheet import CharacterSheet
 
-    cfg = combat_config()
+    base_cfg = combat_config()
     sheet = sheet or CharacterSheet.neutral()
     # An outing too short to count, or a second recording of the same time, loosens nothing.
-    if _made_good_m(points) < float(cfg["minOutingMeters"]) or await _overlaps_another(db, ride):
+    if _made_good_m(points) < float(base_cfg["minOutingMeters"]) or await _overlaps_another(db, ride):
         outcome.missed.extend((m, "NOT_NEAR") for m in monsters if m.status == "SPAWNED")
         return
-    fight_points = _fight_points(points, cfg)
-    words = _word_indices(points, events, cfg)
     ride_id = str(getattr(ride, "id", ""))
+    ride_uuid = getattr(ride, "id", None)
+    user_id = getattr(ride, "user_id", None)
     day = ended.date().isoformat()
     activity = normalise(getattr(ride, "activity", "RIDE"))
     made_good = _made_good_m(points)
+    min_len = float(base_cfg.get("runeMinLengthMeters", 300))
+    max_len = float(base_cfg.get("runeMaxLengthMeters", 4000))
+
+    # Waking (0.7.0): an inscribed rune's road form cut anywhere on the outing wakes
+    # it. Once per outing, it counts a rank deeper and lands on everything in reach.
+    woken: list[tuple[float, float, int]] = []
+    for rune_id in list(sheet.inscribed):
+        form = runes_catalog.road_form(rune_id)
+        if form not in runes_catalog.CUT_FORMS:
+            continue
+        found = claims.match_anywhere(
+            coords, form, threshold=sheet.rune_threshold, min_length_m=min_len, max_length_m=max_len
+        )
+        if found is None:
+            continue
+        lat, lon, index = found
+        sheet = sheet.woken(rune_id)
+        woken.append((lat, lon, index))
+        outcome.woken.append(rune_id)
+        if user_id is not None:
+            await inventory.record_cut(
+                db, user_id, ride_id=ride_uuid, rune_id=rune_id, latitude=lat, longitude=lon, source="WAKING", woke=True,
+                at=points[index].timestamp if index < len(points) else ended,
+            )  # fmt: skip
+
+    first_today = await _outings_today_before(db, ride) + 1
+    cfg = sheet.fight_cfg(base_cfg, first_outings_today=first_today)
+    fight_points = _fight_points(points, cfg)
+    words = _word_indices(points, events, cfg)
+    # Wunjo: a stop long enough at a café, a pub or a green place is the word.
+    if sheet.rules.get("STOP_IS_WORD_S"):
+        words += await _stops_as_words(db, points, float(sheet.rules["STOP_IS_WORD_S"]))
     old_places = await _old_place_anchors(db, monsters)
+    # The Ground Six add a want to the first few of a family met on the outing.
+    extra_wants = _ground_wants(sheet, monsters, fight_points, cfg, activity)
     for obj in monsters:
         try:
             foe = foe_of(obj, excluding_ride=ride_id, day=day)
+            if extra_wants.get(obj.id):
+                foe = fight.Foe(**{**foe.__dict__, "wants": tuple(sorted(set(foe.wants) | extra_wants[obj.id]))})
             hit = None
             if foe.road_form and not foe.rune_today:
                 match = claims.match_rune(
@@ -983,11 +1031,23 @@ async def _fight_by_effort(
                     (obj.latitude, obj.longitude),
                     threshold=sheet.rune_threshold,
                     search_radius_m=sheet.rune_reach_m,
-                    min_length_m=float(cfg.get("runeMinLengthMeters", 300)),
-                    max_length_m=float(cfg.get("runeMaxLengthMeters", 4000)),
+                    min_length_m=min_len,
+                    max_length_m=max_len,
                 )
                 if match is not None:
                     hit = fight.RuneHit(match.shape, match.end)
+                    if match.shape == foe.road_form and user_id is not None:
+                        cut_rune = runes_catalog.rune_for_form(match.shape)
+                        if cut_rune:
+                            at = coords[min(match.end, len(coords) - 1)]
+                            await inventory.record_cut(
+                                db, user_id, ride_id=ride_uuid, rune_id=cut_rune, latitude=at[0], longitude=at[1],
+                                source="FIGHT", place_name=obj.payload.get("anchorName"),
+                            )  # fmt: skip
+            if hit is None or hit.shape != foe.road_form:
+                near = [w for w in woken if haversine_m(w[0], w[1], obj.latitude, obj.longitude) <= sheet.rune_reach_m]
+                if near:
+                    hit = fight.RuneHit(fight.WOKEN, near[0][2])
             # The build against this one: elders and bounties, an old place, a long outing.
             pct = sheet.pct_against(
                 elder=obj.tier >= 2 or bool(obj.bounty),
@@ -1030,18 +1090,125 @@ async def _fight_by_effort(
                 "expiresAt": obj.expires_at.isoformat(),
             }
         )
+        keeps = int(sheet.rules.get("BOUNTY_KEEPS_PURSE", 0))
         if report.outcome == "SEEN_OFF":
             _wound(obj, ride_id, day, report, ended)
             if obj.status == "SPAWNED":
                 _claim(obj, ride, ended, {"method": "EFFORT", "finisher": report.finisher, **report.to_dict()})
                 outcome.claimed.append(obj)
         elif report.taken >= 1:
-            _wound(obj, ride_id, day, report, ended)
+            _wound(obj, ride_id, day, report, ended, bounty_keeps_days=keeps)
             outcome.fights[-1]["expiresAt"] = obj.expires_at.isoformat()
             if obj.status == "SPAWNED":
                 outcome.missed.append((obj, "LOOSENED"))
         elif obj.status == "SPAWNED":
             outcome.missed.append((obj, "UNTOUCHED"))
+
+
+GROUND_RULES = {
+    # rule id: (family, kind it comes to want, only on a bike)
+    "WANTS_ROAD_AT_WATER": ("WATER", "ROAD", False),
+    "WANTS_GROUND_AT_GREEN": ("GREEN", "GROUND", False),
+    "WANTS_WORD_AT_STONE": ("STONE", "WORD", False),
+    "WANTS_ROAD_ON_STREET_BY_BIKE": ("STREET", "ROAD", True),
+}
+
+
+def _ground_wants(
+    sheet: Any, monsters: list[WorldObject], points: list[fight.FightPoint], cfg: dict[str, Any], activity: str
+) -> dict[uuid.UUID, set[str]]:
+    """What the inscribed Ground Six add to the wants of the first few things of
+    their family the outing met, in the order it met them."""
+    rules = {r: v for r, v in sheet.rules.items() if r in GROUND_RULES}
+    if not rules:
+        return {}
+    engage = float(cfg["engageMeters"])
+
+    def contact(obj: WorldObject) -> int | None:
+        return next(
+            (
+                i
+                for i, p in enumerate(points)
+                if p.ok and haversine_m(p.latitude, p.longitude, obj.latitude, obj.longitude) <= engage
+            ),
+            None,
+        )
+
+    met = sorted(((c, m) for m in monsters if (c := contact(m)) is not None), key=lambda x: x[0])
+    out: dict[uuid.UUID, set[str]] = {}
+    for rule, count in rules.items():
+        family, kind, by_bike = GROUND_RULES[rule]
+        if by_bike and activity != "RIDE":
+            continue
+        given = 0
+        for _, obj in met:
+            species = lore.species_by_id().get(lore.species_of(obj.payload) or "") or {}
+            if str(species.get("family") or "").upper() != family:
+                continue
+            if given >= int(count):
+                break
+            out.setdefault(obj.id, set()).add(kind)
+            given += 1
+    return out
+
+
+async def _outings_today_before(db: AsyncSession, ride: Any) -> int:
+    """Processed outings started earlier the same day (Dagaz counts the first few)."""
+    from sqlalchemy import func
+
+    from app.rides.models import Ride
+
+    started = getattr(ride, "started_at", None)
+    if started is None:
+        return 0
+    day_start = started.replace(hour=0, minute=0, second=0, microsecond=0)
+    return int(
+        await db.scalar(
+            select(func.count(Ride.id)).where(
+                Ride.user_id == ride.user_id,
+                Ride.id != ride.id,
+                Ride.status == "PROCESSED",
+                Ride.started_at >= day_start,
+                Ride.started_at < started,
+            )
+        )
+        or 0
+    )
+
+
+STOP_RADIUS_M = 40.0
+STOP_PLACE_M = 80.0
+STOP_CATEGORIES = ("CAFE", "PUB", "NATURE", "FOOD")
+
+
+async def _stops_as_words(db: AsyncSession, points: list[CleanPoint], seconds: float) -> list[int]:
+    """Where the outing stopped long enough at a café, a pub or a green place: the
+    fix it stopped at, once per place (Wunjo). A stop is staying within 40 m."""
+    out: list[int] = []
+    used: set[uuid.UUID] = set()
+    i = 0
+    while i < len(points):
+        j = i
+        while (
+            j + 1 < len(points)
+            and haversine_m(points[i].latitude, points[i].longitude, points[j + 1].latitude, points[j + 1].longitude)
+            <= STOP_RADIUS_M
+        ):
+            j += 1
+        if (points[j].timestamp - points[i].timestamp).total_seconds() >= seconds:
+            here = points[i]
+            places = [
+                d
+                for d in await discoveries_nearby(db, here.latitude, here.longitude, STOP_PLACE_M, limit=10)
+                if d.category in STOP_CATEGORIES and not is_sensitive(d.name, d.tags) and d.id not in used
+            ]
+            if places:
+                used.add(places[0].id)
+                out.append(i)
+            i = j + 1
+        else:
+            i += 1
+    return out
 
 
 OLD_PLACE_CATEGORIES = ("HISTORICAL", "CULTURAL")
