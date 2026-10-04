@@ -78,6 +78,21 @@ struct CharacterView: View {
                     }
                 }
             }
+            // Settings where a phone keeps them: a gear at the top, not the bottom of a long sheet.
+            .overlay(alignment: .topTrailing) {
+                NavigationLink { SettingsView() } label: {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(Theme.Colors.ink)
+                        .frame(width: 40, height: 40)
+                        .background(Theme.Colors.cream.opacity(0.92), in: Circle())
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel("Settings")
+                .accessibilityIdentifier("character.settings")
+                .padding(.trailing, 18)
+                .padding(.top, 4)
+            }
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await model?.load() }
             .sheet(item: $editingBike) { bike in BikeEditorView(bike: bike) { input in Task { await model?.save(bike: input, id: bike.id) } } onDelete: { Task { await model?.delete(bike: bike) } } }

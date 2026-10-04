@@ -12,9 +12,11 @@ struct WorldView: View {
     @State private var directionsTo: Place?
     @State private var planningFreeRide = false
     @State private var onScreen = false
+    @State private var showingLegend = false
     var onOpenCharacter: () -> Void = {}
-    /// A quest's marker was tapped: quests are read on their own tab.
-    var onOpenQuests: () -> Void = {}
+    /// A quest's marker was tapped (its id), or the board was asked for (nil):
+    /// quests are read on their own tab.
+    var onOpenQuests: (UUID?) -> Void = { _ in }
 
     var body: some View {
         NavigationStack {
@@ -60,9 +62,9 @@ struct WorldView: View {
         }
         .onChange(of: container.rideRecorder.localCellStates) { _, _ in model?.rebuildCells() }
         .onChange(of: model?.openedQuestMarker) { _, quest in
-            guard quest != nil else { return }
+            guard let quest else { return }
             model?.openedQuestMarker = nil
-            onOpenQuests()
+            onOpenQuests(quest)
         }
         .onChange(of: container.sync.latestSummary) { _, summary in
             guard summary == nil, let model, let center = model.center else { return }
@@ -97,8 +99,20 @@ struct WorldView: View {
                 PlaceShortcutChips(active: model.activeShortcut) { shortcut in
                     Task { await model.runShortcut(shortcut) }
                 }
-                HStack {
+                HStack(spacing: 10) {
                     Spacer()
+                    // What every mark on the map is (MapLegend).
+                    Button { showingLegend = true } label: {
+                        Image(systemName: "questionmark")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(Theme.Colors.ink)
+                            .frame(width: 42, height: 42)
+                            .background(Theme.Colors.cream.opacity(0.96), in: Circle())
+                            .shadow(color: Theme.Colors.ink.opacity(0.14), radius: 2, y: 1)
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityLabel("What's on the map")
+                    .accessibilityIdentifier("world.legend")
                     MapStyleMenu()
                 }
                 .padding(.horizontal, 16)
@@ -123,16 +137,22 @@ struct WorldView: View {
                         }
                         IconCircleButton(symbol: "location.fill", size: 48) { model.locateMe() }
                             .accessibilityLabel("Show my location")
+                        // The main thing to do, said in words: an icon alone did not say it.
                         Button { planningFreeRide = true } label: {
-                            Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
-                                .font(.system(size: 22, weight: .bold))
-                                .foregroundStyle(Theme.Colors.cream)
-                                .frame(width: 58, height: 58)
-                                .background(Theme.Colors.terracotta, in: Circle())
-                                .shadow(color: Theme.Colors.ink.opacity(0.25), radius: 6, y: 3)
+                            HStack(spacing: 8) {
+                                Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
+                                    .font(.system(size: 18, weight: .bold))
+                                Text("Plan a \(container.session.defaultActivity.noun)")
+                                    .font(Theme.Typography.text(15, .bold))
+                            }
+                            .foregroundStyle(Theme.Colors.cream)
+                            .padding(.horizontal, 18)
+                            .frame(height: 52)
+                            .background(Theme.Colors.terracotta, in: Capsule())
+                            .shadow(color: Theme.Colors.ink.opacity(0.25), radius: 6, y: 3)
                         }
                         .buttonStyle(.pressable)
-                        .accessibilityLabel("Plan a route from here")
+                        .accessibilityIdentifier("world.plan")
                     }
                 }
                 .padding(.horizontal, 16)
@@ -150,15 +170,25 @@ struct WorldView: View {
                     .padding(.horizontal, 16)
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
                 }
+                if let note = model.cutNote {
+                    MapPill(text: note, icon: .runeStone)
+                        .accessibilityIdentifier("world.cutNote")
+                        .transition(.opacity)
+                }
                 if model.selectedPlace == nil, model.selectedObject == nil, model.resultsTitle == nil {
-                    TodayStrip(
-                        character: container.session.character,
-                        nearest: model.nearestObject?.object,
-                        nearestMeters: model.nearestObject?.meters,
-                        activity: container.session.defaultActivity,
-                        units: model.units,
-                        onNearest: { if let nearest = model.nearestObject?.object { withAnimation(.snappy) { model.open(nearest) } } }
-                    )
+                    VStack(alignment: .leading, spacing: 8) {
+                        // The streak; what is near is the Next up card's to say.
+                        TodayStrip(
+                            character: container.session.character,
+                            nearest: nil,
+                            activity: container.session.defaultActivity,
+                            units: model.units,
+                            onNearest: {}
+                        )
+                        NextUpCard(next: model.nextUp, units: model.units, activity: container.session.defaultActivity) {
+                            act(on: model.nextUp, model)
+                        }
+                    }
                     .padding(.horizontal, 12)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -187,7 +217,19 @@ struct WorldView: View {
             )
         }
         .sheet(item: $directionsTo) { place in RoutePlannerView(quest: nil, destination: place) }
+        .sheet(isPresented: $showingLegend) { MapLegend() }
         .sheet(isPresented: $planningFreeRide) { RoutePlannerView(quest: nil) }
+    }
+
+    /// The Next up card's one button.
+    private func act(on next: NextUp, _ model: WorldViewModel) {
+        switch next {
+        case .firstRide: planningFreeRide = true
+        case .inReach(let object): withAnimation(.snappy) { model.open(object) }
+        case .skillPoints: onOpenCharacter()
+        case .creature(let object, _), .treasure(let object, _): directionsTo = WorldViewModel.place(for: object)
+        case .quests: onOpenQuests(nil)
+        }
     }
 
     @ViewBuilder

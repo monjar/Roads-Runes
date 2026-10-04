@@ -125,9 +125,27 @@ final class WorldViewModel {
     }
 
     /// Where rune rides were made: "Raido rune ride, by the pond".
+    /// What to do next, for the card under the map (NextUp).
+    var nextUp: NextUp {
+        NextUp.choose(character: container.session.character, objects: worldObjects, position: position, inReach: isWithinReach)
+    }
+
+    /// A rune shape the player rode, said when its mark is tapped; it clears itself.
+    private(set) var cutNote: String?
+
+    func showCut(_ title: String) {
+        cutNote = title
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            if cutNote == title { cutNote = nil }
+        }
+    }
+
+    /// The rune shapes ridden, drawn smaller than a rune stone to pick up so the
+    /// two are not mistaken for each other.
     var cutMarkers: [MapMarker] {
         cuts.map { cut in
-            MapMarker(id: "cut-\(cut.id)", coordinate: cut.coordinate, kind: .collectable,
+            MapMarker(id: "cut-\(cut.id)", coordinate: cut.coordinate, kind: .poi,
                       title: cut.placeName.map { "\(cut.name) rune ride, by \($0)" } ?? "\(cut.name) rune ride",
                       mark: .rune(cut.runeId))
         }
@@ -368,6 +386,8 @@ final class WorldViewModel {
             camera = MapCamera(center: object.coordinate)
         } else if marker.id.hasPrefix("quest-"), let questId = UUID(uuidString: String(marker.id.dropFirst(6))) {
             openedQuestMarker = questId
+        } else if marker.id.hasPrefix("cut-") {
+            showCut("You rode \(marker.title).")
         } else if let place = results.first(where: { "result-\($0.id)" == marker.id }) {
             select(place, moveCamera: false)
         } else if let discovery = snapshot?.discoveries.first(where: { "discovery-\($0.id.uuidString)" == marker.id }) {

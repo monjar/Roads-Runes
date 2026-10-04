@@ -91,6 +91,8 @@ enum AppTab: Int, CaseIterable, Identifiable {
 
 struct MainTabView: View {
     @State private var tab: AppTab = .world
+    /// A quest a World marker pointed at, for the Quests tab to open.
+    @State private var questToOpen: UUID?
     @State private var tabBar = TabBarVisibility()
 
     init() {
@@ -101,10 +103,13 @@ struct MainTabView: View {
         TabView(selection: $tab) {
             WorldView(
                 onOpenCharacter: { withAnimation(.snappy(duration: 0.25)) { tab = .character } },
-                onOpenQuests: { withAnimation(.snappy(duration: 0.25)) { tab = .quests } }
+                onOpenQuests: { quest in
+                    questToOpen = quest
+                    withAnimation(.snappy(duration: 0.25)) { tab = .quests }
+                }
             )
             .tag(AppTab.world).toolbar(.hidden, for: .tabBar)
-            QuestsView().tag(AppTab.quests).toolbar(.hidden, for: .tabBar)
+            QuestsView(openQuest: $questToOpen).tag(AppTab.quests).toolbar(.hidden, for: .tabBar)
             JournalView().tag(AppTab.journal).toolbar(.hidden, for: .tabBar)
             CharacterView().tag(AppTab.character).toolbar(.hidden, for: .tabBar)
         }
@@ -124,7 +129,14 @@ struct MainTabView: View {
 
 /// The floating ink pill; the active tab is a terracotta pill inside it.
 struct FloatingTabBar: View {
+    @Environment(AppContainer.self) private var container
     @Binding var selected: AppTab
+
+    /// A skill point waiting and a skill to spend it on: the Character tab says so.
+    private var skillWaiting: Bool {
+        guard let character = container.session.character else { return false }
+        return character.unspentAbilityPoints > 0 && character.abilities.contains(where: \.canUnlock)
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -134,6 +146,13 @@ struct FloatingTabBar: View {
                 } label: {
                     VStack(spacing: 3) {
                         IconShape(tab.icon).frame(width: 22, height: 22)
+                            .overlay(alignment: .topTrailing) {
+                                if tab == .character, skillWaiting {
+                                    Circle().fill(Theme.Colors.gold).frame(width: 9, height: 9)
+                                        .offset(x: 4, y: -2)
+                                        .accessibilityLabel("A skill point to spend")
+                                }
+                            }
                         Text(tab.title).font(Theme.Typography.tab)
                     }
                     .foregroundStyle(selected == tab ? Theme.Colors.cream : Theme.Colors.line)

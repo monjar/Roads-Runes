@@ -13,6 +13,9 @@ struct QuestsView: View {
     /// Navigation state lives in the view so setting it always pushes the detail.
     @State private var selectedQuest: Quest?
     @State private var showingStory = false
+    @State private var showingRunes = false
+    /// A quest to open, handed over from a marker tapped on the World map.
+    var openQuest: Binding<UUID?> = .constant(nil)
 
     var body: some View {
         NavigationStack {
@@ -48,26 +51,30 @@ struct QuestsView: View {
                             )
                             .disabled(container.rideRecorder.isActive)
                         }
-                        section("Quests nearby", model.available, empty: model.isLoading ? "Looking for quests…" : "No quests nearby yet. Tap Find more quests below.")
+                        // The story and rune rides near the top, where they can be found.
+                        if container.session.isEnabled("story_quests") {
+                            section("Story", model.story, empty: "No story quest on the board yet.")
+                            shortcut("Story progress", icon: .openBook, id: "quests.story") { showingStory = true }
+                        }
+                        if container.session.character?.sheet?.inscribed != nil {
+                            shortcut("Rune rides · ride a rune's shape", icon: .runeStone, id: "quests.runeRides") { showingRunes = true }
+                        }
+                        if model.isLoading, model.all.isEmpty {
+                            // Loading is not "nothing here": say it is looking.
+                            HStack(spacing: 10) {
+                                ProgressView().tint(Theme.Colors.terracotta)
+                                Text("Finding quests near you…").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 12)
+                            .accessibilityIdentifier("quests.loading")
+                        }
+                        section("Quests nearby", model.available, empty: model.isLoading ? "Finding quests near you…" : "No quests nearby yet. Tap Find more quests below.")
                         if !model.recommended.isEmpty {
                             section("For \(ClassStyle.name(model.characterClass))s", model.recommended, empty: "")
                         }
                         if !model.forAnyone.isEmpty {
                             section("For anyone", model.forAnyone, empty: "")
-                        }
-                        if container.session.isEnabled("story_quests") {
-                            section("Story", model.story, empty: "No story quest on the board yet.")
-                            Button { showingStory = true } label: {
-                                HStack {
-                                    Text("Story progress").font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.terracottaDeep)
-                                    Spacer()
-                                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.Colors.muted)
-                                }
-                                .padding(.vertical, 10)
-                                .padding(.horizontal, 14)
-                                .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
-                            }
-                            .buttonStyle(.pressable)
                         }
                         if container.session.isEnabled("party_quests") { section("Party", model.party, empty: "No party quests yet.") }
                         section("Completed", model.completed, empty: "Finished quests appear here.", compact: true)
@@ -83,6 +90,7 @@ struct QuestsView: View {
             .background(Theme.Colors.cream)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(item: $selectedQuest) { quest in QuestDetailView(quest: quest) }
+            .navigationDestination(isPresented: $showingRunes) { RunesScreen() }
             .navigationDestination(isPresented: $showingStory) {
                 StoryArcsView(onOpenQuest: { questId in
                     // Back to the board, on the step they tapped.
@@ -102,11 +110,40 @@ struct QuestsView: View {
             .onChange(of: container.rideRecorder.isActive) { _, active in
                 if !active { Task { await model?.load() } }
             }
+            .onChange(of: openQuest.wrappedValue, initial: true) { _, id in
+                guard let id else { return }
+                Task { await open(questId: id) }
+            }
         }
         .task {
             if model == nil { model = QuestsViewModel(container: container) }
             await model?.load()
         }
+    }
+
+    /// The quest a World marker pointed at, once the board has it.
+    private func open(questId: UUID) async {
+        if model == nil { model = QuestsViewModel(container: container) }
+        if model?.all.contains(where: { $0.id == questId }) != true { await model?.load() }
+        openQuest.wrappedValue = nil
+        if let quest = model?.all.first(where: { $0.id == questId }) { selectedQuest = quest }
+    }
+
+    /// A row that leads somewhere: an icon, a label, a chevron.
+    private func shortcut(_ title: String, icon: GameIcon, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                IconShape(icon).foregroundStyle(Theme.Colors.terracottaDeep).frame(width: 20, height: 20)
+                Text(title).font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.terracottaDeep)
+                Spacer()
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.Colors.muted)
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 14)
+            .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
+        }
+        .buttonStyle(.pressable)
+        .accessibilityIdentifier(id)
     }
 
     @ViewBuilder

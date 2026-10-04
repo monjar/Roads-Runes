@@ -12,6 +12,7 @@ struct SettingsView: View {
 
     @Environment(AppContainer.self) private var container
     @State private var settings = UserSettings()
+    @State private var showingHowToPlay = false
     @State private var changingClass = false
     @State private var confirmingReset = false
     @State private var resetting = false
@@ -100,6 +101,10 @@ struct SettingsView: View {
                 Button("Save") { Task { await container.session.update(settings: settings); container.mapPreferences.apply(settings: settings) } }
                 Button("Sign out", role: .destructive) { Task { await container.session.signOut() } }
             }
+            Section {
+                Button("How to play") { showingHowToPlay = true }
+                    .accessibilityIdentifier("settings.howToPlay")
+            }
             Section("Credits") {
                 // CC BY 3.0 asks for this: who drew the pictures, and where they are from.
                 Text("Icons by \(Self.iconAuthors) from game-icons.net, under CC BY 3.0.")
@@ -111,6 +116,7 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .onAppear { settings = container.session.settings }
         .sheet(isPresented: $changingClass) { ClassChangeSheet() }
+        .fullScreenCover(isPresented: $showingHowToPlay) { PrologueView(finish: "Close") { showingHowToPlay = false } }
         .confirmationDialog("Start over?", isPresented: $confirmingReset, titleVisibility: .visible) {
             Button("Delete my character and start over", role: .destructive) {
                 resetting = true

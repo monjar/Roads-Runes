@@ -23,17 +23,15 @@ struct WorldSearchBar: View {
             .buttonStyle(.pressable)
             .accessibilityLabel("Search places")
             if let character {
+                // The level in words beside the crest: a bare number on it read as
+                // a count of something unread.
                 Button(action: onCharacter) {
-                    ClassEmblem(characterClass: character.characterClass, size: 36)
-                        .overlay(alignment: .bottomTrailing) {
-                            Text("\(character.overallLevel)")
-                                .font(Theme.Typography.text(10, .bold))
-                                .foregroundStyle(Theme.Colors.cream)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .background(Theme.Colors.ink, in: Capsule())
-                                .offset(x: 4, y: 3)
-                        }
+                    HStack(spacing: 6) {
+                        Text("Lv \(character.overallLevel)")
+                            .font(Theme.Typography.text(12, .bold))
+                            .foregroundStyle(Theme.Colors.inkSoft)
+                        ClassEmblem(characterClass: character.characterClass, size: 34)
+                    }
                 }
                 .buttonStyle(.pressable)
                 .accessibilityLabel("\(character.name), level \(character.overallLevel)")
