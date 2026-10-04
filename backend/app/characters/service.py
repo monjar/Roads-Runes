@@ -20,6 +20,7 @@ from app.characters.schemas import (
     ClassProgressOut,
     RiderProfileIO,
 )
+from app.characters.sheet import build_sheet
 from app.core.activity import normalise
 from app.core.config import Settings
 from app.core.errors import Conflict, FeatureDisabled, NotFound
@@ -156,6 +157,7 @@ def to_character_out(
         streakDays=streak_days,
         longestStreakDays=longest_streak_days,
         streakActiveToday=streak_active_today,
+        sheet=build_sheet(character).to_dict(),
     )
 
 

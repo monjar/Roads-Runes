@@ -14,9 +14,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.characters.models import Character
+from app.characters.sheet import CharacterSheet, build_sheet
 from app.core.activity import normalise
 from app.core.config import Settings
 from app.core.errors import InvalidTransition, NotFound, RideInvalidState
+from app.core.feature_flags import is_enabled
 from app.core.geo import encode_polyline, haversine_m
 from app.core.logging import EVENT_EXPLORATION_VALIDATION_FAILED, get_logger
 from app.core.security import utcnow
@@ -197,6 +199,8 @@ async def _reward_for_ride(
         elevation_gain_meters=ride.elevation_gain_meters,
         activity=ride.activity,
         claims=[(o.kind, o.tier, o.bounty) for o in claims.claimed] if claims else [],
+        effort=bool(claims and claims.effort),
+        blows=list(claims.blows) if claims else [],
         sets_completed=len(claims.sets_completed) if claims else 0,
         story_arc_completed=story_arc_completed,
     )
@@ -259,6 +263,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
 
     ended = ride.ended_at or utcnow()
     exploration = ExplorationOutcome()
+    traversal = None
     if points:
         traversal = traverse([(p.latitude, p.longitude) for p in points], settings.h3_resolution)
         try:
@@ -309,6 +314,13 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
     # What the trace passed or beat. Same gate as XP: a suspicious ride wins nothing.
     claims = ClaimOutcome()
     if points and not validation.suspicious:
+        effort = is_enabled(settings, "effort_combat")
+        # Where on the trace each new cell was first entered: new ground, as blows.
+        new_cell_indices = (
+            sorted(traversal.cells[c].first_seq for c in exploration.new_cells if c in traversal.cells)
+            if traversal is not None
+            else []
+        )
         claims = await world_objects.claim_from_ride(
             db,
             ride,
@@ -318,7 +330,12 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             list(ride.encounter_events or []),
             resolution=settings.h3_resolution,
             ended=ended,
+            effort=effort,
+            new_cell_indices=new_cell_indices,
+            # The character as the ride began, not as it is now (characters/sheet.py).
+            sheet=CharacterSheet.from_dict(ride.loadout_snapshot) if ride.loadout_snapshot else build_sheet(character),
         )
+        flags.extend(f for f in claims.flags if f not in flags)
         claims.tapped = await world_objects.tapped_during(db, ride.user_id, ride.started_at, ended)
 
     quest: QuestInstance | None = None
@@ -468,6 +485,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         "acBreakdown": coins["acBreakdown"],
         "walletBalance": coins["walletBalance"],
         "worldObjects": claims.to_dict(),
+        "quarryId": str(ride.quarry_id) if ride.quarry_id else None,
         "streak": streak.to_dict(),
         "newCells": len(exploration.new_cells),
         "upgradedCells": len(exploration.upgraded_cells),

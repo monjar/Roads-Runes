@@ -45,6 +45,11 @@ class Ride(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # What the phone thinks it beat or opened on the way (world_objects); the server decides.
     encounter_events: Mapped[list[Any]] = mapped_column(JSONType, default=list, nullable=False)
     processing_result: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
+    # The character sheet as it was when the ride started (characters/sheet.py).
+    loadout_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
+    # The world object this outing was planned for ("Plan a route here"): the one
+    # that speaks on the ride, and leads the reckoning.
+    quarry_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     flags: Mapped[list[Any]] = mapped_column(JSONType, default=list, nullable=False)
     processed_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
     strava_activity_id: Mapped[str | None] = mapped_column(String(40), nullable=True)

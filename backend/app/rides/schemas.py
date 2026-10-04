@@ -29,6 +29,8 @@ class RideCreate(APIModel):
     questId: uuid.UUID | None = None
     bikeId: uuid.UUID | None = None
     routeId: uuid.UUID | None = None
+    # The thing this outing is for, if it was planned at one (0.6.1).
+    quarryId: uuid.UUID | None = None
     # Custom adventures (no quest) name themselves; quest rides take the quest title.
     title: str | None = Field(default=None, max_length=120)
 
@@ -107,6 +109,10 @@ class RideOut(APIModel):
     stravaActivityId: str | None = None
     stravaUploadStatus: str | None = None  # QUEUED / UPLOADED / FAILED
     stravaError: str | None = None
+    # The character sheet frozen at the start (characters/sheet.py); the phone folds
+    # the fight over it. Absent for rides from before 0.6.1.
+    loadout: dict[str, Any] | None = None
+    quarryId: uuid.UUID | None = None
 
 
 class RideCompleteOut(APIModel):
@@ -132,6 +138,8 @@ class AdventureSummary(APIModel):
     acBreakdown: list[dict[str, Any]] = []
     walletBalance: int | None = None
     worldObjects: dict[str, Any] | None = None
+    # The thing the outing was planned for; its fight leads the reckoning (0.6.1).
+    quarryId: str | None = None
     streak: dict[str, Any] | None = None
 
 

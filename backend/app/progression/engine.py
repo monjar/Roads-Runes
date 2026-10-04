@@ -106,6 +106,10 @@ class RideRewardInput:
     activity: str = "RIDE"
     # What was beaten, opened or found on the way: (kind, tier, bounty).
     claims: list[tuple[str, int, bool]] = field(default_factory=list)
+    # Effort is damage (world_objects/fight.py): half a monster's XP is paid by the
+    # share of its hold taken, on any outing that takes some, and half on the finish.
+    effort: bool = False
+    blows: list[tuple[int, bool, float]] = field(default_factory=list)
     sets_completed: int = 0
     story_arc_completed: bool = False
 
@@ -121,15 +125,24 @@ def claim_xp(kind: str, tier: int, bounty: bool = False) -> int:
     return int(round(xp * rules["bountyMultiplier"])) if bounty else xp
 
 
-def claim_lines(claims: list[tuple[str, int, bool]]) -> list[XPLine]:
+def claim_lines(claims: list[tuple[str, int, bool]], effort: bool = False) -> list[XPLine]:
     """One line per kind of thing, so the breakdown reads "two chests", not a list."""
     lines: list[XPLine] = []
     for kind, source in CLAIM_SOURCES.items():
         mine = [c for c in claims if c[0] == kind]
         xp = sum(claim_xp(*c) for c in mine)
+        if effort and kind == "MONSTER":
+            # The other half was paid blow by blow (BLOWS_LANDED).
+            xp = int(round(xp / 2))
         if xp:
             lines.append(XPLine(source, xp, {"count": len(mine)}))
     return lines
+
+
+def blow_lines(blows: list[tuple[int, bool, float]]) -> list[XPLine]:
+    """Half of each monster's XP, by the share of its hold this outing took."""
+    xp = int(round(sum(claim_xp("MONSTER", tier, bounty) / 2 * share for tier, bounty, share in blows)))
+    return [XPLine("BLOWS_LANDED", xp, {"count": len(blows)})] if xp else []
 
 
 def compute_ride_xp(inp: RideRewardInput) -> list[XPLine]:
@@ -192,7 +205,9 @@ def compute_ride_xp(inp: RideRewardInput) -> list[XPLine]:
         xp = min(cl["xp"] + int(extra * cl["perExtraHundredMeters"]), cl["maxXp"])
         lines.append(XPLine("CLIMB_COMPLETED", xp, {"gainMeters": inp.elevation_gain_meters}))
 
-    lines.extend(claim_lines(inp.claims))
+    lines.extend(claim_lines(inp.claims, inp.effort))
+    if inp.effort:
+        lines.extend(blow_lines(inp.blows))
 
     if inp.sets_completed:
         lines.append(XPLine("SET_COMPLETED", inp.sets_completed * rules["setCompleted"], {"sets": inp.sets_completed}))

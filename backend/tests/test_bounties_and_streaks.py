@@ -27,7 +27,9 @@ async def test_one_bounty_a_day_worth_double(explorer_client):
     bounty = bounties[0]
     assert bounty["kind"] == "MONSTER"
     assert bounty["rewardAC"] == 2 * world_objects.load_ac_rules()["monster"][str(bounty["tier"])]
-    assert bounty["expiresAt"].startswith((datetime.now(UTC).date() + timedelta(days=1)).isoformat()[:10])
+    # A day and a half to two days, not midnight: a midnight deadline pays for riding after dark.
+    ends = datetime.fromisoformat(bounty["expiresAt"].replace("Z", "+00:00"))
+    assert timedelta(hours=35) <= ends - datetime.now(UTC) <= timedelta(hours=48)
     assert (await c.get("/world/objects/bounty")).json()["id"] == bounty["id"]
 
     # Looking again today does not conjure a second one, even after this one is beaten.

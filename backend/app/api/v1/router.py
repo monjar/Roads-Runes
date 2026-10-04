@@ -20,6 +20,7 @@ from app.routing.router import router as routes_router
 from app.social.router import feed_router, friends_router, parties_router
 from app.users.router import router as users_router
 from app.world_objects.router import router as world_objects_router
+from app.world_objects.service import load_config as load_world_config
 
 api_router = APIRouter()
 
@@ -36,6 +37,9 @@ async def config(settings: SettingsDep) -> dict:
         "h3Resolution": settings.h3_resolution,
         "levels": {"max": max_level("overall"), "maxClass": max_level("class")},
         "environment": settings.environment,
+        # The fight's constants (world_objects/fight.py), so the phone folds the
+        # same fight as the server without a release to change a number.
+        "combat": {k: v for k, v in load_world_config()["combat"].items() if not k.startswith("_")},
     }
 
 

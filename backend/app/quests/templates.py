@@ -58,6 +58,9 @@ def templates_for(
     unlocked = unlocked or set()
     out = []
     for t in all_templates():
+        # A retired template is kept for quests already out, and never dealt again.
+        if t.get("retired"):
+            continue
         # A quest for anyone is a quest for this class too.
         if t["characterClass"] not in (character_class.upper(), ANY_CLASS):
             continue

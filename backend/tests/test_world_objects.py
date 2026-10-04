@@ -204,18 +204,25 @@ async def test_a_slay_quest_completes_on_the_kill(explorer_client, monkeypatch):
 
 
 async def test_a_lure_costs_coins_and_brings_company(explorer_client):
+    """A lamp left out at a place brings one thing there, and costs only if it does."""
     c = explorer_client
     await seed_discoveries()
     world_objects.forget_checks()
-    r = await c.post("/world/objects/lure", json={"latitude": ORIGIN[0], "longitude": ORIGIN[1]})
+    # Nowhere with a name near the middle of the river: nothing comes, nothing is taken.
+    r = await c.post("/world/objects/lure", json={"latitude": 51.5072, "longitude": -0.0400})
+    assert r.status_code == 409 and r.json()["error"]["code"] == "NOTHING_TO_LURE"
+    stave_hill = (51.4990, -0.0480)
+    r = await c.post("/world/objects/lure", json={"latitude": stave_hill[0], "longitude": stave_hill[1]})
     assert r.status_code == 409 and r.json()["error"]["code"] == "INSUFFICIENT_AC"
     me = (await c.get("/users/me")).json()
     async with get_session_factory()() as db:
         await economy.credit(db, uuid.UUID(me["id"]), 60, "ADJUSTMENT")
         await db.commit()
-    r = await c.post("/world/objects/lure", json={"latitude": ORIGIN[0], "longitude": ORIGIN[1]})
+    r = await c.post("/world/objects/lure", json={"latitude": stave_hill[0], "longitude": stave_hill[1]})
     assert r.status_code == 200, r.text
-    assert r.json(), "the lure brought nothing"
+    came = r.json()
+    assert len(came) == 1 and came[0]["kind"] == "MONSTER"
+    assert came[0]["anchorName"] == "Stave Hill"
     assert (await c.get("/wallet")).json()["balance"] == 10
 
 
@@ -546,3 +553,68 @@ async def test_every_creature_comes_with_its_species_and_its_face(explorer_clien
         assert m["monster"]["sigil"] == species["sigil"]
         # Tier 1 is the thing itself; tiers 2 and 3 are its elders, by name.
         assert m["name"] == catalog.name_at_tier(species, m["tier"])
+
+
+def test_a_creature_is_chosen_to_suit_its_place():
+    import random
+
+    from app.world_objects.spawner import Anchor, pick_species
+
+    monsters = load_config_monsters()
+    pond = Anchor("1", "Greenland Dock", "NATURE", 51.49, -0.04, None, tags={"natural": "water", "water": "dock"})
+    pub = Anchor("2", "The Ship", "PUB", 51.49, -0.04, None, tags={"amenity": "pub"})
+    rng = random.Random(1)
+    at_water = [pick_species(rng, pond, monsters)["family"] for _ in range(200)]
+    at_pub = [pick_species(rng, pub, monsters)["family"] for _ in range(200)]
+    assert at_water.count("WATER") > 120
+    assert at_pub.count("STREET") > 120
+
+
+def load_config_monsters():
+    return world_objects.load_config()["monsters"]
+
+
+def test_nothing_is_placed_at_a_memorial_a_church_or_anywhere_private():
+    from app.discoveries.sensitivity import is_sensitive
+
+    assert is_sensitive("Cenotaph", {"historic": "memorial"})
+    assert is_sensitive("St Mary's", {"amenity": "place_of_worship"})
+    assert is_sensitive("Nunhead Cemetery", {"leisure": "nature_reserve"})
+    assert is_sensitive("A garden", {"leisure": "garden", "access": "private"})
+    assert not is_sensitive("Southwark Park", {"leisure": "park"})
+
+
+async def test_the_spawner_leaves_sensitive_places_alone(explorer_client):
+    from app.discoveries.models import Discovery
+
+    await seed_discoveries()
+    async with get_session_factory()() as db:
+        db.add(
+            Discovery(
+                name="Rotherhithe War Memorial",
+                category="HISTORICAL",
+                latitude=ORIGIN[0] + 0.0004,
+                longitude=ORIGIN[1],
+                h3_index=None,
+                source="OSM",
+                osm_id="node/999",
+                moderation_status="APPROVED",
+                cycling_accessible=True,
+                tags={"historic": "memorial"},
+            )
+        )
+        await db.commit()
+    for o in await spawned(explorer_client):
+        assert o["anchorName"] != "Rotherhithe War Memorial"
+
+
+async def test_pace_is_never_dealt_and_new_monsters_carry_their_species(explorer_client):
+    await seed_discoveries()
+    for o in await spawned(explorer_client):
+        if o["kind"] != "MONSTER":
+            continue
+        assert all(m["method"] != "PACE" for m in o["monster"]["killMethods"])
+        async with get_session_factory()() as db:
+            row = await db.get(WorldObject, uuid.UUID(o["id"]))
+            species = row.payload["species"]
+        assert species["wants"] and species["minds"]

@@ -96,15 +96,15 @@
     {
       "slug": "the-iron-hours",
       "title": "The Iron Hours",
-      "description": "A Warrior's arc is not about places. It is about the hours: holding a pace, paying a hill what it asks, and staying on the bike after the interesting part is over.",
+      "description": "A Warrior's arc is not about places. It is about the hours: covering the distance, paying a hill what it asks, and staying out after the interesting part is over.",
       "characterClass": "WARRIOR",
       "minLevel": 2,
       "quests": [
         {
           "slug": "iron-hours-the-tempo",
-          "title": "The Tempo",
-          "description": "Not a sprint. A speed you can hold while you think about something else, held for long enough that it stops being comfortable.",
-          "templateId": "WARRIOR_STEADY_TEMPO"
+          "title": "The Long Haul",
+          "description": "No hills to hide behind and no shortcuts. Just the distance, at whatever pace keeps you going, and a little further than is comfortable.",
+          "templateId": "WARRIOR_LONG_HAUL"
         },
         {
           "slug": "iron-hours-the-hill-toll",
@@ -115,7 +115,7 @@
         {
           "slug": "iron-hours-the-hour-of-iron",
           "title": "The Hour of Iron",
-          "description": "The last one is only time. Stay out in it, keep turning the pedals, and come back having done the unremarkable thing well.",
+          "description": "The last one is only time. Stay out in it, keep going, and come back having done the unremarkable thing well.",
           "templateId": "WARRIOR_HOUR_OF_IRON"
         }
       ],

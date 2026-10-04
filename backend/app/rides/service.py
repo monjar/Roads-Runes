@@ -6,6 +6,8 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.characters.service import maybe_character
+from app.characters.sheet import build_sheet
 from app.core.activity import normalise
 from app.core.errors import NotFound, RideInvalidState
 from app.core.pagination import decode_cursor, encode_cursor
@@ -52,6 +54,8 @@ def ride_out(ride: Ride) -> RideOut:
         stravaActivityId=ride.strava_activity_id,
         stravaUploadStatus=ride.strava_upload_status,
         stravaError=ride.strava_error,
+        loadout=ride.loadout_snapshot,
+        quarryId=ride.quarry_id,
     )
 
 
@@ -77,7 +81,11 @@ async def create_ride(db: AsyncSession, user: User, payload: RideCreate) -> Ride
         quest_id=payload.questId,
         bike_id=payload.bikeId,
         route_id=payload.routeId,
+        quarry_id=payload.quarryId,
         visibility=visibility,
+        # What the character was as the ride began: the fight is judged against
+        # this, on the server and on the phone, whatever changes mid-ride.
+        loadout_snapshot=build_sheet(await maybe_character(db, user.id)).to_dict(),
     )
     db.add(ride)
     await db.flush()
@@ -206,6 +214,7 @@ async def summary(db: AsyncSession, user: User, ride: Ride) -> AdventureSummary 
         acBreakdown=result.get("acBreakdown", []),
         walletBalance=result.get("walletBalance"),
         worldObjects=result.get("worldObjects"),
+        quarryId=result.get("quarryId"),
         streak=result.get("streak"),
     )
 

@@ -73,6 +73,9 @@ class CharacterOut(APIModel):
     longestStreakDays: int = 0
     # True once an outing has counted today, so the app can say "keep it alive" or "done".
     streakActiveToday: bool = False
+    # The sheet a ride started now would be frozen with (characters/sheet.py), so an
+    # outing started offline folds the fight over the last one seen.
+    sheet: dict[str, Any] | None = None
 
 
 class ClassInfo(APIModel):

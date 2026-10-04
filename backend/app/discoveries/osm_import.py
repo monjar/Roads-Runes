@@ -35,7 +35,9 @@ TILES_PER_DEGREE = 10
 # Part of every tile key. Bump it when the query learns a new kind of place, and
 # tiles imported under the old query are read again on the next visit; `store`
 # skips what is already known, so the second pass only adds the new kinds.
-TILE_VERSION = "v2"
+# v3: kept the tags that say a place is a memorial, a church, a cemetery or private
+# (app/discoveries/sensitivity.py), so every tile is fetched again once.
+TILE_VERSION = "v3"
 RETRY_AFTER = timedelta(minutes=15)
 # Quest generation waits this long for the tile the rider is in; the import carries on after.
 FIRST_TILE_WAIT_SECONDS = 15.0
@@ -63,6 +65,15 @@ KEEP_TAGS = (
     "outdoor_seating",
     "stars",
     "route",
+    # What makes a place one the game must leave alone (app/discoveries/sensitivity.py).
+    "landuse",
+    "religion",
+    "memorial",
+    "building",
+    "cemetery",
+    "access",
+    "healthcare",
+    "artwork_type",
 )
 
 BBox = tuple[float, float, float, float]  # (south, west, north, east)
@@ -205,20 +216,29 @@ def parse_elements(elements: list[dict[str, Any]], resolution: int) -> list[dict
 
 
 async def store(db: AsyncSession, places: list[dict[str, Any]]) -> int:
-    """Adds the places not already known by OSM id; returns how many were new."""
+    """Adds the places not already known by OSM id; returns how many were new.
+
+    A place already known has its tags refreshed: a tile fetched again after the
+    kept tags grew (TILE_VERSION) must reach the places it fetched last time.
+    """
     ids = list({p["osm_id"] for p in places})
-    known: set[str] = set()
+    known: dict[str, Discovery] = {}
     for start in range(0, len(ids), 500):
         chunk = ids[start : start + 500]
-        known.update(
-            o for o in (await db.execute(select(Discovery.osm_id).where(Discovery.osm_id.in_(chunk)))).scalars() if o
-        )
+        for row in (await db.execute(select(Discovery).where(Discovery.osm_id.in_(chunk)))).scalars():
+            if row.osm_id:
+                known[row.osm_id] = row
     added = 0
     for place in places:
         if place["osm_id"] in known:
+            row = known[place["osm_id"]]
+            merged = {**(row.tags or {}), **(place.get("tags") or {})}
+            if merged != (row.tags or {}):
+                row.tags = merged
             continue
-        known.add(place["osm_id"])
-        db.add(Discovery(source="OSM", moderation_status="APPROVED", cycling_accessible=True, **place))
+        row = Discovery(source="OSM", moderation_status="APPROVED", cycling_accessible=True, **place)
+        known[place["osm_id"]] = row
+        db.add(row)
         added += 1
     await db.flush()
     return added

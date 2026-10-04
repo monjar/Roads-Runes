@@ -927,6 +927,8 @@
     },
     {
       "id": "WARRIOR_STEADY_TEMPO",
+      "_retired": "0.6.1: it asked for an average speed, and speed is never asked for (docs/PRODUCT_SPEC.md). Kept so quests already issued still resolve; never offered again.",
+      "retired": true,
       "characterClass": "WARRIOR",
       "questType": "COMPLETE_DISTANCE",
       "minLevel": 1,

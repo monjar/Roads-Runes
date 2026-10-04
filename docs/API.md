@@ -236,6 +236,14 @@ their map at least once) or `MET` (seen off, or loosened). A rune is `HELD` or
 placed from 0.6.0 carries `speciesId` in its payload, and its `name` is its
 elder's name at tiers 2 and 3.
 
+With `effort_combat` on (0.6.1) a monster's `monster` block gains `holdMax`,
+`holdLeft`, `wants`, `minds`, `rune`, `roadForm` and sometimes `unpassedDays`,
+and its `killMethods` is empty, so a phone from before 0.6.1 never judges a
+fight. A ride summary's `worldObjects.fights[]` reports each fight
+(`outcome` SEEN_OFF / LOOSENED / UNTOUCHED, `holdBefore`, `holdAfter`,
+`damage` by kind, `finisher`, `wouldHaveDone`), `missed[].reason` gains
+`LOOSENED` and `UNTOUCHED`, and the XP breakdown gains `BLOWS_LANDED`.
+
 ---
 
 ## World
@@ -570,11 +578,20 @@ when no way can be found, `404` for a route that is not the caller's.
   "visibility": "PRIVATE|FRIENDS|PUBLIC",
   "healthKitWorkoutId": null,
   "pointCount": 1800,
-  "createdAt": "..."
+  "createdAt": "...",
+  "loadout": {"version": 1, "characterClass": "EXPLORER", "overallLevel": 8, "classLevel": 6,
+              "damagePct": {"GROUND": 0.3}, "runeThreshold": 0.22, "runeReachMeters": 1000,
+              "coinPct": {}, "xpPct": {}},
+  "quarryId": "uuid|null"
 }
 ```
 
-- `POST /rides` `{"clientRideId": "uuid", "startedAt": "...", "questId": null, "bikeId": null, "routeId": null, "title": null}` → `Ride`. Duplicate `clientRideId` returns the existing ride (idempotent). `title` (≤120 chars) names a custom adventure — a ride planned from a free-text request rather than a quest; quest rides are named by the quest.
+`loadout` (0.6.1) is the character sheet frozen when the ride was created; the
+fight is judged against it (docs/COMBAT.md). `Character.sheet` carries the
+same shape, for an outing started offline. `quarryId` is the world object the
+outing was planned for.
+
+- `POST /rides` `{"clientRideId": "uuid", "startedAt": "...", "questId": null, "bikeId": null, "routeId": null, "quarryId": null, "title": null}` → `Ride`. Duplicate `clientRideId` returns the existing ride (idempotent). `title` (≤120 chars) names a custom adventure — a ride planned from a free-text request rather than a quest; quest rides are named by the quest.
 - `POST /rides/{id}/points` — batched during the ride when network allows (optional; the complete call may carry everything):
 
 ```json
@@ -721,4 +738,4 @@ Parties:
 ## Meta
 
 - `GET /health` → `{"status": "ok", "version": "..."}`
-- `GET /config` → `{"featureFlags": {...}, "h3Resolution": 9, "levels": {"max": 50, "maxClass": 50}, "environment": "development"}`
+- `GET /config` → `{"featureFlags": {...}, "h3Resolution": 9, "levels": {"max": 50, "maxClass": 50}, "environment": "development", "combat": {...}}`. `combat` (0.6.1) holds the fight's constants from `world_objects.json`; see `docs/COMBAT.md`.

@@ -7,7 +7,7 @@ import json
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -17,19 +17,22 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.activity import SPEED_CAP_MPS, normalise
+from app.core.config import get_settings
 from app.core.errors import Conflict, NotFound
+from app.core.feature_flags import is_enabled
 from app.core.geo import haversine_m
 from app.core.logging import get_logger
 from app.core.security import utcnow
 from app.db.spatial import bbox_filter
+from app.discoveries.sensitivity import is_sensitive
 from app.discoveries.service import nearby as discoveries_nearby
 from app.economy import service as economy
 from app.economy.rules import load_ac_rules
 from app.exploration.cells import cell_center, cell_for, frontier_cells
-from app.exploration.service import known_cells
+from app.exploration.service import cells_last_passed, known_cells
 from app.lore import catalog as lore
 from app.rides.validation import CleanPoint
-from app.world_objects import claims
+from app.world_objects import claims, fight
 from app.world_objects.models import WorldObject
 from app.world_objects.schemas import KillMethodOut, MonsterOut, WorldObjectOut
 from app.world_objects.spawner import Anchor, SpawnPlan, day_seed, plan_spawns, tile_of
@@ -71,6 +74,12 @@ class ClaimOutcome:
     owned: dict[str, set[str]] = field(default_factory=dict)
     # Sets this ride finished: [{"id", "name", "bonusAC"}].
     sets_completed: list[dict[str, Any]] = field(default_factory=list)
+    # Effort is damage (fight.py): one report per thing this ride came near, and
+    # what each blow was worth in XP terms: (tier, bounty, share of hold taken).
+    effort: bool = False
+    fights: list[dict[str, Any]] = field(default_factory=list)
+    blows: list[tuple[int, bool, float]] = field(default_factory=list)
+    flags: list[str] = field(default_factory=list)
 
     def counted_of(self, kind: str) -> list[WorldObject]:
         return [o for o in [*self.claimed, *self.tapped] if o.kind == kind]
@@ -101,6 +110,7 @@ class ClaimOutcome:
                 for o, reason in self.missed
             ],
             "setsCompleted": self.sets_completed,
+            **({"fights": self.fights} if self.effort else {}),
         }
 
 
@@ -170,6 +180,18 @@ def to_out(obj: WorldObject, owned: dict[str, set[str]] | None = None) -> WorldO
             speciesId=species_id,
             sigil=dict(species["sigil"]) if species else None,
         )
+        if is_enabled(get_settings(), "effort_combat"):
+            # A phone from before effort is damage can never call a win: it is given
+            # no old-style way to beat anything, and judges nothing.
+            foe = foe_of(obj)
+            monster.killMethods = []
+            monster.holdMax = round(foe.hold_max)
+            monster.holdLeft = round(foe.hold_before)
+            monster.wants = list(foe.wants)
+            monster.minds = list(foe.minds)
+            monster.roadForm = foe.road_form
+            monster.rune = (species or {}).get("rune")
+            monster.unpassedDays = payload.get("unpassedDays")
     return WorldObjectOut(
         id=obj.id,
         kind=obj.kind,
@@ -341,9 +363,31 @@ async def _ensure_spawned(
     if not force and key in _checked:
         return [o for o in live if haversine_m(latitude, longitude, o.latitude, o.longitude) <= radius_m]
     if len(live) < int(cfg["maxLiveInRadius"]):
+        # Nearest first, and enough of them that the outer rings are real: with 300,
+        # a city's places ran out a kilometre from the door.
+        nearby = await discoveries_nearby(db, latitude, longitude, spawn_radius, limit=900)
+        # Nothing is placed at a memorial, a grave, a place of worship, a hospital
+        # or anywhere private, and anything already there moves on.
+        sensitive = {d.id for d in nearby if is_sensitive(d.name, d.tags)}
+        for obj in live:
+            if obj.anchor_discovery_id in sensitive and obj.status == "SPAWNED":
+                obj.status = "EXPIRED"
+        live = [o for o in live if o.status == "SPAWNED"]
+        last_passed = await cells_last_passed(db, user_id)
+        today = utcnow()
         anchors = [
-            Anchor(str(d.id), d.name, d.category, d.latitude, d.longitude, d.h3_index)
-            for d in await discoveries_nearby(db, latitude, longitude, spawn_radius, limit=300)
+            Anchor(
+                str(d.id),
+                d.name,
+                d.category,
+                d.latitude,
+                d.longitude,
+                d.h3_index,
+                tags=dict(d.tags or {}),
+                unpassed_days=(today - last_passed[d.h3_index]).days if d.h3_index in last_passed else None,
+            )
+            for d in nearby
+            if d.id not in sensitive
         ]
         known = await known_cells(db, user_id)
         explored = {h for h, s in known.items() if s == "EXPLORED"}
@@ -383,8 +427,12 @@ async def _ensure_spawned(
                 centre=(latitude, longitude),
                 bounty=True,
             )
-            end_of_day = datetime.combine(utcnow().date() + timedelta(days=1), datetime.min.time(), tzinfo=UTC)
-            live += await _persist(db, user_id, bounty, utcnow(), 0.0, settings.h3_resolution, expires_at=end_of_day)
+            # A day and a half to two days from now, not midnight: a midnight deadline
+            # pays for riding after dark, and the server's midnight is UTC.
+            low, high = cfg.get("combat", {}).get("bountyLifeHours", [36, 48])
+            life = low + (int(bounty_seed[:8], 16) % 1000) / 1000 * (high - low)
+            bounty_ends = utcnow() + timedelta(hours=life)
+            live += await _persist(db, user_id, bounty, utcnow(), 0.0, settings.h3_resolution, expires_at=bounty_ends)
         # The bounty has taken a place; the rest must not land on top of it.
         taken = {str(o.anchor_discovery_id) for o in live if o.anchor_discovery_id}
         occupied = [(o.latitude, o.longitude) for o in live]
@@ -428,6 +476,9 @@ async def _ensure_spawned(
     return [o for o in live if haversine_m(latitude, longitude, o.latitude, o.longitude) <= radius_m]
 
 
+LURE_REACH_M = 250.0
+
+
 async def lure(
     db: AsyncSession,
     settings: Any,
@@ -438,22 +489,197 @@ async def lure(
     character_class: str,
     activity: str,
 ) -> list[WorldObject]:
-    """Coins for company: spawns a fresh set now, whatever the day's seed already gave."""
+    """A lamp left out: one thing comes to the place the player picked.
+
+    It goes to the nearest real place within reach of that spot (a park, a pub, a
+    landmark), quota aside, and the coins are taken only if something comes. It
+    used to take the coins first and then top up to quota, which on a full day
+    placed nothing at all.
+    """
+    cfg = load_config()
+    spacing = float(cfg["minSpacingMeters"])
+    live = await live_objects(db, user_id, latitude, longitude, LURE_REACH_M + spacing)
+    candidates = [
+        d
+        for d in await discoveries_nearby(db, latitude, longitude, LURE_REACH_M, limit=40)
+        if not is_sensitive(d.name, d.tags)
+        and all(haversine_m(d.latitude, d.longitude, o.latitude, o.longitude) >= spacing for o in live)
+    ]
+    if not candidates:
+        raise Conflict(
+            "Nothing would come to that spot. Try a park, a pub or somewhere with a name.",
+            code="NOTHING_TO_LURE",
+        )
     cost = int(load_ac_rules()["lure"]["costAC"])
     await economy.debit(db, user_id, cost, "LURE", payload={"latitude": latitude, "longitude": longitude})
-    suffix = f"lure:{utcnow().timestamp():.0f}"
-    return await ensure_spawned(
-        db,
-        settings,
-        user_id,
-        latitude,
-        longitude,
-        float(load_config()["spawnRadiusMeters"]),
-        character_class=character_class,
-        activity=activity,
-        seed_suffix=suffix,
-        force=True,
+    place = candidates[0]
+    anchor = Anchor(
+        str(place.id),
+        place.name,
+        place.category,
+        place.latitude,
+        place.longitude,
+        place.h3_index,
+        tags=dict(place.tags or {}),
     )
+    seed = day_seed(
+        user_id, utcnow().date().isoformat(), tile_of(latitude, longitude), f"lure:{utcnow().timestamp():.0f}"
+    )
+    plans = plan_spawns(
+        seed=seed,
+        kind="MONSTER",
+        indices=[0],
+        anchors=[anchor],
+        taken_anchor_ids=set(),
+        occupied=[],
+        cfg=cfg,
+        ac_rules=load_ac_rules(),
+        frontier=set(),
+        known={},
+        character_class=character_class,
+        activity=normalise(activity),
+        centre=None,
+    )
+    return await _persist(db, user_id, plans, utcnow(), float(cfg["expiryDays"]), settings.h3_resolution)
+
+
+# --- effort is damage -----------------------------------------------------------
+
+
+def combat_config() -> dict[str, Any]:
+    return load_config()["combat"]
+
+
+def wounds_of(obj: WorldObject) -> dict[str, dict[str, Any]]:
+    """What each ride has taken off it, by ride id."""
+    return dict(((obj.payload or {}).get("wounds") or {}).get("rides") or {})
+
+
+def foe_of(obj: WorldObject, *, excluding_ride: str | None = None, day: str | None = None) -> fight.Foe:
+    """The thing as the fight sees it. Rows from before species had blocks are
+    read from the catalogue by name."""
+    payload = obj.payload or {}
+    block = payload.get("species") or {}
+    species = lore.species_by_id().get(lore.species_of(payload) or "") or {}
+    wants = tuple(block.get("wants") or species.get("wants") or ())
+    minds = tuple(block.get("minds") or species.get("minds") or ())
+    form = block.get("roadForm")
+    if form is None and species.get("rune"):
+        form = (lore.runes_by_id().get(species["rune"]) or {}).get("roadForm")
+    cfg = combat_config()
+    hold_max = float(payload.get("holdMax") or cfg["holdByTier"].get(str(obj.tier), obj.tier * 100))
+    rides = {k: v for k, v in wounds_of(obj).items() if k != excluding_ride}
+    taken = sum(float(w.get("taken", 0)) for w in rides.values())
+    today = [w for w in rides.values() if day and w.get("day") == day]
+    return fight.Foe(
+        latitude=obj.latitude,
+        longitude=obj.longitude,
+        hold_max=hold_max,
+        hold_before=max(0.0, hold_max - taken),
+        wants=wants,
+        minds=minds,
+        road_form=form,
+        rune_today=any(w.get("runeLanded") for w in today),
+        word_today=any(w.get("wordLanded") for w in today),
+    )
+
+
+async def window_objects(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    latitude: float,
+    longitude: float,
+    radius_m: float,
+    started: datetime,
+    ended: datetime,
+) -> list[WorldObject]:
+    """What was out there while the ride was: placed before it ended and not gone
+    before it began, whatever its status now. A late upload is judged against the
+    world it rode through, not the one there now."""
+    stmt = select(WorldObject).where(
+        WorldObject.user_id == user_id,
+        WorldObject.status.in_(["SPAWNED", "EXPIRED"]),
+        WorldObject.spawned_at <= ended,
+        WorldObject.expires_at >= started,
+    )
+    rows = (await db.execute(bbox_filter(stmt, WorldObject, latitude, longitude, radius_m))).scalars().all()
+    return [r for r in rows if haversine_m(latitude, longitude, r.latitude, r.longitude) <= radius_m]
+
+
+def _fight_points(points: list[CleanPoint], cfg: dict[str, Any]) -> list[fight.FightPoint]:
+    limit = float(cfg["maxAccuracyMeters"])
+    return [
+        fight.FightPoint(p.latitude, p.longitude, p.altitude, ok=p.accuracy is None or p.accuracy <= limit)
+        for p in points
+    ]
+
+
+def _word_indices(points: list[CleanPoint], events: list[dict[str, Any]], cfg: dict[str, Any]) -> list[int]:
+    """Where on the trace a note of a few words was written: the fix nearest the
+    moment it was written, so the server, not the phone, says where that was."""
+    out = []
+    for event in events:
+        note = str(event.get("note") or "").strip()
+        if len(note) < int(cfg["wordMinChars"]):
+            continue
+        when = event.get("occurredAt")
+        try:
+            moment = datetime.fromisoformat(str(when).replace("Z", "+00:00")) if when else None
+        except ValueError:
+            moment = None
+        if moment is None:
+            continue
+        nearest = min(range(len(points)), key=lambda i: abs((points[i].timestamp - moment).total_seconds()))
+        out.append(nearest)
+    return out
+
+
+def _made_good_m(points: list[CleanPoint]) -> float:
+    return sum(
+        haversine_m(a.latitude, a.longitude, b.latitude, b.longitude) for a, b in zip(points, points[1:], strict=False)
+    )
+
+
+async def _overlaps_another(db: AsyncSession, ride: Any) -> bool:
+    """A second recording of the same time loosens nothing: one outing, one count."""
+    from app.rides.models import Ride
+
+    if ride.ended_at is None:
+        return False
+    other = await db.scalar(
+        select(Ride.id).where(
+            Ride.user_id == ride.user_id,
+            Ride.id != ride.id,
+            Ride.status == "PROCESSED",
+            Ride.started_at < ride.ended_at,
+            Ride.ended_at > ride.started_at,
+        )
+    )
+    return other is not None
+
+
+def _wound(obj: WorldObject, ride_id: str, day: str, report: fight.FightReport, ended: datetime) -> None:
+    """Writes what this ride took off it. Keyed by ride, so a rerun replaces rather
+    than adds, and reassigned, because the JSON column does not see edits in place."""
+    cfg = combat_config()
+    rides = wounds_of(obj)
+    rides[ride_id] = {
+        "day": day,
+        "taken": round(report.taken, 2),
+        "damage": {k: round(v, 2) for k, v in report.damage.items()},
+        "runeLanded": report.rune_landed,
+        "wordLanded": report.word_landed,
+    }
+    obj.payload = {**(obj.payload or {}), "wounds": {"rides": rides}}
+    # A loosened thing stays a little longer, out of stubbornness: two days from
+    # this outing, never more than a week from when it first appeared.
+    stays = ended + timedelta(days=float(cfg["loosenedStaysDays"]))
+    cap = obj.spawned_at + timedelta(days=float(cfg["maxLifeDays"]))
+    obj.expires_at = max(obj.expires_at, min(stays, cap))
+    if obj.bounty:
+        # A loosened bounty stays on as an ordinary thing at the ordinary purse.
+        obj.bounty = False
+        obj.reward_ac = int(load_ac_rules()["monster"][str(obj.tier)])
 
 
 # --- claiming ------------------------------------------------------------------
@@ -469,9 +695,16 @@ async def claim_from_ride(
     *,
     resolution: int,
     ended: datetime,
+    effort: bool = False,
+    new_cell_indices: list[int] | None = None,
+    sheet: Any = None,
 ) -> ClaimOutcome:
-    """Everything the trace passed or beat. Chests and pieces are passed; monsters are fought."""
-    outcome = ClaimOutcome()
+    """Everything the trace passed or beat. Chests and pieces are passed; monsters are fought.
+
+    With `effort` (flag effort_combat) a monster is fought by effort over the outing
+    (fight.py), and is loosened or seen off; without it, the old pass/fail check.
+    """
+    outcome = ClaimOutcome(effort=effort)
     if len(points) < 2:
         return outcome
     cfg = load_config()
@@ -479,7 +712,12 @@ async def claim_from_ride(
     lons = [p.longitude for p in points]
     centre_lat, centre_lon = (min(lats) + max(lats)) / 2, (min(lons) + max(lons)) / 2
     reach = max(haversine_m(centre_lat, centre_lon, lat, lon) for lat, lon in zip(lats, lons, strict=True)) + 1200
-    live = await live_objects(db, ride.user_id, centre_lat, centre_lon, reach)
+    if effort:
+        started = getattr(ride, "started_at", None) or ended
+        live = await window_objects(db, ride.user_id, centre_lat, centre_lon, reach, started, ended)
+        live = [o for o in live if not (o.kind != "MONSTER" and o.status != "SPAWNED")]
+    else:
+        live = await live_objects(db, ride.user_id, centre_lat, centre_lon, reach)
     coords = [(p.latitude, p.longitude) for p in points]
     activity = normalise(ride.activity)
     held = await pieces_owned(db, ride.user_id)
@@ -489,6 +727,9 @@ async def claim_from_ride(
             if distance <= float(cfg["claimRadiusMeters"][obj.kind]) * 1.25:
                 _claim(obj, ride, ended, {"method": "PASS", "distanceMeters": round(distance, 1)})
                 outcome.claimed.append(obj)
+            continue
+        if effort:
+            # Fought below, all together, once the cheap work is done.
             continue
         if distance > float(cfg["monsterNearMeters"]):
             outcome.missed.append((obj, "NOT_NEAR"))
@@ -502,10 +743,110 @@ async def claim_from_ride(
         else:
             _claim(obj, ride, ended, verdict)
             outcome.claimed.append(obj)
+    if effort:
+        await _fight_by_effort(
+            db,
+            ride,
+            outcome,
+            [o for o in live if o.kind == "MONSTER"],
+            points,
+            coords,
+            encounter_events,
+            new_cell_indices or [],
+            sheet,
+            ended,
+        )
     await db.flush()
     outcome.owned = await pieces_owned(db, ride.user_id)
     outcome.sets_completed = newly_completed(held, outcome.owned)
     return outcome
+
+
+async def _fight_by_effort(
+    db: AsyncSession,
+    ride: Any,
+    outcome: ClaimOutcome,
+    monsters: list[WorldObject],
+    points: list[CleanPoint],
+    coords: list[tuple[float, float]],
+    events: list[dict[str, Any]],
+    new_cell_indices: list[int],
+    sheet: Any,
+    ended: datetime,
+) -> None:
+    from app.characters.sheet import CharacterSheet
+
+    cfg = combat_config()
+    sheet = sheet or CharacterSheet.neutral()
+    # An outing too short to count, or a second recording of the same time, loosens nothing.
+    if _made_good_m(points) < float(cfg["minOutingMeters"]) or await _overlaps_another(db, ride):
+        outcome.missed.extend((m, "NOT_NEAR") for m in monsters if m.status == "SPAWNED")
+        return
+    fight_points = _fight_points(points, cfg)
+    words = _word_indices(points, events, cfg)
+    ride_id = str(getattr(ride, "id", ""))
+    day = ended.date().isoformat()
+    activity = normalise(getattr(ride, "activity", "RIDE"))
+    for obj in monsters:
+        try:
+            foe = foe_of(obj, excluding_ride=ride_id, day=day)
+            hit = None
+            if foe.road_form and not foe.rune_today:
+                match = claims.match_rune(
+                    coords,
+                    (obj.latitude, obj.longitude),
+                    threshold=sheet.rune_threshold,
+                    search_radius_m=sheet.rune_reach_m,
+                    min_length_m=float(cfg.get("runeMinLengthMeters", 300)),
+                    max_length_m=float(cfg.get("runeMaxLengthMeters", 4000)),
+                )
+                if match is not None:
+                    hit = fight.RuneHit(match.shape, match.end)
+            report = fight.resolve(
+                fight_points,
+                foe,
+                activity=activity,
+                damage_pct=sheet.damage_pct,
+                cfg=cfg,
+                new_cell_indices=new_cell_indices,
+                rune_hit=hit,
+                word_indices=words,
+            )
+        except Exception as exc:  # noqa: BLE001 - one bad fight is a miss, never a lost outing
+            log.error("fight_failed", ride_id=ride_id, object_id=str(obj.id), error=str(exc)[:200])
+            if "FIGHT_ERROR" not in outcome.flags:
+                outcome.flags.append("FIGHT_ERROR")
+            continue
+        if report.outcome == "NOT_NEAR":
+            if obj.status == "SPAWNED":
+                outcome.missed.append((obj, "NOT_NEAR"))
+            continue
+        share = min(1.0, report.taken / max(1.0, report.hold_max))
+        if share > 0:
+            outcome.blows.append((obj.tier, bool(obj.bounty), share))
+        outcome.fights.append(
+            {
+                "id": str(obj.id),
+                "name": obj.payload.get("name"),
+                "speciesId": lore.species_of(obj.payload),
+                "tier": obj.tier,
+                "bounty": bool(obj.bounty),
+                **report.to_dict(),
+                "expiresAt": obj.expires_at.isoformat(),
+            }
+        )
+        if report.outcome == "SEEN_OFF":
+            _wound(obj, ride_id, day, report, ended)
+            if obj.status == "SPAWNED":
+                _claim(obj, ride, ended, {"method": "EFFORT", "finisher": report.finisher, **report.to_dict()})
+                outcome.claimed.append(obj)
+        elif report.taken >= 1:
+            _wound(obj, ride_id, day, report, ended)
+            outcome.fights[-1]["expiresAt"] = obj.expires_at.isoformat()
+            if obj.status == "SPAWNED":
+                outcome.missed.append((obj, "LOOSENED"))
+        elif obj.status == "SPAWNED":
+            outcome.missed.append((obj, "UNTOUCHED"))
 
 
 def _claim(obj: WorldObject, ride: Any | None, ended: datetime, detail: dict[str, Any]) -> None:

@@ -32,7 +32,7 @@ from app.quests.generator import GeneratedQuest, GenerationContext, POICandidate
 from app.quests.models import QuestInstance, QuestObjective, QuestProgressEvent
 from app.quests.schemas import ObjectiveEventIn, ObjectiveOut, ObjectiveProgress, QuestOut
 from app.quests.state_machine import assert_transition
-from app.quests.templates import ANY_CLASS
+from app.quests.templates import ANY_CLASS, all_templates
 from app.users.models import User
 from app.world_objects import service as world_objects
 from app.world_objects.models import WorldObject
@@ -472,6 +472,30 @@ async def retire_orphaned(db: AsyncSession, user: User) -> int:
     return retired
 
 
+async def retire_retired_templates(db: AsyncSession, user: User) -> int:
+    """A quest from a template that is no longer dealt (the Tempo, which asked for a
+    speed) leaves the board; one already being ridden still resolves."""
+    retired_ids = {t["id"] for t in all_templates() if t.get("retired")}
+    if not retired_ids:
+        return 0
+    rows = (
+        await db.execute(
+            select(QuestInstance).where(
+                QuestInstance.user_id == user.id,
+                QuestInstance.status.in_(["AVAILABLE", "ACCEPTED"]),
+                QuestInstance.template_id.in_(retired_ids),
+            )
+        )
+    ).scalars()
+    retired = 0
+    for quest in rows:
+        quest.status = "EXPIRED"
+        retired += 1
+    if retired:
+        await db.flush()
+    return retired
+
+
 async def ensure_available(
     db: AsyncSession,
     settings: Settings,
@@ -486,6 +510,7 @@ async def ensure_available(
     await retire_duplicates(db, user, latitude, longitude)
     await retire_unreachable(db, user, latitude, longitude)
     await retire_orphaned(db, user)
+    await retire_retired_templates(db, user)
     available = await list_quests(db, user, "AVAILABLE", latitude, longitude, 20)
     if len(available) < minimum:
         await generate_quests(

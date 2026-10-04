@@ -15,9 +15,11 @@ from typing import Any
 
 from app.core.activity import ACTIVITIES, normalise
 from app.core.geo import haversine_m
-from app.lore.catalog import flavour_at_tier, name_at_tier
+from app.lore.catalog import flavour_at_tier, name_at_tier, runes_by_id
 
 MINUTE = 60
+# A place not passed in this many days is somewhere things settle.
+STALE_DAYS = 30
 
 
 @dataclass
@@ -28,6 +30,11 @@ class Anchor:
     latitude: float
     longitude: float
     h3_index: str | None
+    # What OpenStreetMap says the place is: water, a park, a ruin. A creature is
+    # chosen to suit it.
+    tags: dict[str, Any] = field(default_factory=dict)
+    # Days since the player last passed through this place's cell, if they ever have.
+    unpassed_days: int | None = None
 
 
 @dataclass
@@ -55,7 +62,14 @@ def _pace_text(seconds_per_km: float) -> str:
 
 
 def resolve_method(
-    method: str, tier: int, cfg: dict[str, Any], *, character_class: str, activity: str, rng: random.Random
+    method: str,
+    tier: int,
+    cfg: dict[str, Any],
+    *,
+    character_class: str,
+    activity: str,
+    rng: random.Random,
+    shape: str | None = None,
 ) -> dict[str, Any]:
     """One way to beat a monster with the numbers already worked out for this player."""
     rules = cfg["killMethods"][method]
@@ -75,7 +89,8 @@ def resolve_method(
             "hint": f"Cover {window} m at {_pace_text(paces[activity])} or faster within a kilometre of it.",
         }
     if method == "RUNE":
-        shape = rng.choice(rules["shapes"])
+        # Its own rune's shape where it has one, so both ways of judging agree.
+        shape = shape if shape in rules["shapes"] else rng.choice(rules["shapes"])
         threshold = float(rules.get("classThreshold", {}).get(character_class, rules["scoreThreshold"]))
         return {
             "method": "RUNE",
@@ -154,28 +169,44 @@ def plan_spawns(
             break
         # A weighting was not enough: in a city most places are a mile off, so most
         # spawns were too. Each slot belongs to a ring, and widens only if it is empty.
-        pool = _in_ring(pool, rings[position % len(rings)], centre, cfg)
+        pool = _in_ring(pool, rings[position % len(rings)], centre, cfg, _ring_scale(kind, activity, cfg))
         weights = [1.0 + _appeal(a, kind, frontier, known) + _nearness(a, centre, cfg) for a in pool]
         anchor = rng.choices(pool, weights=weights, k=1)[0]
         used.append((anchor.latitude, anchor.longitude))
         tier = rng.choices([1, 2, 3], weights=cfg["tierWeights"], k=1)[0]
         object_seed = f"{seed}:{kind}:{index}"
         if kind == "MONSTER":
-            monster = rng.choice(cfg["monsters"])
+            # The place first, then what would live there: a Tide Serpent at a pub
+            # was a random draw, and the codex now says where each keeps.
+            monster = pick_species(rng, anchor, cfg["monsters"])
+            form = species_road_form(monster)
             methods = _pick_methods(rng, cfg)
             reward = int(ac_rules["monster"][str(tier)]) * (int(ac_rules["bountyMultiplier"]) if bounty else 1)
+            hold = int(cfg.get("combat", {}).get("holdByTier", {}).get(str(tier), tier * 100))
             payload = {
                 # Tier 1 is the thing itself; tiers 2 and 3 are its elders, by name.
                 "name": name_at_tier(monster, tier) if monster.get("elders") else monster["name"],
                 "flavour": flavour_at_tier(monster, tier) if monster.get("elders") else monster["flavour"],
                 "speciesId": monster.get("id"),
                 "anchorName": anchor.name,
-                "hp": tier * 100,
+                "hp": hold,
+                # Effort is damage (fight.py): what it wants, what it shrugs at, its rune's shape.
+                "species": {
+                    "wants": list(monster.get("wants", [])),
+                    "minds": list(monster.get("minds", [])),
+                    "roadForm": form,
+                },
+                # The old pass/fail check, kept so a phone from before effort_combat (and
+                # the server with the flag off) has something true to judge by. Never PACE.
                 "killMethods": [
-                    resolve_method(m, tier, cfg, character_class=character_class, activity=activity, rng=rng)
+                    resolve_method(
+                        m, tier, cfg, character_class=character_class, activity=activity, rng=rng, shape=form
+                    )
                     for m in methods
                 ],
             }
+            if anchor.unpassed_days is not None:
+                payload["unpassedDays"] = anchor.unpassed_days
         elif kind == "CHEST":
             reward = int(ac_rules["chest"][str(tier)])
             payload = {"name": ("Old", "Iron", "Gilded")[tier - 1] + " chest", "anchorName": anchor.name}
@@ -193,19 +224,60 @@ def plan_spawns(
     return plans
 
 
+# Speed is never asked for (docs/PRODUCT_SPEC.md): PACE is no longer dealt.
+RETIRED_METHODS = {"PACE"}
+
+
 def _pick_methods(rng: random.Random, cfg: dict[str, Any]) -> list[str]:
     """Two ways in, one of them always beatable without a camera or a Scribe."""
-    physical = ["PACE", "CLIMB", "EXPLORE"]
+    physical = ["CLIMB", "EXPLORE"]
     first = rng.choice(physical)
-    others = [m for m in cfg["killMethods"] if m != first]
+    others = [m for m in cfg["killMethods"] if m != first and m not in RETIRED_METHODS]
     return [first, rng.choice(others)]
 
 
-def _in_ring(pool: list[Anchor], ring: str, centre: tuple[float, float] | None, cfg: dict[str, Any]) -> list[Anchor]:
+def _tag_matches(habitat_tags: dict[str, list[str]], tags: dict[str, Any]) -> bool:
+    for key, values in habitat_tags.items():
+        if key in tags and ("*" in values or str(tags[key]) in values):
+            return True
+    return False
+
+
+def species_weight(species: dict[str, Any], anchor: Anchor) -> float:
+    """How well a creature suits a place: its tags, then its kind of place, then anywhere."""
+    habitat = species.get("habitat") or {}
+    if _tag_matches(habitat.get("tags") or {}, anchor.tags or {}):
+        return 6.0
+    if anchor.category in (habitat.get("categories") or []):
+        return 3.0
+    # The odd one turns up lost, about one time in four.
+    return 0.2
+
+
+def pick_species(rng: random.Random, anchor: Anchor, monsters: list[dict[str, Any]]) -> dict[str, Any]:
+    return rng.choices(monsters, weights=[species_weight(m, anchor) for m in monsters], k=1)[0]
+
+
+def species_road_form(species: dict[str, Any]) -> str | None:
+    rune = runes_by_id().get(species.get("rune") or "")
+    return rune.get("roadForm") if rune else None
+
+
+def _ring_scale(kind: str, activity: str, cfg: dict[str, Any]) -> float:
+    """A creature's rings widen with how far the player goes: a ride passes more
+    ground than a walk, and a monster on the doorstep is met by every outing."""
+    if kind != "MONSTER":
+        return 1.0
+    return float(cfg.get("monsterRingScale", {}).get(normalise(activity), 1.0))
+
+
+def _in_ring(
+    pool: list[Anchor], ring: str, centre: tuple[float, float] | None, cfg: dict[str, Any], scale: float = 1.0
+) -> list[Anchor]:
     """The places within this slot's ring; the next ring out if there are none."""
     if centre is None or ring == "anywhere":
         return pool
-    limits = [float(cfg.get("nearMeters", 700)), float(cfg.get("walkableMeters", 1800))]
+    limits = [float(cfg.get("nearMeters", 700)) * scale, float(cfg.get("walkableMeters", 1800)) * scale]
     for limit in limits if ring == "near" else limits[1:]:
         inside = [a for a in pool if haversine_m(centre[0], centre[1], a.latitude, a.longitude) <= limit]
         if inside:
@@ -232,6 +304,10 @@ def _appeal(anchor: Anchor, kind: str, frontier: set[str], known: dict[str, str]
         if cell in frontier:
             score += 3.0
         elif cell and cell not in known:
+            score += 2.0
+        # Things settle where nobody is paying attention: ground the player once
+        # read and has not passed in a month.
+        if anchor.unpassed_days is not None and anchor.unpassed_days >= STALE_DAYS:
             score += 2.0
     if kind == "CHEST" and anchor.category in ("NATURE", "VIEWPOINT", "HISTORICAL"):
         score += 1.0

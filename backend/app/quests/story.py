@@ -73,6 +73,11 @@ def load_arcs() -> list[dict[str, Any]]:
             seen_quests.add(step["slug"])
             template = templates.get(step["templateId"])
             assert template, f"{step['slug']} names a template nobody has: {step['templateId']}"
+            assert not template.get("retired"), f"{step['slug']} is built on a retired template"
+            # Speed is never asked for: no step may rest on an average-speed objective.
+            assert not any(o.get("type") == "SUSTAIN_SPEED" for o in template.get("objectives", [])), (
+                f"{step['slug']} asks for a speed"
+            )
             owner = template["characterClass"]
             assert owner in (ANY_CLASS, character_class), (
                 f"{step['slug']} is in a {character_class or 'open'} arc but its template is {owner}'s"

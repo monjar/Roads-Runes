@@ -23,6 +23,16 @@ class MonsterOut(APIModel):
     # found by name for anything placed before species had ids.
     speciesId: str | None = None
     sigil: dict[str, str] | None = None
+    # Effort is damage (0.6.1, flag effort_combat): its hold, what it wants and
+    # shrugs at (ROAD, GROUND, CLIMB, RUNE, WORD), and its rune and road form.
+    holdMax: int | None = None
+    holdLeft: int | None = None
+    wants: list[str] | None = None
+    minds: list[str] | None = None
+    rune: str | None = None
+    roadForm: str | None = None
+    # Days since the player last passed its place, when they have and it was a while.
+    unpassedDays: int | None = None
 
 
 class WorldObjectOut(APIModel):

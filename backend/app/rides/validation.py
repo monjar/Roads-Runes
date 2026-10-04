@@ -30,6 +30,8 @@ class CleanPoint:
     altitude: float | None = None
     speed: float | None = None
     heart_rate: int | None = None
+    # How sure the phone was of this fix, in metres; fights trust only good ones.
+    accuracy: float | None = None
 
 
 @dataclass
@@ -71,7 +73,17 @@ def validate_points(
         if acc is not None and float(acc) > MAX_ACCURACY_M:
             result.dropped_points += 1
             continue
-        cleaned.append(CleanPoint(lat, lon, ts, p.get("altitudeMeters"), p.get("speedMps"), p.get("heartRateBpm")))
+        cleaned.append(
+            CleanPoint(
+                lat,
+                lon,
+                ts,
+                p.get("altitudeMeters"),
+                p.get("speedMps"),
+                p.get("heartRateBpm"),
+                float(acc) if acc is not None else None,
+            )
+        )
     cleaned.sort(key=lambda c: c.timestamp)
     if result.dropped_points and raw:
         if result.dropped_points / len(raw) > 0.3:
