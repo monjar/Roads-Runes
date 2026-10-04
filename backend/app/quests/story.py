@@ -55,7 +55,7 @@ WAITING = "WAITING"
 # MAIN is the campaign, one chapter after another; SIDE is the trades' own arcs.
 # One live step per track.
 TRACKS = ("MAIN", "SIDE")
-DEFAULT_WAITING = "Waiting for somewhere it can be set near you."
+DEFAULT_WAITING = "Waiting for a good spot near you."
 
 
 @lru_cache
