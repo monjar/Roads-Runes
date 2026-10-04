@@ -46,9 +46,8 @@ struct EncounterCard: View {
                     Text("What it wants").font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink)
                     ForEach(Array(monster.killMethods.enumerated()), id: \.offset) { _, method in
                         HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: Self.symbol(for: method.method))
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(Theme.Colors.terracottaDeep)
+                            MarkView(.icon(Self.icon(for: method.method), spot: .terracotta))
+                                .frame(width: 18, height: 18)
                                 .frame(width: 22)
                             Text(method.hint).font(Theme.Typography.text(13)).foregroundStyle(Theme.Colors.inkSoft)
                         }
@@ -60,8 +59,11 @@ struct EncounterCard: View {
             }
             if let standing = object.setStanding {
                 // Which set, how much of it is held, and whether this piece adds to it.
-                Label(standing.line + (object.pieceOwned == true ? " · you have this one" : ""), systemImage: "sparkles")
-                    .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.sageDeep)
+                HStack(spacing: 6) {
+                    MarkView(.icon(.sparkles, spot: .sage)).frame(width: 16, height: 16)
+                    Text(standing.line + (object.pieceOwned == true ? " · you have this one" : ""))
+                }
+                .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.sageDeep)
                     .accessibilityIdentifier("encounter.set")
             }
             if let claimError { ErrorLine(text: claimError) }
@@ -69,7 +71,7 @@ struct EncounterCard: View {
                 Button(action: onClaim) {
                     ZStack {
                         HStack(spacing: 10) {
-                            Image(systemName: object.kind == .chest ? "shippingbox.fill" : "sparkles")
+                            MarkView(.icon(object.kind == .chest ? .openChest : .runeStone, spot: .paper)).frame(width: 20, height: 20)
                             Text(object.kind == .chest ? "Open chest" : "Pick it up")
                         }
                         .opacity(claiming ? 0 : 1)
@@ -104,24 +106,24 @@ struct EncounterCard: View {
     private func wantsSection(_ monster: MonsterInfo) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("What it wants").font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink)
-            row("scope", LoreCopy.wants(monster.wants ?? [], rune: Self.runeName(monster.rune), runeForm: monster.roadForm))
+            row(.sword, LoreCopy.wants(monster.wants ?? [], rune: Self.runeName(monster.rune), runeForm: monster.roadForm))
                 .accessibilityIdentifier("encounter.wants")
             if let minds = monster.minds, !minds.isEmpty {
-                row("hand.raised", LoreCopy.doesNotMind(minds)).accessibilityIdentifier("encounter.minds")
+                row(.resist, LoreCopy.doesNotMind(minds)).accessibilityIdentifier("encounter.minds")
             }
             if let holdMax = monster.holdMax {
                 let left = monster.holdLeft ?? holdMax
-                row("circle.dashed", left < holdMax ? "Its hold: \(left) of \(holdMax). Loosened." : "Its hold: \(holdMax).")
+                row(.heart, left < holdMax ? "Its hold: \(left) of \(holdMax). Loosened." : "Its hold: \(holdMax).")
                     .accessibilityIdentifier("encounter.hold")
             }
             if let rune = Self.runeName(monster.rune), let form = LoreCopy.roadForm(monster.roadForm) {
-                row("signpost.right", "\(rune). On the road, \(form).")
+                row(.runeStone, "\(rune). On the road, \(form).")
             }
             if let days = monster.unpassedDays, days >= 30 {
-                row("clock", "You have not passed here in \(days) days.")
+                row(.hourglass, "You have not passed here in \(days) days.")
             }
             if let groundRound, groundRound.of > 0 {
-                row("map", groundRound.unread == 0
+                row(.treasureMap, groundRound.unread == 0
                     ? "You have read all the ground round it."
                     : "\(groundRound.unread) of the \(groundRound.of) patches round it are new ground to you.")
                     .accessibilityIdentifier("encounter.ground")
@@ -129,11 +131,10 @@ struct EncounterCard: View {
         }
     }
 
-    private func row(_ symbol: String, _ text: String) -> some View {
+    private func row(_ icon: GameIcon, _ text: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: symbol)
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(Theme.Colors.terracottaDeep)
+            MarkView(.icon(icon, spot: .terracotta))
+                .frame(width: 18, height: 18)
                 .frame(width: 22)
             Text(text).font(Theme.Typography.text(13)).foregroundStyle(Theme.Colors.inkSoft)
                 .fixedSize(horizontal: false, vertical: true)
@@ -165,14 +166,14 @@ struct EncounterCard: View {
         return parts.joined(separator: " · ")
     }
 
-    static func symbol(for method: KillMethodKind) -> String {
+    static func icon(for method: KillMethodKind) -> GameIcon {
         switch method {
-        case .pace: return "hare.fill"
-        case .rune: return "scribble.variable"
-        case .climb: return "mountain.2.fill"
-        case .lore: return "square.and.pencil"
-        case .explore: return "map.fill"
-        case .unknown: return "questionmark"
+        case .pace: return .road
+        case .rune: return .runeStone
+        case .climb: return .climb
+        case .lore: return .note
+        case .explore: return .treasureMap
+        case .unknown: return .mystery
         }
     }
 }

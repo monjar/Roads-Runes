@@ -46,15 +46,8 @@ final class ContactSheetTests: XCTestCase {
         XCTAssertEqual(GlyphBook.runes.count, 24)
         for (id, source) in GlyphBook.runes { try check(source, grid: GlyphBook.runeGrid, id) }
         let grid = CGSize(width: 24, height: 24)
-        for (id, layers) in GlyphBook.crests { for l in layers { try check(l.source, grid: grid, id) } }
-        for (id, body) in GlyphBook.bodies { for l in body.layers { try check(l.source, grid: grid, id) } }
-        for (id, layers) in GlyphBook.marks { for l in layers { try check(l.source, grid: grid, id) } }
-        for (id, layers) in GlyphBook.kinds { for l in layers { try check(l.source, grid: grid, id) } }
-        for (tier, layers) in GlyphBook.chests { for l in layers { try check(l.source, grid: grid, "chest \(tier)") } }
-        // Features are drawn about an anchor, so they may go negative.
-        for (id, feature) in GlyphBook.features {
-            for l in feature.layers { XCTAssertNoThrow(try InkPath(l.source), id) }
-        }
+        try check(GlyphBook.shield, grid: grid, "shield")
+        try check(GlyphBook.disc, grid: grid, "disc")
     }
 
     func testTheParserReadsTheShorthandRunesUse() throws {
@@ -64,11 +57,23 @@ final class ContactSheetTests: XCTestCase {
         XCTAssertEqual(relative.points, [CGPoint(x: 1, y: 1), CGPoint(x: 3, y: 1), CGPoint(x: 3, y: 3), CGPoint(x: 1, y: 3)])
     }
 
-    func testEveryCreatureNamesPartsThatExist() {
+    func testEveryCreatureHasItsOwnIcon() {
+        let icons = Self.sigils.map { GameIcon.forSigil($0.1) }
+        XCTAssertEqual(Set(icons).count, Self.sigils.count, "two creatures share a face")
         for (id, sigil) in Self.sigils {
-            XCTAssertNotNil(GlyphBook.bodies[sigil.body], id)
-            XCTAssertNotNil(GlyphBook.features[sigil.feature], id)
-            XCTAssertNotNil(GlyphBook.marks[sigil.mark], id)
+            XCTAssertEqual(GameIcon.forSigil(sigil), GameIcon.forSpecies(id), id)
+        }
+    }
+
+    func testEveryIconParsesAndStaysOnItsGrid() throws {
+        for icon in GameIcon.allCases {
+            let path = try InkPath(icon.path)
+            XCTAssertFalse(path.elements.isEmpty, icon.rawValue)
+            // Control points may stand off the grid; the curve itself may not.
+            let grid = CGRect(x: 0, y: 0, width: GameIcon.grid, height: GameIcon.grid)
+            let drawn = path.cgPath(grid: grid.size, in: grid).boundingBoxOfPath
+            XCTAssert(grid.insetBy(dx: -2, dy: -2).contains(drawn), "\(icon.rawValue) leaves its grid: \(drawn)")
+            XCTAssertFalse(icon.author.isEmpty, icon.rawValue)
         }
     }
 
@@ -77,9 +82,14 @@ final class ContactSheetTests: XCTestCase {
         let crests = ["explorer", "wizard", "warrior", "scribe"].map { Mark.crest($0) }
         let creatures = Self.sigils.map { Mark.creature($0.1) }
         let elders = Self.sigils.prefix(4).flatMap { [Mark.creature($0.1, tier: 2), Mark.creature($0.1, tier: 3), Mark.creature($0.1, bounty: true), Mark.creature($0.1, unmet: true)] }
-        let things: [Mark] = [.chest(tier: 1), .chest(tier: 2), .chest(tier: 3), .coin, .purse, .worn]
+        let things: [Mark] = [.chest(tier: 1), .chest(tier: 2), .chest(tier: 3), .coin, .purse, .worn,
+                              .quest, .objective, .mystery, .pin, .lamp, .rider("RIDE"), .rider("RUN"), .rider("WALK")]
             + ["ROAD", "GROUND", "CLIMB", "RUNE", "WORD"].map { Mark.kind($0) }
-        for (name, marks) in [("runes", runes), ("crests", crests), ("creatures", creatures), ("elders", elders), ("things", things)] {
+        let places = ["NATURE", "LANDMARK", "PUB", "CAFE", "FOOD", "VIEWPOINT", "HISTORICAL", "CULTURAL", "MUSEUM",
+                      "TRAIL", "WATER", "BRIDGE", "SHOP", "CYCLING", "SOMEWHERE"].map { Mark.place($0) }
+        let icons = GameIcon.allCases.map { Mark.icon($0) }
+        for (name, marks) in [("runes", runes), ("crests", crests), ("creatures", creatures), ("elders", elders), ("things", things),
+                               ("places", places), ("icons", icons)] {
             for (paletteName, palette) in [("phone", InkPalette.phone), ("watch", InkPalette.watch)] {
                 let url = Self.outputDirectory.appendingPathComponent("\(name)-\(paletteName).png")
                 try Self.sheet(marks, palette: palette, to: url)

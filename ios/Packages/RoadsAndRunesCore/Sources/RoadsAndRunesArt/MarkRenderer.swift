@@ -15,43 +15,58 @@ public enum MarkRenderer {
 
     public static func draw(_ mark: Mark, in ctx: CGContext, rect: CGRect, palette: InkPalette) {
         let detailed = min(rect.width, rect.height) >= detailSize
-        let wobble = Wobble(id: mark.id, amount: 0.12)
         let painter = Painter(ctx: ctx, palette: palette, detailed: detailed)
         switch mark {
         case let .rune(id):
+            token(painter, rect: rect, ring: palette.ink)
             guard let source = GlyphBook.runes[id.lowercased()] else {
-                drawWorn(painter, rect: rect, wobble: wobble)
+                icon(painter, .mystery, in: iconRect(rect), color: palette.ink)
                 return
             }
-            painter.layers(stoneLayers, grid: grid24, in: rect, wobble: wobble)
-            let inner = runeRect(in: rect)
             painter.layers(
-                [Glyph.Layer(source, .stroke(0.52), .ink)],
-                grid: GlyphBook.runeGrid, in: inner, wobble: Wobble(id: mark.id, amount: 0.03)
+                [Glyph.Layer(source, .stroke(0.62), .ink)],
+                grid: GlyphBook.runeGrid, in: runeRect(in: rect), wobble: nil
             )
         case let .crest(id):
             let accent = painter.palette.spot(Mark.spot(forCrest: id))
-            painter.layers([Glyph.Layer(GlyphBook.shield, .fill, .accent)], grid: grid24, in: rect, wobble: wobble, accent: accent)
-            if let motif = GlyphBook.crests[id.lowercased()] {
-                painter.layers(motif, grid: grid24, in: rect, wobble: wobble, accent: accent)
-            }
-            painter.layers([Glyph.Layer(GlyphBook.shield, .stroke(1.4), .ink)], grid: grid24, in: rect, wobble: wobble)
+            painter.layers([Glyph.Layer(GlyphBook.shield, .fill, .accent)], grid: grid24, in: rect, wobble: nil, accent: accent)
+            painter.layers([Glyph.Layer(GlyphBook.shield, .stroke(1.2), .ink)], grid: grid24, in: rect, wobble: nil)
+            let inner = CGRect(x: rect.minX + rect.width * 0.27, y: rect.minY + rect.height * 0.2,
+                               width: rect.width * 0.46, height: rect.height * 0.46)
+            icon(painter, .forClass(id), in: inner, color: palette.paper)
         case let .creature(sigil, tier, bounty, unmet):
-            drawCreature(painter, sigil: sigil, tier: tier, bounty: bounty, unmet: unmet, rect: rect, wobble: wobble)
+            creature(painter, icon: .forSigil(sigil), tier: tier, bounty: bounty, unmet: unmet, rect: rect)
         case let .chest(tier):
-            painter.layers(GlyphBook.chests[max(1, min(3, tier))] ?? [], grid: grid24, in: rect, wobble: wobble)
+            let gilded = tier >= 3
+            token(painter, rect: rect, ring: gilded ? palette.spot(.gold) : palette.ink, weight: gilded ? 1.5 : 1.0,
+                  inner: tier == 2)
+            icon(painter, .chest, in: iconRect(rect), color: palette.ink)
         case .coin:
-            painter.layers(GlyphBook.coin, grid: grid24, in: rect, wobble: wobble)
+            painter.layers([Glyph.Layer(GlyphBook.disc, .fill, .spot(.gold))], grid: grid24, in: rect, wobble: nil)
+            icon(painter, .coins, in: rect.insetBy(dx: rect.width * 0.2, dy: rect.height * 0.2), color: palette.ink)
         case .purse:
-            painter.layers(GlyphBook.purse, grid: grid24, in: rect, wobble: wobble)
+            icon(painter, .purse, in: rect, color: palette.ink)
         case let .kind(kind):
-            guard let layers = GlyphBook.kinds[kind.uppercased()] else {
-                drawWorn(painter, rect: rect, wobble: wobble)
-                return
-            }
-            painter.layers(layers, grid: grid24, in: rect, wobble: wobble)
+            icon(painter, .forKind(kind), in: rect, color: palette.ink)
+        case let .place(kind):
+            token(painter, rect: rect, ring: palette.ink)
+            icon(painter, .forPlace(kind), in: iconRect(rect), color: palette.ink)
+        case let .rider(activity):
+            let fill = palette.spot(.terracotta)
+            ctx.setFillColor(fill.cgColor)
+            ctx.fillEllipse(in: discRect(rect))
+            ctx.setStrokeColor(palette.paper.cgColor)
+            ctx.setLineWidth(max(1, rect.width / 14))
+            ctx.strokeEllipse(in: discRect(rect).insetBy(dx: rect.width / 28, dy: rect.width / 28))
+            icon(painter, .forActivity(activity), in: iconRect(rect), color: palette.paper)
+        case let .token(glyph, ring):
+            token(painter, rect: rect, ring: ring.map(palette.spot) ?? palette.ink, weight: ring == .gold ? 1.5 : 1.0)
+            icon(painter, glyph, in: iconRect(rect), color: palette.ink)
+        case let .icon(glyph, spot):
+            icon(painter, glyph, in: rect, color: spot.map(palette.spot) ?? palette.ink)
         case .worn:
-            drawWorn(painter, rect: rect, wobble: wobble)
+            token(painter, rect: rect, ring: palette.inkSoft)
+            icon(painter, .mystery, in: iconRect(rect), color: palette.inkSoft)
         }
     }
 
@@ -68,53 +83,58 @@ public enum MarkRenderer {
 
     static let grid24 = CGSize(width: 24, height: 24)
 
-    static var stoneLayers: [Glyph.Layer] {
-        [
-            Glyph.Layer(GlyphBook.stone, .fill, .spot(.stone)),
-            Glyph.Layer(GlyphBook.stone, .hatch(spacing: 1.8, weight: 0.3), .hatch, detail: true),
-            Glyph.Layer(GlyphBook.stone, .stroke(0.9), .ink),
-        ]
-    }
-
     static func runeRect(in rect: CGRect) -> CGRect {
-        rect.insetBy(dx: rect.width * 0.27, dy: rect.height * 0.2)
+        rect.insetBy(dx: rect.width * 0.32, dy: rect.height * 0.26)
     }
 
-    private static func drawWorn(_ painter: Painter, rect: CGRect, wobble: Wobble) {
-        painter.layers(stoneLayers + [Glyph.Layer(GlyphBook.stoneCrack, .stroke(0.8), .inkSoft)], grid: grid24, in: rect, wobble: wobble)
+    /// The disc of a token, a hair inside the rect so its ring is not clipped.
+    static func discRect(_ rect: CGRect) -> CGRect {
+        rect.insetBy(dx: rect.width * 0.025, dy: rect.height * 0.025)
     }
 
-    private static func drawCreature(
-        _ painter: Painter, sigil: Sigil, tier: Int, bounty: Bool, unmet: Bool, rect: CGRect, wobble: Wobble
-    ) {
-        let gold = painter.palette.spot(.gold)
-        let ringInk: Glyph.Ink = bounty ? .spot(.gold) : .ink
+    /// Where an icon sits on a token.
+    static func iconRect(_ rect: CGRect) -> CGRect {
+        rect.insetBy(dx: rect.width * 0.2, dy: rect.height * 0.2)
+    }
+
+    /// A thing in the world: paper, an ink ring (gold for a bounty or a gilded
+    /// chest), a second ring inside it for something a step up.
+    static func token(_ painter: Painter, rect: CGRect, ring: InkColor, weight: CGFloat = 1.0, inner: Bool = false) {
         painter.layers([Glyph.Layer(GlyphBook.disc, .fill, .paper)], grid: grid24, in: rect, wobble: nil)
-        guard let body = GlyphBook.bodies[sigil.body] else {
-            painter.layers(stoneLayers, grid: grid24, in: rect.insetBy(dx: rect.width * 0.2, dy: rect.height * 0.2), wobble: wobble)
-            painter.layers([Glyph.Layer(GlyphBook.ringOuter, .round(1.0), ringInk)], grid: grid24, in: rect, wobble: nil)
-            return
+        let ctx = painter.ctx
+        let scale = rect.width / 24
+        ctx.saveGState()
+        ctx.setStrokeColor(ring.cgColor)
+        ctx.setLineWidth(max(0.8, weight * scale))
+        ctx.strokeEllipse(in: rect.insetBy(dx: 0.6 * scale + weight * scale / 2, dy: 0.6 * scale + weight * scale / 2))
+        if inner {
+            ctx.setLineWidth(max(0.5, 0.6 * scale))
+            ctx.strokeEllipse(in: rect.insetBy(dx: 2.2 * scale, dy: 2.2 * scale))
         }
-        let inner = rect.insetBy(dx: rect.width * 0.16, dy: rect.height * 0.16)
-        if let mark = GlyphBook.marks[sigil.mark] {
-            painter.layers(mark, grid: grid24, in: inner, wobble: wobble)
-        }
-        painter.layers(body.layers, grid: grid24, in: inner, wobble: wobble)
-        if !unmet, let feature = GlyphBook.features[sigil.feature] {
-            let at: CGPoint
-            switch feature.anchor {
-            case .head: at = body.head
-            case .back: at = body.back
-            case .hand: at = body.hand
-            }
-            painter.layers(feature.layers, grid: grid24, in: inner, wobble: wobble, accent: gold, offset: at)
-        }
-        painter.layers([Glyph.Layer(GlyphBook.ringOuter, .round(bounty ? 1.5 : 1.0), ringInk)], grid: grid24, in: rect, wobble: nil)
-        if tier >= 2 {
-            painter.layers([Glyph.Layer(GlyphBook.ringInner, .round(0.6), ringInk)], grid: grid24, in: rect, wobble: nil)
-        }
+        ctx.restoreGState()
+    }
+
+    /// An icon filled in one colour.
+    static func icon(_ painter: Painter, _ glyph: GameIcon, in rect: CGRect, color: InkColor) {
+        guard let path = PathCache.shared.path(glyph.path) else { return }
+        let ctx = painter.ctx
+        ctx.saveGState()
+        ctx.setFillColor(color.cgColor)
+        ctx.addPath(path.cgPath(grid: CGSize(width: GameIcon.grid, height: GameIcon.grid), in: rect))
+        ctx.fillPath()
+        ctx.restoreGState()
+    }
+
+    /// A creature on its token: gold-ringed for a bounty, a second ring for an
+    /// elder and a crown over the top one; an unmet one only as a pale shape.
+    private static func creature(_ painter: Painter, icon glyph: GameIcon, tier: Int, bounty: Bool, unmet: Bool, rect: CGRect) {
+        let palette = painter.palette
+        token(painter, rect: rect, ring: bounty ? palette.spot(.gold) : palette.ink, weight: bounty ? 1.6 : 1.0, inner: tier >= 2)
+        icon(painter, glyph, in: iconRect(rect), color: unmet ? palette.hatch : palette.ink)
         if tier >= 3 {
-            painter.layers([Glyph.Layer(GlyphBook.notches, .stroke(0.8), ringInk)], grid: grid24, in: rect, wobble: nil)
+            let crown = CGRect(x: rect.midX - rect.width * 0.17, y: rect.minY - rect.height * 0.04,
+                               width: rect.width * 0.34, height: rect.height * 0.34)
+            icon(painter, .crown, in: crown, color: palette.spot(.gold))
         }
     }
 }

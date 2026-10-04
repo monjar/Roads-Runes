@@ -292,7 +292,7 @@ struct AdventureSummaryView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 HStack(spacing: 5) {
-                    Image(systemName: "circlebadge.2.fill").font(.system(size: 13, weight: .bold))
+                    MarkView(.coin).frame(width: 16, height: 16)
                     CountingText(value: shownCoins, prefix: "+", suffix: shownCoins == 1 ? " coin" : " coins").font(Theme.Typography.text(17, .bold))
                 }
                 .foregroundStyle(Theme.Colors.terracottaDeep)
@@ -357,7 +357,7 @@ struct AdventureSummaryView: View {
             Eyebrow(text: "Into the codex", color: Theme.Colors.sageDeep)
             ForEach(firsts) { first in
                 HStack(spacing: 10) {
-                    Image(systemName: "book.fill").font(.system(size: 13, weight: .bold)).foregroundStyle(Theme.Colors.sageDeep)
+                    MarkView(.icon(.spellBook, spot: .sage)).frame(width: 18, height: 18)
                     Text(first.metAs.map { $0 == first.name ? "First met: \(first.name)" : "First met: \(first.name), as \($0)" } ?? "First met: \(first.name)")
                         .font(Theme.Typography.text(14, .semibold)).foregroundStyle(Theme.Colors.ink)
                 }
@@ -369,21 +369,21 @@ struct AdventureSummaryView: View {
     }
 
     /// Runes woken and found, and deeds reached or beaten on this outing (0.7.0).
-    private var runeLines: [(symbol: String, text: String)] {
-        var out: [(String, String)] = []
+    private var runeLines: [(mark: Mark, text: String)] {
+        var out: [(Mark, String)] = []
         for rune in summary.worldObjects?.woken ?? [] {
-            out.append(("seal.fill", "\(rune.capitalized) woke: a rank deeper for this outing."))
+            out.append((.rune(rune), "\(rune.capitalized) woke: a rank deeper for this outing."))
         }
         for found in summary.runesFound ?? [] {
-            out.append(("seal", found.new
+            out.append((.rune(found.rune), found.new
                 ? "\(found.rune.capitalized) is yours now."
                 : "A stone of \(found.rune.capitalized): \(found.shards) towards the next rank."))
         }
         for reached in summary.deeds?.reached ?? [] {
-            out.append(("rosette", "\(reached.name): \(reached.title ?? "a new mark")."))
+            out.append((.icon(.trophy, spot: .gold), "\(reached.name): \(reached.title ?? "a new mark")."))
         }
         for record in summary.deeds?.records ?? [] {
-            out.append(("flag.fill", "\(record.name): \(Int(record.value.rounded())) \(record.unit), the most yet."))
+            out.append((.icon(.laurels), "\(record.name): \(Int(record.value.rounded())) \(record.unit), the most yet."))
         }
         return out
     }
@@ -391,9 +391,13 @@ struct AdventureSummaryView: View {
     private var runesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(runeLines.enumerated()), id: \.offset) { _, line in
-                Label(line.text, systemImage: line.symbol)
-                    .font(Theme.Typography.text(14, .semibold)).foregroundStyle(Theme.Colors.ink)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .top, spacing: 10) {
+                    MarkView(line.mark).frame(width: 24, height: 24)
+                    Text(line.text)
+                        .font(Theme.Typography.text(14, .semibold)).foregroundStyle(Theme.Colors.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
             }
         }
         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -420,7 +424,9 @@ struct AdventureSummaryView: View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(fights) { report in
                 HStack(alignment: .top, spacing: 10) {
-                    EncounterGlyph(kind: .monster, bounty: report.bounty == true, size: 30)
+                    // The creature's own face, from its species (FightReport.speciesId).
+                    MarkView(.token(GameIcon.forSpecies(report.speciesId ?? ""), ring: report.bounty == true ? .gold : nil))
+                        .frame(width: 30, height: 30)
                     Text(FightCopy.line(report, units: units))
                         .font(Theme.Typography.text(14, report.seenOff ? .semibold : .regular))
                         .foregroundStyle(report.seenOff ? Theme.Colors.ink : Theme.Colors.inkSoft)

@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 import WatchKit
@@ -119,9 +120,9 @@ struct IdleScreen: View {
             .foregroundStyle(store.phoneReachable ? WatchTheme.sageLight : WatchTheme.tertiary)
             .padding(.top, 8)
             Spacer()
-            Image(systemName: "bicycle")
-                .font(.system(size: 28, weight: .bold))
+            IconShape(.cycling)
                 .foregroundStyle(WatchTheme.sage)
+                .frame(width: 34, height: 34)
                 .frame(maxWidth: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

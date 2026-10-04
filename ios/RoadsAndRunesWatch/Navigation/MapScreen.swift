@@ -27,7 +27,7 @@ struct MapScreen: View {
                     Annotation(stop.name, coordinate: stop.coordinate.clLocation) {
                         Circle()
                             .fill(stop.requested ? WatchTheme.accent : WatchTheme.tertiary)
-                            .stroke(.white, lineWidth: 1.5)
+                            .stroke(.black, lineWidth: 1.5)
                             .frame(width: 10, height: 10)
                     }
                     .annotationTitles(.hidden)
@@ -36,7 +36,7 @@ struct MapScreen: View {
                     Annotation("You", coordinate: here.clLocation) {
                         Circle()
                             .fill(WatchTheme.sage)
-                            .stroke(.white, lineWidth: 2)
+                            .stroke(.black, lineWidth: 2)
                             .frame(width: 14, height: 14)
                     }
                     .annotationTitles(.hidden)

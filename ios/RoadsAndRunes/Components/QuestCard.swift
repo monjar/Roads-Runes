@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -13,13 +14,8 @@ struct QuestCard: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(ClassStyle.color(quest.characterClass))
-                Image(systemName: ClassStyle.symbol(quest.characterClass))
-                    .font(.system(size: compact ? 18 : 26, weight: .bold))
-                    .foregroundStyle(Theme.Colors.cream)
-            }
-            .frame(width: compact ? 44 : 64, height: compact ? 44 : 64)
+            // The quest's class, as the same crest the character wears.
+            ClassEmblem(characterClass: quest.characterClass, size: compact ? 44 : 64)
             VStack(alignment: .leading, spacing: 2) {
                 Eyebrow(text: eyebrow, color: ClassStyle.textColor(quest.characterClass))
                 Text(quest.title)
@@ -113,7 +109,7 @@ struct ObjectiveRow: View {
                 Text(trailing).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).lineLimit(1)
             }
             if objective.provisional == true {
-                Image(systemName: "hourglass").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.Colors.muted)
+                IconShape(.hourglass).foregroundStyle(Theme.Colors.muted).frame(width: 12, height: 12)
             }
         }
     }

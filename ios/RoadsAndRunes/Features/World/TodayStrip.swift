@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -43,9 +44,8 @@ struct TodayStrip: View {
     private var streak: some View {
         let days = character?.streakDays ?? 0
         let done = character?.streakActiveToday == true
-        let color = done ? Theme.Colors.sageDeep : Theme.Colors.terracottaDeep
         return HStack(spacing: 7) {
-            Image(systemName: done ? "flame.fill" : "flame").font(.system(size: 15, weight: .bold)).foregroundStyle(color)
+            MarkView(.icon(.campfire, spot: done ? .sage : .terracotta)).frame(width: 20, height: 20)
             VStack(alignment: .leading, spacing: 0) {
                 Text(streakTitle(days: days, done: done)).font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink).lineLimit(1)
                 Text(streakLine(days: days, done: done)).font(Theme.Typography.text(11.5, relativeTo: .caption2)).foregroundStyle(Theme.Colors.muted).lineLimit(1)

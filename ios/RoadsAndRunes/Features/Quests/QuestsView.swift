@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -207,7 +208,7 @@ struct QuestDetailView: View {
                             IconCircleButton(symbol: "chevron.left") { dismiss() }.accessibilityLabel("Back").accessibilityIdentifier("quest.back")
                             Spacer()
                             HStack(spacing: 8) {
-                                Image(systemName: ClassStyle.symbol(quest.characterClass)).font(.system(size: 13, weight: .bold))
+                                ClassEmblem(characterClass: quest.characterClass, size: 22)
                                 Eyebrow(text: "\(ClassStyle.name(quest.characterClass)) quest", color: Theme.Colors.cream)
                             }
                             .foregroundStyle(Theme.Colors.cream)
@@ -326,7 +327,7 @@ struct QuestDetailView: View {
                 coordinate: poi.coordinate,
                 kind: poi.id == focused?.id ? .stopActive : .stop,
                 title: poi.name,
-                symbol: DiscoveryIcon.symbol(for: poi.category)
+                mark: DiscoveryIcon.mark(for: poi.category)
             ))
         }
         return out

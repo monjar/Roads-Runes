@@ -18,7 +18,7 @@ struct RunesScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 if missing {
-                    EmptyState(icon: "seal", title: "Not on this server yet", message: "Runes come with the next server update.")
+                    EmptyState(icon: .runeStone, title: "Not on this server yet", message: "Runes come with the next server update.")
                 } else if let error {
                     ErrorLine(text: error)
                 }
@@ -28,7 +28,7 @@ struct RunesScreen: View {
                     slots(state)
                     let held = state.runes.filter(\.held)
                     if held.isEmpty {
-                        EmptyState(icon: "seal", title: "No rune held yet",
+                        EmptyState(icon: .runeStone, title: "No rune held yet",
                                    message: "Rune stones turn up at places on the map. Pick one up and the rune is yours.")
                     } else {
                         SectionHeader(title: "Held", subtitle: "\(held.count) of \(state.runes.count)")

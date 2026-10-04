@@ -33,16 +33,13 @@ extension Mark {
         }
     }
 
-    static func crest(_ characterClass: CharacterClass) -> Mark? {
-        switch characterClass {
-        case .explorer, .wizard, .warrior, .scribe: return .crest(characterClass.rawValue.lowercased())
-        default: return nil
-        }
+    static func crest(_ characterClass: CharacterClass) -> Mark {
+        .crest(characterClass.rawValue.lowercased())
     }
 }
 
 extension Sigil {
-    /// A creature the server named no face for: a hooded shade in the mist.
+    /// A creature the server named no face for: drawn as a dragon's head.
     init(_ sigil: CreatureSigil?) {
         self.init(body: sigil?.body ?? "shade", feature: sigil?.feature ?? "hood", mark: sigil?.mark ?? "mist")
     }

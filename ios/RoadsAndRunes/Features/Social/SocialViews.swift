@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -442,7 +443,7 @@ struct ProfileView: View {
         return HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.Colors.track)
-                Image(systemName: "sparkle").font(.system(size: 18, weight: .bold)).foregroundStyle(Theme.Colors.muted)
+                IconShape(.star).foregroundStyle(Theme.Colors.muted).frame(width: 20, height: 20)
             }
             .frame(width: 56, height: 56)
             VStack(alignment: .leading, spacing: 2) {

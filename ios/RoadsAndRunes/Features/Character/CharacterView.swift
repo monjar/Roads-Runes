@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -116,12 +117,12 @@ struct CharacterView: View {
             // Each only on a server that has it: a 0.7.0 server's sheet carries `inscribed`,
             // a 0.6.2 server's character carries `titlePinned`. An older one has neither.
             if character?.sheet?.inscribed != nil {
-                NavigationLink { RunesScreen() } label: { moreRow("Runes", symbol: "seal") }
+                NavigationLink { RunesScreen() } label: { moreRow("Runes", icon: .runeStone) }
                     .buttonStyle(.pressable)
                     .accessibilityIdentifier("character.runes")
             }
             if character?.titlePinned != nil {
-                NavigationLink { TitlesScreen() } label: { moreRow("Titles", symbol: "rosette") }
+                NavigationLink { TitlesScreen() } label: { moreRow("Titles", icon: .laurels) }
                     .buttonStyle(.pressable)
                     .accessibilityIdentifier("character.titles")
             }
@@ -130,7 +131,7 @@ struct CharacterView: View {
                 DeedsCard()
             }
             if container.session.isEnabled("codex") {
-                NavigationLink { CodexScreen() } label: { moreRow("Codex", symbol: "book.fill") }
+                NavigationLink { CodexScreen() } label: { moreRow("Codex", icon: .spellBook) }
                     .buttonStyle(.pressable)
                     .accessibilityIdentifier("character.codex")
             }
@@ -210,11 +211,7 @@ struct CharacterView: View {
 
     private func bikeRow(_ bike: Bike) -> some View {
         HStack(spacing: 12) {
-            ZStack {
-                Circle().fill(Theme.Colors.cream)
-                Image(systemName: "bicycle").font(.system(size: 15, weight: .bold)).foregroundStyle(Theme.Colors.ink)
-            }
-            .frame(width: 36, height: 36)
+            MarkView(.token(.cycling)).frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 2) {
                 Text(bike.name).font(Theme.Typography.cardTitle).foregroundStyle(Theme.Colors.ink)
                 Text("\(bike.bikeType.rawValue.capitalized)\(bike.isDefault ? " · default" : "")\(bike.allowGravel ? " · gravel ok" : "")")
@@ -228,9 +225,18 @@ struct CharacterView: View {
         .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
     }
 
+    /// A game thing's row: its icon, not a system symbol.
+    private func moreRow(_ title: String, icon: GameIcon) -> some View {
+        moreRow(title) { IconShape(icon).foregroundStyle(Theme.Colors.ink).frame(width: 22, height: 22) }
+    }
+
     private func moreRow(_ title: String, symbol: String) -> some View {
+        moreRow(title) { Image(systemName: symbol).font(.system(size: 15, weight: .bold)).foregroundStyle(Theme.Colors.ink) }
+    }
+
+    private func moreRow(_ title: String, @ViewBuilder leading: () -> some View) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: symbol).font(.system(size: 15, weight: .bold)).foregroundStyle(Theme.Colors.ink).frame(width: 24)
+            leading().frame(width: 24)
             Text(title).font(Theme.Typography.text(15, .semibold)).foregroundStyle(Theme.Colors.ink)
             Spacer()
             Image(systemName: "chevron.right").font(.system(size: 13, weight: .bold)).foregroundStyle(Theme.Colors.muted)

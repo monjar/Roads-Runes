@@ -1,4 +1,5 @@
 import MapKit
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -56,7 +57,10 @@ struct PlaceShortcutChips: View {
             HStack(spacing: 8) {
                 ForEach(PlaceShortcut.allCases) { shortcut in
                     Button { onSelect(shortcut) } label: {
-                        Label(shortcut.title, systemImage: shortcut.symbol)
+                        HStack(spacing: 6) {
+                            IconShape(shortcut.icon).frame(width: 16, height: 16)
+                            Text(shortcut.title)
+                        }
                             .font(Theme.Typography.text(13, .semibold))
                             .foregroundStyle(active == shortcut ? Theme.Colors.cream : Theme.Colors.ink)
                             .padding(.horizontal, 12)
@@ -90,7 +94,7 @@ struct PlaceCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
-                PlaceIcon(symbol: place.symbol, size: 48)
+                PlaceIcon(mark: place.mark, size: 48)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(place.name).font(Theme.Typography.voice(20, relativeTo: .title3)).foregroundStyle(Theme.Colors.ink).lineLimit(2)
                     if !facts.isEmpty {
@@ -116,7 +120,7 @@ struct PlaceCard: View {
                 let purse = container.session.character?.activeCoins ?? 0
                 Button(action: onLamp) {
                     HStack(spacing: 8) {
-                        if leavingLamp { ProgressView().tint(Theme.Colors.ink) } else { Image(systemName: "lamp.desk") }
+                        if leavingLamp { ProgressView().tint(Theme.Colors.ink) } else { IconShape(.lantern).frame(width: 18, height: 18) }
                         Text("Leave a lamp out · \(LoreCopy.purse(lampCost))")
                     }
                     .font(Theme.Typography.text(14, .semibold)).foregroundStyle(Theme.Colors.ink)
@@ -195,7 +199,7 @@ struct PlaceRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            PlaceIcon(symbol: place.symbol, size: 36)
+            PlaceIcon(mark: place.mark, size: 36)
             VStack(alignment: .leading, spacing: 2) {
                 Text(place.name).font(Theme.Typography.text(15, .semibold)).foregroundStyle(Theme.Colors.ink).lineLimit(1)
                 if let detail = place.address ?? place.category {
@@ -214,15 +218,11 @@ struct PlaceRow: View {
 }
 
 struct PlaceIcon: View {
-    let symbol: String
+    let mark: Mark
     var size: CGFloat = 40
 
     var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: size * 0.42, weight: .bold))
-            .foregroundStyle(Theme.Colors.terracottaDeep)
-            .frame(width: size, height: size)
-            .background(Theme.Colors.terracottaTint, in: RoundedRectangle(cornerRadius: size * 0.3, style: .continuous))
+        MarkView(mark).frame(width: size, height: size)
     }
 }
 
@@ -273,12 +273,12 @@ struct PlaceSearchScreen: View {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if search.query.isEmpty {
                         ForEach(PlaceShortcut.allCases) { shortcut in
-                            Button { onShortcut(shortcut) } label: { row(symbol: shortcut.symbol, title: shortcut.title, subtitle: "Near the map") }
+                            Button { onShortcut(shortcut) } label: { row(icon: shortcut.icon, title: shortcut.title, subtitle: "Near the map") }
                                 .buttonStyle(.pressable)
                         }
                     } else {
                         ForEach(search.suggestions, id: \.self) { suggestion in
-                            Button { onPick(suggestion) } label: { row(symbol: "mappin", title: suggestion.title, subtitle: suggestion.subtitle) }
+                            Button { onPick(suggestion) } label: { row(icon: .pin, title: suggestion.title, subtitle: suggestion.subtitle) }
                                 .buttonStyle(.pressable)
                         }
                     }
@@ -292,13 +292,9 @@ struct PlaceSearchScreen: View {
         .onAppear { focused = true }
     }
 
-    private func row(symbol: String, title: String, subtitle: String) -> some View {
+    private func row(icon: GameIcon, title: String, subtitle: String) -> some View {
         HStack(spacing: 14) {
-            Image(systemName: symbol)
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(Theme.Colors.inkSoft)
-                .frame(width: 36, height: 36)
-                .background(Theme.Colors.surface, in: Circle())
+            MarkView(.token(icon)).frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(Theme.Typography.text(15, .semibold)).foregroundStyle(Theme.Colors.ink).lineLimit(1)
                 if !subtitle.isEmpty {

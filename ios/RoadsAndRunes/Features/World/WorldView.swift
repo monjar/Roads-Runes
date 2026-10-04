@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -139,10 +140,10 @@ struct WorldView: View {
                     VStack(spacing: 6) {
                         ClaimToast(object: claimed)
                         if let detail = model.recentClaimDetail {
-                            MapPill(text: detail, symbol: "sparkles").accessibilityIdentifier("claimSet")
+                            MapPill(text: detail, icon: .sparkles).accessibilityIdentifier("claimSet")
                         }
                         if let quest = model.recentQuestTitle {
-                            MapPill(text: "Quest complete: \(quest)", symbol: "checkmark.seal.fill")
+                            MapPill(text: "Quest complete: \(quest)", icon: .scroll)
                                 .accessibilityIdentifier("claimQuestComplete")
                         }
                     }

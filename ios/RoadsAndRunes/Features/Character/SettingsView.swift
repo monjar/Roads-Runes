@@ -1,8 +1,15 @@
 import AuthenticationServices
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
 struct SettingsView: View {
+    /// Everyone whose icons the game draws, for the credits.
+    static let iconAuthors: String = {
+        let names = Array(Set(GameIcon.allCases.map(\.author))).sorted()
+        return names.dropLast().joined(separator: ", ") + (names.count > 1 ? " and " : "") + (names.last ?? "")
+    }()
+
     @Environment(AppContainer.self) private var container
     @State private var settings = UserSettings()
     @State private var changingClass = false
@@ -92,6 +99,13 @@ struct SettingsView: View {
             Section {
                 Button("Save") { Task { await container.session.update(settings: settings); container.mapPreferences.apply(settings: settings) } }
                 Button("Sign out", role: .destructive) { Task { await container.session.signOut() } }
+            }
+            Section("Credits") {
+                // CC BY 3.0 asks for this: who drew the pictures, and where they are from.
+                Text("Icons by \(Self.iconAuthors) from game-icons.net, under CC BY 3.0.")
+                    .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
+                Link("game-icons.net", destination: URL(string: "https://game-icons.net")!)
+                    .font(Theme.Typography.caption)
             }
         }
         .navigationTitle("Settings")

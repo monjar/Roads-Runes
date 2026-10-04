@@ -13,7 +13,7 @@ struct BountyCard: View {
     var body: some View {
         Button(action: onPlan) {
             HStack(spacing: 14) {
-                EncounterGlyph(kind: .monster, bounty: true, size: 48)
+                EncounterGlyph(object: bounty, size: 48)
                 VStack(alignment: .leading, spacing: 3) {
                     Eyebrow(text: "Today's bounty", color: Theme.Colors.terracottaDeep)
                     Text(bounty.name).font(Theme.Typography.cardTitle).foregroundStyle(Theme.Colors.ink).lineLimit(1)

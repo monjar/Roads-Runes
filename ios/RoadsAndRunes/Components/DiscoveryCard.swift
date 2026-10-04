@@ -1,33 +1,11 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
 enum DiscoveryIcon {
-    static func symbol(for category: DiscoveryCategory) -> String {
-        switch category {
-        case .nature: return "leaf.fill"
-        case .historical: return "building.columns.fill"
-        case .cultural: return "theatermasks.fill"
-        case .food: return "fork.knife"
-        case .pub: return "mug.fill"
-        case .cafe: return "cup.and.saucer.fill"
-        case .viewpoint: return "binoculars.fill"
-        case .cycling: return "bicycle"
-        case .landmark: return "mappin.and.ellipse"
-        case .trail: return "figure.hiking"
-        default: return "sparkle"
-        }
-    }
-
-    /// Kinds of discovery share the app's four hues: natural sage, historical
-    /// ink blue, cultural and stops terracotta, viewpoints dusk violet.
-    static func color(for category: DiscoveryCategory) -> Color {
-        switch category {
-        case .nature, .trail, .cycling: return Theme.Colors.sage
-        case .historical, .landmark: return Theme.Colors.scribe
-        case .cultural, .food, .pub, .cafe: return Theme.Colors.terracotta
-        case .viewpoint: return Theme.Colors.wizard
-        default: return Theme.Colors.mutedLight
-        }
+    /// A kind of place's face: the same token on the map, the cards and the Journal.
+    static func mark(for category: DiscoveryCategory) -> Mark {
+        .place(category.rawValue)
     }
 
     static func group(for category: DiscoveryCategory) -> String {
@@ -48,10 +26,7 @@ struct DiscoveryCard: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack {
-                Circle().fill(DiscoveryIcon.color(for: discovery.category))
-                Image(systemName: DiscoveryIcon.symbol(for: discovery.category)).font(.system(size: 14, weight: .bold)).foregroundStyle(Theme.Colors.cream)
-            }
+            MarkView(DiscoveryIcon.mark(for: discovery.category))
             .frame(width: 32, height: 32)
             VStack(alignment: .leading, spacing: 2) {
                 Text(discovery.name).font(Theme.Typography.cardTitle).foregroundStyle(Theme.Colors.ink).lineLimit(1)
@@ -76,10 +51,7 @@ struct DiscoveryTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ZStack {
-                Circle().fill(DiscoveryIcon.color(for: category))
-                Image(systemName: DiscoveryIcon.symbol(for: category)).font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.Colors.cream)
-            }
+            MarkView(DiscoveryIcon.mark(for: category))
             .frame(width: 26, height: 26)
             Text(name).font(Theme.Typography.voice(16, relativeTo: .headline)).foregroundStyle(Theme.Colors.ink).lineLimit(2)
             Text(subtitle).font(Theme.Typography.text(11.5, relativeTo: .caption2)).foregroundStyle(Theme.Colors.muted).lineLimit(1)

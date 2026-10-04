@@ -83,3 +83,22 @@ public struct HoldRing: View {
         .accessibilityValue("\(left * 10) percent")
     }
 }
+
+/// An icon as a SwiftUI shape, for where a system symbol would take a
+/// `foregroundStyle`: the tab bar, a row's leading glyph, a button.
+///
+///     IconShape(.scroll).foregroundStyle(.secondary).frame(width: 20, height: 20)
+public struct IconShape: Shape {
+    let icon: GameIcon
+
+    public init(_ icon: GameIcon) {
+        self.icon = icon
+    }
+
+    public func path(in rect: CGRect) -> Path {
+        guard let ink = PathCache.shared.path(icon.path) else { return Path() }
+        let side = min(rect.width, rect.height)
+        let square = CGRect(x: rect.midX - side / 2, y: rect.midY - side / 2, width: side, height: side)
+        return Path(ink.cgPath(grid: CGSize(width: GameIcon.grid, height: GameIcon.grid), in: square))
+    }
+}

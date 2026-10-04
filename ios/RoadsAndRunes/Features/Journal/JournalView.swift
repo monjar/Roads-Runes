@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -232,7 +233,7 @@ struct JournalView: View {
             .card()
         }
         if model.adventures.isEmpty {
-            EmptyState(icon: "book.closed", title: LoreCopy.emptyJournalTitle, message: LoreCopy.emptyJournalMessage)
+            EmptyState(icon: .openBook, title: LoreCopy.emptyJournalTitle, message: LoreCopy.emptyJournalMessage)
         }
         ForEach(model.adventures) { entry in
             NavigationLink { AdventureDetailView(entry: entry, onDelete: { await model.delete(entry) }) } label: {
@@ -269,7 +270,7 @@ struct JournalView: View {
         }
         let visible = items.filter { filter == nil || $0.group == filter }
         if visible.isEmpty {
-            EmptyState(icon: "sparkle", title: "Nothing discovered yet", message: "Ride past landmarks, parks, pubs and viewpoints to add them to your collection.")
+            EmptyState(icon: .star, title: "Nothing discovered yet", message: "Ride past landmarks, parks, pubs and viewpoints to add them to your collection.")
         }
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
             ForEach(visible) { item in
@@ -333,13 +334,14 @@ struct AdventureRow: View {
     var body: some View {
         let f = UnitFormatter(units: units)
         HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(entry.quest.map { ClassStyle.color($0.characterClass) } ?? Theme.Colors.track)
-                Image(systemName: entry.quest.map { ClassStyle.symbol($0.characterClass) } ?? "bicycle")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(entry.quest == nil ? Theme.Colors.muted : Theme.Colors.cream)
+            // A quest's crest, or for a free outing what it was: a bike, a run, a walk.
+            Group {
+                if let quest = entry.quest {
+                    ClassEmblem(characterClass: quest.characterClass, size: 64)
+                } else {
+                    MarkView(.rider(entry.ride.activity?.rawValue ?? "RIDE")).frame(width: 64, height: 64)
+                }
             }
-            .frame(width: 64, height: 64)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(entry.quest?.title ?? entry.ride.title ?? "Free ride").font(Theme.Typography.cardTitle).foregroundStyle(Theme.Colors.ink).lineLimit(1)
@@ -578,10 +580,7 @@ struct DiscoveryDetailView: View {
                 }
                 if let discovery {
                     HStack(spacing: 14) {
-                        ZStack {
-                            Circle().fill(DiscoveryIcon.color(for: discovery.category))
-                            Image(systemName: DiscoveryIcon.symbol(for: discovery.category)).font(.system(size: 22, weight: .bold)).foregroundStyle(Theme.Colors.cream)
-                        }
+                        MarkView(DiscoveryIcon.mark(for: discovery.category))
                         .frame(width: 56, height: 56)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(discovery.name).font(Theme.Typography.voice(26, relativeTo: .title)).foregroundStyle(Theme.Colors.ink)

@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import SwiftUI
 
 /// Entry to a ride that is not a quest (design 1a, "What kind of ride today?"):
@@ -12,9 +13,9 @@ struct CustomAdventureCard: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .strokeBorder(Theme.Colors.terracotta, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-                Image(systemName: "signpost.right.fill")
-                    .font(.system(size: compact ? 18 : 24, weight: .bold))
+                IconShape(.treasureMap)
                     .foregroundStyle(Theme.Colors.terracottaDeep)
+                    .frame(width: compact ? 24 : 34, height: compact ? 24 : 34)
             }
             .frame(width: compact ? 44 : 64, height: compact ? 44 : 64)
             VStack(alignment: .leading, spacing: 2) {

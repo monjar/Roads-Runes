@@ -73,7 +73,7 @@ struct StoryArcsView: View {
                     Text("Each step is done in order: finishing one is what opens the next. They wait for you; a step never expires.")
                         .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
                     if model.loaded, model.arcs.isEmpty {
-                        EmptyState(icon: "book.closed", title: "Nothing on the board yet", message: "The story will be pinned up here.")
+                        EmptyState(icon: .openBook, title: "Nothing on the board yet", message: "The story will be pinned up here.")
                     }
                     ForEach(model.acts, id: \.number) { act in
                         Eyebrow(text: "Act \(LoreCopy.roman(act.number))\(act.title.map { " · \($0)" } ?? "")", color: Theme.Colors.terracottaDeep)

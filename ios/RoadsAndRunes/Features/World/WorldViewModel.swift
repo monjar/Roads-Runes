@@ -386,7 +386,7 @@ final class WorldViewModel {
     func dropPin(at coordinate: Coordinate) {
         let pin = Place(
             id: String(format: "pin-%.5f,%.5f", coordinate.latitude, coordinate.longitude),
-            name: "Dropped pin", category: nil, address: nil, symbol: "mappin",
+            name: "Dropped pin", category: nil, address: nil, mark: .pin,
             coordinate: coordinate, source: .pin
         )
         select(pin, moveCamera: false)
@@ -402,7 +402,7 @@ final class WorldViewModel {
     static func place(for object: WorldObject) -> Place {
         Place(
             id: "object-\(object.id.uuidString)", name: object.name, category: object.anchorName, address: nil,
-            symbol: object.kind == .monster ? "flame.fill" : (object.kind == .chest ? "shippingbox.fill" : "sparkles"),
+            mark: Mark.of(object),
             coordinate: object.coordinate, source: object.kind == .monster ? .quarry(object.id) : .pin
         )
     }
@@ -514,7 +514,7 @@ final class WorldViewModel {
             name: discovery.name,
             category: "\(kind) · \(discovery.discoveredByUser ? "discovered" : "a mystery")",
             address: nil,
-            symbol: DiscoveryIcon.symbol(for: discovery.category),
+            mark: .place(discovery.category.rawValue),
             coordinate: discovery.coordinate,
             source: .discovery(discovery.id)
         )

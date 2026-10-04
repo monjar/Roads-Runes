@@ -64,7 +64,7 @@ struct CodexBrowser<Places: View>: View {
             .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
             .accessibilityIdentifier("codex.creatures.count")
         if codex.creatures.allSatisfy({ $0.state == .unseen }) {
-            EmptyState(icon: "questionmark.circle", title: "Nothing met yet", message: "They keep to places nobody is paying attention to.")
+            EmptyState(icon: .mystery, title: "Nothing met yet", message: "They keep to places nobody is paying attention to.")
         }
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 12) {
             ForEach(codex.creatures) { creature in

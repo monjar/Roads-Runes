@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 import WatchKit
@@ -9,15 +10,20 @@ struct ObjectiveCompleteOverlay: View {
     let token: Int
     let dismiss: () -> Void
 
+    private var icon: GameIcon {
+        switch event.outcome {
+        case "GONE": return .sword
+        case "OPENED": return .openChest
+        case "FOUND": return .runeStone
+        default: return .flag
+        }
+    }
+
     var body: some View {
         VStack(spacing: 6) {
-            ZStack {
-                Circle().fill(WatchTheme.cream)
-                Image(systemName: "sparkle")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(WatchTheme.sage)
-            }
-            .frame(width: 56, height: 56)
+            // What happened, as the phone draws it: a creature beaten, a chest opened, a find.
+            MarkView(.token(icon), palette: .watch)
+                .frame(width: 56, height: 56)
             // GONE, OPENED, FOUND or DONE; an older phone sends none.
             Text(event.outcome ?? "DONE")
                 .font(.system(size: 11, weight: .bold))

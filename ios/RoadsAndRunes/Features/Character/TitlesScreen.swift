@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -19,7 +20,7 @@ struct TitlesScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 if missing {
-                    EmptyState(icon: "rosette", title: "Not on this server yet", message: "Titles to choose come with the next server update.")
+                    EmptyState(icon: .laurels, title: "Not on this server yet", message: "Titles to choose come with the next server update.")
                 } else if let error {
                     ErrorLine(text: error)
                 }
@@ -53,7 +54,7 @@ struct TitlesScreen: View {
                     .card()
                 }
                 if loaded, titles.isEmpty, !missing, error == nil {
-                    EmptyState(icon: "rosette", title: "No titles yet", message: "Go out once and you are a Passer-by.")
+                    EmptyState(icon: .laurels, title: "No titles yet", message: "Go out once and you are a Passer-by.")
                 }
             }
             .padding(22)
@@ -66,10 +67,16 @@ struct TitlesScreen: View {
 
     private func row(_ title: TitleInfo) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: title.worn ? "rosette" : (title.earned ? "circle" : "lock.fill"))
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(title.worn ? Theme.Colors.terracottaDeep : Theme.Colors.muted)
-                .frame(width: 24)
+            Group {
+                if title.worn {
+                    IconShape(.laurels).foregroundStyle(Theme.Colors.terracottaDeep).frame(width: 22, height: 22)
+                } else {
+                    Image(systemName: title.earned ? "circle" : "lock.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.muted)
+                }
+            }
+            .frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title.name).font(Theme.Typography.text(15, .semibold))
                     .foregroundStyle(title.earned ? Theme.Colors.ink : Theme.Colors.muted)

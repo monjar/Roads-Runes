@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -63,7 +64,7 @@ struct RouteMapPreview: View {
                 coordinate: poi.coordinate,
                 kind: poi.id == focused?.id ? .stopActive : .stop,
                 title: poi.name,
-                symbol: DiscoveryIcon.symbol(for: poi.category)
+                mark: DiscoveryIcon.mark(for: poi.category)
             )
         }
     }
@@ -79,11 +80,8 @@ struct StopCallout: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: DiscoveryIcon.symbol(for: poi.category))
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(Theme.Colors.cream)
+            MarkView(DiscoveryIcon.mark(for: poi.category))
                 .frame(width: 30, height: 30)
-                .background(DiscoveryIcon.color(for: poi.category), in: Circle())
             VStack(alignment: .leading, spacing: 1) {
                 Text(poi.name)
                     .font(Theme.Typography.text(14, .bold))

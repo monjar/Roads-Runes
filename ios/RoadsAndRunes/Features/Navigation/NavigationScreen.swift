@@ -274,7 +274,7 @@ struct NavigationScreen: View {
                 coordinate: poi.coordinate,
                 kind: poi.discoveryId == readingStop?.discoveryId ? .stopActive : .stop,
                 title: poi.name,
-                symbol: DiscoveryIcon.symbol(for: poi.category)
+                mark: DiscoveryIcon.mark(for: poi.category)
             ))
         }
         return out
@@ -414,11 +414,8 @@ struct NearbyStopCard: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: DiscoveryIcon.symbol(for: poi.category))
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(Theme.Colors.sageDeep)
+            MarkView(DiscoveryIcon.mark(for: poi.category))
                 .frame(width: 34, height: 34)
-                .background(Theme.Colors.cream, in: Circle())
             VStack(alignment: .leading, spacing: 1) {
                 Text(poi.name)
                     .font(Theme.Typography.text(15, .bold))
@@ -623,11 +620,7 @@ struct ObjectiveCompleteCard: View {
 
     var body: some View {
         HStack(spacing: 18) {
-            ZStack {
-                Circle().fill(Theme.Colors.cream)
-                Image(systemName: "sparkle").font(.system(size: 28, weight: .bold)).foregroundStyle(Theme.Colors.sage)
-            }
-            .frame(width: 64, height: 64)
+            MarkView(.token(.flag, ring: .sage)).frame(width: 64, height: 64)
             VStack(alignment: .leading, spacing: 4) {
                 Eyebrow(text: "Objective complete", color: Theme.Colors.cream)
                 Text(objective.title).font(Theme.Typography.voice(24, relativeTo: .title)).foregroundStyle(Theme.Colors.cream).lineLimit(2)

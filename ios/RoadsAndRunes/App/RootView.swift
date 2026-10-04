@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -78,12 +79,12 @@ enum AppTab: Int, CaseIterable, Identifiable {
         }
     }
 
-    var symbol: String {
+    var icon: GameIcon {
         switch self {
-        case .world: return "globe"
-        case .quests: return "sparkle"
-        case .journal: return "book.closed"
-        case .character: return "shield"
+        case .world: return .treasureMap
+        case .quests: return .scroll
+        case .journal: return .openBook
+        case .character: return .wizardFace
         }
     }
 }
@@ -132,7 +133,7 @@ struct FloatingTabBar: View {
                     withAnimation(.snappy(duration: 0.25)) { selected = tab }
                 } label: {
                     VStack(spacing: 3) {
-                        Image(systemName: tab.symbol).font(.system(size: 18, weight: .bold))
+                        IconShape(tab.icon).frame(width: 22, height: 22)
                         Text(tab.title).font(Theme.Typography.tab)
                     }
                     .foregroundStyle(selected == tab ? Theme.Colors.cream : Theme.Colors.line)

@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -44,13 +45,13 @@ struct SectionHeader: View {
 }
 
 struct EmptyState: View {
-    let icon: String
+    let icon: GameIcon
     let title: String
     let message: String
 
     var body: some View {
         VStack(spacing: Theme.Spacing.sm) {
-            Image(systemName: icon).font(.system(size: 34, weight: .semibold)).foregroundStyle(Theme.Colors.hatch)
+            IconShape(icon).foregroundStyle(Theme.Colors.hatch).frame(width: 40, height: 40)
             Text(title).font(Theme.Typography.cardTitle).foregroundStyle(Theme.Colors.ink)
             Text(message).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).multilineTextAlignment(.center)
         }

@@ -1,5 +1,7 @@
 excluded:
   - Packages/*/.build
+  # Generated from game-icons.net by scripts/game_icons.py: one path per line, thousands of characters long.
+  - Packages/RoadsAndRunesCore/Sources/RoadsAndRunesArt/GameIcons.swift
   - "*.xcodeproj"
   - DerivedData
 disabled_rules:

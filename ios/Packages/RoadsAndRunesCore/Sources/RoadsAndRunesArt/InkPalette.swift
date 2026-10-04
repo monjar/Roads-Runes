@@ -31,9 +31,10 @@ public struct InkColor: Hashable, Sendable {
     }
 }
 
-/// The second block of a two-block print: one colour beside the ink.
+/// The second block of a two-block print: one colour beside the ink. `paper`
+/// is for an icon on a dark ground (a button, the tab bar).
 public enum Spot: String, Hashable, Sendable, CaseIterable {
-    case terracotta, sage, wizard, scribe, gold, stone
+    case terracotta, sage, wizard, scribe, gold, stone, paper
 }
 
 /// Paper, ink and the spot colours, passed in rather than read from a theme,
@@ -57,7 +58,7 @@ public struct InkPalette: Hashable, Sendable {
     }
 
     public func spot(_ spot: Spot) -> InkColor {
-        spots[spot] ?? ink
+        spot == .paper ? paper : spots[spot] ?? ink
     }
 
     /// The phone: cream paper, near-black ink, the design system's hues
