@@ -102,14 +102,19 @@ public struct WatchNavigationUpdate: Codable, Hashable, Sendable {
     public var newTerritoryMeters: Double?
     /// How far is left of the route.
     public var remainingMeters: Double?
+    /// Which way the rider is heading, in degrees from north (CourseTracker), so
+    /// the Watch map's dot points the way they are going. An older phone sends none.
+    public var courseDegrees: Double?
 
     public init(
         state: NavigationState, instruction: Instruction? = nil, distanceToInstructionMeters: Double? = nil,
         nextInstructionText: String? = nil, objectiveTitle: String? = nil, objectiveDistanceMeters: Double? = nil,
         distanceMeters: Double, elapsedSeconds: Double, elevationGainMeters: Double, heartRate: Int? = nil,
         speedMps: Double? = nil, latitude: Double? = nil, longitude: Double? = nil, timestamp: Date = Date(),
-        encounterLine: String? = nil, newTerritoryMeters: Double? = nil, remainingMeters: Double? = nil
+        encounterLine: String? = nil, newTerritoryMeters: Double? = nil, remainingMeters: Double? = nil,
+        courseDegrees: Double? = nil
     ) {
+        self.courseDegrees = courseDegrees
         self.encounterLine = encounterLine
         self.newTerritoryMeters = newTerritoryMeters
         self.remainingMeters = remainingMeters

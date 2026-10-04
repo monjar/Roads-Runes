@@ -26,6 +26,27 @@ final class RideStoreTests: XCTestCase {
         XCTAssertEqual(decoded.heartRate, 132)
     }
 
+    func testTheRiderDotPointsTheWayTheRiderIsGoing() throws {
+        // An older phone sends positions and no course: the Watch works it out.
+        let store = RideStore()
+        XCTAssertNil(store.riderCourse)
+        var moving = update(instruction: instruction(1))
+        moving.latitude = 51.4900
+        moving.longitude = -0.0400
+        store.apply(update: moving)
+        XCTAssertNil(store.riderCourse, "no direction before the rider has moved")
+        moving.latitude = 51.4902 // about 22 m north
+        store.apply(update: moving)
+        XCTAssertEqual(try XCTUnwrap(store.riderCourse), 0, accuracy: 2)
+        // A phone that sends its course is believed over the guess.
+        moving.courseDegrees = 270
+        store.apply(update: moving)
+        XCTAssertEqual(store.riderCourse, 270)
+        // And the course survives the trip through the Watch messages.
+        let decoded = try WatchMessages.navigationUpdate(from: WatchMessages.navigationUpdate(moving))
+        XCTAssertEqual(decoded.courseDegrees, 270)
+    }
+
     func testStalenessGrowsWithoutMessages() {
         let store = RideStore()
         XCTAssertTrue(store.isStale())

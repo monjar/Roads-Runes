@@ -34,10 +34,7 @@ struct MapScreen: View {
                 }
                 if let here = store.riderCoordinate {
                     Annotation("You", coordinate: here.clLocation) {
-                        Circle()
-                            .fill(WatchTheme.sage)
-                            .stroke(.black, lineWidth: 2)
-                            .frame(width: 14, height: 14)
+                        RiderDot(course: store.riderCourse)
                     }
                     .annotationTitles(.hidden)
                 }
@@ -63,6 +60,43 @@ struct MapScreen: View {
             withAnimation(.easeInOut(duration: 0.3)) { camera = .region(region) }
         } else {
             camera = .region(region)
+        }
+    }
+}
+
+/// The rider on the Watch map: a sage dot with a pointer the way they are
+/// heading, as the phone's has. The map is north-up, so the pointer turns by the
+/// course itself; before the rider has moved there is no pointer.
+struct RiderDot: View {
+    let course: Double?
+
+    var body: some View {
+        ZStack {
+            if let course {
+                Pointer()
+                    .fill(WatchTheme.sage)
+                    .stroke(.black, lineWidth: 1.5)
+                    .frame(width: 26, height: 26)
+                    .rotationEffect(.degrees(course))
+            }
+            Circle()
+                .fill(WatchTheme.sage)
+                .stroke(WatchTheme.cream, lineWidth: 2)
+                .frame(width: 14, height: 14)
+        }
+        .frame(width: 26, height: 26)
+        .accessibilityLabel(course.map { "You, heading \(Int($0.rounded())) degrees" } ?? "You")
+    }
+
+    /// A short triangle standing on the dot, pointing up (north) before it turns.
+    struct Pointer: Shape {
+        func path(in rect: CGRect) -> Path {
+            var path = Path()
+            path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.midX + rect.width * 0.22, y: rect.midY - rect.height * 0.08))
+            path.addLine(to: CGPoint(x: rect.midX - rect.width * 0.22, y: rect.midY - rect.height * 0.08))
+            path.closeSubpath()
+            return path
         }
     }
 }

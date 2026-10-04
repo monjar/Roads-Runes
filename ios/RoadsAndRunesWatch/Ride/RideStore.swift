@@ -44,6 +44,11 @@ final class RideStore {
     /// starting a second GPS on the wrist.
     var riderCoordinate: Coordinate? { update?.coordinate }
 
+    /// Which way the rider is heading: the phone's course, or, from an older phone
+    /// that sends none, worked out here from the positions it sends.
+    var riderCourse: Double? { update?.courseDegrees ?? courseFromPositions.course }
+    @ObservationIgnored private var courseFromPositions = CourseTracker()
+
     /// Last non-nil instruction; survives updates whose instruction is nil and phone drops.
     private(set) var currentInstruction: Instruction?
     /// Distance to `currentInstruction` as last reported alongside a non-nil instruction.
@@ -149,6 +154,7 @@ final class RideStore {
 
     func apply(update newUpdate: WatchNavigationUpdate, receivedAt: Date = Date()) {
         let previousState = update?.state
+        if let here = newUpdate.coordinate { courseFromPositions.update(here) }
         update = newUpdate
         lastUpdateAt = receivedAt
         optimisticPaused = nil
@@ -161,6 +167,7 @@ final class RideStore {
             turnCueToken += 1
         }
         if newUpdate.state.isTerminal {
+            courseFromPositions.reset()
             summary = nil
             currentInstruction = nil
             currentDistanceToInstruction = nil
@@ -206,6 +213,7 @@ final class RideStore {
     }
 
     func reset() {
+        courseFromPositions.reset()
         summary = nil
         update = nil
         lastUpdateAt = nil

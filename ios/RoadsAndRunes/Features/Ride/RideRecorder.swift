@@ -34,6 +34,8 @@ final class RideRecorder {
     /// A new route was just taken; true for a few seconds, for the card to say so.
     private(set) var recentReroute = false
     private(set) var lastFix: LocationFix?
+    /// Which way the rider is heading, for the Watch map's dot.
+    @ObservationIgnored private var course = CourseTracker()
     /// A stop the rider asked for that they are near right now, so the ride can say
     /// "your café is 90 m away" rather than leaving them to spot it going past.
     private(set) var nearbyStop: RoutePOI?
@@ -155,6 +157,7 @@ final class RideRecorder {
         self.title = self.quest == nil ? title : nil
         clientRideId = UUID()
         startedAt = Date()
+        course.reset()
         sequence = 0
         pendingPoints = []
         pendingObjectiveEvents = []
@@ -309,6 +312,7 @@ final class RideRecorder {
         var enriched = fix
         enriched.heartRate = lastHeartRate
         lastFix = enriched
+        course.update(enriched.coordinate)
         lastFixReceivedAt = Date()
         let still = stillness.update(speedMps: enriched.speed, at: enriched.timestamp)
         if still != isStill { isStill = still }
@@ -944,7 +948,8 @@ final class RideRecorder {
             heartRate: stats.lastHeartRateBpm, speedMps: stats.currentSpeedMps,
             latitude: lastFix?.coordinate.latitude, longitude: lastFix?.coordinate.longitude,
             encounterLine: encounterLine, newTerritoryMeters: newTerritoryMeters,
-            remainingMeters: state == .active ? progress?.distanceRemaining : nil
+            remainingMeters: state == .active ? progress?.distanceRemaining : nil,
+            courseDegrees: course.course
         )
         watch.send(update: update, force: force)
     }
