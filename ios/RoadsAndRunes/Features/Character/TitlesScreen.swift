@@ -10,13 +10,19 @@ struct TitlesScreen: View {
     @State private var loaded = false
     @State private var error: String?
     @State private var saving: String?
+    /// The server has no titles to list (one from before 0.6.2).
+    @State private var missing = false
 
     private var pinned: Bool { container.session.character?.titlePinned == true }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                if let error { ErrorLine(text: error) }
+                if missing {
+                    EmptyState(icon: "rosette", title: "Not on this server yet", message: "Titles to choose come with the next server update.")
+                } else if let error {
+                    ErrorLine(text: error)
+                }
                 Text("A title is worn as soon as it is earned, until you choose one.")
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
                 let earned = titles.filter(\.earned)
@@ -46,7 +52,7 @@ struct TitlesScreen: View {
                     }
                     .card()
                 }
-                if loaded, titles.isEmpty {
+                if loaded, titles.isEmpty, !missing, error == nil {
                     EmptyState(icon: "rosette", title: "No titles yet", message: "Go out once and you are a Passer-by.")
                 }
             }
@@ -82,6 +88,8 @@ struct TitlesScreen: View {
         do {
             titles = try await container.api.titles()
             error = nil
+        } catch let failure as APIError where failure.isNotFound {
+            missing = true
         } catch {
             self.error = error.localizedDescription
         }

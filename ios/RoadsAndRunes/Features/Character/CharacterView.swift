@@ -113,14 +113,22 @@ struct CharacterView: View {
             }
             .card()
 
-            NavigationLink { RunesScreen() } label: { moreRow("Runes", symbol: "seal") }
-                .buttonStyle(.pressable)
-                .accessibilityIdentifier("character.runes")
-            NavigationLink { TitlesScreen() } label: { moreRow("Titles", symbol: "rosette") }
-                .buttonStyle(.pressable)
-                .accessibilityIdentifier("character.titles")
-            SectionHeader(title: "Deeds", subtitle: "a record, not points")
-            DeedsCard()
+            // Each only on a server that has it: a 0.7.0 server's sheet carries `inscribed`,
+            // a 0.6.2 server's character carries `titlePinned`. An older one has neither.
+            if character?.sheet?.inscribed != nil {
+                NavigationLink { RunesScreen() } label: { moreRow("Runes", symbol: "seal") }
+                    .buttonStyle(.pressable)
+                    .accessibilityIdentifier("character.runes")
+            }
+            if character?.titlePinned != nil {
+                NavigationLink { TitlesScreen() } label: { moreRow("Titles", symbol: "rosette") }
+                    .buttonStyle(.pressable)
+                    .accessibilityIdentifier("character.titles")
+            }
+            if character?.sheet?.inscribed != nil {
+                SectionHeader(title: "Deeds", subtitle: "a record, not points")
+                DeedsCard()
+            }
             if container.session.isEnabled("codex") {
                 NavigationLink { CodexScreen() } label: { moreRow("Codex", symbol: "book.fill") }
                     .buttonStyle(.pressable)

@@ -200,7 +200,8 @@ extension RideEvent {
     /// in survives only on things placed before it was retired; it is said as the road.
     static func wants(_ method: KillMethodKind) -> String? {
         switch method {
-        case .pace: return "It wants the road used."
+        // Only a server from before 0.6.1 still deals one; say what it really wants.
+        case .pace: return "It wants a fast kilometre."
         case .climb: return "It wants a climb."
         case .rune: return "It wants its rune cut."
         case .lore: return "It wants the word."

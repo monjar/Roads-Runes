@@ -26,7 +26,7 @@ final class RideEventTests: XCTestCase {
     }
 
     func testASightingSaysHowFarAndWhatItWants() {
-        XCTAssertEqual(RideEvent.sighted(name: "Bog Wraith", kind: .monster, meters: 212, method: .pace).spoken(), "Bog Wraith, 200 metres. It wants the road used.")
+        XCTAssertEqual(RideEvent.sighted(name: "Bog Wraith", kind: .monster, meters: 212, method: .pace).spoken(), "Bog Wraith, 200 metres. It wants a fast kilometre.")
         XCTAssertEqual(RideEvent.sighted(name: "Old chest", kind: .chest, meters: 140, method: nil).spoken(), "A chest, 150 metres.")
         XCTAssertEqual(RideEvent.sighted(name: "Raido", kind: .collectable, meters: 12, method: nil).spoken(), "A piece, 50 metres.")
     }
@@ -126,7 +126,7 @@ final class RideEventTests: XCTestCase {
         announcer.offer(.sighted(name: "Old chest", kind: .chest, meters: 350, method: nil), at: t0)
         announcer.offer(.sighted(name: "Fen Troll", kind: .monster, meters: 200, method: .pace), at: t0.addingTimeInterval(1))
         XCTAssertEqual(announcer.waiting, 1)
-        XCTAssertEqual(announcer.nextLine(now: t0.addingTimeInterval(1)), "Fen Troll, 200 metres. It wants the road used.")
+        XCTAssertEqual(announcer.nextLine(now: t0.addingTimeInterval(1)), "Fen Troll, 200 metres. It wants a fast kilometre.")
     }
 
     func testTheGapRunsFromTheEndOfALine() {

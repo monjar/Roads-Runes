@@ -492,7 +492,11 @@ struct EncounterBanner: View {
             return status.distanceMeters <= wordReach ? "Write the word" : nil
         }
         guard let lore = loreMethod else { return nil }
-        return lore.params["requires"]?.arrayValue?.contains(.string("photo")) == true ? "Write a note (and take a photo)" : "Write a note"
+        // This sheet takes words, not photographs: a way in that needs one is not offered,
+        // and nothing is offered from further than the server would accept it.
+        if lore.params["requires"]?.arrayValue?.contains(.string("photo")) == true { return nil }
+        guard status.distanceMeters <= (lore.double("radiusMeters") ?? 120) * 1.5 else { return nil }
+        return "Write a note"
     }
 
     private var line: String {

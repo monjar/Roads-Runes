@@ -179,7 +179,11 @@ struct KnackRow: View {
     var color: Color = Theme.Colors.sage
     let learn: () -> Void
 
-    private var working: Bool { state.ability.working ?? true }
+    /// The server says whether it acts on a knack; one from before 0.6.0 does not, and
+    /// read only these two effects.
+    private var working: Bool {
+        state.ability.working ?? state.ability.effects.contains { ["QUEST_POI_VISIBILITY", "UNLOCK_TEMPLATE"].contains($0.type) }
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {

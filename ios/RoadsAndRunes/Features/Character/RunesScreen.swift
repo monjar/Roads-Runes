@@ -11,12 +11,20 @@ struct RunesScreen: View {
     @State private var error: String?
     @State private var busy: String?
     @State private var cutting: String?
+    /// The server has no runes (one from before 0.7.0): say so, not a spinner for ever.
+    @State private var missing = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                if let error { ErrorLine(text: error) }
-                if let state {
+                if missing {
+                    EmptyState(icon: "seal", title: "Not on this server yet", message: "Runes come with the next server update.")
+                } else if let error {
+                    ErrorLine(text: error)
+                }
+                if missing {
+                    EmptyView()
+                } else if let state {
                     slots(state)
                     let held = state.runes.filter(\.held)
                     if held.isEmpty {
@@ -134,6 +142,8 @@ struct RunesScreen: View {
         do {
             state = try await container.api.runes()
             error = nil
+        } catch let failure as APIError where failure.isNotFound {
+            missing = true
         } catch {
             self.error = error.localizedDescription
         }
@@ -205,7 +215,7 @@ struct DeedsCard: View {
                     }
                 }
             } else if unavailable {
-                Text("Nothing recorded yet.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                Text("The deeds could not be read just now.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
             } else {
                 ProgressView().tint(Theme.Colors.terracotta).frame(maxWidth: .infinity)
             }

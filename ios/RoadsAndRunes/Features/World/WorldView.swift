@@ -213,7 +213,9 @@ struct WorldView: View {
                 units: model.units,
                 onDirections: { directionsTo = place },
                 onClose: { withAnimation(.snappy) { model.closePlace() } },
-                lampCost: WorldViewModel.lampCost,
+                // The lamp only on a server that places one fairly (0.6.1+, which sends `combat`):
+                // an older one took the coins and on most days placed nothing.
+                lampCost: container.session.config?.combat != nil ? WorldViewModel.lampCost : nil,
                 leavingLamp: model.leavingLamp,
                 lampError: model.lampError,
                 onLamp: { Task { await model.leaveLamp(at: place) } }
