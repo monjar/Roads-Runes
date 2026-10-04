@@ -135,6 +135,17 @@ async def test_the_finale_places_its_elder_and_it_stays_while_the_step_is_open(e
         assert again.status == "SPAWNED" and again.expires_at > utcnow()
 
 
+def test_every_steps_elder_seed_fits_its_column():
+    # SQLite does not hold a string to its width; Postgres refuses it, so the
+    # finale failed only on PostGIS.
+    width = WorldObject.__table__.c.seed.type.length
+    for arc in story.load_arcs():
+        for step in arc["quests"]:
+            # The longest the spawner makes of it: a retry number, then kind and index.
+            seed = f"{world_objects.elder_seed(step['slug'])}:99:MONSTER:99"
+            assert len(seed) <= width, step["slug"]
+
+
 def test_a_riddle_names_its_place_nowhere():
     from app.quests.generator import GeneratedObjective, GeneratedQuest
     from app.quests.models import QuestObjective

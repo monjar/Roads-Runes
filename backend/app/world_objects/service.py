@@ -660,6 +660,12 @@ async def place_on_route(
     return placed[0] if placed else None
 
 
+def elder_seed(step_slug: str) -> str:
+    """The seed of a story step's elder. Seeds are unique per user, so the user
+    is not in it; with it, the longest step slug ran past the 96-character column."""
+    return f"story:{step_slug}"
+
+
 async def place_elder(
     db: AsyncSession,
     settings: Any,
@@ -680,12 +686,12 @@ async def place_elder(
     from app.core.activity import DISTANCE_SCALE
     from app.world_objects.spawner import species_road_form
 
-    seed = f"story:{user_id}:{step_slug}"
+    seed = elder_seed(step_slug)
     standing = await db.scalar(
         select(WorldObject).where(
             WorldObject.user_id == user_id,
             WorldObject.status == "SPAWNED",
-            WorldObject.seed.like(f"{seed}%"),
+            WorldObject.seed.like(f"{seed}:%"),
         )
     )
     if standing is not None:
