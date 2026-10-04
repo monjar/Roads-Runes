@@ -987,10 +987,14 @@ async def _fight_by_effort(
     min_len = float(base_cfg.get("runeMinLengthMeters", 300))
     max_len = float(base_cfg.get("runeMaxLengthMeters", 4000))
 
-    # Waking (0.7.0): an inscribed rune's road form cut anywhere on the outing wakes
-    # it. Once per outing, it counts a rank deeper and lands on everything in reach.
+    # Waking (0.7.0): an inscribed rune's road form cut on an outing planned to cut it
+    # (a rune ride) wakes it. Once per outing, it counts a rank deeper and lands on
+    # everything in reach. A shape an ordinary outing happens to make wakes nothing:
+    # street grids make squares, and the replay found three ordinary outings in five
+    # would have woken one by chance.
     woken: list[tuple[float, float, int]] = []
-    for rune_id in list(sheet.inscribed):
+    planned = await _planned_rune(db, ride)
+    for rune_id in [r for r in sheet.inscribed if r == planned]:
         form = runes_catalog.road_form(rune_id)
         if form not in runes_catalog.CUT_FORMS:
             continue
@@ -1103,6 +1107,17 @@ async def _fight_by_effort(
                 outcome.missed.append((obj, "LOOSENED"))
         elif obj.status == "SPAWNED":
             outcome.missed.append((obj, "UNTOUCHED"))
+
+
+async def _planned_rune(db: AsyncSession, ride: Any) -> str | None:
+    """The rune a ride was planned to cut, if it was a rune ride."""
+    from app.routing.models import Route
+
+    route_id = getattr(ride, "route_id", None)
+    if route_id is None:
+        return None
+    route = await db.get(Route, route_id)
+    return str((route.request or {}).get("rune") or "") or None if route is not None else None
 
 
 GROUND_RULES = {

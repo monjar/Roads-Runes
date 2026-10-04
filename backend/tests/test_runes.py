@@ -187,20 +187,50 @@ def test_the_rules_change_the_fight_and_a_woken_rune_counts_a_rank_deeper():
 # --- waking ---------------------------------------------------------------------------
 
 
-async def test_a_loop_cut_anywhere_wakes_raido_and_lands_on_what_is_in_reach(explorer_client):
+async def ride_planned(c, pts: list[dict], route_id: str | None) -> dict:
+    """An outing ridden on a planned route (a rune ride), through the API."""
+    from app.core.geo import haversine_m
+
+    body = {"clientRideId": str(uuid.uuid4()), "startedAt": pts[0]["timestamp"], "routeId": route_id}
+    r = await c.post("/rides", json=body)
+    assert r.status_code == 201, r.text
+    ride_id = r.json()["id"]
+    distance = sum(
+        haversine_m(a["latitude"], a["longitude"], b["latitude"], b["longitude"])
+        for a, b in zip(pts, pts[1:], strict=False)
+    )
+    r = await c.post(
+        f"/rides/{ride_id}/complete",
+        json={
+            "endedAt": pts[-1]["timestamp"],
+            "distanceMeters": distance,
+            "durationSeconds": len(pts) * 2,
+            "elevationGainMeters": 0,
+            "points": pts,
+        },
+    )
+    assert r.status_code == 200, r.text
+    return (await c.get(f"/rides/{ride_id}/summary")).json()
+
+
+async def test_a_planned_loop_wakes_raido_and_lands_on_what_is_in_reach(explorer_client):
     c = explorer_client
     await hold(c, "raido")
-    # A thing with no wish for a rune at all, a kilometre from where the loop is cut.
+    # A thing with no wish for a rune at all, near where the loop is cut.
     far = destination_point(ORIGIN[0], ORIGIN[1], 0, 800)
     object_id = await place_monster("fen-troll", tier=3, at=far, wants=["GROUND", "WORD"], minds=["CLIMB"])
-    summary = await ride(c, loop_trace(ORIGIN, 200, laps=2))
+    planned = await c.post(
+        "/routes/rune", json={"origin": {"latitude": ORIGIN[0], "longitude": ORIGIN[1]}, "rune": "raido"}
+    )
+    assert planned.status_code == 200, planned.text
+    summary = await ride_planned(c, loop_trace(ORIGIN, 200, laps=2), planned.json()["alternatives"][0]["id"])
     world = summary["worldObjects"]
     assert world["woken"] == ["raido"]
     async with get_session_factory()() as db:
         cut = (await db.execute(select(RuneCut).where(RuneCut.source == "WAKING"))).scalar_one()
         assert cut.rune_id == "raido" and cut.woke
     report = next((f for f in world["fights"] if f["id"] == object_id), None)
-    if report is not None:  # it was within reach of the loop's start
+    if report is not None:  # it was within reach of the loop
         assert report["damage"].get("RUNE", 0) > 0
     cuts = (await c.get("/runes/cuts")).json()
     assert cuts and cuts[0]["runeId"] == "raido" and cuts[0]["woke"] is True
@@ -208,6 +238,14 @@ async def test_a_loop_cut_anywhere_wakes_raido_and_lands_on_what_is_in_reach(exp
     hand = next(d for d in deeds_now["deeds"] if d["id"] == "HAND")
     assert hand["value"] >= 1 and hand["title"] == "First Cut"
     assert "First Cut" in summary["titlesUnlocked"]
+
+
+async def test_the_same_loop_on_an_ordinary_outing_wakes_nothing(explorer_client):
+    """Street grids make shapes; only an outing planned to cut the rune wakes it."""
+    c = explorer_client
+    await hold(c, "raido")
+    summary = await ride_planned(c, loop_trace(ORIGIN, 200, laps=2), None)
+    assert summary["worldObjects"].get("woken", []) == []
 
 
 async def test_a_rune_stone_picked_up_on_an_outing_is_held(explorer_client):

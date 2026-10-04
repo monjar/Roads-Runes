@@ -34,10 +34,12 @@ from app.db.session import get_session_factory
 from app.discoveries.sensitivity import is_sensitive
 from app.discoveries.service import nearby
 from app.exploration.cells import cell_for
+from app.inventory.catalog import CUT_FORMS
 from app.lore import catalog
 from app.rides.models import Ride, RidePoint
 from app.users.models import User
 from app.world_objects import fight
+from app.world_objects.claims import match_anywhere
 from app.world_objects.service import load_config
 from app.world_objects.spawner import Anchor, pick_species, species_road_form
 
@@ -182,7 +184,9 @@ async def replay(outings: list[Outing], home: tuple[float, float], known_radius_
 
     known: set[str] = set(h3.grid_disk(cell_for(home[0], home[1], 9), max(0, int(known_radius_m / 350))))
     print(f"Ground already read round home: {len(known)} cells ({known_radius_m:.0f} m)")
-    print(f"{'outing':<22} {'km':>5} {'climb':>6} {'landed':>7} {'met':>4} {'off':>4} {'by chance':>9} {'taken':>6}")
+    print(
+        f"{'outing':<22} {'km':>5} {'climb':>6} {'landed':>7} {'met':>4} {'off':>4} {'by chance':>9} {'taken':>6} {'wakes':>6}"
+    )
     for n, outing in enumerate(outings):
         pts = outing.points
         entered = []
@@ -223,20 +227,30 @@ async def replay(outings: list[Outing], home: tuple[float, float], known_radius_
                     accidental += 1
         km = made_good(pts) / 1000
         share = min(1.0, landed_road / max(1.0, km * 1000))
-        summary.append((outing, km, share, off, accidental, taken))
+        # Shapes an ordinary outing cuts by chance (0.7.0): they would wake a rune if
+        # waking were not kept to planned rune rides.
+        coords = [(p.latitude, p.longitude) for p in pts]
+        wakes = [form for form in CUT_FORMS if match_anywhere(coords, form) is not None]
+        summary.append((outing, km, share, off, accidental, taken, wakes))
         print(
-            f"{outing.name[:22]:<22} {km:5.1f} {climbed(pts):6.0f} {share:7.0%} {met:4d} {off:4d} {accidental:9d} {taken:6.0f}"
+            f"{outing.name[:22]:<22} {km:5.1f} {climbed(pts):6.0f} {share:7.0%} {met:4d} {off:4d} {accidental:9d} "
+            f"{taken:6.0f} {','.join(w[0] for w in wakes) or '-':>6}"
         )
 
     print()
-    by_name = {o.name: t for o, _, _, _, _, t in summary}
+    by_name = {o.name: t for o, _, _, _, _, t, _ in summary}
     if "flat ride 25 km" in by_name and "commute 5 km" in by_name:
         verdict = by_name["flat ride 25 km"] > by_name["commute 5 km"]
         print(f"25 km does more than 5 km: {'yes' if verdict else 'NO'}")
-    landed = sum(1 for _, _, share, _, _, _ in summary if share >= 1 / 3)
+    landed = sum(1 for _, _, share, _, _, _, _ in summary if share >= 1 / 3)
     print(f"Outings where a third of the road landed on something: {landed} of {len(summary)}")
-    chance = sum(1 for *_, acc, _ in summary if acc)
+    chance = sum(1 for *_, acc, _, _ in summary if acc)
     print(f"Outings that saw something off by chance: {chance} of {len(summary)} (pass: at most one in five)")
+    shapes = sum(1 for *_, wakes in summary if wakes)
+    print(
+        f"Outings that cut a rune's shape by chance: {shapes} of {len(summary)}. They wake nothing: "
+        "only an outing planned as a rune ride wakes its rune, so accidental wakes are none."
+    )
     if len(summary) < 10:
         print("Fewer than ten outings: the numbers stay provisional.")
 

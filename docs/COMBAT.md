@@ -66,10 +66,14 @@ Inscribed runes change the fight's rules, never its percentages
 | Jera | the week's notice pays half again |
 | Algiz | a loosened bounty keeps its double purse, a day longer |
 
-**Waking.** Cutting an inscribed rune's road form anywhere on an outing wakes
-it, once: it counts a rank deeper for that outing and lands a rune blow on
-every creature within reach of where it was cut (`fight.WOKEN`), as well as
-on those whose own form it is. The phone does not fold waking, Wunjo's stops,
+**Waking.** Cutting an inscribed rune's road form on an outing planned as that
+rune's rune ride (`POST /routes/rune`) wakes it, once: it counts a rank deeper
+for that outing and lands a rune blow on every creature within reach of where
+it was cut (`fight.WOKEN`), as well as on those whose own form it is. A shape
+an ordinary outing happens to make wakes nothing: the replay found three
+ordinary outings in five cut a square by chance (street grids turn at right
+angles), against the plan's mark of one in five. It still lands on a creature
+whose own rune it is. The phone does not fold waking, Wunjo's stops,
 Dagaz or the Ground Six, so it is early, never late.
 
 ## Afterwards

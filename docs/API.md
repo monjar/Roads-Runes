@@ -534,9 +534,9 @@ number, never a damage percentage. Slots open at levels 1, 10 and 25.
   "name", "unit", "value"}]}`
 
 The sheet (`Character.sheet`, `Ride.loadout`) gains `inscribed` (`{"raido": 1}`) and `rules`
-(`{"CARRIED_SCALE": 2.0}`). Cutting an inscribed rune's road form anywhere on an outing wakes it:
-it counts a rank deeper for that outing and lands a rune blow on every creature within reach
-(`worldObjects.woken`). A ride summary gains `runesFound` (stones picked up) and `deeds`
+(`{"CARRIED_SCALE": 2.0}`). Cutting an inscribed rune's road form on an outing planned as its rune ride wakes it: it counts
+a rank deeper for that outing and lands a rune blow on every creature within reach
+(`worldObjects.woken`). A shape cut by chance on an ordinary outing wakes nothing. A ride summary gains `runesFound` (stones picked up) and `deeds`
 (`{"reached": [{"deed", "name", "tier", "title", "frame"}], "records": [...]}`). Deed titles
 join `GET /character/titles` (`source: DEED`).
 
