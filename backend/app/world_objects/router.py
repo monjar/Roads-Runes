@@ -5,12 +5,13 @@ import uuid
 from fastapi import APIRouter, Query
 
 from app.characters.service import get_character, get_rider_profile
+from app.characters.sheet import build_sheet
 from app.core.deps import CurrentUser, DBDep, SettingsDep
 from app.core.errors import NotFound
 from app.core.schemas import APIModel
 from app.economy import service as economy
-from app.progression.engine import XPLine, claim_lines, load_xp_rules
-from app.progression.service import grant
+from app.progression.engine import XPLine, cap_to_day, claim_lines, load_xp_rules
+from app.progression.service import grant, xp_today
 from app.quests import service as quests
 from app.world_objects import service
 from app.world_objects.schemas import ClaimIn, ClaimResultOut, WorldObjectOut
@@ -84,14 +85,22 @@ async def claim(
 ) -> ClaimResultOut:
     """Open a chest or pick up a piece from beside it. 409 when it is out of reach
     (OBJECT_OUT_OF_RANGE), gone (OBJECT_GONE) or a monster (OBJECT_NOT_CLAIMABLE)."""
-    obj, awarded, set_done = await service.claim_by_tap(
-        db, user.id, object_id, payload.latitude, payload.longitude, payload.horizontalAccuracyMeters
-    )
-    # Worth doing for its own sake too: the same XP a ride past it would have given.
     character = await get_character(db, user)
+    obj, awarded, set_done = await service.claim_by_tap(
+        db,
+        user.id,
+        object_id,
+        payload.latitude,
+        payload.longitude,
+        payload.horizontalAccuracyMeters,
+        coin_pct=build_sheet(character).coin_pct,
+    )
+    # Worth doing for its own sake too: the same XP a ride past it would have given,
+    # within what a day may earn (a ride has its own cap; taps had none).
     lines = claim_lines([(obj.kind, obj.tier, obj.bounty)])
     if set_done is not None:
         lines.append(XPLine("SET_COMPLETED", load_xp_rules()["setCompleted"], {"set": set_done["name"]}))
+    lines = cap_to_day(lines, await xp_today(db, character))
     reward = await grant(db, character, lines)
     finished = await quests.on_object_claimed(db, settings, user, obj)
     return ClaimResultOut(

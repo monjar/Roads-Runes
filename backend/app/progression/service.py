@@ -7,12 +7,15 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.characters import catalog
 from app.characters.models import Character
-from app.progression.engine import XPLine, apply_xp, load_xp_rules, title_for_level
-from app.progression.models import RewardEvent, XPEvent
+from app.core.security import utcnow
+from app.progression import titles as title_catalogue
+from app.progression.engine import XPLine, apply_xp, load_xp_rules
+from app.progression.models import CharacterTitle, RewardEvent, XPEvent
 
 
 @dataclass
@@ -34,6 +37,80 @@ class RewardOutcome:
             "titlesUnlocked": self.titles_unlocked,
             "abilityPointsGained": self.ability_points_gained,
         }
+
+
+async def xp_today(db: AsyncSession, character: Character) -> int:
+    """XP this character has been granted since midnight UTC."""
+    from datetime import datetime, time
+
+    from sqlalchemy import func
+
+    start = datetime.combine(utcnow().date(), time.min, tzinfo=utcnow().tzinfo)
+    total = await db.scalar(
+        select(func.coalesce(func.sum(XPEvent.xp), 0)).where(
+            XPEvent.character_id == character.id, XPEvent.created_at >= start
+        )
+    )
+    return int(total or 0)
+
+
+async def earned_titles(db: AsyncSession, character: Character) -> list[CharacterTitle]:
+    return list(
+        (
+            await db.execute(
+                select(CharacterTitle)
+                .where(CharacterTitle.character_id == character.id)
+                .order_by(CharacterTitle.earned_at, CharacterTitle.slug)
+            )
+        ).scalars()
+    )
+
+
+async def award_title(
+    db: AsyncSession, character: Character, slug: str, *, ride_id: uuid.UUID | None = None
+) -> str | None:
+    """The only way a title is earned. Once per title; worn at once unless the
+    player has chosen what they wear. Returns its name when it is new."""
+    entry = title_catalogue.by_slug().get(slug)
+    if entry is None:
+        raise KeyError(f"no such title: {slug}")
+    have = await db.scalar(
+        select(CharacterTitle).where(CharacterTitle.character_id == character.id, CharacterTitle.slug == slug)
+    )
+    if have is not None:
+        return None
+    db.add(CharacterTitle(user_id=character.user_id, character_id=character.id, slug=slug, earned_at=utcnow()))
+    if not character.title_pinned:
+        character.title = entry["name"]
+    db.add(
+        RewardEvent(
+            user_id=character.user_id,
+            character_id=character.id,
+            reward_type="TITLE",
+            ride_id=ride_id,
+            payload={"title": entry["name"], "slug": slug, **({"arc": entry["arc"]} if entry.get("arc") else {})},
+        )
+    )
+    await db.flush()
+    return str(entry["name"])
+
+
+async def wear_title(db: AsyncSession, character: Character, slug: str | None) -> None:
+    """The player chooses what they wear; `None` goes back to the newest earned."""
+    earned = await earned_titles(db, character)
+    if slug is None:
+        character.title_pinned = False
+        newest = max(earned, key=lambda t: t.earned_at, default=None)
+        entry = title_catalogue.by_slug().get(newest.slug) if newest else None
+        character.title = entry["name"] if entry else character.title
+    else:
+        if slug not in {t.slug for t in earned}:
+            from app.core.errors import Conflict
+
+            raise Conflict("That title has not been earned", code="TITLE_NOT_EARNED")
+        character.title = title_catalogue.by_slug()[slug]["name"]
+        character.title_pinned = True
+    await db.flush()
 
 
 async def grant(
@@ -67,18 +144,19 @@ async def grant(
         character.class_level,
         total,
     )
-    # The title the level before gave: a title earned another way (finishing an arc)
-    # is kept until a level brings a new one, not replaced on the next grant.
-    old_title = title_for_level(character.overall_level)
+    old_level = character.overall_level
     character.overall_xp = result.overall_xp
     character.class_xp = result.class_xp
     character.overall_level = result.overall_level
     character.class_level = result.class_level
     character.ability_points += result.ability_points_gained
+    # A level title reached on the way; a title earned another way (an arc) stays
+    # worn until a level brings a new one, and never once the player has chosen.
     titles: list[str] = []
-    if result.title and result.title != old_title:
-        character.title = result.title
-        titles.append(result.title)
+    for reached in title_catalogue.level_titles_between(old_level, result.overall_level):
+        name = await award_title(db, character, reached["slug"], ride_id=ride_id)
+        if name:
+            titles.append(name)
 
     level_ups = [{"kind": lu.kind, "from": lu.from_level, "to": lu.to_level} for lu in result.level_ups]
     for lu in level_ups:
@@ -105,16 +183,6 @@ async def grant(
                 reward_type="ABILITY_AVAILABLE",
                 ride_id=ride_id,
                 payload=ability,
-            )
-        )
-    for title in titles:
-        db.add(
-            RewardEvent(
-                user_id=character.user_id,
-                character_id=character.id,
-                reward_type="TITLE",
-                ride_id=ride_id,
-                payload={"title": title},
             )
         )
     await db.flush()

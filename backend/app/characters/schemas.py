@@ -76,6 +76,26 @@ class CharacterOut(APIModel):
     # The sheet a ride started now would be frozen with (characters/sheet.py), so an
     # outing started offline folds the fight over the last one seen.
     sheet: dict[str, Any] | None = None
+    # The player chose the title they wear (PUT /character/title); earning another
+    # no longer changes it.
+    titlePinned: bool = False
+
+
+class TitleOut(APIModel):
+    """A title, earned or not: `how` says how to earn it."""
+
+    slug: str
+    name: str
+    source: str
+    how: str
+    earned: bool
+    earnedAt: datetime | None = None
+    worn: bool = False
+
+
+class TitleChoice(APIModel):
+    # A title earned, or null to wear the newest earned again.
+    slug: str | None = None
 
 
 class ClassInfo(APIModel):

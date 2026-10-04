@@ -30,7 +30,6 @@ from app.economy.streaks import StreakOutcome, streak_lines, update_streak
 from app.exploration.cells import cell_for, traverse
 from app.exploration.service import ExplorationOutcome, record_traversal
 from app.progression.engine import RideRewardInput, compute_ride_xp
-from app.progression.models import RewardEvent
 from app.progression.service import grant
 from app.quests import story
 from app.quests.models import QuestInstance, QuestObjective
@@ -181,7 +180,10 @@ async def _reward_for_ride(
     exploration: ExplorationOutcome,
     discoveries: list[Discovery],
     claims: ClaimOutcome | None = None,
-    story_arc_completed: bool = False,
+    sheet: CharacterSheet | None = None,
+    far_new_cells: int = 0,
+    wrote_note: bool = False,
+    days_away: int | None = None,
 ) -> dict[str, Any]:
     inp = RideRewardInput(
         character_class=character.character_class,
@@ -202,7 +204,10 @@ async def _reward_for_ride(
         effort=bool(claims and claims.effort),
         blows=list(claims.blows) if claims else [],
         sets_completed=len(claims.sets_completed) if claims else 0,
-        story_arc_completed=story_arc_completed,
+        xp_mods=dict(sheet.xp_pct) if sheet else {},
+        far_new_cells=far_new_cells,
+        wrote_note=wrote_note,
+        days_away=days_away,
     )
     lines = compute_ride_xp(inp)
     outcome = await grant(db, character, lines, ride_id=ride.id, quest_id=quest.id if quest else None)
@@ -311,6 +316,9 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             db, ride.user_id, [(p.latitude, p.longitude) for p in points], ride.id, ended
         )
 
+    # The character as the ride began, not as it is now (characters/sheet.py).
+    sheet = CharacterSheet.from_dict(ride.loadout_snapshot) if ride.loadout_snapshot else build_sheet(character)
+
     # What the trace passed or beat. Same gate as XP: a suspicious ride wins nothing.
     claims = ClaimOutcome()
     if points and not validation.suspicious:
@@ -332,8 +340,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             ended=ended,
             effort=effort,
             new_cell_indices=new_cell_indices,
-            # The character as the ride began, not as it is now (characters/sheet.py).
-            sheet=CharacterSheet.from_dict(ride.loadout_snapshot) if ride.loadout_snapshot else build_sheet(character),
+            sheet=sheet,
         )
         flags.extend(f for f in claims.flags if f not in flags)
         claims.tapped = await world_objects.tapped_during(db, ride.user_id, ride.started_at, ended)
@@ -377,14 +384,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         elif quest is not None and quest.status != "ACTIVE":
             quest = None
 
-    # Where this leaves them in the arc, if the quest was a step of one: the last
-    # step is the arc's ending, with a title and a purse of its own.
     arc: dict[str, Any] | None = None
-    if quest_completed and quest is not None and quest.story_quest_id is not None:
-        owner = await db.get(User, ride.user_id)
-        arc = await story.standing(db, owner, quest) if owner is not None else None
-    arc_reward = (arc or {}).get("reward") if arc and arc["arcCompleted"] else None
-
     reward: dict[str, Any] = {
         "xpAwarded": 0,
         "xpBreakdown": [],
@@ -403,20 +403,19 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             exploration,
             discoveries,
             claims,
-            story_arc_completed=arc_reward is not None,
+            sheet=sheet,
+            far_new_cells=_far_cells(points, exploration.new_cells),
+            wrote_note=_wrote_note(ride),
+            days_away=await _days_away(db, ride),
         )
-        if arc_reward and arc_reward.get("title"):
-            character.title = arc_reward["title"]
-            reward["titlesUnlocked"] = [*reward["titlesUnlocked"], arc_reward["title"]]
-            db.add(
-                RewardEvent(
-                    user_id=character.user_id,
-                    character_id=character.id,
-                    reward_type="TITLE",
-                    ride_id=ride.id,
-                    payload={"title": arc_reward["title"], "arc": arc["arcSlug"] if arc else None},
-                )
-            )
+    # Where this leaves them in the arc, if the quest was a step of one: the last
+    # step is the arc's ending, with a title, a purse and XP of its own, paid once.
+    arc_coins = 0
+    if quest_completed and quest is not None and quest.story_quest_id is not None and not validation.suspicious:
+        owner = await db.get(User, ride.user_id)
+        if owner is not None:
+            arc = await story.settle_arc(db, owner, character, quest, ride_id=ride.id)
+            reward, arc_coins = merge_arc(reward, arc)
 
     # Coins are the other purse: spent on the character where XP is kept. Same
     # gate as XP, so a suspicious ride earns neither.
@@ -427,8 +426,6 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         streak = await update_streak(db, ride.user_id, ended.date(), ride.distance_meters)
         extra = streak_lines(streak)
         extra += [ACLine("SET_COMPLETED", done["bonusAC"], {"set": done["name"]}) for done in claims.sets_completed]
-        if arc_reward and arc_reward.get("ac") and arc is not None:
-            extra.append(ACLine("STORY_ARC", int(arc_reward["ac"]), {"arc": arc["arcTitle"]}))
         coins = await economy.credit_lines(
             db,
             ride.user_id,
@@ -449,10 +446,15 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
                     for o in claims.claimed
                 ],
                 extra_lines=extra,
+                coin_pct=sheet.coin_pct,
             ),
             ride_id=ride.id,
             quest_id=quest.id if quest_completed and quest else None,
         )
+        if arc_coins and arc is not None:
+            # Paid by settle_arc, outside the per-ride cap; shown with the rest.
+            coins["acAwarded"] += arc_coins
+            coins["acBreakdown"].append({"kind": "STORY_ARC", "ac": arc_coins, "detail": {"arc": arc["arcTitle"]}})
 
     if quest_completed and quest is not None:
         await publish(
@@ -514,6 +516,68 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
     return summary
 
 
+FAR_CELL_M = 5000.0
+
+
+def _far_cells(points: list[CleanPoint], new_cells: list[str] | set[str]) -> int:
+    """New cells whose centres lie more than 5 km from where the outing began."""
+    from app.exploration.cells import cell_center
+
+    if not points or not new_cells:
+        return 0
+    start = points[0]
+    return sum(1 for cell in new_cells if haversine_m(start.latitude, start.longitude, *cell_center(cell)) > FAR_CELL_M)
+
+
+def _wrote_note(ride: Ride) -> bool:
+    """A note of a few words written on the outing: at a creature or for an objective."""
+    events = list(ride.encounter_events or []) + list(ride.objective_events or [])
+    return any(len(str(e.get("note") or "").strip()) >= 12 for e in events)
+
+
+async def _days_away(db: AsyncSession, ride: Ride) -> int | None:
+    """Days between the outing before this one and this one; None if it is the first."""
+    from sqlalchemy import func
+
+    before = await db.scalar(
+        select(func.max(Ride.ended_at)).where(
+            Ride.user_id == ride.user_id,
+            Ride.id != ride.id,
+            Ride.status == "PROCESSED",
+            Ride.started_at < ride.started_at,
+        )
+    )
+    if before is None or ride.started_at is None:
+        return None
+    if before.tzinfo is None:
+        from datetime import UTC
+
+        before = before.replace(tzinfo=UTC)
+    started = ride.started_at if ride.started_at.tzinfo else ride.started_at.replace(tzinfo=before.tzinfo)
+    return max(0, (started - before).days)
+
+
+def merge_arc(reward: dict[str, Any], arc: dict[str, Any] | None) -> tuple[dict[str, Any], int]:
+    """Folds an arc's ending (settle_arc) into a ride's or a quest's reward, and
+    pops the bookkeeping it carried. Returns the reward and the coins it paid."""
+    if arc is None:
+        return reward, 0
+    extra = arc.pop("_xp", None)
+    if extra:
+        reward = {
+            **reward,
+            "xpAwarded": reward.get("xpAwarded", 0) + extra["xpAwarded"],
+            "xpBreakdown": [*reward.get("xpBreakdown", []), *extra["xpBreakdown"]],
+            "levelUps": [*reward.get("levelUps", []), *extra["levelUps"]],
+            "abilitiesUnlocked": [*reward.get("abilitiesUnlocked", []), *extra["abilitiesUnlocked"]],
+            "titlesUnlocked": [*reward.get("titlesUnlocked", []), *extra["titlesUnlocked"]],
+        }
+    paid = arc.get("reward") or {}
+    if paid.get("title") and paid["title"] not in reward.get("titlesUnlocked", []):
+        reward = {**reward, "titlesUnlocked": [*reward.get("titlesUnlocked", []), paid["title"]]}
+    return reward, int(paid.get("ac") or 0)
+
+
 async def complete_quest_with_ride(
     db: AsyncSession, settings: Settings, user: User, quest: QuestInstance, ride_id: uuid.UUID
 ) -> dict[str, Any]:
@@ -552,7 +616,9 @@ async def complete_quest_with_ride(
         if character
         else {}
     )
-    return completion_payload(quest, reward)
+    arc = await story.settle_arc(db, user, character, quest, ride_id=ride.id)
+    reward, _ = merge_arc(reward, arc)
+    return {**completion_payload(quest, reward), "storyProgress": arc}
 
 
 async def complete_quest_without_ride(
@@ -574,7 +640,9 @@ async def complete_quest_without_ride(
         )
     )
     reward = (await grant(db, character, lines, quest_id=quest.id)).to_dict() if character else {}
-    return completion_payload(quest, reward)
+    arc = await story.settle_arc(db, user, character, quest)
+    reward, _ = merge_arc(reward, arc)
+    return {**completion_payload(quest, reward), "storyProgress": arc}
 
 
 def quest_snapshot(quest: QuestInstance | None) -> dict[str, Any] | None:

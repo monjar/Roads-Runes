@@ -87,7 +87,6 @@ def test_what_is_beaten_opened_and_found_is_worth_xp():
             character_class="WARRIOR",
             claims=[("CHEST", 2, False), ("CHEST", 1, False), ("COLLECTABLE", 1, False), ("MONSTER", 1, True)],
             sets_completed=1,
-            story_arc_completed=True,
         )
     )
     by_source = {line.source: line for line in lines}
@@ -95,4 +94,5 @@ def test_what_is_beaten_opened_and_found_is_worth_xp():
     assert by_source["COLLECTABLE_FOUND"].xp == 8
     assert by_source["MONSTER_BEATEN"].xp == 75, "a bounty is worth half as much again"
     assert by_source["SET_COMPLETED"].xp == 150
-    assert by_source["STORY_ARC_COMPLETED"].xp == 400
+    # An arc's ending is paid by story.settle_arc, once, not by the ride.
+    assert "STORY_ARC_COMPLETED" not in by_source

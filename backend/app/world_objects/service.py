@@ -871,6 +871,8 @@ async def _fight_by_effort(
     ride_id = str(getattr(ride, "id", ""))
     day = ended.date().isoformat()
     activity = normalise(getattr(ride, "activity", "RIDE"))
+    made_good = _made_good_m(points)
+    old_places = await _old_place_anchors(db, monsters)
     for obj in monsters:
         try:
             foe = foe_of(obj, excluding_ride=ride_id, day=day)
@@ -886,11 +888,18 @@ async def _fight_by_effort(
                 )
                 if match is not None:
                     hit = fight.RuneHit(match.shape, match.end)
+            # The build against this one: elders and bounties, an old place, a long outing.
+            pct = sheet.pct_against(
+                elder=obj.tier >= 2 or bool(obj.bounty),
+                old_place=obj.anchor_discovery_id in old_places,
+                made_good_m=made_good,
+                foot=activity in ("RUN", "WALK"),
+            )
             report = fight.resolve(
                 fight_points,
                 foe,
                 activity=activity,
-                damage_pct=sheet.damage_pct,
+                damage_pct=pct,
                 cfg=cfg,
                 new_cell_indices=new_cell_indices,
                 rune_hit=hit,
@@ -935,6 +944,23 @@ async def _fight_by_effort(
             outcome.missed.append((obj, "UNTOUCHED"))
 
 
+OLD_PLACE_CATEGORIES = ("HISTORICAL", "CULTURAL")
+
+
+async def _old_place_anchors(db: AsyncSession, monsters: list[WorldObject]) -> set[uuid.UUID]:
+    """Which of these things stand at an old or cultural place (the Historian's
+    knack). Sensitive places never anchor anything, so none is among them."""
+    from app.discoveries.models import Discovery
+
+    ids = {m.anchor_discovery_id for m in monsters if m.anchor_discovery_id}
+    if not ids:
+        return set()
+    rows = await db.execute(
+        select(Discovery.id).where(Discovery.id.in_(ids), Discovery.category.in_(OLD_PLACE_CATEGORIES))
+    )
+    return set(rows.scalars())
+
+
 def _claim(obj: WorldObject, ride: Any | None, ended: datetime, detail: dict[str, Any]) -> None:
     obj.status = "CLAIMED"
     obj.claimed_at = ended
@@ -960,6 +986,7 @@ async def claim_by_tap(
     latitude: float,
     longitude: float,
     accuracy_m: float | None,
+    coin_pct: dict[str, float] | None = None,
 ) -> tuple[WorldObject, int, dict[str, Any] | None]:
     """A chest opened, or a piece picked up, by a player standing beside it.
 
@@ -1022,18 +1049,20 @@ async def claim_by_tap(
         await economy.credit(
             db, user_id, finished["bonusAC"], "SET_COMPLETED", object_id=obj.id, payload={"set": finished["name"]}
         )
-    if obj.reward_ac > 0:
+    # A knack that makes boxes pay more (Rumour) pays on a box opened by hand too.
+    paid = int(round(obj.reward_ac * (1 + float((coin_pct or {}).get(obj.kind, 0.0)))))
+    if paid > 0:
         await economy.credit(
             db,
             user_id,
-            obj.reward_ac,
+            paid,
             "BOUNTY" if obj.bounty else TAP_KINDS[obj.kind],
             object_id=obj.id,
             payload={"objectId": str(obj.id), "name": obj.payload.get("name"), "method": "TAP"},
         )
     await db.flush()
     log.info("world_object_claimed", user=str(user_id), kind=obj.kind, method="TAP", meters=round(distance, 1))
-    return obj, obj.reward_ac + (finished["bonusAC"] if finished else 0), finished
+    return obj, paid + (finished["bonusAC"] if finished else 0), finished
 
 
 async def tapped_during(db: AsyncSession, user_id: uuid.UUID, started: datetime, ended: datetime) -> list[WorldObject]:

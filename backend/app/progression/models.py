@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ForeignKey, Integer, String
+from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, JSONType, TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.base import Base, JSONType, TimestampMixin, TZDateTime, UUIDPrimaryKeyMixin
 
 
 class XPEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -40,3 +41,16 @@ class RewardEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("rides.id", ondelete="SET NULL"), nullable=True, index=True
     )
     payload: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict, nullable=False)
+
+
+class CharacterTitle(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A title the character has earned (progression/titles.py). Written only by
+    `progression.service.award_title`, once per title."""
+
+    __tablename__ = "character_titles"
+    __table_args__ = (UniqueConstraint("character_id", "slug"),)
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    character_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), index=True)
+    slug: Mapped[str] = mapped_column(String(60), nullable=False)
+    earned_at: Mapped[datetime] = mapped_column(TZDateTime, nullable=False)

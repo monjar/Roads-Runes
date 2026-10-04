@@ -19,6 +19,7 @@ from app.characters.schemas import (
     ClassInfo,
     ClassProgressOut,
     RiderProfileIO,
+    TitleOut,
 )
 from app.characters.sheet import build_sheet
 from app.core.activity import normalise
@@ -32,8 +33,8 @@ from app.economy.models import UserStreak, Wallet, WalletTransaction
 from app.economy.rules import class_change_terms
 from app.economy.streaks import get_streak
 from app.exploration.models import UserExplorationCell
-from app.progression.engine import level_bounds
-from app.progression.models import RewardEvent, XPEvent
+from app.progression.engine import ability_points_between, level_bounds
+from app.progression.models import CharacterTitle, RewardEvent, XPEvent
 from app.quests.models import QuestInstance, QuestObjective, QuestProgressEvent
 from app.users.models import User
 from app.world_objects.models import WorldObject
@@ -60,19 +61,27 @@ async def maybe_character(db: AsyncSession, user_id: uuid.UUID) -> Character | N
 
 
 def ability_map(character: Character) -> dict[str, int]:
-    return {a.ability_id: a.rank for a in character.abilities}
+    """The knacks that count: the current trade's. Another trade's knacks stay
+    learned and count again on going back to it."""
+    trade = {a["id"] for a in catalog.abilities_for_class(character.character_class)}
+    return {a.ability_id: a.rank for a in character.abilities if a.ability_id in trade}
+
+
+def knacks_to_choose(character: Character) -> int:
+    """Knacks this trade has earned and not yet chosen. Derived per trade from its
+    level and what it has learned, so a change of trade cannot spend one trade's
+    points on another's knacks, and nothing is stored to drift."""
+    earned = ability_points_between(1, character.class_level)
+    return max(0, earned - sum(ability_map(character).values()))
 
 
 def ability_states(character: Character) -> list[AbilityState]:
     owned = ability_map(character)
+    points = knacks_to_choose(character)
     states = []
     for ability in catalog.abilities_for_class(character.character_class):
         rank = owned.get(ability["id"], 0)
-        can_unlock = (
-            character.ability_points > 0
-            and character.class_level >= ability["requiredClassLevel"]
-            and rank < ability["maxRank"]
-        )
+        can_unlock = points > 0 and character.class_level >= ability["requiredClassLevel"] and rank < ability["maxRank"]
         states.append(
             AbilityState(
                 ability=AbilityOut(**ability, working=catalog.is_working(ability)),
@@ -144,7 +153,7 @@ def to_character_out(
         classLevelFloorXP=c_floor,
         title=character.title,
         abilities=ability_states(character),
-        unspentAbilityPoints=character.ability_points,
+        unspentAbilityPoints=knacks_to_choose(character),
         createdAt=character.created_at,
         activeCoins=active_coins,
         classChanges=character.class_changes,
@@ -158,7 +167,29 @@ def to_character_out(
         longestStreakDays=longest_streak_days,
         streakActiveToday=streak_active_today,
         sheet=build_sheet(character).to_dict(),
+        titlePinned=bool(character.title_pinned),
     )
+
+
+async def title_list(db: AsyncSession, character: Character) -> list[TitleOut]:
+    """Every title there is, the earned ones first in the order they came."""
+    from app.progression import titles as title_catalogue
+    from app.progression.service import earned_titles
+
+    earned = {t.slug: t for t in await earned_titles(db, character)}
+    out = [
+        TitleOut(
+            slug=t["slug"],
+            name=t["name"],
+            source=t["source"],
+            how=t["how"],
+            earned=t["slug"] in earned,
+            earnedAt=earned[t["slug"]].earned_at if t["slug"] in earned else None,
+            worn=t["name"] == character.title,
+        )
+        for t in title_catalogue.catalogue()
+    ]
+    return sorted(out, key=lambda t: (not t.earned, t.earnedAt or utcnow()))
 
 
 def class_list(settings: Settings) -> list[ClassInfo]:
@@ -188,13 +219,15 @@ async def create_character(db: AsyncSession, settings: Settings, user: User, pay
         user_id=user.id,
         name=payload.name.strip(),
         character_class=payload.characterClass,
-        title="Novice",
     )
     db.add(character)
     # Every rider gets a default profile; it is separate from the RPG character.
     if await db.scalar(select(RiderProfile).where(RiderProfile.user_id == user.id)) is None:
         db.add(RiderProfile(user_id=user.id))
     await db.flush()
+    from app.progression.service import award_title
+
+    await award_title(db, character, "level-1")
     await db.refresh(character)
     return character
 
@@ -262,6 +295,7 @@ async def reset_character(db: AsyncSession, user: User) -> None:
     await db.execute(delete(QuestObjective).where(QuestObjective.quest_id.in_(quest_ids)))
     await db.execute(delete(QuestInstance).where(QuestInstance.user_id == user.id))
     for model in (
+        CharacterTitle,
         XPEvent,
         RewardEvent,
         WalletTransaction,
@@ -282,8 +316,8 @@ async def unlock_ability(db: AsyncSession, character: Character, ability_id: str
         raise NotFound("Ability not available for this class")
     if character.class_level < ability["requiredClassLevel"]:
         raise Conflict("Class level too low", code="ABILITY_LOCKED")
-    if character.ability_points <= 0:
-        raise Conflict("No ability points available", code="NO_ABILITY_POINTS")
+    if knacks_to_choose(character) <= 0:
+        raise Conflict("No knack to choose yet", code="NO_ABILITY_POINTS")
     existing = next((a for a in character.abilities if a.ability_id == ability_id), None)
     if existing and existing.rank >= ability["maxRank"]:
         raise Conflict("Ability already at max rank", code="ABILITY_MAX_RANK")
@@ -291,7 +325,8 @@ async def unlock_ability(db: AsyncSession, character: Character, ability_id: str
         existing.rank += 1
     else:
         character.abilities.append(CharacterAbility(character_id=character.id, ability_id=ability_id, rank=1))
-    character.ability_points -= 1
+    # Kept in step for anything still reading the column; the count is derived.
+    character.ability_points = knacks_to_choose(character)
     await db.flush()
     return character
 

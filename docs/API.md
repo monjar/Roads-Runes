@@ -142,12 +142,19 @@ Never includes home location, ride start/end points or live location.
   "characterClass": "EXPLORER",
   "overallLevel": 8, "overallXP": 1820, "nextOverallLevelXP": 2200, "overallLevelFloorXP": 1500,
   "classLevel": 6, "classXP": 900, "nextClassLevelXP": 1200, "classLevelFloorXP": 700,
-  "title": "Wanderer",
+  "title": "Familiar Face", "titlePinned": false,
   "abilities": [AbilityState],
   "unspentAbilityPoints": 1,
   "createdAt": "..."
 }
 ```
+
+Since 0.6.2 `unspentAbilityPoints` is the knacks this trade has to choose,
+derived from the trade's level less what it has learned, and only the current
+trade's knacks count anywhere (the sheet, quests, XP). `titlePinned` (optional)
+is true once the player has chosen what to wear. `sheet` gains `vsEldersPct`,
+`lateRoadPct`, `lateRoadAfterMeters` and `wordOldPlacesPct` (all optional), and
+`xpPct` / `coinPct` carry the XP and coin knacks.
 
 `Ability` / `AbilityState`:
 
@@ -157,10 +164,10 @@ Never includes home location, ride start/end points or live location.
     "id": "explorer_trail_sense",
     "characterClass": "EXPLORER",
     "name": "Trail Sense",
-    "description": "Reveal more interesting nearby paths.",
-    "requiredClassLevel": 5,
+    "description": "Quest stops are looked for 15% further out, and new ground does 5% more against things, per rank.",
+    "requiredClassLevel": 2,
     "maxRank": 3,
-    "effects": [{"type": "QUEST_POI_VISIBILITY", "perRank": 0.15}]
+    "effects": [{"type": "QUEST_POI_VISIBILITY", "perRank": 0.15}, {"type": "DAMAGE_PCT", "kind": "GROUND", "perRank": 0.05}]
   },
   "rank": 1,
   "unlocked": true,
@@ -175,7 +182,17 @@ yet; the character sheet marks the others "not yet".
 - `POST /character` `{"name": "Rowan", "characterClass": "EXPLORER"}` → `Character` (409 if exists; 403 `FEATURE_DISABLED` for classes behind flags).
 - `GET /character`
 - `GET /character/abilities` → `[AbilityState]`
-- `POST /character/abilities/{abilityId}/unlock` → `Character`
+- `POST /character/abilities/{abilityId}/unlock` → `Character` (409 `NO_ABILITY_POINTS` with no knack to choose)
+- `GET /character/titles` (0.6.2) → `[Title]`, every title there is, the earned first:
+  `{"slug": "level-5", "name": "Familiar Face", "source": "LEVEL|ARC|DEED|CAST", "how": "Reach level 5.", "earned": true, "earnedAt": "...", "worn": true}`
+- `PUT /character/title` (0.6.2) `{"slug": "arc-first-light"}` → `Character`: wear an earned title
+  and keep it (409 `TITLE_NOT_EARNED`); `{"slug": null}` wears the newest earned again.
+
+A title is worn as soon as it is earned until the player chooses one. Level titles are Passer-by (1),
+Familiar Face (5), Roadwise (10), Journeyman (20), Waywright (30), Old Hand (40) and Known to the
+Roads (50); finishing an arc gives its own. New XP sources in 0.6.2: `PATHFINDER`, `FAR_WANDERER`,
+`WELCOME_BACK` (the first outing after 14 days or more pays its first kilometre twice), and
+`STORY_ARC_COMPLETED` is paid once per arc whichever way its last step was finished.
 - `GET /character/bikes` → `[Bike]`; `POST /character/bikes`; `PATCH /character/bikes/{id}`; `DELETE /character/bikes/{id}`
 
 `Bike`:

@@ -65,12 +65,10 @@ def level_bounds(level: int, track: str = "overall") -> tuple[int, int | None]:
 
 
 def title_for_level(level: int) -> str | None:
-    titles = load_levels().get("titles", {}).get("overall", {})
-    best: str | None = None
-    for key in sorted((int(k) for k in titles), reverse=False):
-        if level >= key:
-            best = titles[str(key)]
-    return best
+    from app.progression.titles import level_title
+
+    reached = level_title(level)
+    return reached["name"] if reached else None
 
 
 def ability_points_between(old_level: int, new_level: int) -> int:
@@ -111,7 +109,15 @@ class RideRewardInput:
     effort: bool = False
     blows: list[tuple[int, bool, float]] = field(default_factory=list)
     sets_completed: int = 0
-    story_arc_completed: bool = False
+    # Knacks from the ride's frozen sheet (characters/sheet.py `xp_pct`):
+    # FIRST_CELLS (a count), FAR_CELLS, LONG_DISTANCE, DISCOVERY_WITH_NOTE (shares).
+    xp_mods: dict[str, float] = field(default_factory=dict)
+    # New cells more than 5 km from where the outing began (Far Wanderer).
+    far_new_cells: int = 0
+    # A note was written on the outing (Footnote).
+    wrote_note: bool = False
+    # Days since the outing before this one; None for a first outing.
+    days_away: int | None = None
 
 
 CLAIM_SOURCES = {"CHEST": "CHEST_OPENED", "COLLECTABLE": "COLLECTABLE_FOUND", "MONSTER": "MONSTER_BEATEN"}
@@ -183,6 +189,16 @@ def compute_ride_xp(inp: RideRewardInput) -> list[XPLine]:
     if capped_cells:
         xp = capped_cells * rules["newCell"] + min(inp.new_cells_explored, capped_cells) * rules["newCellExploredBonus"]
         lines.append(XPLine("NEW_AREA_EXPLORED", xp, {"cells": capped_cells, "explored": inp.new_cells_explored}))
+        # Pathfinder: the first new cells of an outing pay twice.
+        first = min(capped_cells, int(inp.xp_mods.get("FIRST_CELLS", 0)))
+        if first:
+            lines.append(XPLine("PATHFINDER", first * rules["newCell"], {"cells": first}))
+        # Far Wanderer: new cells a long way from the start pay more.
+        far = min(capped_cells, inp.far_new_cells)
+        if far and inp.xp_mods.get("FAR_CELLS"):
+            xp = int(round(far * rules["newCell"] * inp.xp_mods["FAR_CELLS"]))
+            if xp:
+                lines.append(XPLine("FAR_WANDERER", xp, {"cells": far}))
 
     if inp.new_roads_meters > 0:
         km = inp.new_roads_meters / 1000.0
@@ -191,12 +207,17 @@ def compute_ride_xp(inp: RideRewardInput) -> list[XPLine]:
     discoveries = inp.discovery_categories[: rules["caps"]["perRideDiscoveries"]]
     if discoveries:
         xp = sum(rules["discoveryByCategory"].get(c, rules["discoveryByCategory"]["CUSTOM"]) for c in discoveries)
+        # Footnote: places found on an outing with a note pay more.
+        if inp.wrote_note and inp.xp_mods.get("DISCOVERY_WITH_NOTE"):
+            xp = int(round(xp * (1 + inp.xp_mods["DISCOVERY_WITH_NOTE"])))
         lines.append(XPLine("DISCOVERY_FOUND", xp, {"count": len(discoveries)}))
 
     ld = rules["longDistance"]
     if inp.distance_meters >= ld["thresholdMeters"]:
         extra_km = (inp.distance_meters - ld["thresholdMeters"]) / 1000.0
         xp = min(ld["xp"] + int(extra_km * ld["perExtraKm"]), ld["maxXp"])
+        # Endurance: the long way pays more.
+        xp = int(round(xp * (1 + inp.xp_mods.get("LONG_DISTANCE", 0.0))))
         lines.append(XPLine("LONG_DISTANCE_ADVENTURE", xp, {"distanceMeters": inp.distance_meters}))
 
     cl = rules["climb"]
@@ -211,9 +232,6 @@ def compute_ride_xp(inp: RideRewardInput) -> list[XPLine]:
 
     if inp.sets_completed:
         lines.append(XPLine("SET_COMPLETED", inp.sets_completed * rules["setCompleted"], {"sets": inp.sets_completed}))
-
-    if inp.story_arc_completed:
-        lines.append(XPLine("STORY_ARC_COMPLETED", rules["storyArcBonus"]))
 
     # Ground already ridden: not much, and never nothing.
     kg = rules["knownGround"]
@@ -239,6 +257,15 @@ def compute_ride_xp(inp: RideRewardInput) -> list[XPLine]:
     if bonus:
         lines.append(XPLine("CLASS_BONUS", bonus, {"class": inp.character_class}))
 
+    # Welcome back: the first outing after a fortnight away pays its first
+    # kilometre twice, as a share of what the whole outing paid.
+    wb = rules.get("welcomeBack", {})
+    if inp.days_away is not None and inp.days_away >= int(wb.get("afterDays", 14)) and inp.distance_meters > 0:
+        share = min(1.0, float(wb.get("firstMeters", 1000)) / inp.distance_meters)
+        xp = int(round(sum(line.xp for line in lines) * share))
+        if xp:
+            lines.append(XPLine("WELCOME_BACK", xp, {"daysAway": inp.days_away}))
+
     # Per-ride cap, applied proportionally so the breakdown still adds up.
     cap = rules["caps"]["perRideTotal"]
     total = sum(line.xp for line in lines)
@@ -247,6 +274,17 @@ def compute_ride_xp(inp: RideRewardInput) -> list[XPLine]:
         for line in lines:
             line.xp = int(line.xp * scale)
     return lines
+
+
+def cap_to_day(lines: list[XPLine], earned_today: int) -> list[XPLine]:
+    """What is left of the day's XP (`caps.perDayTotal`), shared out over the lines
+    so the breakdown still adds up. Applied to what is taken by hand."""
+    left = max(0, int(load_xp_rules()["caps"]["perDayTotal"]) - earned_today)
+    total = sum(line.xp for line in lines)
+    if total <= left:
+        return lines
+    scale = left / total if total else 0
+    return [XPLine(line.source, int(line.xp * scale), {**line.detail, "capped": True}) for line in lines]
 
 
 @dataclass

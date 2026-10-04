@@ -15,6 +15,8 @@ from app.characters.schemas import (
     CharacterOut,
     ClassInfo,
     RiderProfileIO,
+    TitleChoice,
+    TitleOut,
 )
 from app.core.deps import CurrentUser, DBDep, SettingsDep
 
@@ -47,6 +49,20 @@ async def change_class(
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)
 async def reset(user: CurrentUser, db: DBDep) -> None:
     await service.reset_character(db, user)
+
+
+@router.get("/titles", response_model=list[TitleOut])
+async def titles(user: CurrentUser, db: DBDep) -> list[TitleOut]:
+    return await service.title_list(db, await service.get_character(db, user))
+
+
+@router.put("/title", response_model=CharacterOut)
+async def wear_title(payload: TitleChoice, user: CurrentUser, db: DBDep) -> CharacterOut:
+    from app.progression.service import wear_title as wear
+
+    character = await service.get_character(db, user)
+    await wear(db, character, payload.slug)
+    return await service.character_out(db, character)
 
 
 @router.get("/abilities", response_model=list[AbilityState])

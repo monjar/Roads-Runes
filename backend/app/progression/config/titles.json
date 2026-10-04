@@ -1,0 +1,28 @@
+{
+  "_comment": "Every title there is, by slug (docs/ROADMAP.md, 0.6.2). Written only through progression.service.award_title. `how` is shown for a title not yet earned. Level titles are degrees of being known; `renamed` maps the seven old level titles to them for the 0009 backfill.",
+  "titles": [
+    {"slug": "level-1", "name": "Passer-by", "source": "LEVEL", "level": 1, "how": "Go out once."},
+    {"slug": "level-5", "name": "Familiar Face", "source": "LEVEL", "level": 5, "how": "Reach level 5."},
+    {"slug": "level-10", "name": "Roadwise", "source": "LEVEL", "level": 10, "how": "Reach level 10."},
+    {"slug": "level-20", "name": "Journeyman", "source": "LEVEL", "level": 20, "how": "Reach level 20."},
+    {"slug": "level-30", "name": "Waywright", "source": "LEVEL", "level": 30, "how": "Reach level 30."},
+    {"slug": "level-40", "name": "Old Hand", "source": "LEVEL", "level": 40, "how": "Reach level 40."},
+    {"slug": "level-50", "name": "Known to the Roads", "source": "LEVEL", "level": 50, "how": "Reach level 50."},
+    {"slug": "arc-first-light", "name": "Early Riser", "source": "ARC", "arc": "first-light", "how": "Finish First Light."},
+    {"slug": "arc-what-settles", "name": "Somebody", "source": "ARC", "arc": "what-settles", "how": "Finish What Settles."},
+    {"slug": "arc-the-rune-at-the-crossing", "name": "Reader at the Crossing", "source": "ARC", "arc": "the-rune-at-the-crossing", "how": "Finish The Rune at the Crossing."},
+    {"slug": "arc-the-edge-of-the-map", "name": "Edgewalker", "source": "ARC", "arc": "the-edge-of-the-map", "how": "Finish The Edge of the Map, as a Wayfinder."},
+    {"slug": "arc-what-the-stones-remember", "name": "Stone Reader", "source": "ARC", "arc": "what-the-stones-remember", "how": "Finish What the Stones Remember, as a Cutter."},
+    {"slug": "arc-the-iron-hours", "name": "Ironbound", "source": "ARC", "arc": "the-iron-hours", "how": "Finish The Iron Hours, as a Mender."},
+    {"slug": "arc-a-record-of-small-things", "name": "Keeper of Small Things", "source": "ARC", "arc": "a-record-of-small-things", "how": "Finish A Record of Small Things, as a Clerk."}
+  ],
+  "renamed": {
+    "Novice": "Passer-by",
+    "Wanderer": "Familiar Face",
+    "Pathfinder": "Roadwise",
+    "Far Wanderer": "Journeyman",
+    "Cartographer": "Waywright",
+    "Worldwalker": "Old Hand",
+    "Legend of the Roads": "Known to the Roads"
+  }
+}

@@ -283,6 +283,70 @@ async def standing(db: AsyncSession, user: User, quest: QuestInstance) -> dict[s
     }
 
 
+async def settle_arc(
+    db: AsyncSession,
+    user: User,
+    character: Character | None,
+    quest: QuestInstance,
+    *,
+    ride_id: uuid.UUID | None = None,
+) -> dict[str, Any] | None:
+    """Pays an arc's ending once, whichever way its last step was finished: on a
+    ride, by a tap at a chest, or by the complete button. It used to be paid only
+    on a ride, so an arc whose last step was a chest opened by hand ended unpaid.
+
+    The ending is its title, its purse (outside the per-ride cap) and its XP, and
+    is keyed by arc: a second completion of the same arc pays nothing. Returns
+    where the step leaves the rider (`standing`), with `reward` only when this
+    call paid it.
+    """
+    from app.economy import service as economy
+    from app.progression.engine import XPLine, load_xp_rules
+    from app.progression.models import RewardEvent
+    from app.progression.service import award_title, grant
+    from app.progression.titles import arc_title
+
+    arc = await standing(db, user, quest)
+    if arc is None or not arc["arcCompleted"] or character is None:
+        return arc
+    settled = (
+        await db.execute(
+            select(RewardEvent).where(
+                RewardEvent.character_id == character.id, RewardEvent.reward_type == "ARC_SETTLED"
+            )
+        )
+    ).scalars()
+    if any((r.payload or {}).get("arc") == arc["arcSlug"] for r in settled):
+        return {**arc, "reward": None}
+    reward = arc_reward(arc["arcSlug"])
+    db.add(
+        RewardEvent(
+            user_id=user.id,
+            character_id=character.id,
+            reward_type="ARC_SETTLED",
+            ride_id=ride_id,
+            payload={"arc": arc["arcSlug"], **reward},
+        )
+    )
+    if reward.get("ac"):
+        await economy.credit(
+            db, user.id, int(reward["ac"]), "STORY_ARC", ride_id=ride_id, payload={"arc": arc["arcTitle"]}
+        )
+    bonus = int(load_xp_rules()["storyArcBonus"])
+    outcome = await grant(
+        db, character, [XPLine("STORY_ARC_COMPLETED", bonus, {"arc": arc["arcSlug"]})], ride_id=ride_id
+    )
+    # The arc's title last, so it is the one worn even when its XP brought a level title too.
+    entry = arc_title(arc["arcSlug"])
+    title = await award_title(db, character, entry["slug"], ride_id=ride_id) if entry else None
+    await db.flush()
+    return {
+        **arc,
+        "reward": {**reward, **({"title": title} if title else {})},
+        "_xp": outcome.to_dict(),
+    }
+
+
 def _authored(text: str, variables: dict[str, Any]) -> str:
     """Authored text may name what the generator found ({poiName}); text that
     names nothing, or names something this template does not produce, is used as

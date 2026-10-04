@@ -58,6 +58,7 @@ def compute_ride_ac(
     quest_difficulty: str | None = None,
     claims: list[dict[str, Any]] | None = None,
     extra_lines: list[ACLine] | None = None,
+    coin_pct: dict[str, float] | None = None,
 ) -> list[ACLine]:
     """What a ride earns: coins per kilometre by activity, one per new cell, the quest's
     purse, and whatever was opened, gathered or beaten on the way."""
@@ -74,12 +75,15 @@ def compute_ride_ac(
     kinds = {"CHEST": "CHEST_OPENED", "COLLECTABLE": "COLLECTABLE", "MONSTER": "MONSTER_SLAIN"}
     for claim in claims or []:
         reward = int(claim.get("rewardAC", 0))
+        # A knack that makes boxes pay more (characters/sheet.py `coin_pct`).
+        reward = int(round(reward * (1 + float((coin_pct or {}).get(str(claim.get("kind")), 0.0)))))
         if reward <= 0:
             continue
         kind = "BOUNTY" if claim.get("bounty") else kinds.get(str(claim.get("kind")), "ADJUSTMENT")
         lines.append(ACLine(kind, reward, {"objectId": str(claim.get("id")), "name": claim.get("name")}))
-    lines.extend(extra_lines or [])
-    return apply_cap(lines, int(rules["caps"]["perRideTotal"]))
+    # Sets, streaks and arcs pay their purse whole: the cap is for what an outing
+    # earns by the kilometre and the thing, not for an ending.
+    return apply_cap(lines, int(rules["caps"]["perRideTotal"])) + list(extra_lines or [])
 
 
 def apply_cap(lines: list[ACLine], cap: int) -> list[ACLine]:
