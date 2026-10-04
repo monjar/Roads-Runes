@@ -113,9 +113,14 @@ struct CharacterView: View {
             }
             .card()
 
+            NavigationLink { RunesScreen() } label: { moreRow("Runes", symbol: "seal") }
+                .buttonStyle(.pressable)
+                .accessibilityIdentifier("character.runes")
             NavigationLink { TitlesScreen() } label: { moreRow("Titles", symbol: "rosette") }
                 .buttonStyle(.pressable)
                 .accessibilityIdentifier("character.titles")
+            SectionHeader(title: "Deeds", subtitle: "a record, not points")
+            DeedsCard()
             if container.session.isEnabled("codex") {
                 NavigationLink { CodexScreen() } label: { moreRow("Codex", symbol: "book.fill") }
                     .buttonStyle(.pressable)

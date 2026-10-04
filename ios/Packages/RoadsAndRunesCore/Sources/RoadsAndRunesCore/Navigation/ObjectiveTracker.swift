@@ -27,6 +27,14 @@ public struct ObjectiveTracker: Sendable {
     private var consecutiveHits: [UUID: Int] = [:]
     private var visitedCells: [UUID: Set<String>] = [:]
     private var cellTargets: [UUID: [CellTarget]] = [:]
+    /// CARRY objectives picked up at their first place and not yet delivered.
+    private var carried: Set<UUID> = []
+
+    static func carryTarget(_ objective: Objective) -> Coordinate? {
+        guard let to = objective.extra?["to"]?.objectValue,
+              let lat = to["latitude"]?.doubleValue, let lon = to["longitude"]?.doubleValue else { return nil }
+        return Coordinate(latitude: lat, longitude: lon)
+    }
 
     public init(objectives: [Objective], start: Coordinate) {
         self.objectives = objectives.sorted { $0.order < $1.order }
@@ -121,6 +129,17 @@ public struct ObjectiveTracker: Sendable {
                 completed = false  // these need the rider to act, or the server to decide
             case .slayMonster, .openChest, .collect:
                 completed = false  // the encounter tracker marks these when the world object is claimed
+            case .inscribeRune:
+                completed = false  // a shape or a stop is read from the trace by the server; a note is written
+            case .carry:
+                // The first place, then the second; the server checks the order on the trace.
+                if carried.contains(objective.id) {
+                    if let to = Self.carryTarget(objective), GeoMath.distance(position, to) <= (objective.radiusMeters ?? 80) {
+                        completed = true
+                    }
+                } else if let from = objective.coordinate, GeoMath.distance(position, from) <= (objective.radiusMeters ?? 80) {
+                    carried.insert(objective.id)
+                }
             }
             if completed {
                 completedObjectiveIDs.insert(objective.id)
@@ -134,10 +153,10 @@ public struct ObjectiveTracker: Sendable {
 
     /// Manually mark an objective complete (e.g. photo taken, note written).
     /// Returns the event to send, or nil if it was already complete.
-    public mutating func markCompleted(_ objectiveID: UUID, at position: Coordinate?, timestamp: Date) -> ObjectiveEvent? {
+    public mutating func markCompleted(_ objectiveID: UUID, at position: Coordinate?, timestamp: Date, note: String? = nil) -> ObjectiveEvent? {
         guard !completedObjectiveIDs.contains(objectiveID) else { return nil }
         completedObjectiveIDs.insert(objectiveID)
-        let event = ObjectiveEvent(objectiveId: objectiveID, occurredAt: timestamp, coordinate: position, value: nil)
+        let event = ObjectiveEvent(objectiveId: objectiveID, occurredAt: timestamp, coordinate: position, value: nil, note: note)
         emittedEvents.append(event)
         return event
     }

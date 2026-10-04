@@ -103,6 +103,14 @@ the shape (the reckoning names it); was there any turn that felt wrong — a
 U-turn, a junction crossed awkwardly, a one-way street, a footpath ridden.
 If any turn felt wrong on a bike, runes are cut on foot only.
 
+### 11. A rune ride
+**Question:** can a rune be planned, ridden and woken without riding badly?
+Inscribe Raido (Character, Runes), then "Cut it" and take the loop the planner
+offers. Ride it as planned. Check: did any turn feel wrong or unsafe; did the
+reckoning say Raido woke; is the cut marked on the Journal's map; did a
+creature in reach take a rune blow. Then, on foot, the same with Sowilo's
+zigzag. Note any loop the matcher did not read (send the GPX).
+
 ## Every release's gate outing
 
 Each release in `docs/ROADMAP.md` is gated on one real outing with the build

@@ -327,6 +327,8 @@ public struct WorldObjectOutcome: Codable, Hashable, Sendable {
     public var setsCompleted: [CompletedSet]?
     /// Effort is damage (0.6.1): one report per thing this outing came near.
     public var fights: [FightReport]?
+    /// Inscribed runes woken on the outing (0.7.0).
+    public var woken: [String]?
 
     public init(claimed: [ClaimedObject] = [], missed: [MissedObject] = [], setsCompleted: [CompletedSet]? = nil, fights: [FightReport]? = nil) {
         self.claimed = claimed

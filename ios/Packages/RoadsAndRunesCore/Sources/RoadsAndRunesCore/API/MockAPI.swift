@@ -19,6 +19,7 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     let lock = NSLock()
     var user: User
     var storedCharacter: Character?
+    var storedRunes: RunesState = SampleData.sampleRunes
     var storedCoins = 0
     var storedTransactions: [WalletTransaction] = []
     var storedObjects: [UUID: WorldObject] = Dictionary(uniqueKeysWithValues: SampleData.sampleObjects.map { ($0.id, $0) })

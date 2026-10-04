@@ -623,7 +623,8 @@ final class RideRecorder {
     /// note goes to the discovery the objective belongs to.
     func complete(objective: Objective, note: String? = nil, photo: Data? = nil) async {
         guard var tracker = objectiveTracker else { return }
-        let event = tracker.markCompleted(objective.id, at: location.lastFix?.coordinate, timestamp: Date())
+        // The note goes with the event: an Ansuz rune is judged by it.
+        let event = tracker.markCompleted(objective.id, at: location.lastFix?.coordinate, timestamp: Date(), note: note)
         objectiveTracker = tracker
         guard let event else { return }
         handle(objectiveEvents: [event])

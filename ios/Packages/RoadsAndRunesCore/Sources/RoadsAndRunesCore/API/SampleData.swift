@@ -432,6 +432,45 @@ public enum SampleData {
         TitleInfo(slug: "level-10", name: "Roadwise", source: "LEVEL", how: "Reach level 10.", earned: false),
     ]
 
+    public static let sampleRunes = RunesState(
+        runes: [
+            RuneInfo(id: "raido", name: "Raido", six: "ROAD", gloss: "The road-rune. Cut it again and the way remembers you.", roadForm: "LOOP",
+                     held: true, rank: 1, shards: 2, inscribed: true,
+                     rule: "The opening blow, what the outing did before it met something, counts 2× at contact.",
+                     nextRank: RuneInfo.RankCost(shards: 2, coins: 100)),
+            RuneInfo(id: "kenaz", name: "Kenaz", six: "ROAD", gloss: "The torch. It shows what is there, which is not always welcome.",
+                     roadForm: "TRIANGLE", held: true, rank: 1, rule: "1 ring of ground read round each place found; things are sighted 600 m out.",
+                     nextRank: RuneInfo.RankCost(shards: 2, coins: 100)),
+            RuneInfo(id: "laguz", name: "Laguz", six: "GROUND", held: false,
+                     rule: "Things that keep to water count the road as something they want: the first 1 met on an outing."),
+        ],
+        inscribed: ["raido"], slots: 1, slotsAtLevel: [1, 10, 25]
+    )
+
+    public static let sampleRuneCuts: [RuneCutInfo] = [
+        RuneCutInfo(runeId: "raido", name: "Raido", latitude: 51.4930, longitude: -0.0300, woke: true, source: "WAKING",
+                    cutAt: referenceDate.addingTimeInterval(-86_400)),
+    ]
+
+    public static let sampleDeeds = DeedsState(
+        deeds: [
+            DeedsState.Deed(id: "LEGS", name: "Legs", what: "Distance, in all", unit: "km", value: 312.4, tier: 2, next: 1000,
+                            title: "Well Travelled", frame: "legs-2"),
+            DeedsState.Deed(id: "LUNGS", name: "Lungs", what: "Height climbed, in all", unit: "m", value: 2400, tier: 1, next: 5000,
+                            title: "Up and Over", frame: "lungs-1"),
+            DeedsState.Deed(id: "EYES", name: "Eyes", what: "New ground read, in all", unit: "patches", value: 412, tier: 1, next: 500,
+                            title: "Looker", frame: "eyes-1"),
+            DeedsState.Deed(id: "HAND", name: "Hand", what: "Runes cut with your track", unit: "runes", value: 1, tier: 1, next: 5,
+                            title: "First Cut", frame: "hand-1"),
+            DeedsState.Deed(id: "INK", name: "Ink", what: "Words written out there", unit: "words", value: 0, tier: 0, next: 1),
+        ],
+        records: [
+            DeedsState.Record(id: "RECORD_FURTHEST", name: "Furthest from where you usually start", unit: "km", value: 14.2),
+            DeedsState.Record(id: "RECORD_NEW_GROUND", name: "Most new ground on one outing", unit: "patches", value: 61),
+            DeedsState.Record(id: "RECORD_HIGHEST", name: "Highest point reached", unit: "m", value: 142),
+        ]
+    )
+
     public static let sampleWeekNotice = WeekNotice(
         week: "2026-W41", kind: "OUTINGS", title: "Three outings this week.", line: "Pinned Monday. Comes down Sunday night.",
         postedBy: "Ada Pym", target: 3, unit: "outings", progress: 1, done: false, paid: false, coins: 150, xp: 200,

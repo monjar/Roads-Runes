@@ -6,7 +6,12 @@ import UIKit
 extension Objective {
     /// Objectives the GPS cannot finish: the rider has to photograph or write something.
     var needsRider: Bool {
-        objectiveType == .photoLocation || objectiveType == .writeNote
+        objectiveType == .photoLocation || objectiveType == .writeNote || isNoteRune
+    }
+
+    /// Ansuz cut by writing (0.7.0): an INSCRIBE_RUNE whose form is a note.
+    var isNoteRune: Bool {
+        objectiveType == .inscribeRune && extra?["roadForm"]?.stringValue == "NOTE"
     }
 }
 
@@ -25,7 +30,7 @@ struct ScribeActions: View {
             if objective.objectiveType == .photoLocation {
                 action("Photograph", symbol: "camera.fill") { takingPhoto = true }
             }
-            if objective.objectiveType == .writeNote {
+            if objective.objectiveType == .writeNote || objective.isNoteRune {
                 action("Write a note", symbol: "square.and.pencil") { writingNote = true }
             }
         }

@@ -1,5 +1,20 @@
 # Plan: Roads & Runes, the whole road to 1.0
 
+## Where it stands (2026-10-04)
+
+Built on the `feat/old-roads` branch, not merged, deployed or sent to TestFlight:
+
+| Release | Built | Still yours |
+|---|---|---|
+| Ground truth | the PostGIS deploy gate, `app/jobs/reprocess.py`, `scripts/play_report.py`, `scripts/replay_fights.py` (run on made-up outings only: 13 short rides on the hosted backend), the source documents | ride 0.5.0 (protocols 1 to 3, sound in a pocket, a shape on real streets); art sign-off |
+| 0.6.0 Words and faces | everything listed below | the gate outing (protocol 4); art sign-off; a read-through of the new lines |
+| 0.6.1 Hold | server, phone and wrist; `effort_combat` off | the replay with real outings; protocols 3 and 5 with a fight; then the flag on |
+| 0.6.2 The Board | titles (migration 0009), working knacks, arcs settled once, Act I, posters, the entry, the week's notice | the gate outing on an Act I step; a snapshot before 0009 runs on Fly; `story_quests` on |
+| 0.7.0 Runes and the fog | runes held, ranked, inscribed and woken (migration 0010), deeds, rune rides, `INSCRIBE_RUNE` and `CARRY`, Act II, the ink fog on the Journal map and behind `ink_fog` on the World tab | a rune ride planned, ridden and woken; the wash seen over your own cells |
+
+Not built from 0.7.0's list: the World tab's ink fog is behind its flag and unseen on a device; the
+phone folds neither waking nor Wunjo's stops (the server does, and the reckoning says so).
+
 ## Context
 
 You asked for the RPG plan to be continued and expanded into one full plan that takes in the existing roadmaps. There are six of them, and they no longer agree:

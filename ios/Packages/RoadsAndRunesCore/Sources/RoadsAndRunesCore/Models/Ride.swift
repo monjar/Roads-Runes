@@ -246,6 +246,9 @@ public struct AdventureSummary: Codable, Hashable, Sendable {
     public var entry: String? = nil
     public var weekNotice: WeekNotice? = nil
     public var codexFirsts: [CodexFirst]? = nil
+    /// 0.7.0: rune stones picked up, and what the outing did for the deeds.
+    public var runesFound: [RuneFound]? = nil
+    public var deeds: DeedsOutcome? = nil
 
     public init(ride: Ride, quest: Quest? = nil, questCompletion: QuestCompletion? = nil, xpAwarded: Int, xpBreakdown: [XPBreakdownEntry], newCells: Int, newTerritoryMeters: Double, newRoadsMeters: Double, discoveries: [DiscoverySummary], levelUps: [LevelUp], abilitiesUnlocked: [Ability], titlesUnlocked: [String]? = nil, flags: [String], acAwarded: Int? = nil, acBreakdown: [ACBreakdownEntry]? = nil, walletBalance: Int? = nil, worldObjects: WorldObjectOutcome? = nil, streak: StreakOutcome? = nil) {
         self.streak = streak

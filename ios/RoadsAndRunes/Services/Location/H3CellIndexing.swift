@@ -37,6 +37,39 @@ struct H3CellIndexing: CellIndexing {
         }
     }
 
+    /// The read ground as outlines: the cells joined (`cellsToLinkedMultiPolygon`),
+    /// one outer ring per connected patch. Holes inside a patch are left out: the
+    /// wash only needs where the paper stops.
+    func outlines(of cells: [String]) -> [[Coordinate]] {
+        let indexes = cells.map(Self.index(from:)).filter { $0 != 0 }
+        guard !indexes.isEmpty else { return [] }
+        var polygon = LinkedGeoPolygon()
+        let error = indexes.withUnsafeBufferPointer { buffer in
+            cellsToLinkedMultiPolygon(buffer.baseAddress, Int32(buffer.count), &polygon)
+        }
+        guard error == 0 else { return [] }
+        let rings = withUnsafeMutablePointer(to: &polygon) { head -> [[Coordinate]] in
+            var out: [[Coordinate]] = []
+            var current: UnsafeMutablePointer<LinkedGeoPolygon>? = head
+            while let poly = current {
+                if let loop = poly.pointee.first {
+                    var ring: [Coordinate] = []
+                    var vertex = loop.pointee.first
+                    while let v = vertex {
+                        ring.append(Coordinate(latitude: radsToDegs(v.pointee.vertex.lat), longitude: radsToDegs(v.pointee.vertex.lng)))
+                        vertex = v.pointee.next
+                    }
+                    if let first = ring.first { ring.append(first) }
+                    out.append(ring)
+                }
+                current = poly.pointee.next
+            }
+            return out
+        }
+        destroyLinkedMultiPolygon(&polygon)
+        return rings
+    }
+
     func center(of cell: String) -> Coordinate {
         let index = Self.index(from: cell)
         var latLng = LatLng(lat: 0, lng: 0)

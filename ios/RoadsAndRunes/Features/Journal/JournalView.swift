@@ -8,6 +8,10 @@ final class JournalViewModel {
     private(set) var discoveries: [UserDiscovery] = []
     private(set) var stats: ExplorationStats?
     private(set) var cells: [CellRender] = []
+    /// The fog as ink (0.7.0): the paper over ground not yet read, with the read ground cut out.
+    private(set) var inkWash: [[Coordinate]] = []
+    /// Where runes were cut, drawn on the map (0.7.0).
+    private(set) var cuts: [RuneCutInfo] = []
     private(set) var mapCenter: Coordinate?
     /// The world's pages and what this player has met; nil while loading, or with the codex off.
     private(set) var codex: Codex?
@@ -44,9 +48,27 @@ final class JournalViewModel {
             self.error = error.localizedDescription
         }
         let center = container.location.lastFix?.coordinate ?? adventures.first?.quest?.origin ?? SampleData.origin
-        if let world = try? await container.api.world(center: center, radiusMeters: 8000) {
-            mapCenter = center
+        mapCenter = center
+        cuts = (try? await container.api.runeCuts()) ?? []
+        // The read ground, whether or not the World draws the fog, as one wash.
+        let dLat = 8000 / 111_195.0, dLon = 8000 / (111_195.0 * max(0.2, cos(center.latitude * .pi / 180)))
+        let box = BoundingBox(minLat: center.latitude - dLat, minLon: center.longitude - dLon,
+                              maxLat: center.latitude + dLat, maxLon: center.longitude + dLon)
+        if let read = try? await container.api.exploration(in: box) {
+            let outlines = container.cellIndexing.outlines(of: read.cells.map(\.h3))
+            inkWash = InkFog.wash(bounds: InkFog.padded(box), outlines: outlines)
+            cells = []
+        } else if let world = try? await container.api.world(center: center, radiusMeters: 8000) {
             cells = FogGrid(indexing: container.cellIndexing).render(serverCells: world.cells, localStates: [:])
+        }
+    }
+
+    /// A mark where each rune was cut: "Raido, cut by the pond".
+    var cutMarkers: [MapMarker] {
+        cuts.map { cut in
+            MapMarker(id: "cut-\(cut.id)", coordinate: cut.coordinate, kind: .collectable,
+                      title: cut.placeName.map { "\(cut.name), cut by \($0)" } ?? "\(cut.name), cut",
+                      mark: .rune(cut.runeId))
         }
     }
 
@@ -277,7 +299,7 @@ struct JournalView: View {
                 FactTile(value: "\(stats.cellsExplored)", label: "Fully explored")
                 FactTile(value: "\(stats.cellsDiscovered ?? 0)", label: "Revealed by quests")
             }
-            Text("Open the World to keep clearing the fog.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+            Text("The paper is ground not yet read. Go out to read more of it.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
         }
     }
 
@@ -288,8 +310,9 @@ struct JournalView: View {
                 center: model.mapCenter ?? SampleData.origin,
                 zoom: 11.5,
                 cells: model.cells,
+                inkWash: model.inkWash,
                 route: [],
-                markers: []
+                markers: model.cutMarkers
             )
             .allowsHitTesting(false)
             if let stats = model.stats {

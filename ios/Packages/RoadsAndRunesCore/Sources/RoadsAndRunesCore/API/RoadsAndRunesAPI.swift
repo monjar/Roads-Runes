@@ -57,6 +57,14 @@ public protocol RoadsAndRunesAPI: Sendable {
     func storyArcs() async throws -> [StoryArc]
     /// This week's notice and how far along it is (0.6.2).
     func weekNotice() async throws -> WeekNotice
+    /// Runes held, ranked and inscribed (0.7.0).
+    func runes() async throws -> RunesState
+    func raiseRune(id: String) async throws -> RunesState
+    func inscribe(runes: [String]) async throws -> RunesState
+    func runeCuts() async throws -> [RuneCutInfo]
+    func deeds() async throws -> DeedsState
+    /// A route in a rune's road form, from here (0.7.0).
+    func runeRide(_ request: RuneRideRequest) async throws -> RuneRideResponse
     func acceptQuest(id: UUID) async throws -> Quest
     func startQuest(id: UUID, rideId: UUID?) async throws -> Quest
     func reportQuestProgress(id: UUID, events: [ObjectiveEvent]) async throws -> Quest

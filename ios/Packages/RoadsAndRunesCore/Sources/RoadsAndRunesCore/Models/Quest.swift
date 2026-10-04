@@ -211,10 +211,13 @@ public struct StoryStanding: Codable, Hashable, Sendable {
     public struct Reward: Codable, Hashable, Sendable {
         public var title: String?
         public var ac: Int?
+        /// A chapter of Act II teaches its rune (0.7.0).
+        public var rune: String?
 
-        public init(title: String? = nil, ac: Int? = nil) {
+        public init(title: String? = nil, ac: Int? = nil, rune: String? = nil) {
             self.title = title
             self.ac = ac
+            self.rune = rune
         }
     }
 
@@ -301,17 +304,20 @@ public struct ObjectiveEvent: Codable, Hashable, Sendable {
     public var latitude: Double?
     public var longitude: Double?
     public var value: Double?
+    /// A note written for it (a WRITE_NOTE, or Ansuz's INSCRIBE_RUNE), for the server to judge.
+    public var note: String?
 
-    public init(objectiveId: UUID, occurredAt: Date, latitude: Double? = nil, longitude: Double? = nil, value: Double? = nil) {
+    public init(objectiveId: UUID, occurredAt: Date, latitude: Double? = nil, longitude: Double? = nil, value: Double? = nil, note: String? = nil) {
         self.objectiveId = objectiveId
         self.occurredAt = occurredAt
         self.latitude = latitude
         self.longitude = longitude
         self.value = value
+        self.note = note
     }
 
-    public init(objectiveId: UUID, occurredAt: Date, coordinate: Coordinate?, value: Double? = nil) {
-        self.init(objectiveId: objectiveId, occurredAt: occurredAt, latitude: coordinate?.latitude, longitude: coordinate?.longitude, value: value)
+    public init(objectiveId: UUID, occurredAt: Date, coordinate: Coordinate?, value: Double? = nil, note: String? = nil) {
+        self.init(objectiveId: objectiveId, occurredAt: occurredAt, latitude: coordinate?.latitude, longitude: coordinate?.longitude, value: value, note: note)
     }
 }
 

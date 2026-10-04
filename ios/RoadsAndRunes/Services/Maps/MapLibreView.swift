@@ -66,6 +66,9 @@ struct MapLibreView: UIViewRepresentable {
     var center: Coordinate?
     var zoom: Double = 13
     var cells: [CellRender] = []
+    /// The fog as ink (0.7.0, `InkFog.wash`): the outer ring, then the read ground as
+    /// holes. Drawn instead of `cells` when given; never on the ride screen.
+    var inkWash: [[Coordinate]] = []
     var route: [Coordinate] = []
     /// A dashed line that is not a route: the way back to one, or the crow's flight
     /// to where a route will go once it has been drawn.
@@ -144,6 +147,7 @@ struct MapLibreView: UIViewRepresentable {
         private var styleLoaded = false
         private var markers: [String: (marker: MapMarker, annotation: MLNPointAnnotation)] = [:]
         private var lastCellsHash = 0
+        private var lastInkHash = 0
         private var lastRouteHash: Int?
         private var lastGuideHash: Int?
         private var lastReachHash: Int?
@@ -159,6 +163,7 @@ struct MapLibreView: UIViewRepresentable {
                 return symbols.identifier
             })
             lastCellsHash = 0
+            lastInkHash = 0
             lastRouteHash = nil
             lastGuideHash = nil
             lastReachHash = nil
@@ -183,6 +188,7 @@ struct MapLibreView: UIViewRepresentable {
             guard styleLoaded, let style = mapView.style else { return }
             applyEmphasis(style)
             applyFog(style)
+            applyInk(style)
             applyRoute(style)
             applyGuide(style)
             applyReach(style)
@@ -308,6 +314,67 @@ struct MapLibreView: UIViewRepresentable {
                 line.lineWidth = NSExpression(forConstantValue: 1.2)
                 line.lineDashPattern = NSExpression(forConstantValue: [4, 3])
                 style.addLayer(line)
+            }
+        }
+
+        // MARK: The fog as ink (0.7.0)
+
+        /// One paper wash with the read ground cut out of it, a feathered edge where
+        /// the paper meets the map, and a dotted frontier along it.
+        private func applyInk(_ style: MLNStyle) {
+            var hasher = Hasher()
+            for ring in parent.inkWash {
+                hasher.combine(ring.count)
+                if let first = ring.first { hasher.combine(first.latitude); hasher.combine(first.longitude) }
+            }
+            let hash = hasher.finalize()
+            guard hash != lastInkHash else { return }
+            lastInkHash = hash
+            let source = ensureSource(style, id: "rr-ink")
+            let edges = ensureSource(style, id: "rr-ink-edges")
+            guard let outer = parent.inkWash.first, outer.count >= 4 else {
+                source.shape = MLNShapeCollectionFeature(shapes: [])
+                edges.shape = MLNShapeCollectionFeature(shapes: [])
+                return
+            }
+            func coords(_ ring: [Coordinate]) -> [CLLocationCoordinate2D] {
+                ring.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+            }
+            let holes: [MLNPolygon] = parent.inkWash.dropFirst().map { ring in
+                var points = coords(ring)
+                return MLNPolygon(coordinates: &points, count: UInt(points.count))
+            }
+            var outerPoints = coords(outer)
+            let wash = MLNPolygonFeature(coordinates: &outerPoints, count: UInt(outerPoints.count), interiorPolygons: holes)
+            source.shape = wash
+            let lines: [MLNPolylineFeature] = parent.inkWash.dropFirst().map { ring in
+                var points = coords(ring)
+                return MLNPolylineFeature(coordinates: &points, count: UInt(points.count))
+            }
+            edges.shape = MLNShapeCollectionFeature(shapes: lines)
+            if style.layer(withIdentifier: "rr-ink-wash") == nil {
+                let fill = MLNFillStyleLayer(identifier: "rr-ink-wash", source: source)
+                fill.fillColor = NSExpression(forConstantValue: UIColor(hex: 0xF3E7D2, alpha: 0.9))
+                fill.fillAntialiased = NSExpression(forConstantValue: true)
+                let feather = MLNLineStyleLayer(identifier: "rr-ink-feather", source: edges)
+                feather.lineColor = NSExpression(forConstantValue: UIColor(hex: 0xF3E7D2, alpha: 0.75))
+                feather.lineWidth = NSExpression(forConstantValue: 16)
+                feather.lineBlur = NSExpression(forConstantValue: 12)
+                let frontier = MLNLineStyleLayer(identifier: "rr-ink-frontier", source: edges)
+                frontier.lineColor = NSExpression(forConstantValue: UIColor(hex: 0x645C50, alpha: 0.5))
+                frontier.lineWidth = NSExpression(forConstantValue: 1.3)
+                frontier.lineDashPattern = NSExpression(forConstantValue: [0.5, 3])
+                frontier.lineCap = NSExpression(forConstantValue: "round")
+                // Over the roads, under the labels, so names still read through the paper.
+                if let firstLabel = style.layers.first(where: { $0 is MLNSymbolStyleLayer }) {
+                    style.insertLayer(fill, below: firstLabel)
+                    style.insertLayer(feather, below: firstLabel)
+                    style.insertLayer(frontier, below: firstLabel)
+                } else {
+                    style.addLayer(fill)
+                    style.addLayer(feather)
+                    style.addLayer(frontier)
+                }
             }
         }
 

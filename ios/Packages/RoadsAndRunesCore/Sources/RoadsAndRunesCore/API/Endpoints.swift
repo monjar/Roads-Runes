@@ -200,6 +200,12 @@ public enum Endpoints {
     }
     public static func storyArcs() -> Endpoint { Endpoint(method: .get, path: "/quests/story") }
     public static func weekNotice() -> Endpoint { Endpoint(method: .get, path: "/quests/week") }
+    public static func runes() -> Endpoint { Endpoint(method: .get, path: "/runes") }
+    public static func raiseRune(id: String) -> Endpoint { Endpoint(method: .post, path: "/runes/\(id)/rank") }
+    public static func inscribe(_ body: InscribeRequest) throws -> Endpoint { try .json(.put, "/runes/inscribed", body: body) }
+    public static func runeCuts() -> Endpoint { Endpoint(method: .get, path: "/runes/cuts") }
+    public static func deeds() -> Endpoint { Endpoint(method: .get, path: "/character/deeds") }
+    public static func runeRide(_ body: RuneRideRequest) throws -> Endpoint { try .json(.post, "/routes/rune", body: body, timeout: 60) }
     public static func friends() -> Endpoint { Endpoint(method: .get, path: "/friends") }
     public static func friendRequests() -> Endpoint { Endpoint(method: .get, path: "/friends/requests") }
     public static func sendFriendRequest(userId: UUID) throws -> Endpoint {

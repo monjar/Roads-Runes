@@ -86,11 +86,63 @@ final class WorldViewModel {
     /// With the fog switched off on the server, a ride must not paint hexes either:
     /// they were a readout nobody could act on, so the map is plain until they are a game.
     func rebuildCells() {
+        // The fog as ink (0.7.0, `ink_fog`): the hexagons give way to one wash.
+        if container.session.isEnabled("ink_fog") {
+            cells = []
+            Task { await loadInk() }
+            return
+        }
         guard let snapshot, snapshot.isEnabled(FeatureFlag.fogOfWar) else {
             cells = []
             return
         }
         cells = fogGrid.render(serverCells: snapshot.cells, localStates: container.rideRecorder.localCellStates)
+    }
+
+    // MARK: The fog as ink (0.7.0)
+
+    private(set) var inkWash: [[Coordinate]] = []
+    /// Where the nearest unread ground is, for the frontier chevron.
+    private(set) var frontier: Coordinate?
+    private(set) var cuts: [RuneCutInfo] = []
+    private var inkCentre: Coordinate?
+
+    private func loadInk() async {
+        guard let here = center ?? position else { return }
+        if let last = inkCentre, GeoMath.distance(last, here) < 1500, !inkWash.isEmpty { return }
+        inkCentre = here
+        let dLat = 6000 / 111_195.0, dLon = 6000 / (111_195.0 * max(0.2, cos(here.latitude * .pi / 180)))
+        let box = BoundingBox(minLat: here.latitude - dLat, minLon: here.longitude - dLon,
+                              maxLat: here.latitude + dLat, maxLon: here.longitude + dLon)
+        guard let read = try? await container.api.exploration(in: box) else { return }
+        let ridden = Set(container.rideRecorder.localCellStates.keys)
+        let cellsRead = Set(read.cells.map(\.h3)).union(ridden)
+        inkWash = InkFog.wash(bounds: InkFog.padded(box), outlines: container.cellIndexing.outlines(of: Array(cellsRead)))
+        if let position {
+            frontier = InkFog.nearestUnread(from: position, read: cellsRead, indexing: container.cellIndexing)
+        }
+        if cuts.isEmpty { cuts = (try? await container.api.runeCuts()) ?? [] }
+    }
+
+    /// Where runes were cut: "Raido, cut by the pond".
+    var cutMarkers: [MapMarker] {
+        cuts.map { cut in
+            MapMarker(id: "cut-\(cut.id)", coordinate: cut.coordinate, kind: .collectable,
+                      title: cut.placeName.map { "\(cut.name), cut by \($0)" } ?? "\(cut.name), cut",
+                      mark: .rune(cut.runeId))
+        }
+    }
+
+    /// Takes the map to the nearest unread ground.
+    func goToFrontier() {
+        guard let frontier else { return }
+        camera = MapCamera(center: frontier, zoom: 15)
+    }
+
+    /// The bearing from here to the nearest unread ground, in degrees, for the chevron.
+    var frontierBearing: Double? {
+        guard let frontier, let position else { return nil }
+        return GeoMath.bearing(from: position, to: frontier)
     }
 
     func regionChanged(_ box: BoundingBox) {

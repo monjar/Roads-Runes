@@ -77,8 +77,9 @@ struct WorldView: View {
                 center: model.center ?? container.location.lastFix?.coordinate ?? SampleData.origin,
                 zoom: 14,
                 cells: model.cells,
+                inkWash: model.inkWash,
                 reach: model.reach,
-                markers: model.markers,
+                markers: model.markers + model.cutMarkers,
                 emphasis: styleKey.emphasis,
                 onRegionChanged: { center, _ in Task { await model.load(around: center) } },
                 onMarkerTap: { marker in withAnimation(.snappy) { model.tapMarker(marker) } },
@@ -104,6 +105,21 @@ struct WorldView: View {
                 HStack {
                     Spacer()
                     VStack(spacing: 12) {
+                        // The frontier chevron (0.7.0, ink fog): which way the nearest unread ground lies.
+                        if let bearing = model.frontierBearing {
+                            Button { model.goToFrontier() } label: {
+                                Image(systemName: "chevron.up")
+                                    .font(.system(size: 18, weight: .heavy))
+                                    .foregroundStyle(Theme.Colors.ink)
+                                    .rotationEffect(.degrees(bearing))
+                                    .frame(width: 48, height: 48)
+                                    .background(Theme.Colors.cream, in: Circle())
+                                    .overlay(Circle().stroke(Theme.Colors.ink.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [1, 3])))
+                            }
+                            .buttonStyle(.pressable)
+                            .accessibilityLabel("The nearest unread ground")
+                            .accessibilityIdentifier("world.frontier")
+                        }
                         IconCircleButton(symbol: "location.fill", size: 48) { model.locateMe() }
                             .accessibilityLabel("Show my location")
                         Button { planningFreeRide = true } label: {

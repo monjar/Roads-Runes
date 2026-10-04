@@ -36,7 +36,7 @@ struct AdventureSummaryView: View {
 
     /// The order things arrive in.
     private enum Stage: Int, Comparable {
-        case trace, fight, xp, lines, coins, levels, world, codex, quest, entry, rest
+        case trace, fight, xp, lines, coins, levels, world, codex, runes, quest, entry, rest
 
         static func < (lhs: Stage, rhs: Stage) -> Bool { lhs.rawValue < rhs.rawValue }
     }
@@ -83,6 +83,7 @@ struct AdventureSummaryView: View {
                             if stage >= .levels { levelCards.id(Stage.levels) }
                             if stage >= .world { worldSection.id(Stage.world) }
                             if stage >= .codex, !firsts.isEmpty { codexSection.id(Stage.codex) }
+                            if stage >= .runes, !runeLines.isEmpty { runesSection.id(Stage.runes) }
                             if stage >= .quest { questSection.id(Stage.quest) }
                             if stage >= .entry, let entry = summary.entry, !entry.isEmpty { entrySection(entry).id(Stage.entry) }
                             if stage >= .rest { restSection.id(Stage.rest) }
@@ -183,6 +184,10 @@ struct AdventureSummaryView: View {
         if !firsts.isEmpty {
             await arrive(at: .codex, after: 0.5)
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        }
+        if !runeLines.isEmpty {
+            await arrive(at: .runes, after: 0.5)
+            UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
         }
         if hasQuest { await arrive(at: .quest, after: 0.6) }
         if summary.entry?.isEmpty == false { await arrive(at: .entry, after: 0.5) }
@@ -361,6 +366,38 @@ struct AdventureSummaryView: View {
         .transition(.scale(scale: 0.95).combined(with: .opacity))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("summary.codex")
+    }
+
+    /// Runes woken and found, and deeds reached or beaten on this outing (0.7.0).
+    private var runeLines: [(symbol: String, text: String)] {
+        var out: [(String, String)] = []
+        for rune in summary.worldObjects?.woken ?? [] {
+            out.append(("seal.fill", "\(rune.capitalized) woke: a rank deeper for this outing."))
+        }
+        for found in summary.runesFound ?? [] {
+            out.append(("seal", found.new
+                ? "\(found.rune.capitalized) is yours now."
+                : "A stone of \(found.rune.capitalized): \(found.shards) towards the next rank."))
+        }
+        for reached in summary.deeds?.reached ?? [] {
+            out.append(("rosette", "\(reached.name): \(reached.title ?? "a new mark")."))
+        }
+        for record in summary.deeds?.records ?? [] {
+            out.append(("flag.fill", "\(record.name): \(Int(record.value.rounded())) \(record.unit), the most yet."))
+        }
+        return out
+    }
+
+    private var runesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(runeLines.enumerated()), id: \.offset) { _, line in
+                Label(line.text, systemImage: line.symbol)
+                    .font(Theme.Typography.text(14, .semibold)).foregroundStyle(Theme.Colors.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .accessibilityIdentifier("summary.runes")
     }
 
     /// The outing's entry: a few written lines, in the journal too.

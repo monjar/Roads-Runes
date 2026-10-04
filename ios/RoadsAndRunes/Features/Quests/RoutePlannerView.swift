@@ -32,11 +32,14 @@ final class RoutePlannerViewModel {
     let quest: Quest?
     /// Directions to a place picked on the World map (A → B instead of a loop).
     let destination: Place?
+    /// A rune ride (0.7.0): routes whose turns make this rune's road form.
+    let rune: String?
     private let container: AppContainer
 
-    init(quest: Quest?, destination: Place? = nil, container: AppContainer) {
+    init(quest: Quest?, destination: Place? = nil, rune: String? = nil, container: AppContainer) {
         self.quest = quest
         self.destination = destination
+        self.rune = rune
         self.container = container
         activity = quest?.activity.flatMap { $0 == .unknown ? nil : $0 } ?? container.session.defaultActivity
         if let destination, let here = container.location.lastFix?.coordinate {
@@ -46,9 +49,10 @@ final class RoutePlannerViewModel {
         }
     }
 
-    var showsControls: Bool { quest == nil || isTweaking }
+    var showsControls: Bool { rune == nil && (quest == nil || isTweaking) }
 
     var routesHeading: String {
+        if rune != nil { return "Ways to cut it" }
         if quest != nil { return alternatives.count > 1 ? "Ways to \(activity.noun) it" : "The route" }
         return destination == nil ? "Three ways to \(activity.noun) it" : "Ways to get there"
     }
@@ -92,6 +96,7 @@ final class RoutePlannerViewModel {
     /// chosen route's label; quest rides carry the quest title instead.
     var adventureTitle: String? {
         guard quest == nil, let selected else { return nil }
+        if let rune { return "Cut \(rune.prefix(1).uppercased() + rune.dropFirst())" }
         if let destination { return "\(activity.verb) to \(destination.name)" }
         let asked = request.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !asked.isEmpty else { return "\(selected.label) ride" }
@@ -200,6 +205,21 @@ final class RoutePlannerViewModel {
             narrator.cancel()
             planningStep = nil
         }
+        if let rune {
+            do {
+                let response = try await container.api.runeRide(RuneRideRequest(
+                    origin: origin, rune: rune, activity: activity, bikeId: activity == .ride ? selectedBike?.id : nil
+                ))
+                alternatives = response.alternatives
+                engine = response.engine
+                understood = response.hint
+                choose(response.alternatives.first)
+                error = nil
+            } catch {
+                self.error = error.localizedDescription
+            }
+            return
+        }
         do {
             let response = try await container.api.generateRoutes(RouteGenerateRequest(
                 origin: origin, destination: destination?.coordinate, bikeId: activity == .ride ? selectedBike?.id : nil, questId: quest?.id,
@@ -278,6 +298,8 @@ struct RoutePlannerView: View {
     @FocusState private var writingRequest: Bool
     let quest: Quest?
     var destination: Place?
+    /// A rune ride: routes whose turns make this rune's road form (0.7.0).
+    var rune: String?
 
     private static let presets = ["Café ride", "Pub ride", "Easy", "Gravel", "Scenic", "Quiet roads"]
 
@@ -295,7 +317,7 @@ struct RoutePlannerView: View {
             if let model { content(model) } else { ProgressView().tint(Theme.Colors.terracotta) }
         }
         .task {
-            if model == nil { model = RoutePlannerViewModel(quest: quest, destination: destination, container: container) }
+            if model == nil { model = RoutePlannerViewModel(quest: quest, destination: destination, rune: rune, container: container) }
             await model?.loadBikes()
             if model?.alternatives.isEmpty == true { await model?.prepare() }
         }

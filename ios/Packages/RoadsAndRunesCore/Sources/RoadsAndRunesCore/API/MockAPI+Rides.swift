@@ -153,6 +153,37 @@ extension MockAPI {
 
     public func storyArcs() async throws -> [StoryArc] { try await run { SampleData.sampleStoryArcs } }
     public func weekNotice() async throws -> WeekNotice { try await run { SampleData.sampleWeekNotice } }
+    public func runes() async throws -> RunesState { try await run { self.storedRunes } }
+    public func raiseRune(id: String) async throws -> RunesState {
+        try await run {
+            guard let index = self.storedRunes.runes.firstIndex(where: { $0.id == id }), self.storedRunes.runes[index].canRaise else {
+                throw APIError.server(code: APIErrorCode.conflict, message: "Raising it needs more stones of it", status: 409)
+            }
+            self.storedRunes.runes[index].rank += 1
+            self.storedRunes.runes[index].shards -= self.storedRunes.runes[index].nextRank?.shards ?? 2
+            return self.storedRunes
+        }
+    }
+    public func inscribe(runes: [String]) async throws -> RunesState {
+        try await run {
+            guard runes.count <= self.storedRunes.slots else {
+                throw APIError.server(code: APIErrorCode.conflict, message: "No slot open for it", status: 409)
+            }
+            self.storedRunes.inscribed = runes
+            for index in self.storedRunes.runes.indices {
+                self.storedRunes.runes[index].inscribed = runes.contains(self.storedRunes.runes[index].id)
+            }
+            return self.storedRunes
+        }
+    }
+    public func runeCuts() async throws -> [RuneCutInfo] { try await run { SampleData.sampleRuneCuts } }
+    public func deeds() async throws -> DeedsState { try await run { SampleData.sampleDeeds } }
+    public func runeRide(_ request: RuneRideRequest) async throws -> RuneRideResponse {
+        try await run {
+            RuneRideResponse(alternatives: [SampleData.sampleRoute], rune: request.rune, roadForm: "LOOP",
+                             hint: "Cut Raido here: a loop, about 2.4 km.", engine: "mock")
+        }
+    }
 
     public func friends() async throws -> [FriendSummary] { try await run { self.storedFriends } }
     public func searchUsers(query: String) async throws -> [FriendSummary] {

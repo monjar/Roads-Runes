@@ -280,6 +280,18 @@ final class MainFlowsUITests: XCTestCase {
         )
     }
 
+    func testTheSheetHasRunesAndDeeds() throws {
+        signInAsNewRider(at: Self.rotherhithe)
+        tapTab("Character")
+        let runes = app.buttons["character.runes"]
+        scrollTo(runes)
+        // The deeds sit just below the door to the runes.
+        XCTAssertTrue(app.descendants(matching: .any)["character.deeds"].waitForExistence(timeout: 10), "The sheet has no deeds")
+        tapOffCentre(runes, dx: 0.7)
+        XCTAssertTrue(app.descendants(matching: .any)["runes.slots"].waitForExistence(timeout: 20), "The runes screen has no slots")
+        XCTAssertTrue(app.staticTexts["No rune held yet"].exists, "A new character holds a rune already")
+    }
+
     // MARK: - Helpers
 
     /// Welcome → developer sign-in → character → bike → location, as a new rider.
@@ -309,8 +321,11 @@ final class MainFlowsUITests: XCTestCase {
     /// Scrolls the screen until the element is there and on screen; bikes sit
     /// far down the character tab, below abilities and the cycling profile.
     private func scrollTo(_ element: XCUIElement, swipes: Int = 6, file: StaticString = #filePath, line: UInt = #line) {
+        // Hittable is not enough: a row under the tab bar is "hittable" and a tap on it
+        // lands on the tab. Clear of the bottom 120 points, it is really on screen.
+        let bottom = app.windows.firstMatch.frame.maxY - 120
         for _ in 0..<swipes {
-            if element.exists && element.isHittable { return }
+            if element.exists && element.isHittable && element.frame.maxY < bottom { return }
             app.swipeUp()
         }
         XCTAssertTrue(element.waitForExistence(timeout: 10), "\(element) never came into view", file: file, line: line)

@@ -77,7 +77,8 @@ public struct FightTracker: Sendable {
 
     public init(objects: [WorldObject], setup: Setup) {
         self.setup = setup
-        var cfg = setup.constants
+        // What the inscribed runes change that the phone can follow (Raido, Ansuz).
+        var cfg = setup.sheet.fightConstants(setup.constants)
         cfg.rates = cfg.rates.mapValues { $0 * Self.underClaim }
         self.cfg = cfg
         for object in objects where object.kind == .monster && object.status == .spawned {

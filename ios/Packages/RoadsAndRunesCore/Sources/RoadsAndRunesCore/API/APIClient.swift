@@ -345,6 +345,12 @@ public actor APIClient: RoadsAndRunesAPI {
     public func searchUsers(query: String) async throws -> [FriendSummary] { try await request(Endpoints.searchUsers(query: query)) }
     public func storyArcs() async throws -> [StoryArc] { try await request(Endpoints.storyArcs()) }
     public func weekNotice() async throws -> WeekNotice { try await request(Endpoints.weekNotice()) }
+    public func runes() async throws -> RunesState { try await request(Endpoints.runes()) }
+    public func raiseRune(id: String) async throws -> RunesState { try await request(Endpoints.raiseRune(id: id)) }
+    public func inscribe(runes: [String]) async throws -> RunesState { try await request(try Endpoints.inscribe(InscribeRequest(runes: runes))) }
+    public func runeCuts() async throws -> [RuneCutInfo] { try await request(Endpoints.runeCuts()) }
+    public func deeds() async throws -> DeedsState { try await request(Endpoints.deeds()) }
+    public func runeRide(_ request: RuneRideRequest) async throws -> RuneRideResponse { try await self.request(try Endpoints.runeRide(request)) }
     public func friends() async throws -> [FriendSummary] { try await request(Endpoints.friends()) }
     public func friendRequests() async throws -> FriendRequests { try await request(Endpoints.friendRequests()) }
     public func sendFriendRequest(userId: UUID) async throws -> FriendRequestResult { try await request(try Endpoints.sendFriendRequest(userId: userId)) }

@@ -18,6 +18,21 @@ public struct CharacterSheet: Codable, Hashable, Sendable {
     public var lateRoadPct: Double?
     public var lateRoadAfterMeters: Double?
     public var wordOldPlacesPct: Double?
+    /// 0.7.0: the runes inscribed, by rank, and the rules they make ("CARRIED_SCALE": 2).
+    public var inscribed: [String: Int]?
+    public var rules: [String: Double]?
+
+    /// The combat constants with what the inscribed runes change that the phone can
+    /// follow: the opening blow (Raido) and how far the word reaches (Ansuz).
+    public func fightConstants(_ cfg: CombatConstants) -> CombatConstants {
+        var out = cfg
+        if let scale = rules?["CARRIED_SCALE"], scale > 0 { out.carriedFraction = cfg.carriedFraction * scale }
+        if let reach = rules?["WORD_RADIUS_M"] { out.wordRadiusMeters = max(cfg.wordRadiusMeters, reach) }
+        return out
+    }
+
+    /// Things are sighted further out with Kenaz inscribed.
+    public var sightMeters: Double? { rules?["REVEAL_RINGS"] != nil ? 600 : nil }
 
     /// The build against one thing on this outing, as the server works it out
     /// (`CharacterSheet.pct_against`). The phone does not know which places are old,
