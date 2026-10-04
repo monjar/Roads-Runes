@@ -168,6 +168,9 @@ Never includes home location, ride start/end points or live location.
 }
 ```
 
+`ability.working` (0.6.0, optional) says whether the server acts on that knack
+yet; the character sheet marks the others "not yet".
+
 - `GET /character/classes` → `[ClassInfo]`: `{"id": "WIZARD", "name": "Wizard", "tagline": "Cuts the runes again. Looks twice.", "description": "…", "enabled": true, "guild": "the Cutters", "saying": "Look twice, then once more.", "crest": "wizard"}`. `guild`, `saying` and `crest` are optional (0.6.0); a trade's lore is in `docs/WORLD.md`.
 - `POST /character` `{"name": "Rowan", "characterClass": "EXPLORER"}` → `Character` (409 if exists; 403 `FEATURE_DISABLED` for classes behind flags).
 - `GET /character`

@@ -3,6 +3,8 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppContainer.self) private var container
+    /// A player from before the world had a premise sees it once (docs/ROADMAP.md, 0.6.0).
+    @State private var showPrologue = false
 
     var body: some View {
         @Bindable var recorder = container.rideRecorder
@@ -43,7 +45,21 @@ struct RootView: View {
                 }
             }
         }
+        .fullScreenCover(isPresented: $showPrologue) {
+            PrologueView(finish: "Carry on") {
+                Prologue.seen = true
+                showPrologue = false
+            }
+        }
+        .onChange(of: container.session.state, initial: true) { _, state in
+            if state == .ready, !container.session.isOnboarding, !Prologue.seen, !AppContainer.isUITesting {
+                showPrologue = true
+            }
+        }
         .tint(Theme.Colors.terracotta)
+        // Every colour in the app is a fixed hex on cream; there is no dark palette
+        // yet (docs/ROADMAP.md, 1.0), so stock forms must not go dark under it.
+        .preferredColorScheme(.light)
     }
 }
 

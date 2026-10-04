@@ -22,7 +22,7 @@ struct TodayStrip: View {
                     HStack(spacing: 8) {
                         EncounterGlyph(object: nearest, size: 28)
                         VStack(alignment: .leading, spacing: 0) {
-                            Text(nearest.name).font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink).lineLimit(1)
+                            Text(nearest.kind == .collectable ? (nearest.piece ?? nearest.name) : nearest.name).font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink).lineLimit(1)
                             Text(nearestLine(nearest)).font(Theme.Typography.text(11.5, relativeTo: .caption2)).foregroundStyle(Theme.Colors.muted).lineLimit(1)
                         }
                         Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.Colors.muted)

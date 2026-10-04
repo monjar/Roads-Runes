@@ -39,3 +39,49 @@ public enum LoreCopy {
     public static let closeTheBook = "Close the book"
     public static let changeOfTrade = "Change of trade"
 }
+
+public extension LoreCopy {
+    /// The five kinds of effort, as the world says them.
+    static func kind(_ kind: String) -> String {
+        switch kind.uppercased() {
+        case "ROAD": return "the road"
+        case "GROUND": return "new ground"
+        case "CLIMB": return "height"
+        case "RUNE": return "a rune"
+        case "WORD": return "the word"
+        default: return kind.lowercased()
+        }
+    }
+
+    /// What a rune comes out as on a road.
+    static func roadForm(_ form: String?) -> String? {
+        switch form?.uppercased() {
+        case "LOOP": return "a loop"
+        case "TRIANGLE": return "a triangle"
+        case "SQUARE": return "a square"
+        case "ZIGZAG": return "a zigzag"
+        case "NOTE": return "a note written"
+        case "STOP": return "a stop"
+        default: return nil
+        }
+    }
+
+    /// "Wants the road and a rune (Dagaz, a square)."
+    static func wants(_ kinds: [String], rune: String? = nil, runeForm: String? = nil) -> String {
+        let words = kinds.map { kind -> String in
+            if kind.uppercased() == "RUNE", let rune {
+                let form = roadForm(runeForm).map { ", \($0)" } ?? ""
+                return "a rune (\(rune)\(form))"
+            }
+            return Self.kind(kind)
+        }
+        return "Wants \(words.joined(separator: " and "))."
+    }
+
+    static func doesNotMind(_ kinds: [String]) -> String {
+        "Does not mind \(kinds.map(kind).joined(separator: " or "))."
+    }
+
+    static let emptyJournalTitle = "Nothing written yet"
+    static let emptyJournalMessage = "The journal fills itself. It only needs you to go out."
+}

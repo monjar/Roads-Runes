@@ -72,7 +72,14 @@ def ability_states(character: Character) -> list[AbilityState]:
             and character.class_level >= ability["requiredClassLevel"]
             and rank < ability["maxRank"]
         )
-        states.append(AbilityState(ability=AbilityOut(**ability), rank=rank, unlocked=rank > 0, canUnlock=can_unlock))
+        states.append(
+            AbilityState(
+                ability=AbilityOut(**ability, working=catalog.is_working(ability)),
+                rank=rank,
+                unlocked=rank > 0,
+                canUnlock=can_unlock,
+            )
+        )
     return states
 
 

@@ -21,6 +21,9 @@ class AbilityOut(APIModel):
     requiredClassLevel: int
     maxRank: int
     effects: list[dict[str, Any]] = []
+    # Whether the server acts on this knack yet. Most were promised before they
+    # did anything; the sheet says so plainly rather than advertise them.
+    working: bool | None = None
 
 
 class AbilityState(APIModel):

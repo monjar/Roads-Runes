@@ -101,16 +101,26 @@ struct CharacterView: View {
             if let error = model.error { ErrorLine(text: error) }
 
             let abilities = character?.abilities ?? []
-            SectionHeader(title: "Abilities", subtitle: "\(abilities.filter(\.unlocked).count) of \(abilities.count) unlocked")
-            FlowLayout(spacing: 8) {
-                ForEach(abilities) { state in
-                    AbilityCard(state: state, color: classColor) { Task { await model.unlock(state) } }
-                }
-            }
+            SectionHeader(title: "Knacks", subtitle: "\(abilities.filter(\.unlocked).count) of \(abilities.count) learnt")
             if let points = character?.unspentAbilityPoints, points > 0 {
-                Text("\(LoreCopy.knacksToChoose(points)) · tap an outlined one")
+                Text(LoreCopy.knacksToChoose(points))
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.terracottaDeep)
             }
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(abilities) { state in
+                    KnackRow(state: state, color: classColor) { Task { await model.unlock(state) } }
+                }
+            }
+            .card()
+
+            if container.session.isEnabled("codex") {
+                NavigationLink { CodexScreen() } label: { moreRow("Codex", symbol: "book.fill") }
+                    .buttonStyle(.pressable)
+                    .accessibilityIdentifier("character.codex")
+            }
+
+            Divider().overlay(Theme.Colors.line).padding(.top, 6)
+            Text("The rider").font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.muted)
 
             cyclingProfile(model)
 

@@ -9,6 +9,8 @@ final class JournalViewModel {
     private(set) var stats: ExplorationStats?
     private(set) var cells: [CellRender] = []
     private(set) var mapCenter: Coordinate?
+    /// The world's pages and what this player has met; nil while loading, or with the codex off.
+    private(set) var codex: Codex?
     var error: String?
     private let container: AppContainer
 
@@ -35,6 +37,9 @@ final class JournalViewModel {
             discoveries = try await container.api.myDiscoveries().items
             stats = try await container.api.journalStats()
             error = nil
+            if container.session.isEnabled("codex") {
+                codex = try? await container.api.codex()
+            }
         } catch {
             self.error = error.localizedDescription
         }
@@ -95,10 +100,12 @@ final class JournalViewModel {
 enum JournalSection: Int, CaseIterable, Hashable {
     case adventures, discoveries, map, stats
 
-    var title: String {
+    /// The second segment is the codex (docs/WORLD.md) when it is on: the places
+    /// found are its last chapter.
+    func title(codex: Bool) -> String {
         switch self {
         case .adventures: return "Adventures"
-        case .discoveries: return "Discoveries"
+        case .discoveries: return codex ? "Codex" : "Discoveries"
         case .map: return "Map"
         case .stats: return "Stats"
         }
@@ -126,12 +133,19 @@ struct JournalView: View {
                             Text("\(exploredArea(stats)) · \(stats.discoveriesFound) discoveries").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
                         }
                     }
-                    SegmentedPill(options: JournalSection.allCases, title: { $0.title }, selection: $section)
+                    SegmentedPill(options: JournalSection.allCases, title: { $0.title(codex: codexOn) }, selection: $section)
                     if let model {
                         if let error = model.error { ErrorLine(text: error) }
                         switch section {
                         case .adventures: adventures(model)
-                        case .discoveries: discoveries(model)
+                        case .discoveries:
+                            if codexOn {
+                                CodexBrowser(codex: model.codex, showWants: container.session.isEnabled("effort_combat")) {
+                                    discoveries(model)
+                                }
+                            } else {
+                                discoveries(model)
+                            }
                         case .map: mapSection(model)
                         case .stats: StatsView(stats: model.stats, units: model.units)
                         }
@@ -167,6 +181,8 @@ struct JournalView: View {
         }
     }
 
+    private var codexOn: Bool { container.session.isEnabled("codex") }
+
     private func exploredArea(_ stats: ExplorationStats) -> String {
         let area = Double(stats.cellsVisited) * 0.1053
         return area >= 10 ? "\(Int(area.rounded())) km²" : String(format: "%.1f km²", area)
@@ -194,7 +210,7 @@ struct JournalView: View {
             .card()
         }
         if model.adventures.isEmpty {
-            EmptyState(icon: "book.closed", title: "No adventures yet", message: "Your completed rides, quests and discoveries will be recorded here.")
+            EmptyState(icon: "book.closed", title: LoreCopy.emptyJournalTitle, message: LoreCopy.emptyJournalMessage)
         }
         ForEach(model.adventures) { entry in
             NavigationLink { AdventureDetailView(entry: entry, onDelete: { await model.delete(entry) }) } label: {

@@ -7,6 +7,7 @@ import SwiftUI
 struct OnboardingFlow: View {
     @Environment(AppContainer.self) private var container
     @State private var step: Step = .welcome
+    @State private var prologueDone = AppContainer.isUITesting
 
     enum Step { case welcome, character, activity, bike, location }
 
@@ -17,7 +18,14 @@ struct OnboardingFlow: View {
                 case .signedOut:
                     WelcomeView()
                 case .needsCharacter:
-                    CharacterCreationView(onDone: { step = .activity })
+                    if prologueDone {
+                        CharacterCreationView(onDone: { step = .activity })
+                    } else {
+                        PrologueView(finish: "Choose a trade") {
+                            Prologue.seen = true
+                            prologueDone = true
+                        }
+                    }
                 default:
                     // A new character: how you move, a bike if you ride, then location, then the world.
                     switch step {
@@ -52,7 +60,7 @@ struct WelcomeView: View {
             }
             .padding(.bottom, 8)
             Text("Roads & Runes").font(Theme.Typography.voice(40, relativeTo: .largeTitle)).foregroundStyle(Theme.Colors.ink)
-            Text("An RPG where the real world is the map\nand every ride, run and walk explores it.")
+            Text("Every road was written once.\nGo out and read it back.")
                 .font(Theme.Typography.text(15))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(Theme.Colors.muted)
@@ -119,8 +127,8 @@ struct CharacterCreationView: View {
         ZStack(alignment: .bottom) {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("How do you\nlike to explore?").font(Theme.Typography.voice(32, relativeTo: .largeTitle)).foregroundStyle(Theme.Colors.ink)
-                    Text("Your class shapes your quests and bonuses. It never locks you out of anything.")
+                    Text("Choose a\ntrade").font(Theme.Typography.voice(32, relativeTo: .largeTitle)).foregroundStyle(Theme.Colors.ink)
+                    Text("Your trade shapes your notices and what pays best. It never locks you out of anything.")
                         .font(Theme.Typography.text(13.5)).foregroundStyle(Theme.Colors.muted).lineSpacing(2)
                     TextField("Your name", text: $name).textFieldStyle(CreamFieldStyle()).padding(.vertical, 4)
                     ForEach(classes) { info in
@@ -179,6 +187,9 @@ struct ClassCard: View {
                     } else if !info.enabled {
                         Eyebrow(text: "Coming soon", color: Theme.Colors.muted)
                     }
+                }
+                if let guild = info.guild {
+                    Text(guild.capitalizedFirst).font(Theme.Typography.captionStrong).foregroundStyle(ClassStyle.textColor(characterClass))
                 }
                 Text(info.tagline).font(Theme.Typography.text(13)).foregroundStyle(Theme.Colors.inkSoft).lineSpacing(2)
                 Text(info.description).font(Theme.Typography.text(11.5, relativeTo: .caption2)).foregroundStyle(Theme.Colors.muted).lineLimit(2)

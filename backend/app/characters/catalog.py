@@ -26,6 +26,15 @@ def abilities_by_id() -> dict[str, dict[str, Any]]:
     return {a["id"]: a for a in abilities()}
 
 
+# The effects something on the server actually reads. An ability with none of
+# these is shown as "not yet" rather than as if it did something.
+READ_EFFECTS = frozenset({"QUEST_POI_VISIBILITY", "UNLOCK_TEMPLATE"})
+
+
+def is_working(ability: dict[str, Any]) -> bool:
+    return any(e.get("type") in READ_EFFECTS for e in ability.get("effects", []))
+
+
 def abilities_for_class(character_class: str) -> list[dict[str, Any]]:
     return [a for a in abilities() if a["characterClass"] == character_class.upper()]
 

@@ -295,7 +295,6 @@ public enum SampleData {
             CodexEntry(id: "the-old-roads", chapter: "WORLD", title: "The Old Roads", body: [
                 "Every road was written once. The people who made them cut a rune where two ways met.",
                 "People still use the roads. Nobody reads them. A road that is used and not read goes vague. That is the fog.",
-                "E. Sallow, who was asked to keep this short.",
             ], by: "enid-sallow", byName: "Enid Sallow"),
             CodexEntry(id: "the-fog", chapter: "WORLD", title: "The fog",
                        body: ["Ground you have not read. Plenty of people have passed it. That is not the same thing."],
@@ -358,7 +357,7 @@ public enum SampleData {
         ],
         discoveries: sampleDiscoveries,
         questMarkers: [QuestMarker(questId: questId, title: sampleQuest.title, latitude: 51.5, longitude: -0.02, difficulty: .moderate, questType: "EXPLORE_REGION", status: .available)],
-        featureFlags: ["fog_of_war": false, "story_quests": false],
+        featureFlags: ["fog_of_war": false, "story_quests": false, "codex": true],
         objects: sampleObjects
     )
 
@@ -407,7 +406,7 @@ public enum SampleData {
 
     public static let sampleConfig = AppConfig(
         featureFlags: ["fog_of_war": false, "story_quests": false, "party_quests": false, "strava": false,
-                       "wizard_class": false, "warrior_class": false, "scribe_class": false],
+                       "wizard_class": true, "warrior_class": true, "scribe_class": true, "codex": true],
         h3Resolution: 9, levels: LevelLimits(max: 50, maxClass: 30), environment: "preview"
     )
 }

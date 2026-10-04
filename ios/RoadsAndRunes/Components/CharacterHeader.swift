@@ -38,15 +38,23 @@ struct CharacterHeader: View {
 
     private var color: Color { ClassStyle.color(character.characterClass) }
 
+    /// "Explorer, of the Wayfinders · level 6".
+    private var tradeLine: String {
+        let name = ClassStyle.name(character.characterClass)
+        let guild = ClassStyle.guild(character.characterClass).map { ", of \($0)" } ?? ""
+        return "\(name)\(guild) · level \(character.classLevel)"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(spacing: 16) {
                 ClassEmblem(characterClass: character.characterClass, size: 84, inverted: true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(character.name).font(Theme.Typography.voice(30, relativeTo: .largeTitle)).lineLimit(1).minimumScaleFactor(0.7)
-                    Text("\(ClassStyle.name(character.characterClass)) — Level \(character.classLevel)").font(Theme.Typography.text(14, .semibold))
+                    Text(tradeLine).font(Theme.Typography.text(14, .semibold))
                     if let title = character.title {
-                        Text("“\(title)”").font(Theme.Typography.caption).opacity(0.85)
+                        TitleRibbon(title: title)
+                            .accessibilityIdentifier("character.title")
                     }
                     HStack(spacing: 8) {
                         if let coins = character.activeCoins {
@@ -126,6 +134,85 @@ struct CharacterChip: View {
         .padding(.vertical, 6)
         .background(Theme.Colors.ink, in: Capsule())
         .shadow(color: Theme.Colors.ink.opacity(0.2), radius: 5, y: 3)
+    }
+}
+
+/// What the board calls you, on a ribbon with cut ends.
+struct TitleRibbon: View {
+    let title: String
+    var ink: Color = Theme.Colors.ink
+    var paper: Color = Theme.Colors.cream
+
+    var body: some View {
+        Text(title)
+            .font(Theme.Typography.text(12.5, .semibold))
+            .foregroundStyle(ink)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
+            .background(RibbonShape().fill(paper))
+            .accessibilityLabel("Title: \(title)")
+    }
+}
+
+/// A banner with a swallow-tail notch at each end.
+struct RibbonShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let notch = min(8, rect.height * 0.45)
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX - notch, y: rect.midY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX + notch, y: rect.midY))
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// A knack as a row you can read: its name, its ranks, what it does, and plainly
+/// whether the server acts on it yet. Most were promised before they did
+/// anything (docs/ROADMAP.md, 0.6.2); the sheet says "not yet" rather than
+/// advertise them.
+struct KnackRow: View {
+    let state: AbilityState
+    var color: Color = Theme.Colors.sage
+    let learn: () -> Void
+
+    private var working: Bool { state.ability.working ?? true }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Circle()
+                .fill(state.unlocked ? color : Color.clear)
+                .overlay(Circle().strokeBorder(state.unlocked ? .clear : Theme.Colors.hatch, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2])))
+                .frame(width: 14, height: 14)
+                .padding(.top, 3)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(state.ability.name).font(Theme.Typography.bodyStrong).foregroundStyle(Theme.Colors.ink)
+                    if state.ability.maxRank > 1 {
+                        Text("\(state.rank) of \(state.ability.maxRank)").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                    }
+                    if !working {
+                        Text("not yet").font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.muted)
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .overlay(Capsule().stroke(Theme.Colors.hatch, lineWidth: 1))
+                    }
+                }
+                Text(state.ability.description).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !state.unlocked, !state.canUnlock {
+                    Text("From trade level \(state.ability.requiredClassLevel)").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                }
+            }
+            Spacer(minLength: 8)
+            if state.canUnlock {
+                Button("Learn", action: learn).buttonStyle(.surfacePill)
+                    .accessibilityLabel("Learn \(state.ability.name)")
+            }
+        }
+        .accessibilityElement(children: .contain)
     }
 }
 

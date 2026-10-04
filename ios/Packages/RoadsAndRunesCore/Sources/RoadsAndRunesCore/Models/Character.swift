@@ -18,8 +18,10 @@ public struct Ability: Codable, Hashable, Identifiable, Sendable {
     public var requiredClassLevel: Int
     public var maxRank: Int
     public var effects: [AbilityEffect]
+    /// Whether the server acts on it yet; nil from servers before 0.6.0.
+    public var working: Bool?
 
-    public init(id: String, characterClass: CharacterClass, name: String, description: String, requiredClassLevel: Int, maxRank: Int, effects: [AbilityEffect]) {
+    public init(id: String, characterClass: CharacterClass, name: String, description: String, requiredClassLevel: Int, maxRank: Int, effects: [AbilityEffect], working: Bool? = nil) {
         self.id = id
         self.characterClass = characterClass
         self.name = name
@@ -27,10 +29,11 @@ public struct Ability: Codable, Hashable, Identifiable, Sendable {
         self.requiredClassLevel = requiredClassLevel
         self.maxRank = maxRank
         self.effects = effects
+        self.working = working
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, characterClass, name, description, requiredClassLevel, maxRank, effects
+        case id, characterClass, name, description, requiredClassLevel, maxRank, effects, working
     }
 
     /// `effects` defaults to empty: a ride summary that lists an unlocked ability without
@@ -44,6 +47,7 @@ public struct Ability: Codable, Hashable, Identifiable, Sendable {
         requiredClassLevel = try c.decode(Int.self, forKey: .requiredClassLevel)
         maxRank = try c.decode(Int.self, forKey: .maxRank)
         effects = try c.decodeIfPresent([AbilityEffect].self, forKey: .effects) ?? []
+        working = try c.decodeIfPresent(Bool.self, forKey: .working)
     }
 }
 

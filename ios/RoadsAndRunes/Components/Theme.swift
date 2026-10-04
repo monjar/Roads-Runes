@@ -234,6 +234,17 @@ enum ClassStyle {
         }
     }
 
+    /// The trade's guild (docs/WORLD.md), for "Explorer, of the Wayfinders".
+    static func guild(_ characterClass: CharacterClass) -> String? {
+        switch characterClass {
+        case .explorer: return "the Wayfinders"
+        case .wizard: return "the Cutters"
+        case .warrior: return "the Menders"
+        case .scribe: return "the Clerks"
+        default: return nil
+        }
+    }
+
     static func name(_ characterClass: CharacterClass) -> String {
         switch characterClass {
         case .unknown: return "Adventurer"

@@ -56,7 +56,7 @@ final class MainFlowsUITests: XCTestCase {
         tapOffCentre(waitFor(app.buttons["Pause ride"], 30), dx: 0.5)
         tapOffCentre(waitFor(app.buttons["End"]), dx: 0.15)
         waitFor(app.buttons["End & save"]).tap()
-        let collect = app.buttons["Collect rewards"]
+        let collect = app.buttons["Close the book"]
         XCTAssertTrue(collect.waitForExistence(timeout: 90), "No adventure summary after the ride")
         tapOffCentre(collect, dx: 0.1)
         // Back where the ride began: the quest, now in progress.
