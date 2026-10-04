@@ -11,7 +11,7 @@ Built on the `feat/old-roads` branch, not merged to master. 0.7.0 went to TestFl
 | 0.6.1 Hold | server, phone and wrist; `effort_combat` off | the replay with real outings; protocols 3 and 5 with a fight; then the flag on |
 | 0.6.2 The Board | titles (migration 0009), working knacks, arcs settled once, Act I, posters, the entry, the week's notice | the gate outing on an Act I step; a snapshot before 0009 runs on Fly; `story_quests` on |
 | 0.7.0 Runes and the fog | runes held, ranked, inscribed and woken (migration 0010), deeds, rune rides, `INSCRIBE_RUNE` and `CARRY`, Act II, the ink fog on the Journal map and behind `ink_fog` on the World tab | a rune ride planned, ridden and woken; the wash seen over your own cells |
-| 0.7.1 Plain sight | in progress: the lamp fixed on the server and the phone, one icon set (game-icons.net) across the app and the Watch, docs/VOICE.md | the wording read-through; the gate below |
+| 0.7.1 Plain sight | the lamp (server on Fly, phone in the build), one icon set (game-icons.net) across the app and the Watch, docs/VOICE.md and the wording pass on server, phone and Watch, how to play, Next up, the map legend, a labelled Plan a ride, markers that answer a tap, Settings and story where they can be found; CI on every branch push and `make backend-test-pg` | read the new words in one sitting; hand the phone to someone new; quest text and lore in your own words |
 
 Not built from 0.7.0's list: the World tab's ink fog is behind its flag and unseen on a device; the
 phone folds neither waking nor Wunjo's stops (the server does, and the reckoning says so).
