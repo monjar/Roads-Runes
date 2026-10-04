@@ -76,12 +76,14 @@ async def test_the_corridor_import_stops_waiting_when_its_budget_is_spent(engine
 
     async def slow_fetch(bbox):
         started.append(bbox)
-        await osm_import.asyncio.sleep(0.3)
+        await osm_import.asyncio.sleep(1.0)
         return ELEMENTS
 
+    # Well short of one fetch, with room for a slow database: 0.25 s against a
+    # 0.3 s fetch failed on a busy machine although the budget was kept.
     before = osm_import.asyncio.get_running_loop().time()
     await osm_import.ensure_pois_along(settings, 51.4906, -0.0316, 51.4906, 0.1414, budget_s=0.1, fetch=slow_fetch)
-    assert osm_import.asyncio.get_running_loop().time() - before < 0.25, "the budget was not honoured"
+    assert osm_import.asyncio.get_running_loop().time() - before < 0.7, "the budget was not honoured"
     await osm_import.drain()
     assert len(started) == len(osm_import.tiles_along(51.4906, -0.0316, 51.4906, 0.1414)), "the rest never imported"
 

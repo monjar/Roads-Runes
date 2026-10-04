@@ -1,11 +1,16 @@
 name: backend
 
+# Every branch, not only master: the deploy runs the full suite on PostGIS, and
+# a branch that had never met Postgres found out there, one deploy at a time.
 on:
   push:
-    branches: [master, main]
     paths: ["backend/**", ".github/workflows/backend.yml"]
   pull_request:
     paths: ["backend/**", ".github/workflows/backend.yml"]
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
 
 defaults:
   run:
