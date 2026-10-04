@@ -74,6 +74,7 @@ def load_arcs() -> list[dict[str, Any]]:
     seen_arcs: set[str] = set()
     seen_quests: set[str] = set()
     acts = {a["id"] for a in data.get("acts", [])}
+    flags_set: set[str] = set()
     for arc in arcs:
         assert arc["slug"] not in seen_arcs, f"duplicate arc slug {arc['slug']}"
         seen_arcs.add(arc["slug"])
@@ -100,6 +101,11 @@ def load_arcs() -> list[dict[str, Any]]:
                 f"{step['slug']} is in a {character_class or 'open'} arc but its template is {owner}'s"
             )
             assert step.get("completion"), f"{step['slug']} says nothing when it is done"
+            if step.get("flag"):
+                flags_set.add(step["flag"])
+            for variant in step.get("variants", []):
+                # A notice may remember something the player did, never something they could not have.
+                assert variant["ifFlag"] in flags_set, f"{step['slug']} reads a flag no earlier step sets"
             # The step before it, unless the author named something else.
             step.setdefault("prerequisiteSlug", arc["quests"][index - 1]["slug"] if index else None)
             step["sequence"] = index + 1
@@ -390,6 +396,8 @@ async def settle_arc(
     from app.progression.service import award_title, grant
     from app.progression.titles import arc_title
 
+    if character is not None:
+        await note_flags(db, character, quest)
     arc = await standing(db, user, quest)
     if arc is None or not arc["arcCompleted"] or character is None:
         return arc
@@ -423,12 +431,43 @@ async def settle_arc(
     # The arc's title last, so it is the one worn even when its XP brought a level title too.
     entry = arc_title(arc["arcSlug"])
     title = await award_title(db, character, entry["slug"], ride_id=ride_id) if entry else None
+    # A chapter of Act II teaches its rune: held at rank I, or a stone towards the next.
+    if reward.get("rune"):
+        from app.inventory.service import give_rune
+
+        await give_rune(db, character, str(reward["rune"]), key=f"arc:{arc['arcSlug']}", ride_id=ride_id)
     await db.flush()
     return {
         **arc,
         "reward": {**reward, **({"title": title} if title else {})},
         "_xp": outcome.to_dict(),
     }
+
+
+async def note_flags(db: AsyncSession, character: Character, quest: QuestInstance) -> None:
+    """A step that remembers something (`flag`): set when its quest is finished with
+    every optional objective done too. Later notices read it; nothing is locked out."""
+    if quest.story_quest_id is None:
+        return
+    step = await db.get(StoryQuest, quest.story_quest_id)
+    flag = authored_step(step.slug).get("flag") if step is not None else None
+    if not flag:
+        return
+    optional = [o for o in quest.objectives if not o.required]
+    if optional and all(o.status == "COMPLETED" for o in optional):
+        flags = list(character.story_flags or [])
+        if flag not in flags:
+            character.story_flags = [*flags, flag]
+            await db.flush()
+
+
+def _wording(step_slug: str, character: Character) -> str | None:
+    """A later notice's other wording, when it remembers something the player did."""
+    flags = set(character.story_flags or [])
+    for variant in authored_step(step_slug).get("variants", []):
+        if variant["ifFlag"] in flags:
+            return str(variant["description"])
+    return None
 
 
 def _authored(text: str, variables: dict[str, Any]) -> str:
@@ -535,12 +574,13 @@ async def offer(
 
     authored = authored_step(step.slug)
     arc_meta = next((a for a in load_arcs() if any(q["slug"] == step.slug for q in a["quests"])), {})
+    words = _wording(step.slug, character) or step.description
     generated = replace(
         generated,
         title=_authored(step.title, generated.variables),
-        description=_authored(step.description, generated.variables),
+        description=_authored(words, generated.variables),
         narrative={
-            "hook": _authored(step.description, generated.variables),
+            "hook": _authored(words, generated.variables),
             "completion": _authored(authored.get("completion") or "", generated.variables) or None,
             "source": "story",
             # Who posted it, and one of their lines: attached last, so nothing drops it.

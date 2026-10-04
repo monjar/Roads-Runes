@@ -13,6 +13,8 @@ from app.routing.schemas import (
     RouteGenerateResponse,
     RouteOptionOut,
     RoutePackageOut,
+    RuneRideRequest,
+    RuneRideResponse,
 )
 
 router = APIRouter(prefix="/routes", tags=["routes"])
@@ -31,6 +33,38 @@ async def generate(
     return RouteGenerateResponse(
         alternatives=[service.route_out(r, c) for r, c in results],
         parsedRequest=parsed,
+        engine=results[0][0].engine,
+    )
+
+
+@router.post("/rune", response_model=RuneRideResponse)
+async def rune_ride(
+    payload: RuneRideRequest,
+    user: CurrentUser,
+    db: DBDep,
+    settings: SettingsDep,
+    engine: Annotated[object, Depends(get_router_client)],
+    llm: Annotated[object, Depends(get_llm)],
+) -> RuneRideResponse:
+    """Up to three ways to cut a rune from here (409 `RUNE_NOT_A_SHAPE`, `RUNE_NOT_FOR_ACTIVITY`)."""
+    from app.routing import rune_rides
+
+    results, form, hint = await rune_rides.plan(
+        db,
+        settings,
+        engine,
+        llm,
+        user,
+        payload.origin,
+        payload.rune,
+        payload.activity,
+        payload.bikeId,  # type: ignore[arg-type]
+    )
+    return RuneRideResponse(
+        alternatives=[service.route_out(r, c) for r, c in results],
+        rune=payload.rune,
+        roadForm=form,
+        hint=hint,
         engine=results[0][0].engine,
     )
 

@@ -30,6 +30,10 @@ OBJECTIVE_TYPES = (
     "SLAY_MONSTER",
     "OPEN_CHEST",
     "COLLECT",
+    # 0.7.0: a rune cut round a place (a road form, a note, or a stop), and something
+    # taken from one place to another.
+    "INSCRIBE_RUNE",
+    "CARRY",
 )
 
 DIFFICULTIES = ("EASY", "MODERATE", "HARD", "EPIC")

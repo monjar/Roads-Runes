@@ -141,6 +141,16 @@ coming is the reason to come back — each step marked COMPLETED, OPEN (on the
 board now), READY (next up), WAITING or LOCKED. All of it is behind the
 `story_quests` feature flag.
 
+Act II, "Five More Cuts" (0.7.0), is five chapters after The Rune at the
+Crossing, one per rune (Kenaz, Ansuz, Wunjo, Sowilo, Dagaz), each learn,
+fetch, prove and cut: an old place, a `CARRY`, something seen off, and an
+`INSCRIBE_RUNE` in the rune's road form (a note for Ansuz, a stop for
+Wunjo). Finishing a chapter teaches its rune (`reward.rune`, held at rank I).
+A step may remember something (`flag`, set when its quest is finished with
+every optional objective done too) and a later step may read it
+(`variants`, by `ifFlag`): the second chapter's fetch is posted "for whoever
+came home the other way". Nothing is ever locked out.
+
 Every notice says who posted it (`narrative.poster`, a cast member and one of
 their lines, by seed) and has an authored `completion` line; a story step's
 comes from the arc file, a generated quest's from its template. Story-only

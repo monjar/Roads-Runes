@@ -30,6 +30,7 @@ from app.economy.rules import ACLine, compute_ride_ac
 from app.economy.streaks import StreakOutcome, streak_lines, update_streak
 from app.exploration.cells import cell_for, traverse
 from app.exploration.service import ExplorationOutcome, record_traversal
+from app.inventory import catalog as runes_catalog
 from app.inventory import deeds
 from app.inventory import service as inventory
 from app.lore.service import creature_tallies
@@ -44,9 +45,26 @@ from app.rides.validation import CleanPoint, check_cell_plausibility, validate_p
 from app.social.service import publish
 from app.users.models import User
 from app.world_objects import service as world_objects
+from app.world_objects.claims import match_rune
 from app.world_objects.service import ClaimOutcome
 
 log = get_logger(__name__)
+
+
+def _stopped_at(points: list[CleanPoint], place: tuple[float, float], radius: float, seconds: float) -> bool:
+    """Whether the outing stayed within reach of a place for long enough."""
+    inside = [p for p in points if haversine_m(place[0], place[1], p.latitude, p.longitude) <= radius]
+    if len(inside) < 2:
+        return False
+    run_start = inside[0]
+    last = inside[0]
+    for p in inside[1:]:
+        if (p.timestamp - last.timestamp).total_seconds() > 120:
+            run_start = p  # it left and came back: a new stop
+        last = p
+        if (last.timestamp - run_start.timestamp).total_seconds() >= seconds:
+            return True
+    return False
 
 
 def _simplify(points: list[CleanPoint], max_points: int = 1500) -> list[list[float]]:
@@ -145,6 +163,48 @@ def evaluate_objectives(
         elif t == "COMPLETE_ROUTE":
             done = distance_m >= (o.target_meters or 0) * 0.9
             o.progress_current = min(o.progress_target, distance_m)
+        elif t == "INSCRIBE_RUNE" and o.latitude is not None and o.longitude is not None:
+            form = str((o.extra or {}).get("roadForm") or "LOOP")
+            radius = float(o.radius_meters or 1500)
+            if form == "NOTE":
+                # A note of a few words written within reach of the place.
+                ev = client_by_objective.get(str(o.id))
+                done = bool(
+                    ev is not None
+                    and len(str(ev.get("note") or "").strip()) >= 12
+                    and (
+                        ev.get("latitude") is None
+                        or haversine_m(o.latitude, o.longitude, float(ev["latitude"]), float(ev["longitude"]))
+                        <= radius * 1.5
+                    )
+                )
+            elif form == "STOP":
+                done = _stopped_at(
+                    points, (o.latitude, o.longitude), radius, float((o.extra or {}).get("stopSeconds", 300))
+                )
+            else:
+                match = match_rune(coords, (o.latitude, o.longitude), threshold=0.25, search_radius_m=radius)
+                done = match is not None and match.shape == form
+                if done:
+                    shape = coords[match.start : match.end + 1]
+                    o.extra = {
+                        **(o.extra or {}),
+                        "cutAt": [sum(p[0] for p in shape) / len(shape), sum(p[1] for p in shape) / len(shape)],
+                    }
+            o.progress_current = 1.0 if done else 0.0
+        elif t == "CARRY" and o.latitude is not None and o.longitude is not None:
+            to = (o.extra or {}).get("to") or {}
+            radius = float(o.radius_meters or 80) * 1.25
+            picked = next(
+                (i for i, (lat, lon) in enumerate(coords) if haversine_m(o.latitude, o.longitude, lat, lon) <= radius),
+                None,
+            )
+            delivered = picked is not None and any(
+                haversine_m(float(to["latitude"]), float(to["longitude"]), lat, lon) <= radius
+                for lat, lon in coords[picked:]
+            )
+            o.progress_current = 2.0 if delivered else (1.0 if picked is not None else 0.0)
+            done = bool(delivered)
         elif t == "COMPLETE_WITH_FRIEND":
             done = bool(o.extra.get("friendConfirmed"))
         elif t == "SLAY_MONSTER":
@@ -403,6 +463,18 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
                 claims=claims,
             )
             for o in objectives_completed:
+                # A rune cut for a quest is a cut like any other: on the map, in the Hand.
+                if o.objective_type == "INSCRIBE_RUNE":
+                    form = str((o.extra or {}).get("roadForm") or "")
+                    rune_id = (o.extra or {}).get("rune") or (
+                        runes_catalog.rune_for_form(form) if form in runes_catalog.CUT_FORMS else None
+                    )
+                    at = (o.extra or {}).get("cutAt") or [o.latitude, o.longitude]
+                    if rune_id and at[0] is not None:
+                        await inventory.record_cut(
+                            db, ride.user_id, ride_id=ride.id, rune_id=str(rune_id), latitude=float(at[0]),
+                            longitude=float(at[1]), source="QUEST", place_name=(o.extra or {}).get("poiName"),
+                        )  # fmt: skip
                 if o.discovery_id:
                     d = await db.get(Discovery, o.discovery_id)
                     if d is not None:

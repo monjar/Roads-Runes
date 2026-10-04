@@ -330,6 +330,26 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
         variables["poiFact"] = _fact_for(poi)
         farthest_m = haversine_m(ctx.latitude, ctx.longitude, poi.latitude, poi.longitude)
 
+    # Somewhere to take it to (CARRY): a second real place, a walk or a ride from the first.
+    carry_to: POICandidate | None = None
+    if "carryTo" in rules and poi is not None:
+        to_rules = dict(rules["carryTo"])
+        lo, hi = (float(x) * 1000 for x in to_rules.get("distanceKm", [1, 4]))
+        wanted = to_rules.get("poiCategory")
+        wanted = set(wanted) if isinstance(wanted, list) else ({wanted} if wanted else set())
+        options = [
+            p
+            for p in ctx.pois
+            if p.id != poi.id
+            and (not wanted or p.category in wanted)
+            and lo <= haversine_m(poi.latitude, poi.longitude, p.latitude, p.longitude) <= hi
+        ]
+        if not options:
+            return None
+        carry_to = rng.choice(options)
+        variables["carryToName"] = carry_to.name
+        farthest_m = max(farthest_m, haversine_m(ctx.latitude, ctx.longitude, carry_to.latitude, carry_to.longitude))
+
     region_cells: list[str] = []
     if "regionCount" in rules:
         count = int(rules["regionCount"])
@@ -443,6 +463,35 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
             obj.target_value = float(variables.get("speedKmh", 20))
             # A fast two kilometres is not a tempo ride.
             obj.extra = {"minDistanceMeters": float(variables.get("distanceKm", 10)) * 1000 * 0.8}
+        elif otype == "INSCRIBE_RUNE":
+            if poi is None:
+                return None
+            form = str(spec.get("roadForm") or rules.get("roadForm") or "LOOP")
+            obj.latitude, obj.longitude = poi.latitude, poi.longitude
+            # A shape may be cut anywhere within reach of the place; a note or a stop at it.
+            obj.radius_meters = float(spec.get("radiusMeters", 1500 if form not in ("NOTE", "STOP") else 120))
+            obj.discovery_id = poi.id
+            obj.extra = {"roadForm": form, "rune": spec.get("rune"), "poiName": poi.name, "category": poi.category}
+            if form == "NOTE":
+                obj.extra["safety"] = "Stop safely before completing this objective."
+            if form == "STOP":
+                obj.extra["stopSeconds"] = int(spec.get("stopSeconds", 300))
+        elif otype == "CARRY":
+            if poi is None or carry_to is None:
+                return None
+            obj.latitude, obj.longitude = poi.latitude, poi.longitude
+            obj.radius_meters = float(spec.get("radiusMeters", 80))
+            obj.discovery_id = poi.id
+            obj.target_count = 2
+            obj.extra = {
+                "poiName": poi.name,
+                "to": {
+                    "latitude": carry_to.latitude,
+                    "longitude": carry_to.longitude,
+                    "name": carry_to.name,
+                    "discoveryId": carry_to.id,
+                },
+            }
         elif otype in ("SLAY_MONSTER", "OPEN_CHEST", "COLLECT"):
             wanted = int(rules.get("worldObject", {}).get("count", 1))
             obj.target_count = 1 if otype == "SLAY_MONSTER" else wanted

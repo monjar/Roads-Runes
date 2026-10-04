@@ -66,7 +66,7 @@ async def arc_of(quest: dict) -> str:
 
 
 def test_act_one_is_three_chapters_in_order_and_every_step_says_something_when_done():
-    main = [a for a in story.load_arcs() if a["track"] == "MAIN"]
+    main = [a for a in story.load_arcs() if a["track"] == "MAIN" and a.get("act") == 1]
     assert [a["slug"] for a in main] == ["first-light", "what-settles", "the-rune-at-the-crossing"]
     assert [a.get("after") for a in main] == [None, "first-light", "what-settles"]
     assert story.acts()[0]["title"] == "The Board"

@@ -11,6 +11,7 @@
     {"slug": "arc-first-light", "name": "Early Riser", "source": "ARC", "arc": "first-light", "how": "Finish First Light."},
     {"slug": "arc-what-settles", "name": "Somebody", "source": "ARC", "arc": "what-settles", "how": "Finish What Settles."},
     {"slug": "arc-the-rune-at-the-crossing", "name": "Reader at the Crossing", "source": "ARC", "arc": "the-rune-at-the-crossing", "how": "Finish The Rune at the Crossing."},
+    {"slug": "arc-the-cut-of-dagaz", "name": "Five Cuts", "source": "ARC", "arc": "the-cut-of-dagaz", "how": "Finish Act II, Five More Cuts."},
     {"slug": "arc-the-edge-of-the-map", "name": "Edgewalker", "source": "ARC", "arc": "the-edge-of-the-map", "how": "Finish The Edge of the Map, as a Wayfinder."},
     {"slug": "arc-what-the-stones-remember", "name": "Stone Reader", "source": "ARC", "arc": "what-the-stones-remember", "how": "Finish What the Stones Remember, as a Cutter."},
     {"slug": "arc-the-iron-hours", "name": "Ironbound", "source": "ARC", "arc": "the-iron-hours", "how": "Finish The Iron Hours, as a Mender."},

@@ -405,7 +405,15 @@ aside, and the player's purse pays 50 coins only if something comes.
 }
 ```
 
-Objective types: `VISIT_LOCATION, VISIT_REGION, EXPLORE_DISTANCE, EXPLORE_NEW_ROADS, REACH_ELEVATION, COMPLETE_DISTANCE, COMPLETE_CLIMB, VISIT_POI, PHOTO_LOCATION, WRITE_NOTE, VISIT_MULTIPLE_LOCATIONS, RETURN_TO_START, COMPLETE_WITH_FRIEND, COMPLETE_ROUTE, RIDE_DURATION, SUSTAIN_SPEED`.
+Objective types: `VISIT_LOCATION, VISIT_REGION, EXPLORE_DISTANCE, EXPLORE_NEW_ROADS, REACH_ELEVATION, COMPLETE_DISTANCE, COMPLETE_CLIMB, VISIT_POI, PHOTO_LOCATION, WRITE_NOTE, VISIT_MULTIPLE_LOCATIONS, RETURN_TO_START, COMPLETE_WITH_FRIEND, COMPLETE_ROUTE, RIDE_DURATION, SUSTAIN_SPEED, SLAY_MONSTER, OPEN_CHEST, COLLECT, INSCRIBE_RUNE, CARRY`.
+
+0.7.0 adds two. `INSCRIBE_RUNE` asks for a rune round a place: `extra.roadForm` is `LOOP`,
+`TRIANGLE`, `SQUARE` or `ZIGZAG` (a shape cut with the trace within `radiusMeters` of the
+place, judged by the rune matcher), `NOTE` (a note of a few words sent as the objective's
+`progress` event within reach) or `STOP` (staying within reach for `extra.stopSeconds`);
+`extra.rune` names the rune. `CARRY` asks for the trace to reach the objective's place and
+later `extra.to` (`{"latitude", "longitude", "name", "discoveryId"}`); `progress` counts 0, 1
+(picked up) and 2 (delivered).
 
 `RIDE_DURATION` counts minutes and `SUSTAIN_SPEED` the ride's average km/h (with a floor
 in `extra.minDistanceMeters`, so a fast two kilometres does not pass); both are judged
@@ -535,6 +543,20 @@ new cells (`discovered_via: CARTOGRAPHER`), rune stones likelier, and one missed
 objective of a finished quest counting (`extra.forgiven`).
 
 ## Routes
+
+### `POST /routes/rune` (0.7.0)
+
+A rune ride: up to three routes whose waypoints on the road network make a rune's road
+form, starting where the player is.
+
+```json
+{"origin": {"latitude": 51.49, "longitude": -0.04}, "rune": "raido", "activity": "RIDE", "bikeId": null}
+```
+
+→ `{"alternatives": [RouteOption], "rune": "raido", "roadForm": "LOOP", "hint": "Cut Raido here: a loop, about 2.4 km.", "engine": "graphhopper"}`.
+Loops, triangles and squares on a bike, zigzags on foot (409 `RUNE_NOT_FOR_ACTIVITY`); a
+rune with no road form is 409 `RUNE_NOT_A_SHAPE`. Each route's label is the rune's name and
+its `request` carries `rune` and `roadForm`.
 
 ### `POST /routes/generate`
 

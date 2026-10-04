@@ -1830,6 +1830,273 @@
       ],
       "completion": "Seen off. The crossing reads plainly again.",
       "waitingReason": "Waiting for somewhere for it to have settled."
+    },
+    {
+      "id": "ANY_FETCH",
+      "characterClass": "ANY",
+      "questType": "CARRY",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "poiCategory": [
+          "HISTORICAL",
+          "CULTURAL",
+          "LANDMARK",
+          "NATURE",
+          "VIEWPOINT"
+        ],
+        "poiDistanceKm": [
+          1,
+          6
+        ],
+        "carryTo": {
+          "poiCategory": [
+            "NATURE",
+            "CULTURAL",
+            "LANDMARK",
+            "HISTORICAL"
+          ],
+          "distanceKm": [
+            1,
+            4
+          ]
+        }
+      },
+      "objectives": [
+        {
+          "type": "CARRY",
+          "title": "From {poiName} to {carryToName}",
+          "required": true
+        },
+        {
+          "type": "RETURN_TO_START",
+          "title": "Come home the other way",
+          "required": false,
+          "radiusMeters": 300
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Fetch and Carry",
+          "description": "Something to be taken from {poiName} to {carryToName}. What it is does not matter; that it went from one to the other does."
+        }
+      ],
+      "completion": "Carried. It is where it was meant to be, which is more than most things.",
+      "waitingReason": "Waiting for two places a walk or a ride apart."
+    },
+    {
+      "id": "ANY_CUT_TRIANGLE",
+      "characterClass": "ANY",
+      "questType": "INSCRIBE_RUNE",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "poiCategory": [
+          "NATURE",
+          "LANDMARK",
+          "VIEWPOINT"
+        ],
+        "poiDistanceKm": [
+          1,
+          6
+        ]
+      },
+      "objectives": [
+        {
+          "type": "INSCRIBE_RUNE",
+          "title": "Cut Kenaz round {poiName}: a triangle",
+          "required": true,
+          "roadForm": "TRIANGLE",
+          "rune": "kenaz"
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Cut Kenaz round {poiName}",
+          "description": "A triangle with your track, somewhere near {poiName}. Three corners, and back to the first."
+        }
+      ],
+      "completion": "Kenaz, cut. It shows what is there, which is not always welcome.",
+      "waitingReason": "Waiting for somewhere to cut a triangle near you."
+    },
+    {
+      "id": "ANY_CUT_NOTE",
+      "characterClass": "ANY",
+      "questType": "INSCRIBE_RUNE",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "poiCategory": [
+          "HISTORICAL",
+          "CULTURAL",
+          "LANDMARK",
+          "NATURE",
+          "VIEWPOINT"
+        ],
+        "poiDistanceKm": [
+          1,
+          6
+        ]
+      },
+      "objectives": [
+        {
+          "type": "INSCRIBE_RUNE",
+          "title": "Write Ansuz at {poiName}: a few words, standing still",
+          "required": true,
+          "roadForm": "NOTE",
+          "rune": "ansuz"
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Write Ansuz at {poiName}",
+          "description": "Go to {poiName}, stop, and write down what it is in a few words. A place named is a place kept."
+        }
+      ],
+      "completion": "Ansuz, written. The place is kept.",
+      "waitingReason": "Waiting for a place worth naming near you."
+    },
+    {
+      "id": "ANY_CUT_STOP",
+      "characterClass": "ANY",
+      "questType": "INSCRIBE_RUNE",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "poiCategory": [
+          "CAFE",
+          "PUB",
+          "NATURE"
+        ],
+        "poiDistanceKm": [
+          1,
+          6
+        ]
+      },
+      "objectives": [
+        {
+          "type": "INSCRIBE_RUNE",
+          "title": "Stop at {poiName} for five minutes",
+          "required": true,
+          "roadForm": "STOP",
+          "rune": "wunjo",
+          "stopSeconds": 300
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Stop at {poiName} for five minutes",
+          "description": "Stop at {poiName} for five minutes and do nothing in particular. Roads were also for going somewhere pleasant."
+        }
+      ],
+      "completion": "Wunjo, kept. Five minutes, and nothing came of it, which was the point.",
+      "waitingReason": "Waiting for somewhere pleasant to stop near you."
+    },
+    {
+      "id": "ANY_CUT_ZIGZAG",
+      "characterClass": "ANY",
+      "questType": "INSCRIBE_RUNE",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "poiCategory": [
+          "NATURE",
+          "LANDMARK",
+          "VIEWPOINT"
+        ],
+        "poiDistanceKm": [
+          1,
+          6
+        ]
+      },
+      "objectives": [
+        {
+          "type": "INSCRIBE_RUNE",
+          "title": "Cut Sowilo near {poiName}: a zigzag",
+          "required": true,
+          "roadForm": "ZIGZAG",
+          "rune": "sowilo"
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Cut Sowilo near {poiName}",
+          "description": "Four legs near {poiName}, each turning back across the last. Easiest on foot, where a sharp turn is only a step."
+        }
+      ],
+      "completion": "Sowilo, cut. The road goes somewhere; this was the somewhere.",
+      "waitingReason": "Waiting for room to cut a zigzag near you."
+    },
+    {
+      "id": "ANY_CUT_SQUARE",
+      "characterClass": "ANY",
+      "questType": "INSCRIBE_RUNE",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "poiCategory": [
+          "NATURE",
+          "LANDMARK",
+          "VIEWPOINT"
+        ],
+        "poiDistanceKm": [
+          1,
+          6
+        ]
+      },
+      "objectives": [
+        {
+          "type": "INSCRIBE_RUNE",
+          "title": "Cut Dagaz round {poiName}: a square",
+          "required": true,
+          "roadForm": "SQUARE",
+          "rune": "dagaz"
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Cut Dagaz round {poiName}",
+          "description": "A square with your track near {poiName}: four sides, four turns the same way, back where you began."
+        }
+      ],
+      "completion": "Dagaz, cut. The day has two sides; you have been round both.",
+      "waitingReason": "Waiting for somewhere to cut a square near you."
     }
   ]
 }

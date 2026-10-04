@@ -90,6 +90,24 @@ class RouteGenerateResponse(APIModel):
     engine: str
 
 
+class RuneRideRequest(APIModel):
+    """A route in a rune's road form, from here (0.7.0)."""
+
+    origin: Coordinate
+    rune: str = Field(max_length=20)
+    activity: Activity | None = None
+    bikeId: uuid.UUID | None = None
+
+
+class RuneRideResponse(APIModel):
+    alternatives: list[RouteOptionOut]
+    rune: str
+    roadForm: str
+    # "Cut Raido here: a loop, about 2.4 km."
+    hint: str
+    engine: str
+
+
 class RoutePackageOut(APIModel):
     route: RouteOptionOut
     quest: Any | None

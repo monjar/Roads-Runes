@@ -1,7 +1,16 @@
 {
   "_comment": "The campaign (docs/ROADMAP.md, Appendix E). An arc is a chapter; `act` groups chapters; `track` MAIN is the campaign and SIDE the trades' own arcs, one live step per track. `after` names the chapter that must be finished first. `giver` is the cast member who posts it (lore/config/cast.json). Every line is activity-neutral: an outing, never a ride.",
   "acts": [
-    {"id": 1, "title": "The Board", "description": "Ada Pym keeps a board. Things go up on it and nobody comes. Then somebody does."}
+    {
+      "id": 1,
+      "title": "The Board",
+      "description": "Ada Pym keeps a board. Things go up on it and nobody comes. Then somebody does."
+    },
+    {
+      "id": 2,
+      "title": "Five More Cuts",
+      "description": "One rune read at a crossing is a start. There are five more on the roads round here, half-worn. Enid Sallow has the list."
+    }
   ],
   "arcs": [
     {
@@ -37,7 +46,10 @@
           "templateId": "ANY_HIGH_GROUND"
         }
       ],
-      "reward": {"title": "Early Riser", "ac": 100}
+      "reward": {
+        "title": "Early Riser",
+        "ac": 100
+      }
     },
     {
       "slug": "what-settles",
@@ -73,7 +85,10 @@
           "templateId": "ANY_THREE_PATCHES"
         }
       ],
-      "reward": {"title": "Somebody", "ac": 150}
+      "reward": {
+        "title": "Somebody",
+        "ac": 150
+      }
     },
     {
       "slug": "the-rune-at-the-crossing",
@@ -109,7 +124,10 @@
           "templateId": "ANY_THE_ELDER"
         }
       ],
-      "reward": {"title": "Reader at the Crossing", "ac": 300}
+      "reward": {
+        "title": "Reader at the Crossing",
+        "ac": 300
+      }
     },
     {
       "slug": "the-edge-of-the-map",
@@ -142,7 +160,10 @@
           "templateId": "EXPLORER_OUT_AND_BACK"
         }
       ],
-      "reward": {"title": "Edgewalker", "ac": 200}
+      "reward": {
+        "title": "Edgewalker",
+        "ac": 200
+      }
     },
     {
       "slug": "what-the-stones-remember",
@@ -175,7 +196,10 @@
           "templateId": "WIZARD_OLD_GROUND"
         }
       ],
-      "reward": {"title": "Stone Reader", "ac": 200}
+      "reward": {
+        "title": "Stone Reader",
+        "ac": 200
+      }
     },
     {
       "slug": "the-iron-hours",
@@ -208,7 +232,10 @@
           "templateId": "WARRIOR_HOUR_OF_IRON"
         }
       ],
-      "reward": {"title": "Ironbound", "ac": 200}
+      "reward": {
+        "title": "Ironbound",
+        "ac": 200
+      }
     },
     {
       "slug": "a-record-of-small-things",
@@ -241,7 +268,248 @@
           "templateId": "SCRIBE_ROUTE_SURVEY"
         }
       ],
-      "reward": {"title": "Keeper of Small Things", "ac": 200}
+      "reward": {
+        "title": "Keeper of Small Things",
+        "ac": 200
+      }
+    },
+    {
+      "slug": "the-cut-of-kenaz",
+      "title": "The Cut of Kenaz",
+      "act": 2,
+      "chapter": 1,
+      "track": "MAIN",
+      "after": "the-rune-at-the-crossing",
+      "giver": "enid-sallow",
+      "description": "Kenaz. The torch. It shows what is there, which is not always welcome. Learn where it was, fetch what it needs, clear the ground, and cut it.",
+      "characterClass": null,
+      "minLevel": 1,
+      "quests": [
+        {
+          "slug": "cut-of-kenaz-where-it-was",
+          "title": "Where Kenaz Was",
+          "templateId": "ANY_OLD_STONE",
+          "description": "Kenaz was cut somewhere old round here. Go and stand where it was. The map is vague about which stone; so is everyone else.",
+          "completion": "You stood where Kenaz was cut. It was there; it needs doing again."
+        },
+        {
+          "slug": "cut-of-kenaz-fetch-and-carry",
+          "title": "Fetch and Carry",
+          "templateId": "ANY_FETCH",
+          "description": "Something to be taken from {poiName} to {carryToName}. What it is does not matter; that it went from one to the other does.",
+          "completion": "Carried. It is where it was meant to be, which is more than most things.",
+          "flag": "came-home-the-other-way"
+        },
+        {
+          "slug": "cut-of-kenaz-something-in-the-way",
+          "title": "Something in the Way",
+          "templateId": "ANY_SLAY_NEARBY",
+          "description": "Something has settled where Kenaz should be read. Give it what it wants.",
+          "completion": "Seen off. The ground is clear for the cut."
+        },
+        {
+          "slug": "cut-of-kenaz-the-cut",
+          "title": "Cut Kenaz",
+          "templateId": "ANY_CUT_TRIANGLE",
+          "description": "A triangle with your track near a place worth showing. Three corners, and back to the first.",
+          "completion": "Kenaz, cut. It shows what is there, which is not always welcome."
+        }
+      ],
+      "reward": {
+        "ac": 100,
+        "rune": "kenaz"
+      }
+    },
+    {
+      "slug": "the-cut-of-ansuz",
+      "title": "The Cut of Ansuz",
+      "act": 2,
+      "chapter": 2,
+      "track": "MAIN",
+      "after": "the-cut-of-kenaz",
+      "giver": "enid-sallow",
+      "description": "Ansuz. The word-rune. A place named is a place kept. Learn where it was, fetch what it needs, clear the ground, and cut it.",
+      "characterClass": null,
+      "minLevel": 1,
+      "quests": [
+        {
+          "slug": "cut-of-ansuz-where-it-was",
+          "title": "Where Ansuz Was",
+          "templateId": "ANY_OLD_STONE",
+          "description": "Ansuz was cut somewhere old round here. Go and stand where it was. The map is vague about which stone; so is everyone else.",
+          "completion": "You stood where Ansuz was cut. It was there; it needs doing again."
+        },
+        {
+          "slug": "cut-of-ansuz-fetch-and-carry",
+          "title": "Fetch and Carry",
+          "templateId": "ANY_FETCH",
+          "description": "Something to be taken from {poiName} to {carryToName}. What it is does not matter; that it went from one to the other does.",
+          "completion": "Carried. It is where it was meant to be, which is more than most things.",
+          "variants": [
+            {
+              "ifFlag": "came-home-the-other-way",
+              "description": "Posted for whoever came home the other way last time. Something to be taken from {poiName} to {carryToName}; the other way will do again."
+            }
+          ]
+        },
+        {
+          "slug": "cut-of-ansuz-something-in-the-way",
+          "title": "Something in the Way",
+          "templateId": "ANY_SLAY_NEARBY",
+          "description": "Something has settled where Ansuz should be read. Give it what it wants.",
+          "completion": "Seen off. The ground is clear for the cut."
+        },
+        {
+          "slug": "cut-of-ansuz-the-cut",
+          "title": "Write Ansuz",
+          "templateId": "ANY_CUT_NOTE",
+          "description": "Go to the place, stop, and name it in a few words. That is the whole of the rune.",
+          "completion": "Ansuz, written. The place is kept."
+        }
+      ],
+      "reward": {
+        "ac": 100,
+        "rune": "ansuz"
+      }
+    },
+    {
+      "slug": "the-cut-of-wunjo",
+      "title": "The Cut of Wunjo",
+      "act": 2,
+      "chapter": 3,
+      "track": "MAIN",
+      "after": "the-cut-of-ansuz",
+      "giver": "enid-sallow",
+      "description": "Wunjo. The glad rune. Roads were also for going somewhere pleasant. Learn where it was, fetch what it needs, clear the ground, and cut it.",
+      "characterClass": null,
+      "minLevel": 1,
+      "quests": [
+        {
+          "slug": "cut-of-wunjo-where-it-was",
+          "title": "Where Wunjo Was",
+          "templateId": "ANY_OLD_STONE",
+          "description": "Wunjo was cut somewhere old round here. Go and stand where it was. The map is vague about which stone; so is everyone else.",
+          "completion": "You stood where Wunjo was cut. It was there; it needs doing again."
+        },
+        {
+          "slug": "cut-of-wunjo-fetch-and-carry",
+          "title": "Fetch and Carry",
+          "templateId": "ANY_FETCH",
+          "description": "Something to be taken from {poiName} to {carryToName}. What it is does not matter; that it went from one to the other does.",
+          "completion": "Carried. It is where it was meant to be, which is more than most things."
+        },
+        {
+          "slug": "cut-of-wunjo-something-in-the-way",
+          "title": "Something in the Way",
+          "templateId": "ANY_SLAY_NEARBY",
+          "description": "Something has settled where Wunjo should be read. Give it what it wants.",
+          "completion": "Seen off. The ground is clear for the cut."
+        },
+        {
+          "slug": "cut-of-wunjo-the-cut",
+          "title": "Keep Wunjo",
+          "templateId": "ANY_CUT_STOP",
+          "description": "Five minutes somewhere pleasant, doing nothing in particular. It counts.",
+          "completion": "Wunjo, kept. Five minutes, and nothing came of it, which was the point."
+        }
+      ],
+      "reward": {
+        "ac": 100,
+        "rune": "wunjo"
+      }
+    },
+    {
+      "slug": "the-cut-of-sowilo",
+      "title": "The Cut of Sowilo",
+      "act": 2,
+      "chapter": 4,
+      "track": "MAIN",
+      "after": "the-cut-of-wunjo",
+      "giver": "enid-sallow",
+      "description": "Sowilo. The sun. A road goes somewhere; this is the somewhere. Learn where it was, fetch what it needs, clear the ground, and cut it.",
+      "characterClass": null,
+      "minLevel": 1,
+      "quests": [
+        {
+          "slug": "cut-of-sowilo-where-it-was",
+          "title": "Where Sowilo Was",
+          "templateId": "ANY_OLD_STONE",
+          "description": "Sowilo was cut somewhere old round here. Go and stand where it was. The map is vague about which stone; so is everyone else.",
+          "completion": "You stood where Sowilo was cut. It was there; it needs doing again."
+        },
+        {
+          "slug": "cut-of-sowilo-fetch-and-carry",
+          "title": "Fetch and Carry",
+          "templateId": "ANY_FETCH",
+          "description": "Something to be taken from {poiName} to {carryToName}. What it is does not matter; that it went from one to the other does.",
+          "completion": "Carried. It is where it was meant to be, which is more than most things."
+        },
+        {
+          "slug": "cut-of-sowilo-something-in-the-way",
+          "title": "Something in the Way",
+          "templateId": "ANY_SLAY_NEARBY",
+          "description": "Something has settled where Sowilo should be read. Give it what it wants.",
+          "completion": "Seen off. The ground is clear for the cut."
+        },
+        {
+          "slug": "cut-of-sowilo-the-cut",
+          "title": "Cut Sowilo",
+          "templateId": "ANY_CUT_ZIGZAG",
+          "description": "Four legs, each turning back across the last. Easiest on foot.",
+          "completion": "Sowilo, cut. The road went somewhere; you were there."
+        }
+      ],
+      "reward": {
+        "ac": 100,
+        "rune": "sowilo"
+      }
+    },
+    {
+      "slug": "the-cut-of-dagaz",
+      "title": "The Cut of Dagaz",
+      "act": 2,
+      "chapter": 5,
+      "track": "MAIN",
+      "after": "the-cut-of-sowilo",
+      "giver": "enid-sallow",
+      "description": "Dagaz. The day-rune. Dawn and dusk are the same mark seen from each side. Learn where it was, fetch what it needs, clear the ground, and cut it.",
+      "characterClass": null,
+      "minLevel": 1,
+      "quests": [
+        {
+          "slug": "cut-of-dagaz-where-it-was",
+          "title": "Where Dagaz Was",
+          "templateId": "ANY_OLD_STONE",
+          "description": "Dagaz was cut somewhere old round here. Go and stand where it was. The map is vague about which stone; so is everyone else.",
+          "completion": "You stood where Dagaz was cut. It was there; it needs doing again."
+        },
+        {
+          "slug": "cut-of-dagaz-fetch-and-carry",
+          "title": "Fetch and Carry",
+          "templateId": "ANY_FETCH",
+          "description": "Something to be taken from {poiName} to {carryToName}. What it is does not matter; that it went from one to the other does.",
+          "completion": "Carried. It is where it was meant to be, which is more than most things."
+        },
+        {
+          "slug": "cut-of-dagaz-something-in-the-way",
+          "title": "Something in the Way",
+          "templateId": "ANY_SLAY_NEARBY",
+          "description": "Something has settled where Dagaz should be read. Give it what it wants.",
+          "completion": "Seen off. The ground is clear for the cut."
+        },
+        {
+          "slug": "cut-of-dagaz-the-cut",
+          "title": "Cut Dagaz",
+          "templateId": "ANY_CUT_SQUARE",
+          "description": "Four sides, four turns the same way, and back where you began.",
+          "completion": "Dagaz, cut. Five more cuts, read and remade."
+        }
+      ],
+      "reward": {
+        "ac": 100,
+        "rune": "dagaz",
+        "title": "Five Cuts"
+      }
     }
   ]
 }

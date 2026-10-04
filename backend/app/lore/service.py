@@ -67,7 +67,10 @@ async def creature_tallies(db: AsyncSession, user_id: uuid.UUID) -> dict[str, _T
 
 
 async def runes_found(db: AsyncSession, user_id: uuid.UUID) -> dict[str, int]:
-    """How many of each rune-stone the player has picked up, by rune id."""
+    """How many of each rune-stone the player has picked up, by rune id, counting a
+    rune held another way (taught by a chapter of Act II) as found once."""
+    from app.inventory.models import RuneHolding
+
     rows = await db.execute(
         select(WorldObject.payload).where(
             WorldObject.user_id == user_id, WorldObject.kind == "COLLECTABLE", WorldObject.status == "CLAIMED"
@@ -76,11 +79,13 @@ async def runes_found(db: AsyncSession, user_id: uuid.UUID) -> dict[str, int]:
     found: dict[str, int] = {}
     for (payload,) in rows:
         payload = payload or {}
-        if payload.get("setId") != "RUNES":
+        if payload.get("setId") not in ("RUNES", "GROUND"):
             continue
         rune = catalog.rune_by_name(str(payload.get("piece") or ""))
         if rune is not None:
             found[rune["id"]] = found.get(rune["id"], 0) + 1
+    for (rune_id,) in await db.execute(select(RuneHolding.rune_id).where(RuneHolding.user_id == user_id)):
+        found.setdefault(rune_id, 1)
     return found
 
 
