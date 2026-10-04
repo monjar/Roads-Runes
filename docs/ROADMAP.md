@@ -11,7 +11,7 @@ Built on the `feat/old-roads` branch, not merged to master. 0.7.0 went to TestFl
 | 0.6.1 Hold | server, phone and wrist; `effort_combat` off | the replay with real outings; protocols 3 and 5 with a fight; then the flag on |
 | 0.6.2 The Board | titles (migration 0009), working knacks, arcs settled once, Act I, posters, the entry, the week's notice | the gate outing on an Act I step; a snapshot before 0009 runs on Fly; `story_quests` on |
 | 0.7.0 Runes and the fog | runes held, ranked, inscribed and woken (migration 0010), deeds, rune rides, `INSCRIBE_RUNE` and `CARRY`, Act II, the ink fog on the Journal map and behind `ink_fog` on the World tab | a rune ride planned, ridden and woken; the wash seen over your own cells |
-| 0.7.1 Plain sight | the lamp (server on Fly, phone in the build), one icon set (game-icons.net) across the app and the Watch, docs/VOICE.md and the wording pass on server, phone and Watch, how to play, Next up, the map legend, a labelled Plan a ride, markers that answer a tap, Settings and story where they can be found; CI on every branch push and `make backend-test-pg` | read the new words in one sitting; hand the phone to someone new; quest text and lore in your own words |
+| 0.7.1 Plain sight | the lamp (server on Fly, phone in the build), one icon set (game-icons.net) across the app and the Watch, docs/VOICE.md and the wording pass on server, phone and Watch, how to play, Next up, the map legend, a labelled Plan a ride, markers that answer a tap, the Watch map's dot pointing the way you face, Settings and story where they can be found; CI on every branch push and `make backend-test-pg` | read the new words in one sitting; hand the phone to someone new; quest text and lore in your own words |
 
 Not built from 0.7.0's list: the World tab's ink fog is behind its flag and unseen on a device; the
 phone folds neither waking nor Wunjo's stops (the server does, and the reckoning says so).
@@ -100,7 +100,7 @@ Sizes are relative to 0.5.0, which was 3,126 lines in 53 files. Each release is 
 | 3 | **0.6.2 The Board** | Titles, working abilities, Act I with a finale, a poster on every notice, a written entry, a weekly notice | L | `0009` | protocol 2 on an Act I step |
 | 4 | **0.7.0 Runes and the fog** | Runes inscribed and woken, rune rides, deeds, the fog back as ink, Act II | XL | `0010` | a rune ride |
 | 5 | **0.7.1 Plain sight** | One look (an open fantasy icon set everywhere), plain words (docs/VOICE.md), a lamp that says what it will do, a "Next up" card, a map legend, how to play | L | none | someone new plays without asking |
-| 6 | **0.7.2 What you carry** | Gear, loot, a stall and the book, every level pays, grudges, twelve more creatures | L | `0011` | protocol 6 (battery) |
+| 6 | **0.7.2 What you carry** | Gear, loot, a stall and the book, every level pays, grudges, twelve more creatures; the Watch catches up (the game on its map, fights, Journey's end) | L | `0011` | protocol 6 (battery) |
 | 7 | **0.7.3 Between rides** | Lock screen, wrist and home screen; quick starts; a sealed notice; the pledge; letters to yourself; a card to share | L | `0012` | a quick-started outing |
 | 8 | **0.8.0 The old ones** | Bosses that take weeks, lairs, treasure maps, Act III | XL | `0013` | protocol 8 (somewhere new) |
 | 9 | **0.9.0 The parish** | Named districts, kept ground, an atlas, seasons, Act IV, cosmetics | XL | `0014` | protocol 7 (typed request) |
@@ -369,6 +369,11 @@ server's messages and labels and the voice check follow it.
   players who already have a character.
 - Settings, the Codex and story arcs where they can be found.
 
+**On the Watch.** The same marks and words, and the map's dot now points the
+way the rider is heading (a Core `CourseTracker`; the phone sends the course
+with each update, and a Watch with an older phone works it out from the
+positions). The rest of the Watch's catching up is in 0.7.2.
+
 **Done when** someone who has never seen the app plays an outing without asking
 what anything is, and the user has read the new words in one sitting.
 
@@ -413,7 +418,25 @@ Migration `0011`: `inventory_items`, gear in `loadouts`.
 
 **Offline and recovery.** The last world loaded is cached beside the route package, and crash recovery replays the game layer as well as the ride.
 
-**It worked if** a drop changes what you wear, and coins run low at least once.
+**On the Watch: catching up with the phone.** The Watch was built for 0.5.0's
+ride and has had only words and marks since. In this release it gets the game:
+- **The game on the Watch map.** Creatures, chests, rune stones, the bounty
+  and the quarry near the route drawn as their marks, and each objective's
+  place as a flag (sent with the route summary, changes with the updates;
+  optional fields, so an older Watch ignores them). Stops drawn as their place
+  marks, not dots.
+- **A fight on the wrist.** The quarry, or else the nearest creature, as its
+  mark in its health ring on the Quest page, redrawn in tenths with no numbers
+  (the phone already folds the fight; it sends the species and the tenths), with
+  the fight taps Core already keeps apart from the turn taps.
+- **Journey's end on the wrist.** After Save, one card: creatures defeated,
+  coins, XP, a level, anything found or dropped. Then back to the idle screen.
+- **Drops** in the objective overlay with their mark.
+- `RideStoreTests` for every new field; a Watch-palette sheet for every new
+  mark in the contact-sheet test.
+
+**It worked if** a drop changes what you wear, and coins run low at least once,
+and the Watch alone is enough to follow a fight.
 
 ---
 
@@ -429,6 +452,8 @@ Migration `0012`: `pledges`, `letters`. The 2026-10-01 "Between rides" release, 
 **Quick starts**
 - App Intents for Siri, Shortcuts and the Action Button: "Start an outing", "Go out for the bounty", "Give me something for forty minutes".
 - **A start command from the Watch**, which asks the phone to start when it is reachable. This makes field protocol 5 possible as written.
+- **Next up on the Watch's idle screen**, in place of "Start a ride on your iPhone": the streak, the bounty and how far, and a quest to start from the wrist.
+- **Always-On** keeps the map's dot and the next turn, dimmed, not only the turn.
 
 **A sealed notice** (the menu's "fate's errand"): choose 20, 40 or 90 minutes. Ada Pym's notice picks the direction and keeps the objective hidden until halfway, using the existing hidden-objective machinery.
 
@@ -487,6 +512,10 @@ Migration `0013`: `old_ones`. The living-world phase of the spec, for one player
 - **Capstone abilities**, one per trade at trade level 20.
 - **The Hard Six** in the codex.
 
+**On the Watch:** an old one's phase ring and mark on the Quest page while it is
+the quarry; a phase broken is one tap and its mark in the overlay. Hot and cold,
+if built, is wrist taps only.
+
 **It worked if** an old one changes where you go for more than one week.
 
 ---
@@ -522,6 +551,9 @@ Migration `0014`: `regions`, `user_regions`. The 0.6 "Home ground" ideas that we
 - **Cosmetics at the stall:** route ink, marker frames, crest frames.
 - **Place lore from Wikidata:** fetched once per tile at import, never per ride. A line is used only if it passes the validator: no capital word or number not in the facts. The Trade Six complete in this release.
 
+**On the Watch:** a district entered is named on the next standstill, never while
+moving; Journey's end on the wrist says which districts were kept.
+
 **It worked if** you ride a known district on purpose to keep it.
 
 ---
@@ -550,6 +582,8 @@ Migration `0015`: `familiars`. The game is whole for one player.
 - the first illustrations in the art slots, if you want them.
 
 **A balance pass** over a year of `play_report.py`, with every constant still in config.
+
+**On the Watch:** the familiar's mark on the idle screen and the complication.
 
 **It worked if** you finish the campaign and keep going out anyway.
 
@@ -593,6 +627,10 @@ Nothing in it compares speed or performance, and nothing exposes live location.
   - Each writer is idempotent by ride and object.
   - New per-user tables join the delete list in `reset_character` (`characters/service.py:238`).
 - **Flags.** Every release's new behaviour sits behind a flag that isolates it on both server and phone, with a written way back.
+- **The Watch.** Every release says what changes on the wrist, or says "nothing on the Watch" and why.
+  - A new field between phone and Watch is optional both ways: an older phone or Watch ignores it, and the Watch has a fallback when it is missing.
+  - `RideStoreTests` cover each new message; the Watch scheme builds and its tests run with every release.
+  - Nothing to read while moving still holds on the wrist: a mark, a ring, a tap, a word at a standstill.
 - **Runes on screen.**
   - Plain Elder Futhark forms only: never doubled, never beside themselves.
   - Never on a share card, widget, icon, crest or ribbon.
