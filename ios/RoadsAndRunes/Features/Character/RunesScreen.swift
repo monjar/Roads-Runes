@@ -170,6 +170,8 @@ struct RunesScreen: View {
 struct DeedsCard: View {
     @Environment(AppContainer.self) private var container
     @State private var deeds: DeedsState?
+    /// The server could not say (one from before 0.7.0 has no deeds): not a spinner for ever.
+    @State private var unavailable = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -202,13 +204,18 @@ struct DeedsCard: View {
                             .font(Theme.Typography.captionStrong.monospacedDigit()).foregroundStyle(Theme.Colors.ink)
                     }
                 }
+            } else if unavailable {
+                Text("Nothing recorded yet.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
             } else {
                 ProgressView().tint(Theme.Colors.terracotta).frame(maxWidth: .infinity)
             }
         }
         .card()
         .accessibilityIdentifier("character.deeds")
-        .task { deeds = try? await container.api.deeds() }
+        .task {
+            deeds = try? await container.api.deeds()
+            unavailable = deeds == nil
+        }
     }
 
     static func kind(of deed: String) -> String {
