@@ -188,7 +188,9 @@ yet; the character sheet marks the others "not yet".
 - `PUT /character/title` (0.6.2) `{"slug": "arc-first-light"}` → `Character`: wear an earned title
   and keep it (409 `TITLE_NOT_EARNED`); `{"slug": null}` wears the newest earned again.
 
-A title is worn as soon as it is earned until the player chooses one. Level titles are Passer-by (1),
+A title is worn as soon as it is earned until the player chooses one. Since 0.7.0 there are deed
+titles (`DEED`, five per deed) and the cast's (`CAST`): finishing enough of one person's notices
+(by `narrative.poster.castId`) earns their title, which is all the standing with the cast there is. Level titles are Passer-by (1),
 Familiar Face (5), Roadwise (10), Journeyman (20), Waywright (30), Old Hand (40) and Known to the
 Roads (50); finishing an arc gives its own. New XP sources in 0.6.2: `PATHFINDER`, `FAR_WANDERER`,
 `WELCOME_BACK` (the first outing after 14 days or more pays its first kilometre twice), and
@@ -725,7 +727,7 @@ outing was planned for.
   "elevationGainMeters": 340, "activeCalories": 876,
   "points": [...optional remaining points...],
   "cellsVisited": [...optional remaining cells...],
-  "objectiveEvents": [{"objectiveId": "uuid", "occurredAt": "...", "latitude": 51.49, "longitude": -0.04}],
+  "objectiveEvents": [{"objectiveId": "uuid", "occurredAt": "...", "latitude": 51.49, "longitude": -0.04, "note": null}],
   "healthKitWorkoutId": null
 }
 ```
@@ -863,4 +865,4 @@ Parties:
 ## Meta
 
 - `GET /health` → `{"status": "ok", "version": "..."}`
-- `GET /config` → `{"featureFlags": {...}, "h3Resolution": 9, "levels": {"max": 50, "maxClass": 50}, "environment": "development", "combat": {...}}`. `combat` (0.6.1) holds the fight's constants from `world_objects.json`; see `docs/COMBAT.md`.
+- `GET /config` → `{"featureFlags": {...}, "h3Resolution": 9, "levels": {"max": 50, "maxClass": 50}, "environment": "development", "combat": {...}}`. `combat` (0.6.1) holds the fight's constants from `world_objects.json`; see `docs/COMBAT.md`. Flags added since 0.6.0: `codex` (on), `effort_combat` (off until ridden), `ink_fog` (0.7.0, off: the World tab's fog as one ink wash with a frontier chevron; the Journal's map card draws the wash regardless). An objective event may carry `note` (0.7.0): the note written for a `WRITE_NOTE` or an Ansuz `INSCRIBE_RUNE`, which the server judges by.

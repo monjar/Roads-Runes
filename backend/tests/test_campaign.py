@@ -183,3 +183,37 @@ def test_a_riddle_names_its_place_nowhere():
         variables={"poiName": "Stave Hill", "poiFact": "The map files it as viewpoint."},
     )
     assert "Stave Hill" not in compose_story(quest)
+
+
+async def test_finishing_enough_of_one_persons_notices_earns_their_title(explorer_client):
+    from app.characters.models import Character
+
+    c = explorer_client
+    user_id = await me(c)
+    async with get_session_factory()() as db:
+        for _ in range(5):
+            db.add(
+                QuestInstance(
+                    user_id=user_id,
+                    template_id="EXPLORER_NEW_TERRITORY",
+                    quest_type="EXPLORE_NEW_ROADS",
+                    character_class="EXPLORER",
+                    title="x",
+                    description="x",
+                    difficulty="EASY",
+                    recommended_distance_km=8.0,
+                    estimated_duration_minutes=40,
+                    base_xp=150,
+                    status="COMPLETED",
+                    narrative={"poster": {"castId": "nell-foss", "name": "Nell Foss", "line": "Past the last lamp."}},
+                    latitude=ORIGIN[0],
+                    longitude=ORIGIN[1],
+                )
+            )
+        await db.commit()
+        character = (await db.execute(select(Character).where(Character.user_id == user_id))).scalar_one()
+        assert await story.cast_titles(db, character) == ["Lamp-Lit"]
+        assert await story.cast_titles(db, character) == [], "earned once"
+        await db.commit()
+    titles = {t["slug"]: t for t in (await c.get("/character/titles")).json()}
+    assert titles["cast-nell-foss"]["earned"] and not titles["cast-ada-pym"]["earned"]

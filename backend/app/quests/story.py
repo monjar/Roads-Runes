@@ -398,6 +398,7 @@ async def settle_arc(
 
     if character is not None:
         await note_flags(db, character, quest)
+        await cast_titles(db, character, ride_id=ride_id)
     arc = await standing(db, user, quest)
     if arc is None or not arc["arcCompleted"] or character is None:
         return arc
@@ -442,6 +443,34 @@ async def settle_arc(
         "reward": {**reward, **({"title": title} if title else {})},
         "_xp": outcome.to_dict(),
     }
+
+
+async def cast_titles(db: AsyncSession, character: Character, *, ride_id: uuid.UUID | None = None) -> list[str]:
+    """Standing with the cast, folded into titles (0.7.0): enough of one person's
+    notices finished earns their title. Nothing else is tracked."""
+    from app.progression.service import award_title
+    from app.progression.titles import catalogue
+
+    wanted = [t for t in catalogue() if t["source"] == "CAST"]
+    if not wanted:
+        return []
+    rows = await db.execute(
+        select(QuestInstance.narrative).where(
+            QuestInstance.user_id == character.user_id, QuestInstance.status == COMPLETED
+        )
+    )
+    done: dict[str, int] = {}
+    for (narrative,) in rows:
+        cast_id = ((narrative or {}).get("poster") or {}).get("castId")
+        if cast_id:
+            done[cast_id] = done.get(cast_id, 0) + 1
+    earned = []
+    for title in wanted:
+        if done.get(title["cast"], 0) >= int(title["count"]):
+            name = await award_title(db, character, title["slug"], ride_id=ride_id)
+            if name:
+                earned.append(name)
+    return earned
 
 
 async def note_flags(db: AsyncSession, character: Character, quest: QuestInstance) -> None:

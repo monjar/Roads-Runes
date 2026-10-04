@@ -88,7 +88,11 @@ async def totals(db: AsyncSession, user_id: uuid.UUID) -> dict[str, float]:
     rides = (
         await db.execute(
             select(
-                Ride.distance_meters, Ride.elevation_gain_meters, Ride.processing_result, Ride.encounter_events
+                Ride.distance_meters,
+                Ride.elevation_gain_meters,
+                Ride.processing_result,
+                Ride.encounter_events,
+                Ride.objective_events,
             ).where(Ride.user_id == user_id, Ride.status == "PROCESSED")
         )
     ).all()
@@ -96,7 +100,10 @@ async def totals(db: AsyncSession, user_id: uuid.UUID) -> dict[str, float]:
     lungs = sum(float(r.elevation_gain_meters or 0) for r in rides)
     eyes = sum(int((r.processing_result or {}).get("newCells") or 0) for r in rides)
     ink = sum(
-        1 for r in rides for e in (r.encounter_events or []) if len(str((e or {}).get("note") or "").strip()) >= 12
+        1
+        for r in rides
+        for e in [*(r.encounter_events or []), *(r.objective_events or [])]
+        if len(str((e or {}).get("note") or "").strip()) >= 12
     )
     hand = int(await db.scalar(select(func.count(RuneCut.id)).where(RuneCut.user_id == user_id)) or 0)
     return {"LEGS": legs, "LUNGS": lungs, "EYES": float(eyes), "HAND": float(hand), "INK": float(ink)}

@@ -47,7 +47,7 @@ def test_the_catalogue_has_seven_degrees_of_being_known_and_says_how_each_is_ear
         "Old Hand",
         "Known to the Roads",
     ]
-    assert len(titles.catalogue()) == 40, "7 level, 8 arc and 25 deed titles"
+    assert len(titles.catalogue()) == 45, "7 level, 8 arc, 25 deed and 5 cast titles"
     assert set(titles.renamed().values()) == {t["name"] for t in level}
     assert titles.level_title(7)["name"] == "Familiar Face"
 
@@ -55,7 +55,7 @@ def test_the_catalogue_has_seven_degrees_of_being_known_and_says_how_each_is_ear
 async def test_a_new_character_is_a_passer_by_and_can_see_every_title(explorer_client):
     assert (await explorer_client.get("/character")).json()["title"] == "Passer-by"
     listed = (await explorer_client.get("/character/titles")).json()
-    assert len(listed) == 40
+    assert len(listed) == 45
     assert listed[0]["slug"] == "level-1" and listed[0]["earned"] and listed[0]["worn"]
     unearned = next(t for t in listed if t["slug"] == "level-5")
     assert not unearned["earned"] and unearned["how"] == "Reach level 5."

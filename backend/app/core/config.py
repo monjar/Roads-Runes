@@ -44,6 +44,9 @@ DEFAULT_FLAGS: dict[str, bool] = {
     # Fights decided by effort over an outing instead of one pass/fail check (0.6.1).
     # Off until the build that understands it is on the phone; see docs/ROADMAP.md.
     "effort_combat": False,
+    # The fog as one ink wash on the World tab, with a frontier chevron (0.7.0). The
+    # Journal's map card draws it whatever this says.
+    "ink_fog": False,
 }
 
 

@@ -49,6 +49,8 @@ class ObjectiveEventIn(APIModel):
     latitude: float | None = None
     longitude: float | None = None
     value: float | None = None
+    # A note written for the objective (WRITE_NOTE, or Ansuz's INSCRIBE_RUNE), 0.7.0.
+    note: str | None = Field(default=None, max_length=2000)
 
 
 class EncounterEventIn(APIModel):

@@ -522,9 +522,15 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
     # Where this leaves them in the arc, if the quest was a step of one: the last
     # step is the arc's ending, with a title, a purse and XP of its own, paid once.
     arc_coins = 0
-    if quest_completed and quest is not None and quest.story_quest_id is not None and not validation.suspicious:
+    # Every finished quest is settled: a cast member's title may come of any notice,
+    # and a story step may end its arc.
+    if quest_completed and quest is not None and not validation.suspicious:
         owner = await db.get(User, ride.user_id)
         if owner is not None:
+            if character is not None:
+                cast = await story.cast_titles(db, character, ride_id=ride.id)
+                if cast:
+                    reward = {**reward, "titlesUnlocked": [*reward.get("titlesUnlocked", []), *cast]}
             arc = await story.settle_arc(db, owner, character, quest, ride_id=ride.id)
             reward, arc_coins = merge_arc(reward, arc)
 
