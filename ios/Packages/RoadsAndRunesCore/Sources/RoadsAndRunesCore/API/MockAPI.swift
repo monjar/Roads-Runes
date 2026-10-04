@@ -267,8 +267,12 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
                 monster: SampleData.sampleMonster.monster
             )
             self.storedObjects[lured.id] = lured
-            return self.storedObjects.values.filter { $0.status == .spawned }
+            // As the server does: only what came.
+            return [lured]
         }
+    }
+    public func lampCheck(at center: Coordinate) async throws -> LampCheck {
+        try await run { LampCheck(ok: true, cost: 50, placeName: "the towpath") }
     }
     public func abilities() async throws -> [AbilityState] { try await run { try self.requireCharacter().abilities } }
     public func unlockAbility(id: String) async throws -> Character {

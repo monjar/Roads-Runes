@@ -28,6 +28,7 @@ final class FlakyAPI: RoadsAndRunesAPI, @unchecked Sendable {
     func worldObject(id: UUID) async throws -> WorldObject { try await inner.worldObject(id: id) }
     func bounty() async throws -> WorldObject? { try await inner.bounty() }
     func lure(at center: Coordinate) async throws -> [WorldObject] { try await inner.lure(at: center) }
+    func lampCheck(at center: Coordinate) async throws -> LampCheck { try await inner.lampCheck(at: center) }
     func claimWorldObject(id: UUID, _ request: WorldObjectClaimRequest) async throws -> WorldObjectClaim { try await inner.claimWorldObject(id: id, request) }
     func abilities() async throws -> [AbilityState] { try await inner.abilities() }
     func unlockAbility(id: String) async throws -> Character { try await inner.unlockAbility(id: id) }

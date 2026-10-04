@@ -29,6 +29,8 @@ public protocol RoadsAndRunesAPI: Sendable {
     /// Today's bounty; nil until the world has been looked at today, or once it is gone.
     func bounty() async throws -> WorldObject?
     func lure(at center: Coordinate) async throws -> [WorldObject]
+    /// Whether a lamp at this spot would bring something, and where, without spending anything.
+    func lampCheck(at center: Coordinate) async throws -> LampCheck
     /// Open a chest or pick up a piece from beside it. Throws `OBJECT_OUT_OF_RANGE` when it is not within reach.
     func claimWorldObject(id: UUID, _ request: WorldObjectClaimRequest) async throws -> WorldObjectClaim
     func abilities() async throws -> [AbilityState]

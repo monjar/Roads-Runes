@@ -84,6 +84,11 @@ public enum Endpoints {
         try .json(.post, "/world/objects/\(id.uuidString)/claim", body: body, timeout: 20)
     }
     public static func lure(_ body: LureRequest) throws -> Endpoint { try .json(.post, "/world/objects/lure", body: body) }
+    public static func lampCheck(at center: Coordinate) -> Endpoint {
+        Endpoint(method: .get, path: "/world/objects/lure", query: [
+            QueryItem("latitude", String(center.latitude)), QueryItem("longitude", String(center.longitude)),
+        ])
+    }
     public static func walletTransactions(limit: Int?, cursor: String?) -> Endpoint {
         var query: [QueryItem] = []
         if let limit { query.append(QueryItem("limit", String(limit))) }

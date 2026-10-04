@@ -261,6 +261,7 @@ public actor APIClient: RoadsAndRunesAPI {
     }
     public func claimWorldObject(id: UUID, _ request: WorldObjectClaimRequest) async throws -> WorldObjectClaim { try await self.request(try Endpoints.claimWorldObject(id: id, request)) }
     public func lure(at center: Coordinate) async throws -> [WorldObject] { try await request(try Endpoints.lure(LureRequest(latitude: center.latitude, longitude: center.longitude))) }
+    public func lampCheck(at center: Coordinate) async throws -> LampCheck { try await request(Endpoints.lampCheck(at: center)) }
     public func abilities() async throws -> [AbilityState] { try await request(Endpoints.abilities()) }
     public func unlockAbility(id: String) async throws -> Character { try await request(Endpoints.unlockAbility(id: id)) }
     public func titles() async throws -> [TitleInfo] { try await request(Endpoints.titles()) }

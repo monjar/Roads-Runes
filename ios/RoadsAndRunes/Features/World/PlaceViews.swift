@@ -85,8 +85,10 @@ struct PlaceCard: View {
     let units: Units
     let onDirections: () -> Void
     let onClose: () -> Void
-    /// A lamp left out here: what it costs, what is in the purse, and what happened last time.
+    /// A lamp here: what it costs, what the server says it would do, what is in
+    /// the purse, and what happened last time.
     var lampCost: Int?
+    var lampCheck: LampCheck?
     var leavingLamp = false
     var lampError: String?
     var onLamp: () -> Void = {}
@@ -117,24 +119,7 @@ struct PlaceCard: View {
             }
             .buttonStyle(.primary)
             if let lampCost {
-                let purse = container.session.character?.activeCoins ?? 0
-                Button(action: onLamp) {
-                    HStack(spacing: 8) {
-                        if leavingLamp { ProgressView().tint(Theme.Colors.ink) } else { IconShape(.lantern).frame(width: 18, height: 18) }
-                        Text("Leave a lamp out · \(LoreCopy.purse(lampCost))")
-                    }
-                    .font(Theme.Typography.text(14, .semibold)).foregroundStyle(Theme.Colors.ink)
-                    .frame(maxWidth: .infinity).frame(height: 40)
-                    .background(Theme.Colors.surface, in: Capsule())
-                }
-                .buttonStyle(.pressable)
-                .disabled(leavingLamp || purse < lampCost)
-                .accessibilityIdentifier("place.lamp")
-                Text(purse < lampCost
-                     ? "You have \(LoreCopy.purse(purse)). A lamp is \(lampCost)."
-                     : "Something comes to the nearest named place within 250 m. The coins go only if it does.")
-                    .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
-                if let lampError { ErrorLine(text: lampError) }
+                lampSection(cost: lampCost)
             }
         }
         .padding(18)
@@ -214,6 +199,55 @@ struct PlaceRow: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
         .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+extension PlaceCard {
+    /// Light a lamp: a creature comes to a named place near here. The card says
+    /// what will happen before anything is spent, so a lamp that cannot work is
+    /// never a button that takes a tap and then refuses.
+    @ViewBuilder
+    func lampSection(cost: Int) -> some View {
+        let purse = container.session.character?.activeCoins ?? 0
+        let refused = lampCheck.map { !$0.ok } ?? false
+        Divider().overlay(Theme.Colors.line)
+        HStack(alignment: .top, spacing: 10) {
+            MarkView(.lamp).frame(width: 34, height: 34)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Light a lamp").font(Theme.Typography.text(15, .semibold)).foregroundStyle(Theme.Colors.ink)
+                Text(lampLine(cost: cost, purse: purse))
+                    .font(Theme.Typography.caption).foregroundStyle(refused ? Theme.Colors.terracottaDeep : Theme.Colors.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("place.lampLine")
+            }
+        }
+        Button(action: onLamp) {
+            HStack(spacing: 8) {
+                if leavingLamp { ProgressView().tint(Theme.Colors.ink) } else { IconShape(.lantern).frame(width: 18, height: 18) }
+                Text("Light a lamp · \(LoreCopy.purse(cost))")
+            }
+            .font(Theme.Typography.text(14, .semibold)).foregroundStyle(Theme.Colors.ink)
+            .frame(maxWidth: .infinity).frame(height: 40)
+            .background(Theme.Colors.surface, in: Capsule())
+        }
+        .buttonStyle(.pressable)
+        .disabled(leavingLamp || purse < cost || refused)
+        .opacity(purse < cost || refused ? 0.5 : 1)
+        .accessibilityIdentifier("place.lamp")
+        if let lampError { ErrorLine(text: lampError) }
+    }
+
+    private func lampLine(cost: Int, purse: Int) -> String {
+        if let lampCheck, !lampCheck.ok {
+            return lampCheck.message ?? "A lamp won't work here. Try a park, a pub or a landmark."
+        }
+        if purse < cost {
+            return "A lamp costs \(cost) coins and you have \(purse). Open chests and defeat creatures to earn more."
+        }
+        if let place = lampCheck?.placeName {
+            return "A creature will come to \(place). You only pay if one comes."
+        }
+        return "Calls a creature to a named place within 250 m. You only pay if one comes."
     }
 }
 

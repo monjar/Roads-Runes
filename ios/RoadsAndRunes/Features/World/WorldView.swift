@@ -217,10 +217,14 @@ struct WorldView: View {
                 // The lamp only on a server that places one fairly (0.6.1+, which sends `combat`):
                 // an older one took the coins and on most days placed nothing.
                 lampCost: container.session.config?.combat != nil ? WorldViewModel.lampCost : nil,
+                lampCheck: model.lampCheck,
                 leavingLamp: model.leavingLamp,
                 lampError: model.lampError,
                 onLamp: { Task { await model.leaveLamp(at: place) } }
             )
+            .task(id: place.id) {
+                if container.session.config?.combat != nil { await model.checkLamp(at: place) }
+            }
             .padding(.horizontal, 12)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         } else if let title = model.resultsTitle {

@@ -355,6 +355,27 @@ public struct StreakOutcome: Codable, Hashable, Sendable {
     }
 }
 
+/// `GET /world/objects/lure`: whether a lamp left at a spot would bring
+/// something, and to which place, asked before any coins are spent. A server
+/// from before 0.7.1 has no such check (404).
+public struct LampCheck: Codable, Hashable, Sendable {
+    public var ok: Bool
+    public var cost: Int
+    /// The named place the creature would come to.
+    public var placeName: String?
+    /// Why it would not: NO_PLACE_NEAR, ALREADY_HERE.
+    public var code: String?
+    public var message: String?
+
+    public init(ok: Bool, cost: Int, placeName: String? = nil, code: String? = nil, message: String? = nil) {
+        self.ok = ok
+        self.cost = cost
+        self.placeName = placeName
+        self.code = code
+        self.message = message
+    }
+}
+
 /// `POST /world/objects/lure`.
 public struct LureRequest: Codable, Hashable, Sendable {
     public var latitude: Double

@@ -248,11 +248,20 @@ final class WorldViewModel {
         }
     }
 
-    /// A lamp left out (docs/COMBAT.md): one thing comes to the nearest named place
-    /// within 250 m of the spot, and the coins go only if something comes.
+    /// A lamp (docs/COMBAT.md): a creature comes to the nearest named place within
+    /// 250 m of the spot, and the coins go only if one comes.
     static let lampCost = 50
     private(set) var leavingLamp = false
     var lampError: String?
+    /// What the server says a lamp would do at the open place, asked before any
+    /// coins are spent; nil while asking, or on a server without the check.
+    private(set) var lampCheck: LampCheck?
+
+    /// Ask, for free, whether a lamp at this place would bring a creature and where.
+    func checkLamp(at place: Place) async {
+        lampCheck = nil
+        lampCheck = try? await container.api.lampCheck(at: place.coordinate)
+    }
 
     func leaveLamp(at place: Place) async {
         guard !leavingLamp else { return }
@@ -262,10 +271,13 @@ final class WorldViewModel {
         do {
             let came = try await container.api.lure(at: place.coordinate)
             for object in came { take(object) }
-            if let first = came.first {
-                selectedPlace = nil
-                open(first)
+            guard let first = came.first else {
+                // An older server could take nothing and place nothing; say so.
+                lampError = "Nothing came this time."
+                return
             }
+            selectedPlace = nil
+            open(first)
             container.analytics.track(.worldObjectClaimed, properties: ["kind": "LAMP", "name": place.name, "method": "LAMP"])
             await container.session.refreshCharacter()
         } catch {
@@ -369,6 +381,7 @@ final class WorldViewModel {
         selectedObject = nil
         selectedPlace = place
         lampError = nil
+        lampCheck = nil
         if moveCamera { camera = MapCamera(center: place.coordinate) }
         if place.address == nil { Task { await fillAddress(for: place) } }
     }
