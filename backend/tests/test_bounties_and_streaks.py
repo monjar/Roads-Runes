@@ -41,8 +41,11 @@ async def test_one_bounty_a_day_worth_double(explorer_client):
     paid = next(line for line in summary["acBreakdown"] if line["kind"] == "BOUNTY")
     # The grandest bounty is worth a whole ride's cap on its own, so with the
     # kilometres on top every line is scaled down a little and the sum is the cap.
+    # The day's streak coins and a set's purse are paid outside it (economy/rules.py),
+    # which made this fail whenever the bounty drawn was the top tier.
     if paid.get("detail", {}).get("capped"):
-        assert summary["acAwarded"] == world_objects.load_ac_rules()["caps"]["perRideTotal"]
+        uncapped = sum(line["ac"] for line in summary["acBreakdown"] if line["kind"] in ("STREAK", "SET_COMPLETED"))
+        assert summary["acAwarded"] - uncapped == world_objects.load_ac_rules()["caps"]["perRideTotal"]
         assert paid["ac"] >= bounty["rewardAC"] * 0.9
     else:
         assert paid["ac"] == bounty["rewardAC"]
