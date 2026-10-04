@@ -48,6 +48,14 @@ COMPLETED = "COMPLETED"
 OPEN = "OPEN"
 READY = "READY"
 LOCKED = "LOCKED"
+# Next up, but it cannot be set where the player is; the reason is authored on
+# its template (`waitingReason`).
+WAITING = "WAITING"
+
+# MAIN is the campaign, one chapter after another; SIDE is the trades' own arcs.
+# One live step per track.
+TRACKS = ("MAIN", "SIDE")
+DEFAULT_WAITING = "Waiting for somewhere it can be set near you."
 
 
 @lru_cache
@@ -58,16 +66,25 @@ def load_arcs() -> list[dict[str, Any]]:
     would generate nothing and show the rider a step they can never take — so it
     fails here, at import, rather than silently on the board.
     """
+    from app.lore.catalog import cast_by_id
+
     data = json.loads((CONFIG_DIR / "story_arcs.json").read_text())
     arcs = data["arcs"]
     templates = template_by_id()
     seen_arcs: set[str] = set()
     seen_quests: set[str] = set()
+    acts = {a["id"] for a in data.get("acts", [])}
     for arc in arcs:
         assert arc["slug"] not in seen_arcs, f"duplicate arc slug {arc['slug']}"
         seen_arcs.add(arc["slug"])
         character_class = arc.get("characterClass")
         assert arc["quests"], f"{arc['slug']} has no steps"
+        arc.setdefault("track", "SIDE" if character_class else "MAIN")
+        assert arc["track"] in TRACKS, f"{arc['slug']} is on no track"
+        assert arc.get("act") is None or arc["act"] in acts, f"{arc['slug']} is in an act nobody wrote"
+        assert arc.get("giver") is None or arc["giver"] in cast_by_id(), f"{arc['slug']} is posted by a stranger"
+        if arc.get("after"):
+            assert arc["after"] in seen_arcs, f"{arc['slug']} comes after an arc not written before it"
         for index, step in enumerate(arc["quests"]):
             assert step["slug"] not in seen_quests, f"duplicate step slug {step['slug']}"
             seen_quests.add(step["slug"])
@@ -82,10 +99,24 @@ def load_arcs() -> list[dict[str, Any]]:
             assert owner in (ANY_CLASS, character_class), (
                 f"{step['slug']} is in a {character_class or 'open'} arc but its template is {owner}'s"
             )
+            assert step.get("completion"), f"{step['slug']} says nothing when it is done"
             # The step before it, unless the author named something else.
             step.setdefault("prerequisiteSlug", arc["quests"][index - 1]["slug"] if index else None)
             step["sequence"] = index + 1
     return arcs
+
+
+@lru_cache
+def acts() -> list[dict[str, Any]]:
+    return list(json.loads((CONFIG_DIR / "story_arcs.json").read_text()).get("acts", []))
+
+
+def authored_arc(slug: str) -> dict[str, Any]:
+    return next((a for a in load_arcs() if a["slug"] == slug), {})
+
+
+def authored_step(slug: str) -> dict[str, Any]:
+    return next((q for a in load_arcs() for q in a["quests"] if q["slug"] == slug), {})
 
 
 _synced = False
@@ -133,10 +164,14 @@ def reset_sync_cache() -> None:
     _synced = False
 
 
-def _unlocked(arc: StoryArc, character: Character) -> bool:
+def _unlocked(arc: StoryArc, character: Character, finished: set[str] | None = None) -> bool:
     """A class arc is that class's, and measured against their class level; an
-    open arc is anyone's, measured against how far they have come overall."""
+    open arc is anyone's, measured against how far they have come overall. A
+    chapter of the campaign waits for the one before it."""
     if not arc.enabled:
+        return False
+    after = authored_arc(arc.slug).get("after")
+    if after and after not in (finished or set()):
         return False
     if arc.character_class and arc.character_class != character.character_class:
         return False
@@ -178,26 +213,56 @@ async def _arcs(db: AsyncSession) -> list[StoryArc]:
     return list((await db.execute(select(StoryArc).order_by(StoryArc.min_level, StoryArc.slug))).scalars())
 
 
-async def progress(db: AsyncSession, user: User, character: Character) -> list[dict[str, Any]]:
-    """Every arc and where the rider stands in it, for the Story tab."""
-    by_step = await _quests_by_step(db, user)
-    done = {
-        step_slug
-        for step_slug, quest in ((step.slug, by_step.get(step.id)) for arc in await _arcs(db) for step in arc.quests)
-        if quest is not None and quest.status == COMPLETED
+def _finished_arcs(arcs: list[StoryArc], by_step: dict[uuid.UUID, QuestInstance]) -> set[str]:
+    return {
+        arc.slug
+        for arc in arcs
+        if arc.quests and all((q := by_step.get(s.id)) is not None and q.status == COMPLETED for s in arc.quests)
     }
+
+
+def _order(arcs: list[StoryArc]) -> list[StoryArc]:
+    """The campaign in act and chapter order, then the trades' arcs."""
+
+    def key(arc: StoryArc) -> tuple[int, int, int, str]:
+        meta = authored_arc(arc.slug)
+        main = meta.get("track") == "MAIN"
+        return (0 if main else 1, int(meta.get("act") or 0), int(meta.get("chapter") or 0), arc.slug)
+
+    return sorted(arcs, key=key)
+
+
+async def progress(db: AsyncSession, user: User, character: Character) -> list[dict[str, Any]]:
+    """Every arc and where the rider stands in it, for the Story tab: the
+    campaign's chapters in order, then the trades' arcs."""
+    by_step = await _quests_by_step(db, user)
+    arcs = _order(await _arcs(db))
+    finished = _finished_arcs(arcs, by_step)
+    done = {
+        step.slug
+        for arc in arcs
+        for step in arc.quests
+        if (quest := by_step.get(step.id)) is not None and quest.status == COMPLETED
+    }
+    waiting = dict(character.story_waiting or {})
     out = []
-    for arc in await _arcs(db):
+    for arc in arcs:
+        meta = authored_arc(arc.slug)
         steps = []
         for step in arc.quests:
             quest = by_step.get(step.id)
+            state = _state(step, quest, done)
+            reason = None
+            if state == READY and step.slug in waiting:
+                state, reason = WAITING, str(waiting[step.slug].get("reason") or DEFAULT_WAITING)
             steps.append(
                 {
                     "slug": step.slug,
                     "sequence": step.sequence,
                     "title": step.title,
                     "description": step.description,
-                    "state": _state(step, quest, done),
+                    "state": state,
+                    "waitingReason": reason,
                     "questId": quest.id if quest is not None and quest.status != COMPLETED else None,
                 }
             )
@@ -208,17 +273,24 @@ async def progress(db: AsyncSession, user: User, character: Character) -> list[d
                 "description": arc.description,
                 "characterClass": arc.character_class,
                 "minLevel": arc.min_level,
-                "unlocked": _unlocked(arc, character),
+                "unlocked": _unlocked(arc, character, finished),
                 "quests": steps,
+                "track": meta.get("track"),
+                "act": meta.get("act"),
+                "actTitle": next((a["title"] for a in acts() if a["id"] == meta.get("act")), None),
+                "chapter": meta.get("chapter"),
+                "after": meta.get("after"),
+                "giver": meta.get("giver"),
+                "reward": dict(meta.get("reward") or {}) or None,
             }
         )
     return out
 
 
-async def due(db: AsyncSession, user: User, character: Character) -> list[StoryQuest]:
-    """Every step the rider could be given next: the first unridden one of each
-    unlocked arc, in arc order. Empty when a step is already open, or when
-    everything unlocked is finished.
+async def due(db: AsyncSession, user: User, character: Character, track: str | None = None) -> list[StoryQuest]:
+    """Every step the rider could be given next on a track: the first unridden
+    one of each unlocked arc, in order. Empty when that track already has a step
+    open, or when everything unlocked on it is finished.
 
     A list rather than one step, because a step can turn out to be unplaceable
     *here* — "Somewhere to Look From" needs high ground, and a flat city has none.
@@ -227,13 +299,25 @@ async def due(db: AsyncSession, user: User, character: Character) -> list[StoryQ
     day the rider is somewhere it works.
     """
     by_step = await _quests_by_step(db, user)
-    if any(q.status in LIVE_STATES for q in by_step.values()):
+    arcs = _order(await _arcs(db))
+    arc_track = {arc.id: authored_arc(arc.slug).get("track", "MAIN") for arc in arcs}
+    step_arc = {step.id: arc.id for arc in arcs for step in arc.quests}
+    live_tracks = {
+        arc_track.get(step_arc.get(sid))  # type: ignore[arg-type]
+        for sid, q in by_step.items()
+        if q.status in LIVE_STATES
+    }
+    if track is None and live_tracks:
         return []
-    arcs = await _arcs(db)
+    if track is not None and track in live_tracks:
+        return []
+    finished = _finished_arcs(arcs, by_step)
     done = {step.slug for arc in arcs for step in arc.quests if (q := by_step.get(step.id)) and q.status == COMPLETED}
     candidates: list[StoryQuest] = []
     for arc in arcs:
-        if not _unlocked(arc, character):
+        if track is not None and arc_track[arc.id] != track:
+            continue
+        if not _unlocked(arc, character, finished):
             continue
         for step in arc.quests:
             if step.slug in done:
@@ -367,21 +451,27 @@ async def offer(
     longitude: float,
     now: datetime,
     activity: str | None = None,
+    track: str | None = None,
 ) -> QuestInstance | None:
-    """Put the rider's next story step on the board, here, now.
+    """Put the rider's next story step on a track on the board, here, now.
 
     The step names a template; where it sends them is generated from their own
     position and explored ground like any other quest. Only the words are
     authored. Story steps never expire — an arc waits for the rider, not the
-    other way round.
+    other way round. A step that cannot be set here is remembered as WAITING,
+    with the reason its template gives; a chapter's finale places its elder.
     """
-    from app.quests.generator import instantiate
+    from app.core.activity import normalise
+    from app.lore.catalog import poster
+    from app.quests.generator import WorldObjectCandidate, instantiate
     from app.quests.service import _persist, build_context
+    from app.world_objects import service as world_objects
 
-    candidates = await due(db, user, character)
+    candidates = await due(db, user, character, track)
     if not candidates:
         return None
     ctx = await build_context(db, settings, user, character, latitude, longitude, None, activity)
+    waiting = dict(character.story_waiting or {})
 
     step: StoryQuest | None = None
     generated = None
@@ -390,24 +480,72 @@ async def offer(
         if template is None:  # load_arcs asserts this, but a row can outlive a template
             log.warning("story_template_missing", step=candidate.slug, template=candidate.template_id)
             continue
+        step_ctx = ctx
+        elder_spec = (template.get("objectiveRules") or {}).get("elder")
+        if elder_spec:
+            # The finale's old one, placed for this step and no other.
+            elder = await world_objects.place_elder(
+                db,
+                settings,
+                user.id,
+                latitude,
+                longitude,
+                step_slug=candidate.slug,
+                spec=elder_spec,
+                character_class=character.character_class,
+                activity=normalise(activity or ctx.activity),
+            )
+            if elder is None:
+                step_ctx = replace(ctx, world_objects=[])
+            else:
+                step_ctx = replace(
+                    ctx,
+                    world_objects=[
+                        WorldObjectCandidate(
+                            id=str(elder.id),
+                            kind=elder.kind,
+                            name=str(elder.payload.get("name")),
+                            anchor_name=elder.payload.get("anchorName"),
+                            latitude=elder.latitude,
+                            longitude=elder.longitude,
+                            expires_at=elder.expires_at,
+                        )
+                    ],
+                )
         for salt in range(8):
-            generated = instantiate(template, ctx, salt=salt)
+            generated = instantiate(template, step_ctx, salt=salt)
             if generated is not None:
                 step = candidate
                 break
         if step is not None:
             break
-        # Nothing here fits this step — no POI of the kind it needs, no unexplored
+        # Nothing here fits this step — no place of the kind it needs, no unread
         # ground within reach. That arc waits for better ground; try the next one.
+        waiting[candidate.slug] = {
+            "reason": template.get("waitingReason") or DEFAULT_WAITING,
+            "at": now.isoformat(),
+        }
         log.info("story_step_not_placeable", step=candidate.slug, template=candidate.template_id)
     if step is None or generated is None:
+        character.story_waiting = waiting
+        await db.flush()
         return None
+    waiting.pop(step.slug, None)
+    character.story_waiting = waiting
 
+    authored = authored_step(step.slug)
+    arc_meta = next((a for a in load_arcs() if any(q["slug"] == step.slug for q in a["quests"])), {})
     generated = replace(
         generated,
         title=_authored(step.title, generated.variables),
         description=_authored(step.description, generated.variables),
-        narrative={"hook": _authored(step.description, generated.variables), "completion": None, "source": "story"},
+        narrative={
+            "hook": _authored(step.description, generated.variables),
+            "completion": _authored(authored.get("completion") or "", generated.variables) or None,
+            "source": "story",
+            # Who posted it, and one of their lines: attached last, so nothing drops it.
+            "poster": poster(None, f"{user.id}:{step.slug}", giver=arc_meta.get("giver")),
+        },
     )
     quest = _persist(user, generated, now)
     quest.story_quest_id = step.id

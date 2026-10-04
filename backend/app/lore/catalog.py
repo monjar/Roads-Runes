@@ -101,6 +101,17 @@ def poster_for(character_class: str | None) -> dict[str, Any]:
     return next((p for p in cast() if p["posts"] == wanted), cast_by_id()["ada-pym"])
 
 
+def poster(character_class: str | None, seed: str, giver: str | None = None) -> dict[str, Any]:
+    """The poster on a notice: who put it up and one of their lines, picked by
+    seed so the same notice always carries the same line (never by a model)."""
+    import hashlib
+
+    person = cast_by_id().get(giver or "") or poster_for(character_class)
+    lines = person["lines"]
+    line = lines[int(hashlib.sha256(seed.encode()).hexdigest()[:8], 16) % len(lines)]
+    return {"castId": person["id"], "name": person["name"], "line": line}
+
+
 # --- codex pages -------------------------------------------------------------
 
 

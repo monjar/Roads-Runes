@@ -44,6 +44,8 @@ def all_templates() -> list[dict[str, Any]]:
     for t in templates:
         for o in t["objectives"]:
             assert o["type"] in OBJECTIVE_TYPES, f"unknown objective type in {t['id']}"
+        # Every notice says something when it is done (docs/ROADMAP.md, 0.6.2).
+        assert t.get("completion"), f"{t['id']} has no completion line"
     return templates
 
 
@@ -58,8 +60,9 @@ def templates_for(
     unlocked = unlocked or set()
     out = []
     for t in all_templates():
-        # A retired template is kept for quests already out, and never dealt again.
-        if t.get("retired"):
+        # A retired template is kept for quests already out, and never dealt again;
+        # a story-only one is dealt by its arc and never on the board.
+        if t.get("retired") or t.get("storyOnly"):
             continue
         # A quest for anyone is a quest for this class too.
         if t["characterClass"] not in (character_class.upper(), ANY_CLASS):

@@ -50,12 +50,17 @@ EFFORT_LINES = {
 WAYS = {"RIDE": "by bike", "RUN": "at a run", "WALK": "on foot"}
 
 
+def is_puzzle(quest: GeneratedQuest) -> bool:
+    """A riddle withholds its place: nothing written about the quest may name it."""
+    return any((o.extra or {}).get("hidden") for o in quest.objectives)
+
+
 def compose_story(quest: GeneratedQuest) -> str:
     """A paragraph from the quest's own facts: the template's hook, what the map
     knows about the place, what the class makes of it, and how big a day it is."""
     variables = quest.variables or {}
     sentences = [quest.description.strip()]
-    place = variables.get("poiName")
+    place = None if is_puzzle(quest) else variables.get("poiName")
     fact = variables.get("poiFact")
     if place and fact and str(fact) not in quest.description:
         sentences.append(f"{place} is on every map and in nobody's plans. {fact}")
@@ -90,8 +95,11 @@ async def enrich(llm: LLMClient, quest: GeneratedQuest, locality: str | None = N
         "distanceKm": quest.recommended_distance_km,
         "premise": quest.description,
         "objectives": [o.title for o in quest.objectives],
-        "placeNames": [o.extra.get("poiName") for o in quest.objectives if o.extra.get("poiName")],
-        "whatTheMapSaysOfThePlace": variables.get("poiFact"),
+        # A riddle's place is never named, not even to the model.
+        "placeNames": []
+        if is_puzzle(quest)
+        else [o.extra.get("poiName") for o in quest.objectives if o.extra.get("poiName")],
+        "whatTheMapSaysOfThePlace": None if is_puzzle(quest) else variables.get("poiFact"),
         "monsterOrObject": variables.get("objectName"),
         "monsterOrObjectIsAt": variables.get("objectPlace"),
         "locality": locality,

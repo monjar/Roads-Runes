@@ -243,10 +243,12 @@ def _poi_candidates(ctx: GenerationContext, rules: dict[str, Any]) -> list[POICa
     lo, hi = rules.get("poiDistanceKm", [3 * default_reach, 15 * default_reach])
     lo_m, hi_m = lo * 1000, hi * 1000 * (1 + ctx.poi_visibility_bonus)
     category = rules.get("poiCategory")
+    # One category, or any of several.
+    categories = set(category) if isinstance(category, list) else ({category} if category else set())
     tag_any = rules.get("poiTagAny")
     out = []
     for poi in ctx.pois:
-        if category and poi.category != category:
+        if categories and poi.category not in categories:
             continue
         if tag_any and not any(t in " ".join(str(v) for v in poi.tags.values()).lower() for t in tag_any):
             continue
@@ -475,6 +477,10 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
     narrative = rng.choice(template["narrative"])
     title = narrative["title"].format(**variables)
     description = narrative["description"].format(**variables)
+    try:
+        completion = str(template.get("completion") or "").format(**variables) or None
+    except (KeyError, IndexError, ValueError):
+        completion = None
     return GeneratedQuest(
         template_id=template["id"],
         quest_type=template["questType"],
@@ -486,7 +492,7 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
         estimated_duration_minutes=duration,
         base_xp=base_xp,
         objectives=objectives,
-        narrative={"hook": description, "completion": None, "source": "template"},
+        narrative={"hook": description, "completion": completion, "source": "template"},
         seed=f"{template['id']}:{salt}",
         latitude=ctx.latitude,
         longitude=ctx.longitude,

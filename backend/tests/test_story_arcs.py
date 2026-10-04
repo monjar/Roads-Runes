@@ -107,26 +107,35 @@ async def test_the_next_step_comes_only_when_the_one_before_is_ridden(explorer_c
 @pytest.mark.anyio
 async def test_an_arc_waiting_for_ground_it_can_use_does_not_block_the_others(explorer_client):
     """ "Somewhere to Look From" needs high ground, and the seeded area has none.
-    The arc waits — it must not take every other arc down with it, and it must not
-    leave the rider with no spine at all."""
+    The step waits, says why, and the trade's own arc carries on beside it on its
+    own track."""
+    c = explorer_client
     await seed_discoveries()
-    await promote(explorer_client, 2)
-    for _ in range(2):  # ride out the two steps of First Light that can be placed here
-        step = next(q for q in await board(explorer_client) if q["storyQuestId"])
+    await promote(c, 2)
+
+    async def step_of(arc_slug: str) -> dict | None:
+        on_board = await board(c)  # the board is what offers the steps
+        arcs = {a["slug"]: a for a in (await c.get("/quests/story")).json()}
+        open_ids = {str(q["questId"]) for q in arcs[arc_slug]["quests"] if q["state"] == "OPEN"}
+        return next((q for q in on_board if q["id"] in open_ids), None)
+
+    for _ in range(2):  # the two steps of First Light that can be placed here
+        step = await step_of("first-light")
+        assert step is not None
         await finish(step["id"])
 
-    offered = next((q for q in await board(explorer_client) if q["storyQuestId"]), None)
-    assert offered is not None, "the unplaceable step stalled every arc"
-
-    arcs = {a["slug"]: a for a in (await explorer_client.get("/quests/story")).json()}
+    await board(c)
+    arcs = {a["slug"]: a for a in (await c.get("/quests/story")).json()}
+    assert arcs["first-light"]["track"] == "MAIN" and arcs["the-edge-of-the-map"]["track"] == "SIDE"
     stalled = next(q for q in arcs["first-light"]["quests"] if q["sequence"] == 3)
-    assert stalled["state"] == "READY", "the waiting step is still the one that comes next"
-    # What was offered instead is the Explorer arc's opening step, now they are level 2.
+    assert stalled["state"] == "WAITING", "the waiting step is still the one that comes next"
+    assert stalled["waitingReason"] == "Waiting for high ground within reach."
+    # The trade's arc is on the other track, and open.
     opening = arcs["the-edge-of-the-map"]["quests"][0]
     assert arcs["the-edge-of-the-map"]["unlocked"] is True
     assert opening["state"] == "OPEN"
-    assert opening["questId"] == offered["id"]
-    assert offered["title"] == opening["title"]
+    # The next chapter waits for First Light to be finished.
+    assert arcs["what-settles"]["unlocked"] is False and arcs["what-settles"]["after"] == "first-light"
 
 
 @pytest.mark.anyio

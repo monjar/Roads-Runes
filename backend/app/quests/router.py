@@ -19,6 +19,7 @@ from app.quests.schemas import (
     QuestProgressRequest,
     QuestStartRequest,
     StoryArcOut,
+    WeekNoticeOut,
 )
 from app.routing import service as routing
 from app.routing.schemas import RouteOptionOut
@@ -89,6 +90,16 @@ async def story_arcs(user: CurrentUser, db: DBDep, settings: SettingsDep) -> lis
     require_flag(settings, "story_quests")
     character = await get_character(db, user)
     return [StoryArcOut(**arc) for arc in await story.progress(db, user, character)]
+
+
+@router.get("/week", response_model=WeekNoticeOut)
+async def week_notice(user: CurrentUser, db: DBDep) -> WeekNoticeOut:
+    """This week's notice and how far along it is."""
+    from app.core.security import utcnow
+    from app.quests import week
+
+    state = await week.standing(db, user.id, utcnow().date())
+    return WeekNoticeOut(**{k: v for k, v in state.items() if k != "startsAt"})
 
 
 @router.get("/{quest_id}", response_model=QuestOut)

@@ -218,15 +218,41 @@ def to_out(obj: WorldObject, owned: dict[str, set[str]] | None = None) -> WorldO
 
 async def expire_stale(db: AsyncSession, user_id: uuid.UUID) -> None:
     now = utcnow()
-    rows = (
-        await db.execute(
-            select(WorldObject).where(
-                WorldObject.user_id == user_id, WorldObject.status == "SPAWNED", WorldObject.expires_at < now
+    rows = list(
+        (
+            await db.execute(
+                select(WorldObject).where(
+                    WorldObject.user_id == user_id, WorldObject.status == "SPAWNED", WorldObject.expires_at < now
+                )
             )
-        )
-    ).scalars()
+        ).scalars()
+    )
+    if not rows:
+        return
+    # A thing a live story step points at does not leave while the step is open:
+    # it waits a day at a time, as the arc waits for the player.
+    held = await _held_by_story(db, user_id)
     for row in rows:
-        row.status = "EXPIRED"
+        if str(row.id) in held:
+            row.expires_at = now + timedelta(days=1)
+        else:
+            row.status = "EXPIRED"
+
+
+async def _held_by_story(db: AsyncSession, user_id: uuid.UUID) -> set[str]:
+    from app.quests.models import QuestInstance, QuestObjective
+
+    rows = await db.execute(
+        select(QuestObjective.extra)
+        .join(QuestInstance, QuestObjective.quest_id == QuestInstance.id)
+        .where(
+            QuestInstance.user_id == user_id,
+            QuestInstance.story_quest_id.is_not(None),
+            QuestInstance.status.in_(["AVAILABLE", "ACCEPTED", "ACTIVE"]),
+            QuestObjective.status != "COMPLETED",
+        )
+    )
+    return {str((extra or {}).get("objectId")) for extra in rows.scalars() if (extra or {}).get("objectId")}
 
 
 async def live_objects(
@@ -624,6 +650,80 @@ async def place_on_route(
     placed = await _persist(db, user_id, plans, utcnow(), float(cfg["expiryDays"]), settings.h3_resolution)
     if placed:
         log.info("world_object_on_route", route_id=str(route_id), object_id=str(placed[0].id))
+    return placed[0] if placed else None
+
+
+async def place_elder(
+    db: AsyncSession,
+    settings: Any,
+    user_id: uuid.UUID,
+    latitude: float,
+    longitude: float,
+    *,
+    step_slug: str,
+    spec: dict[str, Any],
+    character_class: str,
+    activity: str,
+) -> WorldObject | None:
+    """A named elder bound to a story step, the finale of a chapter: an old one
+    of the given tier at a real place beyond the near ring, whose wants include
+    the rune with the given road form without needing it. Once per step; the one
+    already standing is used again. It stays while the step is open
+    (`expire_stale`)."""
+    from app.core.activity import DISTANCE_SCALE
+    from app.world_objects.spawner import species_road_form
+
+    seed = f"story:{user_id}:{step_slug}"
+    standing = await db.scalar(
+        select(WorldObject).where(
+            WorldObject.user_id == user_id,
+            WorldObject.status == "SPAWNED",
+            WorldObject.seed.like(f"{seed}%"),
+        )
+    )
+    if standing is not None:
+        return standing
+    cfg = load_config()
+    form = spec.get("roadForm")
+    species = [
+        m
+        for m in cfg["monsters"]
+        if "RUNE" in (m.get("wants") or []) and (form is None or species_road_form(m) == form)
+    ]
+    if not species:
+        return None
+    scale = DISTANCE_SCALE.get(normalise(activity), 1.0)
+    lo, hi = (float(x) * 1000 * scale for x in spec.get("distanceKm", [1.5, 4]))
+    live = await live_objects(db, user_id, latitude, longitude, hi + float(cfg["minSpacingMeters"]))
+    anchors = [
+        Anchor(str(d.id), d.name, d.category, d.latitude, d.longitude, d.h3_index, tags=dict(d.tags or {}))
+        for d in await discoveries_nearby(db, latitude, longitude, hi, limit=600)
+        if not is_sensitive(d.name, d.tags) and haversine_m(latitude, longitude, d.latitude, d.longitude) >= lo
+    ]
+    if not anchors:
+        return None
+    tier = int(spec.get("tier", 3))
+    attempts = len(await _seeds_like(db, user_id, seed))
+    plans = plan_spawns(
+        seed=f"{seed}:{attempts}" if attempts else seed,
+        kind="MONSTER",
+        indices=[0],
+        anchors=anchors,
+        taken_anchor_ids={str(o.anchor_discovery_id) for o in live if o.anchor_discovery_id},
+        occupied=[(o.latitude, o.longitude) for o in live],
+        cfg={**cfg, "monsters": species, "tierWeights": [1 if t == tier else 0 for t in (1, 2, 3)]},
+        ac_rules=load_ac_rules(),
+        frontier=set(),
+        known={},
+        character_class=character_class,
+        activity=normalise(activity),
+        centre=None,
+    )
+    for plan in plans:
+        plan.payload["storyStep"] = step_slug
+    placed = await _persist(db, user_id, plans, utcnow(), float(spec.get("lifeDays", 21)), settings.h3_resolution)
+    if placed:
+        log.info("story_elder_placed", step=step_slug, object_id=str(placed[0].id), name=placed[0].payload.get("name"))
     return placed[0] if placed else None
 
 

@@ -27,6 +27,7 @@ from app.economy import service as economy
 from app.economy.rules import quest_ac
 from app.exploration.cells import cell_for
 from app.exploration.service import known_cells, reveal
+from app.lore.catalog import poster
 from app.quests import narrative, story
 from app.quests.generator import GeneratedQuest, GenerationContext, POICandidate, WorldObjectCandidate, generate
 from app.quests.models import QuestInstance, QuestObjective, QuestProgressEvent
@@ -48,6 +49,9 @@ QUEST_REACH_KM = 18.0
 QUEST_REACH_OF_COMFORTABLE = 0.6
 
 
+HIDDEN_KEYS = ("poiName", "category", "objectName", "objectPlace")
+
+
 def objective_out(o: QuestObjective) -> ObjectiveOut:
     # A puzzle objective keeps its coordinates until it is done: the planned route
     # still leads there, but the app cannot name the place or pin it on the map.
@@ -63,7 +67,7 @@ def objective_out(o: QuestObjective) -> ObjectiveOut:
         targetCells=o.target_cells,
         targetElevationMeters=o.target_elevation_meters,
         targetCount=o.target_count,
-        discoveryId=o.discovery_id,
+        discoveryId=None if hidden else o.discovery_id,
         required=o.required,
         order=o.order,
         completionRule=o.completion_rule,
@@ -71,7 +75,8 @@ def objective_out(o: QuestObjective) -> ObjectiveOut:
         completedAt=o.completed_at,
         provisional=o.provisional,
         progress=ObjectiveProgress(current=o.progress_current, target=o.progress_target),
-        extra=o.extra or {},
+        # Nor does the puzzle name it: the place's name and what it is stay back too.
+        extra={k: v for k, v in (o.extra or {}).items() if not hidden or k not in HIDDEN_KEYS},
     )
 
 
@@ -330,6 +335,9 @@ async def generate_quests(
     object_expiry = {o.id: o.expires_at for o in ctx.world_objects if o.expires_at is not None}
     for g in generated:
         g = narrative.with_story(g)
+        # Who put it up, and one of their lines: attached after the story is
+        # written, so neither the model nor the composed paragraph can drop it.
+        g.narrative = {**(g.narrative or {}), "poster": poster(g.character_class, f"{user.id}:{g.seed}:{now.date()}")}
         quest = _persist(user, g, now)
         # A quest about something in the world is over when that thing is.
         for o in g.objectives:
@@ -523,11 +531,15 @@ async def ensure_available(
             db, settings, llm, user, character, latitude, longitude, 1, activity=activity, only_any=True
         )
         available = await list_quests(db, user, "AVAILABLE", latitude, longitude, 20)
-    # The spine: one authored step, waiting until it is ridden. Generated quests
-    # are a different three every time and go nowhere; an arc is what the rider is
-    # actually in the middle of.
-    if settings.flags.get("story_quests") and not any(q.story_quest_id for q in available):
-        if await story.offer(db, settings, llm, user, character, latitude, longitude, utcnow(), activity):
+    # The spine: one authored step per track (the campaign, and the trade's own
+    # arc), waiting until it is done. Generated quests are a different three
+    # every time and go nowhere; an arc is what the player is in the middle of.
+    if settings.flags.get("story_quests"):
+        offered = False
+        for track in story.TRACKS:
+            if await story.offer(db, settings, llm, user, character, latitude, longitude, utcnow(), activity, track):
+                offered = True
+        if offered:
             available = await list_quests(db, user, "AVAILABLE", latitude, longitude, 20)
     return available
 

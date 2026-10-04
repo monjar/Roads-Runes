@@ -70,8 +70,10 @@ class StoryStepOut(APIModel):
     sequence: int
     title: str
     description: str
-    # COMPLETED (ridden) / OPEN (on the board now) / READY (next up) / LOCKED
+    # COMPLETED (done) / OPEN (on the board now) / READY (next up) / WAITING (next
+    # up, but it cannot be set where the player is: `waitingReason` says why) / LOCKED
     state: str
+    waitingReason: str | None = None
     questId: uuid.UUID | None = None
 
 
@@ -83,6 +85,33 @@ class StoryArcOut(APIModel):
     minLevel: int
     unlocked: bool
     quests: list[StoryStepOut]
+    # The campaign (0.6.2): MAIN or SIDE, its act and chapter, the chapter it
+    # comes after, who posts it, and what finishing it gives. All optional.
+    track: str | None = None
+    act: int | None = None
+    actTitle: str | None = None
+    chapter: int | None = None
+    after: str | None = None
+    giver: str | None = None
+    reward: dict[str, Any] | None = None
+
+
+class WeekNoticeOut(APIModel):
+    """The week's notice (0.6.2): one goal an ISO week, a fixed target, paid once."""
+
+    week: str
+    kind: str
+    title: str
+    line: str
+    postedBy: str
+    target: int
+    unit: str
+    progress: int
+    done: bool
+    paid: bool
+    coins: int
+    xp: int
+    endsAt: datetime
 
 
 class QuestGenerateRequest(APIModel):

@@ -7,7 +7,8 @@ from tests.test_first_playable_journey import ORIGIN, seed_discoveries
 
 
 def test_open_templates_are_offered_to_every_class():
-    open_ids = {t["id"] for t in all_templates() if t["characterClass"] == ANY_CLASS}
+    # Story-only templates are dealt by their arc, never on the board.
+    open_ids = {t["id"] for t in all_templates() if t["characterClass"] == ANY_CLASS and not t.get("storyOnly")}
     assert len(open_ids) >= 5
     for character_class in ("EXPLORER", "WIZARD", "WARRIOR", "SCRIBE"):
         offered = {t["id"] for t in templates_for(character_class, 1)}

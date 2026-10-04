@@ -216,6 +216,9 @@ async def summary(db: AsyncSession, user: User, ride: Ride) -> AdventureSummary 
         worldObjects=result.get("worldObjects"),
         quarryId=result.get("quarryId"),
         streak=result.get("streak"),
+        entry=result.get("entry"),
+        weekNotice=result.get("weekNotice"),
+        codexFirsts=result.get("codexFirsts") or [],
     )
 
 

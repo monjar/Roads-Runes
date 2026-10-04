@@ -371,7 +371,8 @@ aside, and the player's purse pays 50 coins only if something comes.
   "templateId": "EXPLORER_NEW_TERRITORY",
   "title": "Beyond the Water",
   "description": "...",
-  "narrative": {"hook": "...", "completion": "..."},
+  "narrative": {"hook": "...", "completion": "...",
+                "poster": {"castId": "nell-foss", "name": "Nell Foss", "line": "By the pond. Not there at lamp-lighting."}},
   "difficulty": "EASY|MODERATE|HARD|EPIC",
   "recommendedDistanceKm": 28,
   "estimatedDurationMinutes": 120,
@@ -411,9 +412,14 @@ in `extra.minDistanceMeters`, so a fast two kilometres does not pass); both are 
 server-side when the ride is processed. `PHOTO_LOCATION` and `WRITE_NOTE` need the rider
 to act and complete through `POST /quests/{id}/progress`.
 
-A puzzle objective (Wizard quests) omits `latitude`/`longitude` until it is completed —
-the route generated for the quest still passes the place, but the app cannot name or pin
-it. The app renders such an objective as "hidden".
+A puzzle objective (Wizard quests) omits `latitude`/`longitude`, `discoveryId` and the
+place's name and category in `extra` until it is completed — the route generated for the
+quest still passes the place, but the app cannot name or pin it, and neither the composed
+story nor the model is told its name. The app renders such an objective as "hidden".
+
+Every notice carries `narrative.poster` (0.6.2, optional): who put it up and one of their
+lines, picked by seed and attached after the story is written. `narrative.completion` is
+an authored line for every template and every story step.
 
 - `GET /quests?latitude&longitude&status=AVAILABLE&limit` → paginated. If the
   user has fewer than 3 `AVAILABLE` quests near the point the server
@@ -471,11 +477,30 @@ flag; 403 when it is off.
 }]
 ```
 
-`state` is `COMPLETED` (ridden), `OPEN` (on the board now, `questId` set), `READY`
-(next up) or `LOCKED` (waiting on the step before). Locked arcs are returned too —
-`unlocked` says whether this rider's class and level have reached it. A step is
-put on the board by `GET /quests` (`ensure_available`), one at a time, and never
-expires. See `docs/QUEST_SYSTEM.md` for the rules.
+`state` is `COMPLETED` (done), `OPEN` (on the board now, `questId` set), `READY`
+(next up), `WAITING` (next up, but it cannot be set where the player is;
+`waitingReason` says why) or `LOCKED` (waiting on the step before). Locked arcs are
+returned too — `unlocked` says whether this player's class, level and the chapter
+before have reached it. A step is put on the board by `GET /quests`
+(`ensure_available`), one per track, and never expires.
+
+0.6.2 adds to each arc (all optional): `track` (`MAIN`, the campaign; `SIDE`, a
+trade's own arc), `act` and `actTitle`, `chapter`, `after` (the chapter that must be
+finished first), `giver` (a cast id) and `reward` (`{"title", "ac"}`). Act I, "The
+Board", is First Light, What Settles and The Rune at the Crossing; its finale places a
+named elder bound to its step, which stays while the step is open. An arc's ending is
+paid once, whichever way its last step was finished. See `docs/QUEST_SYSTEM.md`.
+
+### `GET /quests/week` (0.6.2)
+
+The week's notice: one goal an ISO week, a fixed target, paid once (150 coins and
+200 XP) by the outing that meets it.
+
+```json
+{"week": "2026-W41", "kind": "OUTINGS|NEW_GROUND|PLACES|SEEN_OFF", "title": "Three outings this week.",
+ "line": "Pinned Monday. Comes down Sunday night.", "postedBy": "Ada Pym", "target": 3, "unit": "outings",
+ "progress": 1, "done": false, "paid": false, "coins": 150, "xp": 200, "endsAt": "..."}
+```
 
 ## Routes
 
@@ -697,7 +722,14 @@ What a ride pays:
   `{"arcSlug", "arcTitle", "stepTitle", "stepsDone", "stepsTotal", "arcCompleted", "nextTitle", "reward"}`.
   On the last step `reward` is `{"title", "ac"}`: the title is set on the character and listed in
   `titlesUnlocked`, the purse is the `STORY_ARC` coin line. A title earned this way is kept until a
-  level brings a new one.
+  level brings a new one. Since 0.6.2 the ending is paid once per arc (`story.settle_arc`), on a
+  ride, by a chest opened by hand, or by `POST /quests/{id}/complete`, and `reward` is null on
+  any later completion of the same arc.
+- `entry` (0.6.2): two to five sentences about the outing, composed from its facts by seed
+  (`app/chronicle/compose.py`); null for an outing under 300 m.
+- `weekNotice` (0.6.2): the week's notice when this outing met it and paid it; null otherwise.
+- `codexFirsts` (0.6.2): `[{"speciesId", "name", "metAs"}]`, creatures seen off or loosened for
+  the first time on this outing, for the reckoning's codex stamp.
 
 - `GET /rides` paginated, newest first. `GET /rides/{id}`. `GET /rides/{id}/geometry` → `{"coordinates": [...], "encodedPolyline": "..."}`.
 - `PATCH /rides/{id}` `{"visibility": "FRIENDS", "title": "...", "notes": "..."}`
@@ -732,7 +764,7 @@ What a ride pays:
 
 ## Journal
 
-- `GET /journal/adventures` → paginated `AdventureEntry` (`{ride, quest, xpAwarded, discoveries, newTerritoryMeters, photos, notes}`)
+- `GET /journal/adventures` → paginated `AdventureEntry` (`{ride, quest, xpAwarded, discoveries, newTerritoryMeters, photos, notes, entry}`); `entry` (0.6.2) is the outing's written lines, null before 0.6.2
 - `GET /journal/stats` → same shape as `/world/exploration/stats` plus secondary speed stats.
 
 ---

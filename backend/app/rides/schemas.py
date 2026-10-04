@@ -141,6 +141,11 @@ class AdventureSummary(APIModel):
     # The thing the outing was planned for; its fight leads the reckoning (0.6.1).
     quarryId: str | None = None
     streak: dict[str, Any] | None = None
+    # 0.6.2: the entry the outing leaves in the journal, the week's notice when this
+    # outing met it, and the creatures met for the first time (the codex stamp).
+    entry: str | None = None
+    weekNotice: dict[str, Any] | None = None
+    codexFirsts: list[dict[str, Any]] = []
 
 
 class RideGeometry(APIModel):

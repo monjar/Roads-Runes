@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.characters.models import Character
 from app.characters.sheet import CharacterSheet, build_sheet
+from app.chronicle.compose import Facts, compose
 from app.core.activity import normalise
 from app.core.config import Settings
 from app.core.errors import InvalidTransition, NotFound, RideInvalidState
@@ -29,9 +30,10 @@ from app.economy.rules import ACLine, compute_ride_ac
 from app.economy.streaks import StreakOutcome, streak_lines, update_streak
 from app.exploration.cells import cell_for, traverse
 from app.exploration.service import ExplorationOutcome, record_traversal
+from app.lore.service import creature_tallies
 from app.progression.engine import RideRewardInput, compute_ride_xp
 from app.progression.service import grant
-from app.quests import story
+from app.quests import story, week
 from app.quests.models import QuestInstance, QuestObjective
 from app.quests.service import all_required_complete, completion_payload, quest_out
 from app.quests.state_machine import assert_transition
@@ -319,6 +321,13 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
     # The character as the ride began, not as it is now (characters/sheet.py).
     sheet = CharacterSheet.from_dict(ride.loadout_snapshot) if ride.loadout_snapshot else build_sheet(character)
 
+    # What the player had met before this outing, for the codex stamp after it.
+    met_before = {
+        species
+        for species, tally in (await creature_tallies(db, ride.user_id)).items()
+        if tally.seen_off or tally.loosened
+    }
+
     # What the trace passed or beat. Same gate as XP: a suspicious ride wins nothing.
     claims = ClaimOutcome()
     if points and not validation.suspicious:
@@ -488,6 +497,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         "walletBalance": coins["walletBalance"],
         "worldObjects": claims.to_dict(),
         "quarryId": str(ride.quarry_id) if ride.quarry_id else None,
+        "codexFirsts": first_meetings(claims, met_before),
         "streak": streak.to_dict(),
         "newCells": len(exploration.new_cells),
         "upgradedCells": len(exploration.upgraded_cells),
@@ -508,12 +518,99 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         "droppedPoints": validation.dropped_points,
         "flags": flags,
     }
+    # The entry: a few written lines about the outing. A failure here is a ride
+    # without an entry, never a lost ride.
+    try:
+        summary["entry"] = compose_entry(ride, summary, claims, quest if quest_completed else None, arc, streak)
+    except Exception as exc:  # noqa: BLE001
+        log.error("entry_failed", ride_id=str(ride.id), error=str(exc)[:200])
+
     ride.flags = flags
     ride.processing_result = summary
     ride.processed_at = utcnow()
     ride.status = "FLAGGED" if validation.suspicious else "PROCESSED"
     await db.flush()
+
+    # The week's notice counts this outing now that it is processed, and pays once.
+    if character is not None and not validation.suspicious:
+        try:
+            paid = await week.settle(db, ride.user_id, (ride.started_at or ended).date(), ride_id=ride.id)
+        except Exception as exc:  # noqa: BLE001
+            log.error("week_notice_failed", ride_id=str(ride.id), error=str(exc)[:200])
+            paid = None
+        if paid is not None:
+            summary = {
+                **summary,
+                "weekNotice": {k: v for k, v in paid.items() if k not in ("startsAt", "endsAt")},
+                "xpAwarded": summary["xpAwarded"] + week.PAY_XP,
+                "xpBreakdown": [*summary["xpBreakdown"], {"source": "WEEK_NOTICE", "xp": week.PAY_XP}],
+                "acAwarded": summary["acAwarded"] + week.PAY_COINS,
+                "acBreakdown": [*summary["acBreakdown"], {"kind": "WEEK_NOTICE", "ac": week.PAY_COINS}],
+                "walletBalance": await economy.balance(db, ride.user_id),
+            }
+            ride.processing_result = summary
+            await db.flush()
     return summary
+
+
+def first_meetings(claims: ClaimOutcome, met_before: set[str]) -> list[dict[str, Any]]:
+    """Creatures seen off or loosened for the first time on this outing."""
+    from app.lore import catalog as lore
+
+    met: dict[str, str] = {}
+    for obj in claims.claimed:
+        if obj.kind == "MONSTER":
+            species = lore.species_of(obj.payload)
+            if species and species not in met_before:
+                met.setdefault(species, str(obj.payload.get("name")))
+    for fight in claims.fights:
+        species = fight.get("speciesId")
+        if species and species not in met_before and fight.get("outcome") in ("SEEN_OFF", "LOOSENED"):
+            met.setdefault(species, str(fight.get("name")))
+    book = lore.species_by_id()
+    return [{"speciesId": s, "name": book.get(s, {}).get("name", n), "metAs": n} for s, n in sorted(met.items())]
+
+
+def compose_entry(
+    ride: Ride,
+    summary: dict[str, Any],
+    claims: ClaimOutcome,
+    quest: QuestInstance | None,
+    arc: dict[str, Any] | None,
+    streak: StreakOutcome,
+) -> str:
+    """The facts of the outing, for chronicle.compose; nothing it was not given."""
+    world = summary.get("worldObjects") or {}
+    fights = world.get("fights") or []
+    seen_off = [str(o.payload.get("name")) for o in claims.claimed if o.kind == "MONSTER"]
+    loosened = [str(f.get("name")) for f in fights if f.get("outcome") == "LOOSENED" and f.get("name")]
+    quarry_name = None
+    quarry_seen_off = None
+    if ride.quarry_id is not None:
+        quarry = next((f for f in fights if f.get("id") == str(ride.quarry_id)), None)
+        if quarry is not None:
+            quarry_name = str(quarry.get("name"))
+            quarry_seen_off = quarry.get("outcome") == "SEEN_OFF"
+    distance = float(ride.distance_meters or 0)
+    new_m = float(summary.get("newTerritoryMeters") or 0)
+    facts = Facts(
+        activity=normalise(ride.activity),
+        distance_m=distance,
+        climb_m=float(ride.elevation_gain_meters or 0),
+        new_cells=int(summary.get("newCells") or 0),
+        known_share=max(0.0, 1 - new_m / distance) if distance else 1.0,
+        places=[str(d["name"]) for d in summary.get("discoveries") or []],
+        seen_off=seen_off,
+        loosened=loosened,
+        chests=sum(1 for o in claims.claimed if o.kind == "CHEST"),
+        pieces=sum(1 for o in claims.claimed if o.kind == "COLLECTABLE"),
+        quest_title=quest.title if quest is not None else None,
+        arc_finished=arc["arcTitle"] if arc and arc.get("arcCompleted") and arc.get("reward") else None,
+        quarry=quarry_name,
+        quarry_seen_off=quarry_seen_off,
+        days_kept=streak.days,
+    )
+    return compose(facts, seed=str(ride.id))
 
 
 FAR_CELL_M = 5000.0

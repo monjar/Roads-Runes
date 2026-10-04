@@ -21,6 +21,7 @@ TRANSACTION_KINDS = (
     "STREAK",
     "CLASS_CHANGE",
     "LURE",
+    "WEEK_NOTICE",
     "ADJUSTMENT",
 )
 

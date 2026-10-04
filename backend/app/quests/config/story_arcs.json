@@ -1,71 +1,155 @@
 {
+  "_comment": "The campaign (docs/ROADMAP.md, Appendix E). An arc is a chapter; `act` groups chapters; `track` MAIN is the campaign and SIDE the trades' own arcs, one live step per track. `after` names the chapter that must be finished first. `giver` is the cast member who posts it (lore/config/cast.json). Every line is activity-neutral: an outing, never a ride.",
+  "acts": [
+    {"id": 1, "title": "The Board", "description": "Ada Pym keeps a board. Things go up on it and nobody comes. Then somebody does."}
+  ],
   "arcs": [
     {
       "slug": "first-light",
       "title": "First Light",
-      "description": "Nobody starts as an adventurer. They start by going outside, and then going a little further than last time. Three rides, in order, and the map is no longer only the bit you already knew.",
+      "act": 1,
+      "chapter": 1,
+      "track": "MAIN",
+      "giver": "ada-pym",
+      "description": "Nobody starts out knowing the roads. They start by going outside, and then a little further than last time. Three outings, in order, and the map is no longer only the part you already knew.",
       "characterClass": null,
       "minLevel": 1,
       "quests": [
         {
           "slug": "first-light-out-of-the-door",
           "title": "Out of the Door",
-          "description": "The hardest part of every ride is the first hundred metres. Take a road you have never taken — any road, as long as it is new to you — and the rest of the map starts to owe you something.",
+          "description": "The hardest part of any outing is the first hundred metres. Take a way you have never taken, any way, as long as it is new to you, and the rest of the map starts to owe you something.",
+          "completion": "A way you had not taken. It is on the map now, in your hand.",
           "templateId": "ANY_NEW_GROUND"
         },
         {
           "slug": "first-light-something-green",
           "title": "Something Green",
-          "description": "Every town keeps a green place, and most riders pass the turning for years without taking it. Take it, then come home the way you like.",
+          "description": "Every town keeps a green place, and most people pass the turning for years without taking it. Take it, then come home whichever way you like.",
+          "completion": "The turning was there all along. Now it has been taken.",
           "templateId": "ANY_GREEN_HOUR"
         },
         {
           "slug": "first-light-somewhere-to-look-from",
           "title": "Somewhere to Look From",
-          "description": "Ground you have ridden looks different from above it. Climb to somewhere you can see it from, and the first light of this is done.",
+          "description": "Ground you have read looks different from above it. Climb to somewhere you can see it from, and the first light of this is done.",
+          "completion": "You looked down on it. It looked smaller, which was the point.",
           "templateId": "ANY_HIGH_GROUND"
         }
       ],
-      "reward": {
-        "title": "Early Riser",
-        "ac": 100
-      }
+      "reward": {"title": "Early Riser", "ac": 100}
+    },
+    {
+      "slug": "what-settles",
+      "title": "What Settles",
+      "act": 1,
+      "chapter": 2,
+      "track": "MAIN",
+      "after": "first-light",
+      "giver": "ada-pym",
+      "description": "A road used and not read goes vague, and things settle in the vague parts. Not wicked; in the way. There are a few on the board and nobody to send.",
+      "characterClass": null,
+      "minLevel": 1,
+      "quests": [
+        {
+          "slug": "what-settles-something-in-the-way",
+          "title": "Something in the Way",
+          "description": "One on the board with a name and a place. Go and find out what it wants, and give it that.",
+          "completion": "Seen off. The pin comes out of the board.",
+          "templateId": "ANY_SLAY_NEARBY"
+        },
+        {
+          "slug": "what-settles-a-box-nobody-came-back-for",
+          "title": "A Box Nobody Came Back For",
+          "description": "A waywright buried it when the gate closed and did not come back. It is still there. Pass close enough and it is yours.",
+          "completion": "Opened. Whatever the waywright meant by it, it is in the book now.",
+          "templateId": "ANY_UNLOCK_CHEST"
+        },
+        {
+          "slug": "what-settles-three-patches",
+          "title": "Three Patches",
+          "description": "Three patches of unread ground within reach. Go into each one. Reading them is most of the work.",
+          "completion": "Three patches read. Something had been settling in the middle one.",
+          "templateId": "ANY_THREE_PATCHES"
+        }
+      ],
+      "reward": {"title": "Somebody", "ac": 150}
+    },
+    {
+      "slug": "the-rune-at-the-crossing",
+      "title": "The Rune at the Crossing",
+      "act": 1,
+      "chapter": 3,
+      "track": "MAIN",
+      "after": "what-settles",
+      "giver": "enid-sallow",
+      "description": "Every road was written once, by people who cut a rune where two ways met. One of them has been found, and something has settled on it.",
+      "characterClass": null,
+      "minLevel": 1,
+      "quests": [
+        {
+          "slug": "rune-at-the-crossing-where-two-ways-met",
+          "title": "Where Two Ways Met",
+          "description": "The map files it as old. Go and stand at it. Somebody meant something by it.",
+          "completion": "You stood where they stood. The map is still being polite about it.",
+          "templateId": "ANY_OLD_STONE"
+        },
+        {
+          "slug": "rune-at-the-crossing-write-it-down",
+          "title": "Write It Down",
+          "description": "Reading is the job. Go to the place, stop, and write down what is there in a few words. It counts for more than it looks.",
+          "completion": "Written down. A copy has been asked for.",
+          "templateId": "ANY_WRITE_IT_DOWN"
+        },
+        {
+          "slug": "rune-at-the-crossing-the-one-at-the-crossing",
+          "title": "The One at the Crossing",
+          "description": "An old one has sat on the crossing long enough to think it owns it. It wants Raido, a loop cut with your track, and will take other things more slowly. Expect two outings.",
+          "completion": "Seen off. The crossing reads plainly again, which is all anyone wanted.",
+          "templateId": "ANY_THE_ELDER"
+        }
+      ],
+      "reward": {"title": "Reader at the Crossing", "ac": 300}
     },
     {
       "slug": "the-edge-of-the-map",
       "title": "The Edge of the Map",
-      "description": "An Explorer's map has an edge, and the edge moves. This is the work of moving it: out past the fog, across three unknown places, and back with the shape of them.",
+      "track": "SIDE",
+      "giver": "nell-foss",
+      "description": "A Wayfinder's map has an edge, and the edge moves. This is the work of moving it: out past the fog, into three unread places, and back with the shape of them.",
       "characterClass": "EXPLORER",
       "minLevel": 2,
       "quests": [
         {
           "slug": "edge-of-the-map-past-the-fog",
           "title": "Past the Fog",
-          "description": "Roads you have never travelled, and enough of them to be sure it was deliberate. The fog does not lift for a rider who turns back at the first unfamiliar junction.",
+          "description": "Ways you have never taken, and enough of them to be sure it was deliberate. The fog does not lift for someone who turns back at the first unfamiliar corner.",
+          "completion": "Past the last lamp and back. The edge is further out than it was.",
           "templateId": "EXPLORER_NEW_TERRITORY"
         },
         {
           "slug": "edge-of-the-map-three-unknowns",
           "title": "Three Unknowns",
-          "description": "One unknown place is an accident. Three, in one ride, is a survey.",
+          "description": "One unread place is an accident. Three, on one outing, is a survey.",
+          "completion": "Three places that were rumours. Now they are places.",
           "templateId": "EXPLORER_THREE_REGIONS"
         },
         {
           "slug": "edge-of-the-map-and-back-again",
           "title": "And Back Again",
           "description": "The edge is only moved once you can find your way home from it. Out to the far place, and back under your own navigation.",
+          "completion": "Out to the far place and home again. That is what moving the edge means.",
           "templateId": "EXPLORER_OUT_AND_BACK"
         }
       ],
-      "reward": {
-        "title": "Edgewalker",
-        "ac": 200
-      }
+      "reward": {"title": "Edgewalker", "ac": 200}
     },
     {
       "slug": "what-the-stones-remember",
       "title": "What the Stones Remember",
-      "description": "A Wizard reads the city as a text somebody else wrote. Markers nobody explains, lines that are too straight to be accidents, ground older than the road on top of it.",
+      "track": "SIDE",
+      "giver": "enid-sallow",
+      "description": "A Cutter reads the town as a text somebody else wrote: markers nobody explains, lines too straight to be accidents, ground older than the road on top of it.",
       "characterClass": "WIZARD",
       "minLevel": 2,
       "quests": [
@@ -73,87 +157,91 @@
           "slug": "stones-remember-the-marker",
           "title": "The Marker",
           "description": "Somebody put it there and meant something by it. Stand at it, and write down what you think they meant.",
+          "completion": "The marker still explains nothing. You have a theory, which is more than most.",
           "templateId": "WIZARD_STRANGE_MARKER"
         },
         {
           "slug": "stones-remember-the-straight-idea",
           "title": "The Straight Idea",
-          "description": "Three points on one bearing. Ride them in any order; the line does not care, but you will see it once you have.",
+          "description": "Three points on one bearing. Take them in any order. The line does not mind, but you will see it once you have.",
+          "completion": "Three points, one line. It was there before the streets were.",
           "templateId": "WIZARD_LEY_LINE"
         },
         {
           "slug": "stones-remember-older-than-the-road",
           "title": "Older Than the Road",
-          "description": "The tarmac is new. What it runs past is not. Find the old ground, and take a way there nobody has mapped for you.",
+          "description": "The surface is new. What it runs past is not. Find the old ground, and take a way there nobody has mapped for you.",
+          "completion": "Older than the road, and it knew it. You do too, now.",
           "templateId": "WIZARD_OLD_GROUND"
         }
       ],
-      "reward": {
-        "title": "Stone Reader",
-        "ac": 200
-      }
+      "reward": {"title": "Stone Reader", "ac": 200}
     },
     {
       "slug": "the-iron-hours",
       "title": "The Iron Hours",
-      "description": "A Warrior's arc is not about places. It is about the hours: covering the distance, paying a hill what it asks, and staying out after the interesting part is over.",
+      "track": "SIDE",
+      "giver": "tam-hurdle",
+      "description": "A Mender's arc is not about places. It is about the hours: covering the distance, paying a hill what it asks, and staying out after the interesting part is over.",
       "characterClass": "WARRIOR",
       "minLevel": 2,
       "quests": [
         {
           "slug": "iron-hours-the-tempo",
           "title": "The Long Haul",
-          "description": "No hills to hide behind and no shortcuts. Just the distance, at whatever pace keeps you going, and a little further than is comfortable.",
+          "description": "No hills to hide behind and no short cuts. Only the distance, at whatever pace keeps you going, and a little further than is comfortable.",
+          "completion": "Long one. Done.",
           "templateId": "WARRIOR_LONG_HAUL"
         },
         {
           "slug": "iron-hours-the-hill-toll",
           "title": "The Hill's Toll",
           "description": "Every hill charges the same price and does not negotiate. Climb until it is paid.",
+          "completion": "Paid in full. The hill keeps no change.",
           "templateId": "WARRIOR_HILL_TOLL"
         },
         {
           "slug": "iron-hours-the-hour-of-iron",
           "title": "The Hour of Iron",
           "description": "The last one is only time. Stay out in it, keep going, and come back having done the unremarkable thing well.",
+          "completion": "Out for the hours, back for tea. Nothing remarkable, done well.",
           "templateId": "WARRIOR_HOUR_OF_IRON"
         }
       ],
-      "reward": {
-        "title": "Ironbound",
-        "ac": 200
-      }
+      "reward": {"title": "Ironbound", "ac": 200}
     },
     {
       "slug": "a-record-of-small-things",
       "title": "A Record of Small Things",
-      "description": "A Scribe's claim is that the small things are the record: one place looked at properly, three corners of a neighbourhood, a road nobody has written down. Ride it, photograph it, say what it was.",
+      "track": "SIDE",
+      "giver": "walter-garth",
+      "description": "A Clerk's claim is that the small things are the record: one place looked at properly, three corners of a neighbourhood, a road nobody has written down.",
       "characterClass": "SCRIBE",
       "minLevel": 2,
       "quests": [
         {
           "slug": "record-of-small-things-one-place-properly",
           "title": "One Place, Properly",
-          "description": "Not a glance from the saddle. Stop, photograph it, and write the thing about it that a photograph does not carry.",
+          "description": "Not a glance in passing. Stop, photograph it, and write the thing about it that a photograph does not carry.",
+          "completion": "One place, properly. One entry in the book.",
           "templateId": "SCRIBE_DOCUMENT_PLACE"
         },
         {
           "slug": "record-of-small-things-three-corners",
           "title": "Three Corners",
           "description": "A neighbourhood is not one place. Take its corners, and note what changes between them.",
+          "completion": "Three corners. Three entries. The neighbourhood is on paper.",
           "templateId": "SCRIBE_THREE_CORNERS"
         },
         {
           "slug": "record-of-small-things-the-unwritten-road",
           "title": "The Unwritten Road",
-          "description": "Roads you have never travelled, surveyed rather than merely ridden: the photograph, the note, and the distance to earn them.",
+          "description": "Ways you have never taken, surveyed rather than merely passed: the photograph, the note, and the distance to earn them.",
+          "completion": "Surveyed and written. The road is no longer unwritten.",
           "templateId": "SCRIBE_ROUTE_SURVEY"
         }
       ],
-      "reward": {
-        "title": "Keeper of Small Things",
-        "ac": 200
-      }
+      "reward": {"title": "Keeper of Small Things", "ac": 200}
     }
   ]
 }
