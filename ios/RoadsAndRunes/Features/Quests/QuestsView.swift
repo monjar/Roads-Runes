@@ -35,6 +35,9 @@ struct QuestsView: View {
                             .buttonStyle(.pressable)
                             .accessibilityIdentifier("customAdventure")
                             .disabled(container.rideRecorder.isActive)
+                        if let notice = model.weekNotice {
+                            WeekNoticeCard(notice: notice)
+                        }
                         if let bounty = model.bounty {
                             BountyCard(
                                 bounty: bounty,
@@ -219,6 +222,7 @@ struct QuestDetailView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(quest.title).font(Theme.Typography.voice(30, relativeTo: .largeTitle)).foregroundStyle(Theme.Colors.ink)
                         Text(quest.narrative.hook ?? quest.description).font(Theme.Typography.text(14)).foregroundStyle(Theme.Colors.inkSoft).lineSpacing(3)
+                        if let poster = quest.narrative.poster { PosterLine(poster: poster) }
                         VStack(spacing: 8) {
                             let objectives = quest.sortedObjectives
                             ForEach(Array(objectives.enumerated()), id: \.element.id) { offset, objective in

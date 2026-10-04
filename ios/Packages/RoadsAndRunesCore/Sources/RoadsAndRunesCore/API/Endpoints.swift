@@ -92,6 +92,8 @@ public enum Endpoints {
     }
     public static func abilities() -> Endpoint { Endpoint(method: .get, path: "/character/abilities") }
     public static func unlockAbility(id: String) -> Endpoint { Endpoint(method: .post, path: "/character/abilities/\(id)/unlock") }
+    public static func titles() -> Endpoint { Endpoint(method: .get, path: "/character/titles") }
+    public static func wearTitle(_ body: TitleChoice) throws -> Endpoint { try .json(.put, "/character/title", body: body) }
     public static func bikes() -> Endpoint { Endpoint(method: .get, path: "/character/bikes") }
     public static func createBike(_ body: BikeIn) throws -> Endpoint { try .json(.post, "/character/bikes", body: body) }
     public static func updateBike(id: UUID, _ body: BikeIn) throws -> Endpoint { try .json(.patch, "/character/bikes/\(id.uuidString)", body: body) }
@@ -197,6 +199,7 @@ public enum Endpoints {
         Endpoint(method: .get, path: "/users/search", query: [QueryItem("q", query), QueryItem("limit", String(limit))])
     }
     public static func storyArcs() -> Endpoint { Endpoint(method: .get, path: "/quests/story") }
+    public static func weekNotice() -> Endpoint { Endpoint(method: .get, path: "/quests/week") }
     public static func friends() -> Endpoint { Endpoint(method: .get, path: "/friends") }
     public static func friendRequests() -> Endpoint { Endpoint(method: .get, path: "/friends/requests") }
     public static func sendFriendRequest(userId: UUID) throws -> Endpoint {

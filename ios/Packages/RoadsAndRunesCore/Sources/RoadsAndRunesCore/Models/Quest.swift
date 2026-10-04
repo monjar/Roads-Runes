@@ -76,10 +76,27 @@ public struct Objective: Codable, Hashable, Identifiable, Sendable {
 public struct QuestNarrative: Codable, Hashable, Sendable {
     public var hook: String?
     public var completion: String?
+    /// Who put the notice up, and one of their lines (0.6.2). Optional: an older
+    /// server sends none.
+    public var poster: QuestPoster?
 
-    public init(hook: String? = nil, completion: String? = nil) {
+    public init(hook: String? = nil, completion: String? = nil, poster: QuestPoster? = nil) {
         self.hook = hook
         self.completion = completion
+        self.poster = poster
+    }
+}
+
+/// A cast member and one of their lines, on a notice (docs/WORLD.md).
+public struct QuestPoster: Codable, Hashable, Sendable {
+    public var castId: String
+    public var name: String
+    public var line: String
+
+    public init(castId: String, name: String, line: String) {
+        self.castId = castId
+        self.name = name
+        self.line = line
     }
 }
 
@@ -309,11 +326,13 @@ public struct QuestProgressRequest: Codable, Hashable, Sendable {
 /// One step of an authored arc (`GET /quests/story`). The words are written; where
 /// it sends the rider is generated from where they are, like any other quest.
 public struct StoryStep: Codable, Hashable, Identifiable, Sendable {
-    /// COMPLETED (ridden) · OPEN (on the board now) · READY (next up) · LOCKED
+    /// COMPLETED (done) · OPEN (on the board now) · READY (next up) · WAITING (next
+    /// up, but it cannot be set where the player is) · LOCKED
     public enum State: String, SafeEnum {
         case completed = "COMPLETED"
         case open = "OPEN"
         case ready = "READY"
+        case waiting = "WAITING"
         case locked = "LOCKED"
         case unknown = "UNKNOWN"
     }
@@ -323,17 +342,20 @@ public struct StoryStep: Codable, Hashable, Identifiable, Sendable {
     public var title: String
     public var description: String
     public var state: State
+    /// Why a WAITING step cannot be set here ("Waiting for high ground within reach.").
+    public var waitingReason: String?
     /// The quest on the board for this step, while there is one.
     public var questId: UUID?
 
     public var id: String { slug }
 
-    public init(slug: String, sequence: Int, title: String, description: String, state: State, questId: UUID? = nil) {
+    public init(slug: String, sequence: Int, title: String, description: String, state: State, waitingReason: String? = nil, questId: UUID? = nil) {
         self.slug = slug
         self.sequence = sequence
         self.title = title
         self.description = description
         self.state = state
+        self.waitingReason = waitingReason
         self.questId = questId
     }
 }
@@ -350,13 +372,26 @@ public struct StoryArc: Codable, Hashable, Identifiable, Sendable {
     /// sent: what is coming is the reason to come back.
     public var unlocked: Bool
     public var quests: [StoryStep]
+    /// The campaign (0.6.2): MAIN or SIDE, its act and chapter, the chapter it comes
+    /// after, the cast id of who posts it, and what finishing it gives. All optional.
+    public var track: String?
+    public var act: Int?
+    public var actTitle: String?
+    public var chapter: Int?
+    public var after: String?
+    public var giver: String?
+    public var reward: StoryStanding.Reward?
 
     public var id: String { slug }
 
     public var completedCount: Int { quests.filter { $0.state == .completed }.count }
     public var isComplete: Bool { !quests.isEmpty && completedCount == quests.count }
+    /// The campaign, as opposed to a trade's own arc.
+    public var isCampaign: Bool { track == "MAIN" }
 
-    public init(slug: String, title: String, description: String, characterClass: CharacterClass? = nil, minLevel: Int, unlocked: Bool, quests: [StoryStep]) {
+    public init(slug: String, title: String, description: String, characterClass: CharacterClass? = nil, minLevel: Int, unlocked: Bool, quests: [StoryStep],
+                track: String? = nil, act: Int? = nil, actTitle: String? = nil, chapter: Int? = nil, after: String? = nil, giver: String? = nil,
+                reward: StoryStanding.Reward? = nil) {
         self.slug = slug
         self.title = title
         self.description = description
@@ -364,5 +399,51 @@ public struct StoryArc: Codable, Hashable, Identifiable, Sendable {
         self.minLevel = minLevel
         self.unlocked = unlocked
         self.quests = quests
+        self.track = track
+        self.act = act
+        self.actTitle = actTitle
+        self.chapter = chapter
+        self.after = after
+        self.giver = giver
+        self.reward = reward
+    }
+}
+
+
+/// The week's notice (`GET /quests/week`, 0.6.2): one goal an ISO week, a fixed
+/// target, paid once.
+public struct WeekNotice: Codable, Hashable, Sendable {
+    public var week: String
+    /// OUTINGS, NEW_GROUND, PLACES or SEEN_OFF.
+    public var kind: String
+    public var title: String
+    public var line: String?
+    public var postedBy: String?
+    public var target: Int
+    public var unit: String
+    public var progress: Int
+    public var done: Bool
+    public var paid: Bool
+    public var coins: Int?
+    public var xp: Int?
+    public var endsAt: Date?
+
+    public var fraction: Double { target > 0 ? min(1, Double(progress) / Double(target)) : 0 }
+
+    public init(week: String, kind: String, title: String, line: String? = nil, postedBy: String? = nil, target: Int, unit: String,
+                progress: Int, done: Bool, paid: Bool, coins: Int? = nil, xp: Int? = nil, endsAt: Date? = nil) {
+        self.week = week
+        self.kind = kind
+        self.title = title
+        self.line = line
+        self.postedBy = postedBy
+        self.target = target
+        self.unit = unit
+        self.progress = progress
+        self.done = done
+        self.paid = paid
+        self.coins = coins
+        self.xp = xp
+        self.endsAt = endsAt
     }
 }

@@ -107,6 +107,11 @@ final class AppContainer {
         ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
     }
 
+    /// One UI test launches with the prologue (RR_SHOW_PROLOGUE=1); the rest skip it.
+    static var showsPrologueInUITest: Bool {
+        ProcessInfo.processInfo.environment["RR_SHOW_PROLOGUE"] == "1"
+    }
+
     static var isUITesting: Bool {
         ProcessInfo.processInfo.environment["RR_UI_TEST"] == "1"
     }

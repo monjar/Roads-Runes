@@ -82,6 +82,42 @@ public extension LoreCopy {
         "Does not mind \(kinds.map(kind).joined(separator: " or "))."
     }
 
+    /// The five who write the board, by cast id (backend lore/config/cast.json).
+    static func castName(_ id: String?) -> String? {
+        switch id {
+        case "ada-pym": return "Ada Pym"
+        case "tam-hurdle": return "Tam Hurdle"
+        case "enid-sallow": return "Enid Sallow"
+        case "walter-garth": return "Walter Garth"
+        case "nell-foss": return "Nell Foss"
+        default: return nil
+        }
+    }
+
+    /// "I", "II", … for acts.
+    static func roman(_ n: Int) -> String {
+        let table: [(Int, String)] = [(10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")]
+        var left = max(0, n)
+        var out = ""
+        for (value, numeral) in table {
+            while left >= value {
+                out += numeral
+                left -= value
+            }
+        }
+        return out
+    }
+
+    /// "Finishing it: Early Riser, and 100 coins."
+    static func arcReward(_ reward: StoryStanding.Reward?) -> String? {
+        guard let reward else { return nil }
+        var parts: [String] = []
+        if let title = reward.title { parts.append(title) }
+        if let ac = reward.ac, ac > 0 { parts.append(purse(ac)) }
+        guard !parts.isEmpty else { return nil }
+        return "Finishing it: " + parts.joined(separator: ", and ") + "."
+    }
+
     static let emptyJournalTitle = "Nothing written yet"
     static let emptyJournalMessage = "The journal fills itself. It only needs you to go out."
 }

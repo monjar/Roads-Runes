@@ -263,6 +263,8 @@ public actor APIClient: RoadsAndRunesAPI {
     public func lure(at center: Coordinate) async throws -> [WorldObject] { try await request(try Endpoints.lure(LureRequest(latitude: center.latitude, longitude: center.longitude))) }
     public func abilities() async throws -> [AbilityState] { try await request(Endpoints.abilities()) }
     public func unlockAbility(id: String) async throws -> Character { try await request(Endpoints.unlockAbility(id: id)) }
+    public func titles() async throws -> [TitleInfo] { try await request(Endpoints.titles()) }
+    public func wearTitle(slug: String?) async throws -> Character { try await request(try Endpoints.wearTitle(TitleChoice(slug: slug))) }
     public func bikes() async throws -> [Bike] { try await request(Endpoints.bikes()) }
     public func createBike(_ bike: BikeIn) async throws -> Bike { try await request(try Endpoints.createBike(bike)) }
     public func updateBike(id: UUID, _ patch: BikeIn) async throws -> Bike { try await request(try Endpoints.updateBike(id: id, patch)) }
@@ -342,6 +344,7 @@ public actor APIClient: RoadsAndRunesAPI {
 
     public func searchUsers(query: String) async throws -> [FriendSummary] { try await request(Endpoints.searchUsers(query: query)) }
     public func storyArcs() async throws -> [StoryArc] { try await request(Endpoints.storyArcs()) }
+    public func weekNotice() async throws -> WeekNotice { try await request(Endpoints.weekNotice()) }
     public func friends() async throws -> [FriendSummary] { try await request(Endpoints.friends()) }
     public func friendRequests() async throws -> FriendRequests { try await request(Endpoints.friendRequests()) }
     public func sendFriendRequest(userId: UUID) async throws -> FriendRequestResult { try await request(try Endpoints.sendFriendRequest(userId: userId)) }

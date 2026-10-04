@@ -34,6 +34,9 @@ struct QuestCard: View {
                         .lineSpacing(1.5)
                         .padding(.vertical, 1)
                 }
+                if !compact, let poster = quest.narrative.poster {
+                    PosterLine(poster: poster)
+                }
                 Text(facts).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).lineLimit(1)
             }
             Spacer(minLength: 0)
@@ -64,6 +67,20 @@ struct QuestCard: View {
             "\(objectives) objective\(objectives == 1 ? "" : "s")",
             "\(quest.rewards.xp ?? quest.baseXP) XP",
         ].joined(separator: " · ")
+    }
+}
+
+/// Who put the notice up, and one of their lines (docs/WORLD.md): "By the pond.
+/// Not there at lamp-lighting." — Nell Foss. Never more than one name per card.
+struct PosterLine: View {
+    let poster: QuestPoster
+
+    var body: some View {
+        (Text("\u{201C}\(poster.line)\u{201D} ").italic().foregroundStyle(Theme.Colors.inkSoft)
+            + Text(poster.name).font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.muted))
+            .font(Theme.Typography.caption)
+            .lineLimit(2)
+            .accessibilityIdentifier("quest.poster")
     }
 }
 

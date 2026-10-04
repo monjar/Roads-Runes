@@ -1,13 +1,12 @@
 import RoadsAndRunesCore
 import SwiftUI
 
-/// The arcs and where the rider stands in each (spec §21, phase 9).
+/// The campaign and the trade's own arcs, and where the player stands in each
+/// (docs/ROADMAP.md, Appendix E).
 ///
-/// The board is a different three quests every time and leads nowhere; an arc is
-/// what the rider is in the middle of. So the ordering here is what is *live*
-/// first, then what they could start, then what is still ahead of them — and the
-/// ones they cannot reach yet are shown rather than hidden, because what is coming
-/// is the reason to come back.
+/// The campaign comes first, act by act and chapter by chapter, in order; then the
+/// trade's arcs, live first. Locked chapters are shown rather than hidden, because
+/// what is coming is the reason to come back.
 @MainActor
 @Observable
 final class StoryArcsModel {
@@ -28,12 +27,25 @@ final class StoryArcsModel {
         loaded = true
     }
 
-    /// Whatever is live, then what can be started, then what is still locked.
+    /// The campaign's acts, each with its chapters in order.
+    var acts: [(number: Int, title: String?, chapters: [StoryArc])] {
+        let campaign = arcs.filter(\.isCampaign)
+        let numbers = Array(Set(campaign.map { $0.act ?? 1 })).sorted()
+        return numbers.map { number in
+            let chapters = campaign.filter { ($0.act ?? 1) == number }.sorted { ($0.chapter ?? 0, $0.title) < ($1.chapter ?? 0, $1.title) }
+            return (number, chapters.first?.actTitle, chapters)
+        }
+    }
+
+    /// The trade's own arcs (and any arc from a server before tracks): whatever is
+    /// live, then what can be started, then what is still locked.
     var ordered: [StoryArc] {
-        arcs.sorted { a, b in
+        arcs.filter { !$0.isCampaign }.sorted { a, b in
             (rank(a), a.minLevel, a.title) < (rank(b), b.minLevel, b.title)
         }
     }
+
+    func title(of slug: String?) -> String? { arcs.first { $0.slug == slug }?.title }
 
     private func rank(_ arc: StoryArc) -> Int {
         if arc.quests.contains(where: { $0.state == .open }) { return 0 }
@@ -58,10 +70,21 @@ struct StoryArcsView: View {
                 }
                 if let model {
                     if let error = model.error { ErrorLine(text: error) }
-                    Text("Arcs are ridden in order: finishing a step is what opens the next. They wait for you — a step never expires.")
+                    Text("Each step is done in order: finishing one is what opens the next. They wait for you; a step never expires.")
                         .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
                     if model.loaded, model.arcs.isEmpty {
-                        EmptyState(icon: "book.closed", title: "No arcs yet", message: "Story arcs will appear here.")
+                        EmptyState(icon: "book.closed", title: "Nothing on the board yet", message: "The story will be pinned up here.")
+                    }
+                    ForEach(model.acts, id: \.number) { act in
+                        Eyebrow(text: "Act \(LoreCopy.roman(act.number))\(act.title.map { " · \($0)" } ?? "")", color: Theme.Colors.terracottaDeep)
+                            .padding(.top, 6)
+                            .accessibilityIdentifier("story.act")
+                        ForEach(act.chapters) { arc in
+                            ArcCard(arc: arc, afterTitle: model.title(of: arc.after), onOpenQuest: onOpenQuest)
+                        }
+                    }
+                    if !model.ordered.isEmpty {
+                        Eyebrow(text: model.acts.isEmpty ? "Arcs" : "Your trade", color: Theme.Colors.muted).padding(.top, 6)
                     }
                     ForEach(model.ordered) { arc in ArcCard(arc: arc, onOpenQuest: onOpenQuest) }
                 } else {
@@ -84,6 +107,7 @@ struct StoryArcsView: View {
 
 private struct ArcCard: View {
     let arc: StoryArc
+    var afterTitle: String?
     let onOpenQuest: (UUID) -> Void
 
     private var accent: Color {
@@ -101,8 +125,14 @@ private struct ArcCard: View {
             }
             Text(arc.title).font(Theme.Typography.heading).foregroundStyle(Theme.Colors.ink)
             Text(arc.description).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+            if let giver = LoreCopy.castName(arc.giver) {
+                Text("Posted by \(giver)").font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.inkSoft)
+            }
             if !arc.unlocked {
                 Text(lockedReason).font(Theme.Typography.caption).foregroundStyle(accent)
+            }
+            if let reward = LoreCopy.arcReward(arc.reward), !arc.isComplete {
+                Text(reward).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
             }
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(arc.quests.enumerated()), id: \.element.id) { index, step in
@@ -116,14 +146,16 @@ private struct ArcCard: View {
     }
 
     private var eyebrow: String {
-        if arc.isComplete { return "Complete" }
+        if arc.isComplete { return "Finished" }
+        if arc.isCampaign, let chapter = arc.chapter { return "Chapter \(chapter)" }
         guard let characterClass = arc.characterClass else { return "For anyone" }
         return "\(ClassStyle.name(characterClass)) arc"
     }
 
     private var lockedReason: String {
+        if let afterTitle { return "Opens when \(afterTitle) is finished." }
         guard let characterClass = arc.characterClass else { return "Opens at level \(arc.minLevel)." }
-        return "For \(ClassStyle.name(characterClass))s, from class level \(arc.minLevel)."
+        return "For \(ClassStyle.name(characterClass))s, from trade level \(arc.minLevel)."
     }
 }
 
@@ -156,6 +188,11 @@ private struct StepRow: View {
                     .strikethrough(step.state == .completed, color: Theme.Colors.muted)
                 // A locked step keeps its words: knowing what is coming is the point.
                 Text(step.description).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                if step.state == .waiting {
+                    Text(step.waitingReason ?? "Waiting for somewhere it can be set near you.")
+                        .font(Theme.Typography.captionStrong).foregroundStyle(accent)
+                        .accessibilityIdentifier("story.waiting")
+                }
                 if step.state == .open, let questId = step.questId {
                     Button("On your board now") { onOpenQuest(questId) }
                         .font(Theme.Typography.captionStrong)
@@ -173,6 +210,7 @@ private struct StepRow: View {
         case .completed: return "checkmark.circle.fill"
         case .open: return "circle.circle.fill"
         case .ready: return "circle"
+        case .waiting: return "hourglass"
         case .locked, .unknown: return "lock.fill"
         }
     }
@@ -182,6 +220,7 @@ private struct StepRow: View {
         case .completed: return Theme.Colors.sageDeep
         case .open: return accent
         case .ready: return Theme.Colors.ink
+        case .waiting: return accent
         case .locked, .unknown: return Theme.Colors.muted
         }
     }

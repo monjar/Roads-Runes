@@ -36,7 +36,7 @@ struct AdventureSummaryView: View {
 
     /// The order things arrive in.
     private enum Stage: Int, Comparable {
-        case trace, fight, xp, lines, coins, levels, world, quest, rest
+        case trace, fight, xp, lines, coins, levels, world, codex, quest, entry, rest
 
         static func < (lhs: Stage, rhs: Stage) -> Bool { lhs.rawValue < rhs.rawValue }
     }
@@ -82,7 +82,9 @@ struct AdventureSummaryView: View {
                             if stage >= .coins, coins > 0 { coinSection.id(Stage.coins) }
                             if stage >= .levels { levelCards.id(Stage.levels) }
                             if stage >= .world { worldSection.id(Stage.world) }
+                            if stage >= .codex, !firsts.isEmpty { codexSection.id(Stage.codex) }
                             if stage >= .quest { questSection.id(Stage.quest) }
+                            if stage >= .entry, let entry = summary.entry, !entry.isEmpty { entrySection(entry).id(Stage.entry) }
                             if stage >= .rest { restSection.id(Stage.rest) }
                         }
                         .padding(.horizontal, 22)
@@ -178,7 +180,12 @@ struct AdventureSummaryView: View {
             try? await Task.sleep(for: .milliseconds(700))
         }
         if hasWorld { await arrive(at: .world, after: 0.5) }
+        if !firsts.isEmpty {
+            await arrive(at: .codex, after: 0.5)
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        }
         if hasQuest { await arrive(at: .quest, after: 0.6) }
+        if summary.entry?.isEmpty == false { await arrive(at: .entry, after: 0.5) }
         await arrive(at: .rest, after: 0.6)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
@@ -314,7 +321,7 @@ struct AdventureSummaryView: View {
                     .frame(width: 62, height: 62)
                     .background(Theme.Colors.sageDeep, in: Circle())
                 VStack(alignment: .leading, spacing: 2) {
-                    Eyebrow(text: "Level up", color: Theme.Colors.sageLight)
+                    Eyebrow(text: "The roads count again", color: Theme.Colors.sageLight)
                     Text(levelUp.kind == .classLevel ? "\(className) level \(levelUp.to)" : "Level \(levelUp.to)")
                         .font(Theme.Typography.voice(22, relativeTo: .title2)).foregroundStyle(Theme.Colors.cream)
                     Text("from \(levelUp.from)").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.line)
@@ -332,8 +339,39 @@ struct AdventureSummaryView: View {
     }
 
     private var hasWorld: Bool {
+        if summary.weekNotice?.paid == true { return true }
         guard let world = summary.worldObjects else { return summary.streak?.extended == true }
         return !world.claimed.isEmpty || world.missed.contains { $0.reason == "UNBEATEN" } || summary.streak?.extended == true
+    }
+
+    /// Creatures met for the first time on this outing: stamped into the codex.
+    private var firsts: [CodexFirst] { summary.codexFirsts ?? [] }
+
+    private var codexSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Eyebrow(text: "Into the codex", color: Theme.Colors.sageDeep)
+            ForEach(firsts) { first in
+                HStack(spacing: 10) {
+                    Image(systemName: "book.fill").font(.system(size: 13, weight: .bold)).foregroundStyle(Theme.Colors.sageDeep)
+                    Text(first.metAs.map { $0 == first.name ? "First met: \(first.name)" : "First met: \(first.name), as \($0)" } ?? "First met: \(first.name)")
+                        .font(Theme.Typography.text(14, .semibold)).foregroundStyle(Theme.Colors.ink)
+                }
+            }
+        }
+        .transition(.scale(scale: 0.95).combined(with: .opacity))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("summary.codex")
+    }
+
+    /// The outing's entry: a few written lines, in the journal too.
+    private func entrySection(_ entry: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Eyebrow(text: "The entry", color: Theme.Colors.muted)
+            Text(entry).font(Theme.Typography.text(14)).italic().foregroundStyle(Theme.Colors.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .transition(.opacity)
+        .accessibilityIdentifier("summary.entry")
     }
 
     /// Effort is damage: one report per thing the outing reached, the quarry first.
@@ -387,6 +425,11 @@ struct AdventureSummaryView: View {
                     .font(Theme.Typography.text(13)).foregroundStyle(Theme.Colors.inkSoft)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("summary.nearMiss")
+            }
+            if let notice = summary.weekNotice, notice.paid {
+                Label("The week's notice: done. \(notice.title)", systemImage: "pin.fill")
+                    .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.sageDeep)
+                    .accessibilityIdentifier("summary.weekNotice")
             }
             if let streak = summary.streak, streak.extended {
                 Label(streakLine(streak), systemImage: "flame.fill")

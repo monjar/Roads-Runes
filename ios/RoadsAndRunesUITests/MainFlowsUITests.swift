@@ -245,6 +245,41 @@ final class MainFlowsUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Save"].waitForExistence(timeout: 10), "The bike row did not open its editor")
     }
 
+    // MARK: - The world (0.6.0 to 0.6.2)
+
+    func testThePrologueComesBeforeTheTrade() throws {
+        app.launchEnvironment["RR_SHOW_PROLOGUE"] = "1"
+        #if targetEnvironment(simulator)
+        XCUIDevice.shared.location = XCUILocation(location: Self.rotherhithe)
+        #endif
+        app.launch()
+        replaceText(in: waitFor(app.textFields["Developer subject"]), with: "ui-\(UUID().uuidString.prefix(8).lowercased())")
+        tapOffCentre(app.buttons["Developer sign in"], dx: 0.5)
+        XCTAssertTrue(app.buttons["prologue.next"].waitForExistence(timeout: 30), "A new player went straight to choosing a trade")
+        for _ in 0..<6 where app.buttons["prologue.next"].exists && !app.textFields["Your name"].exists {
+            tapOffCentre(app.buttons["prologue.next"], dx: 0.3)
+        }
+        XCTAssertTrue(app.textFields["Your name"].waitForExistence(timeout: 20), "The prologue did not lead to the trade")
+    }
+
+    func testTheSheetHasTitlesAndACodex() throws {
+        signInAsNewRider(at: Self.rotherhithe)
+        tapTab("Character")
+        let titles = app.buttons["character.titles"]
+        scrollTo(titles)
+        tapOffCentre(titles, dx: 0.7)
+        XCTAssertTrue(app.buttons["title.level-1"].waitForExistence(timeout: 20), "A new character is not a Passer-by")
+        XCTAssertTrue(app.staticTexts["Reach level 5."].exists, "A title still to earn does not say how")
+        // The codex lives in the Journal; the sheet's door leads to the same pages.
+        tapTab("Journal")
+        tapOffCentre(waitFor(app.buttons["Codex"]), dx: 0.3)
+        XCTAssertTrue(
+            app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "codex.")).firstMatch
+                .waitForExistence(timeout: 20),
+            "The codex did not open"
+        )
+    }
+
     // MARK: - Helpers
 
     /// Welcome → developer sign-in → character → bike → location, as a new rider.

@@ -12,6 +12,26 @@ public struct CharacterSheet: Codable, Hashable, Sendable {
     public var damagePct: [String: Double]
     public var runeThreshold: Double
     public var runeReachMeters: Double
+    /// Knacks that depend on the thing or the outing (0.6.2). Optional: a version 1
+    /// sheet has none.
+    public var vsEldersPct: Double?
+    public var lateRoadPct: Double?
+    public var lateRoadAfterMeters: Double?
+    public var wordOldPlacesPct: Double?
+
+    /// The build against one thing on this outing, as the server works it out
+    /// (`CharacterSheet.pct_against`). The phone does not know which places are old,
+    /// so the Historian's knack is left out and the phone is early, never late.
+    public func pct(againstElder elder: Bool, madeGoodMeters: Double, onFoot: Bool) -> [String: Double] {
+        var pct = damagePct
+        if elder, let bonus = vsEldersPct, bonus > 0 {
+            for kind in FightResolver.kinds { pct[kind, default: 0] += bonus }
+        }
+        if let bonus = lateRoadPct, bonus > 0, madeGoodMeters > (lateRoadAfterMeters ?? 10_000) / (onFoot ? 2 : 1) {
+            pct["ROAD", default: 0] += bonus
+        }
+        return pct
+    }
 
     public init(version: Int = 1, characterClass: String = "EXPLORER", overallLevel: Int = 1, classLevel: Int = 1,
                 damagePct: [String: Double] = [:], runeThreshold: Double = 0.22, runeReachMeters: Double = 1000) {
@@ -156,5 +176,21 @@ public struct WouldHaveDone: Codable, Hashable, Sendable {
         self.kind = kind
         self.units = units
         self.unit = unit
+    }
+}
+
+/// A creature met for the first time on an outing (`codexFirsts`), for the codex stamp.
+public struct CodexFirst: Codable, Hashable, Sendable, Identifiable {
+    public var speciesId: String
+    public var name: String
+    /// What it was called when met: an elder's own name.
+    public var metAs: String?
+
+    public var id: String { speciesId }
+
+    public init(speciesId: String, name: String, metAs: String? = nil) {
+        self.speciesId = speciesId
+        self.name = name
+        self.metAs = metAs
     }
 }

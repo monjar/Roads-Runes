@@ -140,7 +140,7 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
             let isMe = userId == self.user.id
             return PublicProfile(
                 id: userId, displayName: isMe ? self.user.displayName : "Bea", characterClass: .explorer,
-                overallLevel: isMe ? self.storedCharacter?.overallLevel : 5, title: isMe ? self.storedCharacter?.title : "Pathfinder",
+                overallLevel: isMe ? self.storedCharacter?.overallLevel : 5, title: isMe ? self.storedCharacter?.title : "Familiar Face",
                 questsCompleted: 12, discoveriesFound: 30, favouriteTerrain: "GRAVEL", friendship: isMe ? FriendshipState.none : FriendshipState.friends,
                 recentAdventures: [
                     AdventureSummaryPublic(
@@ -281,6 +281,34 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
             character.abilities[index].unlocked = true
             character.abilities[index].canUnlock = character.abilities[index].rank < character.abilities[index].ability.maxRank
             character.unspentAbilityPoints -= 1
+            self.storedCharacter = character
+            return character
+        }
+    }
+    public func titles() async throws -> [TitleInfo] {
+        try await run {
+            let character = try self.requireCharacter()
+            return SampleData.sampleTitles.map { title in
+                var t = title
+                t.worn = t.earned && t.name == character.title
+                return t
+            }
+        }
+    }
+    public func wearTitle(slug: String?) async throws -> Character {
+        try await run {
+            var character = try self.requireCharacter()
+            let earned = SampleData.sampleTitles.filter(\.earned)
+            if let slug {
+                guard let title = earned.first(where: { $0.slug == slug }) else {
+                    throw APIError.server(code: APIErrorCode.conflict, message: "That title has not been earned", status: 409)
+                }
+                character.title = title.name
+                character.titlePinned = true
+            } else {
+                character.title = earned.last?.name ?? character.title
+                character.titlePinned = false
+            }
             self.storedCharacter = character
             return character
         }

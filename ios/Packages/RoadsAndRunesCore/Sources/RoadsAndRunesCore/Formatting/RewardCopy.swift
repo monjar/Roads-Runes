@@ -21,7 +21,11 @@ public enum RewardCopy {
         case "MONSTER_BEATEN": return "Things seen off"
         case "BLOWS_LANDED": return "Things loosened"
         case "SET_COMPLETED": return "A set complete"
-        case "SOCIAL_QUEST_COMPLETED": return "Ridden together"
+        case "SOCIAL_QUEST_COMPLETED": return "Out together"
+        case "PATHFINDER": return "First new cells, twice"
+        case "FAR_WANDERER": return "Far from home"
+        case "WELCOME_BACK": return "The roads kept your place"
+        case "WEEK_NOTICE": return "The week's notice"
         case "REGION_COMPLETED": return "A region complete"
         case "CLASS_BONUS": return className.map { "\($0) bonus" } ?? "Class bonus"
         default: return humanised(source)
@@ -41,6 +45,7 @@ public enum RewardCopy {
         case "STREAK": return "Days kept"
         case "SET_COMPLETED": return "A set complete"
         case "STORY_ARC": return "An arc finished"
+        case "WEEK_NOTICE": return "The week's notice"
         default: return humanised(kind)
         }
     }

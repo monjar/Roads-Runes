@@ -113,6 +113,9 @@ struct CharacterView: View {
             }
             .card()
 
+            NavigationLink { TitlesScreen() } label: { moreRow("Titles", symbol: "rosette") }
+                .buttonStyle(.pressable)
+                .accessibilityIdentifier("character.titles")
             if container.session.isEnabled("codex") {
                 NavigationLink { CodexScreen() } label: { moreRow("Codex", symbol: "book.fill") }
                     .buttonStyle(.pressable)

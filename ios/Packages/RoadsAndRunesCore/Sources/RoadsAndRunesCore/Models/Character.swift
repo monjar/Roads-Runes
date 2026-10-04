@@ -104,6 +104,8 @@ public struct Character: Codable, Hashable, Identifiable, Sendable {
     public var streakActiveToday: Bool?
     /// The sheet a ride started now would carry (0.6.1), for an outing started offline.
     public var sheet: CharacterSheet? = nil
+    /// The player chose the title they wear (0.6.2); earning another no longer changes it.
+    public var titlePinned: Bool? = nil
 
     public init(
         id: UUID, name: String, characterClass: CharacterClass, overallLevel: Int, overallXP: Int,
@@ -290,5 +292,44 @@ public struct RiderProfile: Codable, Hashable, Sendable {
         self.gravelComfort = gravelComfort
         self.technicalTrailComfort = technicalTrailComfort
         self.cyclewayPreference = cyclewayPreference
+    }
+}
+
+/// A title, earned or not (`GET /character/titles`, 0.6.2): `how` says how to earn it.
+public struct TitleInfo: Codable, Hashable, Identifiable, Sendable {
+    public var slug: String
+    public var name: String
+    /// LEVEL, ARC, DEED or CAST.
+    public var source: String
+    public var how: String
+    public var earned: Bool
+    public var earnedAt: Date?
+    public var worn: Bool
+
+    public var id: String { slug }
+
+    public init(slug: String, name: String, source: String, how: String, earned: Bool, earnedAt: Date? = nil, worn: Bool = false) {
+        self.slug = slug
+        self.name = name
+        self.source = source
+        self.how = how
+        self.earned = earned
+        self.earnedAt = earnedAt
+        self.worn = worn
+    }
+}
+
+/// `PUT /character/title`: an earned title to wear, or nil for the newest earned.
+public struct TitleChoice: Codable, Hashable, Sendable {
+    public var slug: String?
+
+    public init(slug: String?) {
+        self.slug = slug
+    }
+
+    // `{"slug": null}` is the request to go back to the newest; it must be sent, not dropped.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(slug, forKey: .slug)
     }
 }

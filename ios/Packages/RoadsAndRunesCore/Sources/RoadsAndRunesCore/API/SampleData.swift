@@ -77,7 +77,7 @@ public enum SampleData {
         id: characterId, name: "Rowan", characterClass: .explorer,
         overallLevel: 8, overallXP: 1820, nextOverallLevelXP: 2200, overallLevelFloorXP: 1500,
         classLevel: 6, classXP: 900, nextClassLevelXP: 1200, classLevelFloorXP: 700,
-        title: "Wanderer", abilities: sampleAbilities, unspentAbilityPoints: 1, createdAt: referenceDate
+        title: "Familiar Face", abilities: sampleAbilities, unspentAbilityPoints: 1, createdAt: referenceDate
     )
 
     public static let sampleClasses: [ClassInfo] = [
@@ -363,7 +363,7 @@ public enum SampleData {
 
     // MARK: Social & meta
 
-    public static let sampleFriend = FriendSummary(id: friendId, displayName: "Bea", characterClass: .explorer, overallLevel: 5, title: "Pathfinder", since: referenceDate)
+    public static let sampleFriend = FriendSummary(id: friendId, displayName: "Bea", characterClass: .explorer, overallLevel: 5, title: "Familiar Face", since: referenceDate)
 
     public static let sampleParty = Party(
         id: partyId, ownerId: userId, questId: questId, routeId: nil, status: .forming, completionRule: .group,
@@ -378,31 +378,65 @@ public enum SampleData {
         StoryArc(
             slug: "first-light",
             title: "First Light",
-            description: "Nobody starts as an adventurer. They start by going outside, and then going a little further than last time.",
+            description: "Nobody starts out knowing the roads. They start by going outside, and then a little further than last time.",
             minLevel: 1,
             unlocked: true,
             quests: [
                 StoryStep(slug: "first-light-out-of-the-door", sequence: 1, title: "Out of the Door",
-                          description: "The hardest part of every ride is the first hundred metres.", state: .completed),
+                          description: "The hardest part of any outing is the first hundred metres.", state: .completed),
                 StoryStep(slug: "first-light-something-green", sequence: 2, title: "Something Green",
-                          description: "Every town keeps a green place, and most riders pass the turning for years.", state: .open, questId: questId),
+                          description: "Every town keeps a green place, and most people pass the turning for years.", state: .open, questId: questId),
                 StoryStep(slug: "first-light-somewhere-to-look-from", sequence: 3, title: "Somewhere to Look From",
-                          description: "Ground you have ridden looks different from above it.", state: .locked),
-            ]
+                          description: "Ground you have read looks different from above it.", state: .locked),
+            ],
+            track: "MAIN", act: 1, actTitle: "The Board", chapter: 1, giver: "ada-pym",
+            reward: StoryStanding.Reward(title: "Early Riser", ac: 100)
+        ),
+        StoryArc(
+            slug: "what-settles",
+            title: "What Settles",
+            description: "A road used and not read goes vague, and things settle in the vague parts. Not wicked; in the way.",
+            minLevel: 1,
+            unlocked: false,
+            quests: [
+                StoryStep(slug: "what-settles-something-in-the-way", sequence: 1, title: "Something in the Way",
+                          description: "One on the board with a name and a place.", state: .ready),
+                StoryStep(slug: "what-settles-a-box-nobody-came-back-for", sequence: 2, title: "A Box Nobody Came Back For",
+                          description: "A waywright buried it when the gate closed.", state: .locked),
+                StoryStep(slug: "what-settles-three-patches", sequence: 3, title: "Three Patches",
+                          description: "Three patches of unread ground within reach.", state: .locked),
+            ],
+            track: "MAIN", act: 1, actTitle: "The Board", chapter: 2, after: "first-light", giver: "ada-pym",
+            reward: StoryStanding.Reward(title: "Somebody", ac: 150)
         ),
         StoryArc(
             slug: "the-edge-of-the-map",
             title: "The Edge of the Map",
-            description: "An Explorer's map has an edge, and the edge moves. This is the work of moving it.",
+            description: "A Wayfinder's map has an edge, and the edge moves. This is the work of moving it.",
             characterClass: .explorer,
             minLevel: 2,
-            unlocked: false,
+            unlocked: true,
             quests: [
                 StoryStep(slug: "edge-of-the-map-past-the-fog", sequence: 1, title: "Past the Fog",
-                          description: "Roads you have never travelled, and enough of them to be sure it was deliberate.", state: .ready),
-            ]
+                          description: "Ways you have never taken, and enough of them to be sure it was deliberate.", state: .waiting,
+                          waitingReason: "Waiting for unread ground within reach."),
+            ],
+            track: "SIDE", giver: "nell-foss", reward: StoryStanding.Reward(title: "Edgewalker", ac: 200)
         ),
     ]
+
+    public static let sampleTitles: [TitleInfo] = [
+        TitleInfo(slug: "level-1", name: "Passer-by", source: "LEVEL", how: "Go out once.", earned: true, earnedAt: referenceDate),
+        TitleInfo(slug: "level-5", name: "Familiar Face", source: "LEVEL", how: "Reach level 5.", earned: true, earnedAt: referenceDate, worn: true),
+        TitleInfo(slug: "arc-first-light", name: "Early Riser", source: "ARC", how: "Finish First Light.", earned: false),
+        TitleInfo(slug: "level-10", name: "Roadwise", source: "LEVEL", how: "Reach level 10.", earned: false),
+    ]
+
+    public static let sampleWeekNotice = WeekNotice(
+        week: "2026-W41", kind: "OUTINGS", title: "Three outings this week.", line: "Pinned Monday. Comes down Sunday night.",
+        postedBy: "Ada Pym", target: 3, unit: "outings", progress: 1, done: false, paid: false, coins: 150, xp: 200,
+        endsAt: referenceDate.addingTimeInterval(4 * 86_400)
+    )
 
     public static let sampleConfig = AppConfig(
         featureFlags: ["fog_of_war": false, "story_quests": false, "party_quests": false, "strava": false,

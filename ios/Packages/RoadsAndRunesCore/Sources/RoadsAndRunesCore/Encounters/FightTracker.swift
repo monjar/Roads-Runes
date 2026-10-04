@@ -63,6 +63,8 @@ public struct FightTracker: Sendable {
     private let cfg: CombatConstants
     private var foes: [UUID: (object: WorldObject, foe: FightResolver.Foe)] = [:]
     private var points: [FightResolver.Point] = []
+    /// Metres made good so far, for knacks that start after a long way (Second Wind).
+    private var madeGood = 0.0
     private var newCellIndices: [Int] = []
     private var wordIndices: [Int] = []
     private var runeHits: [UUID: FightResolver.RuneHit] = [:]
@@ -104,6 +106,7 @@ public struct FightTracker: Sendable {
     public mutating func add(position: Coordinate, altitude: Double?, accuracy: Double?) -> [FightNews] {
         let ok = accuracy.map { $0 >= 0 && $0 <= cfg.maxAccuracyMeters } ?? true
         let roadCell = setup.indexing.cell(latitude: position.latitude, longitude: position.longitude, resolution: cfg.roadCellResolution)
+        if ok, let last = points.last(where: \.ok) { madeGood += GeoMath.distance(last.coordinate, position) }
         points.append(FightResolver.Point(latitude: position.latitude, longitude: position.longitude, altitude: altitude, ok: ok, roadCell: roadCell))
         let index = points.count - 1
         let ground = setup.indexing.cell(latitude: position.latitude, longitude: position.longitude, resolution: setup.groundResolution)
@@ -149,8 +152,14 @@ public struct FightTracker: Sendable {
     private mutating func evaluate(_ id: UUID) -> [FightNews] {
         guard let entry = foes[id] else { return [] }
         if runeHits[id] == nil, let hit = runeHit(for: entry.foe) { runeHits[id] = hit }
+        // The build against this one, as the server works it out (elders and bounties,
+        // a long way); the Historian's old places are the server's alone.
+        let pct = setup.sheet.pct(
+            againstElder: entry.object.tier >= 2 || entry.object.isBounty, madeGoodMeters: madeGood,
+            onFoot: setup.activity == .run || setup.activity == .walk
+        )
         let report = FightResolver.resolve(
-            points, foe: entry.foe, activity: setup.activity.rawValue, pct: setup.sheet.damagePct, cfg: cfg,
+            points, foe: entry.foe, activity: setup.activity.rawValue, pct: pct, cfg: cfg,
             newCellIndices: newCellIndices, runeHit: runeHits[id], wordIndices: wordIndices
         )
         reports[id] = report

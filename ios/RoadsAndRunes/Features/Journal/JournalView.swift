@@ -326,6 +326,10 @@ struct AdventureRow: View {
                         .foregroundStyle(entry.quest.map { ClassStyle.textColor($0.characterClass) } ?? Theme.Colors.sageDeep)
                 }
                 Text(meta(f)).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).lineLimit(1)
+                // The first line of the entry, for a journal that reads like one.
+                if let written = entry.entry, let first = written.split(separator: ".").first, !first.isEmpty {
+                    Text(first + ".").font(Theme.Typography.caption).italic().foregroundStyle(Theme.Colors.inkSoft).lineLimit(1)
+                }
             }
         }
         .padding(.vertical, 12)
@@ -454,12 +458,17 @@ struct AdventureDetailView: View {
                     Spacer(minLength: 8)
                     Text("+\(entry.xpAwarded) XP").font(Theme.Typography.text(22, .bold)).foregroundStyle(Theme.Colors.sageDeep)
                 }
+                if let written = entry.entry, !written.isEmpty {
+                    Text(written).font(Theme.Typography.text(15)).italic().foregroundStyle(Theme.Colors.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("journal.entry")
+                }
                 MapLibreView(styleURL: Config.mapStyleURL(for: .adventure), center: geometry?.path.first ?? entry.quest?.origin, zoom: 12, cells: [], route: geometry?.path ?? [], markers: markers)
                     .frame(height: 220)
                     .background(Theme.Colors.surface)
                     .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
                 HStack(spacing: 8) {
-                    FactTile(value: f.distance(meters: entry.ride.distanceMeters), label: "Ridden")
+                    FactTile(value: f.distance(meters: entry.ride.distanceMeters), label: "Distance")
                     FactTile(value: f.duration(seconds: Double(entry.ride.durationSeconds)), label: "Time")
                     FactTile(value: f.elevation(meters: entry.ride.elevationGainMeters), label: "Climbed")
                     FactTile(value: f.distance(meters: entry.newTerritoryMeters), label: "New", valueColor: Theme.Colors.sageDeep)

@@ -7,7 +7,7 @@ import SwiftUI
 struct OnboardingFlow: View {
     @Environment(AppContainer.self) private var container
     @State private var step: Step = .welcome
-    @State private var prologueDone = AppContainer.isUITesting
+    @State private var prologueDone = AppContainer.isUITesting && !AppContainer.showsPrologueInUITest
 
     enum Step { case welcome, character, activity, bike, location }
 

@@ -241,6 +241,11 @@ public struct AdventureSummary: Codable, Hashable, Sendable {
     public var streak: StreakOutcome?
     /// The thing the outing was planned for; its fight leads the reckoning.
     public var quarryId: String? = nil
+    /// 0.6.2: the entry the outing left, the week's notice when this outing met it,
+    /// and creatures met for the first time (the reckoning's codex stamp).
+    public var entry: String? = nil
+    public var weekNotice: WeekNotice? = nil
+    public var codexFirsts: [CodexFirst]? = nil
 
     public init(ride: Ride, quest: Quest? = nil, questCompletion: QuestCompletion? = nil, xpAwarded: Int, xpBreakdown: [XPBreakdownEntry], newCells: Int, newTerritoryMeters: Double, newRoadsMeters: Double, discoveries: [DiscoverySummary], levelUps: [LevelUp], abilitiesUnlocked: [Ability], titlesUnlocked: [String]? = nil, flags: [String], acAwarded: Int? = nil, acBreakdown: [ACBreakdownEntry]? = nil, walletBalance: Int? = nil, worldObjects: WorldObjectOutcome? = nil, streak: StreakOutcome? = nil) {
         self.streak = streak
@@ -275,10 +280,13 @@ public struct AdventureEntry: Codable, Hashable, Identifiable, Sendable {
     public var levelUps: [LevelUp]?
     public var notes: String?
     public var photos: [String]
+    /// The outing's written lines (0.6.2).
+    public var entry: String?
 
     public var id: UUID { ride.id }
 
-    public init(ride: Ride, quest: Quest? = nil, xpAwarded: Int, discoveries: [DiscoverySummary], newTerritoryMeters: Double, newCells: Int? = nil, levelUps: [LevelUp]? = nil, notes: String? = nil, photos: [String] = []) {
+    public init(ride: Ride, quest: Quest? = nil, xpAwarded: Int, discoveries: [DiscoverySummary], newTerritoryMeters: Double, newCells: Int? = nil, levelUps: [LevelUp]? = nil, notes: String? = nil, photos: [String] = [], entry: String? = nil) {
+        self.entry = entry
         self.ride = ride
         self.quest = quest
         self.xpAwarded = xpAwarded

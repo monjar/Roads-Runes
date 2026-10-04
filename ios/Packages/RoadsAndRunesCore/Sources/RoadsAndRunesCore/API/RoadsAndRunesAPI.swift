@@ -33,6 +33,10 @@ public protocol RoadsAndRunesAPI: Sendable {
     func claimWorldObject(id: UUID, _ request: WorldObjectClaimRequest) async throws -> WorldObjectClaim
     func abilities() async throws -> [AbilityState]
     func unlockAbility(id: String) async throws -> Character
+    /// Every title there is, earned first (0.6.2).
+    func titles() async throws -> [TitleInfo]
+    /// Wear an earned title, or nil to wear the newest earned again (0.6.2).
+    func wearTitle(slug: String?) async throws -> Character
     func bikes() async throws -> [Bike]
     func createBike(_ bike: BikeIn) async throws -> Bike
     func updateBike(id: UUID, _ patch: BikeIn) async throws -> Bike
@@ -51,6 +55,8 @@ public protocol RoadsAndRunesAPI: Sendable {
     func quest(id: UUID) async throws -> Quest
     /// The authored arcs and where this rider stands in each.
     func storyArcs() async throws -> [StoryArc]
+    /// This week's notice and how far along it is (0.6.2).
+    func weekNotice() async throws -> WeekNotice
     func acceptQuest(id: UUID) async throws -> Quest
     func startQuest(id: UUID, rideId: UUID?) async throws -> Quest
     func reportQuestProgress(id: UUID, events: [ObjectiveEvent]) async throws -> Quest
