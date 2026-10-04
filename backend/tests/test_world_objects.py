@@ -210,10 +210,15 @@ async def test_a_lure_costs_coins_and_brings_company(explorer_client):
     world_objects.forget_checks()
     # Nowhere with a name near the middle of the river: nothing comes, nothing is taken.
     r = await c.post("/world/objects/lure", json={"latitude": 51.5072, "longitude": -0.0400})
-    assert r.status_code == 409 and r.json()["error"]["code"] == "NOTHING_TO_LURE"
+    assert r.status_code == 409 and r.json()["error"]["code"] == "NO_PLACE_NEAR"
+    assert "named place" in r.json()["error"]["message"]
     stave_hill = (51.4990, -0.0480)
     r = await c.post("/world/objects/lure", json={"latitude": stave_hill[0], "longitude": stave_hill[1]})
     assert r.status_code == 409 and r.json()["error"]["code"] == "INSUFFICIENT_AC"
+    # A lamp that could not be paid for leaves nothing behind.
+    async with get_session_factory()() as db:
+        left = (await db.execute(select(WorldObject))).scalars().all()
+        assert not left, [(o.seed, o.kind, o.payload.get("anchorName")) for o in left]
     me = (await c.get("/users/me")).json()
     async with get_session_factory()() as db:
         await economy.credit(db, uuid.UUID(me["id"]), 60, "ADJUSTMENT")
@@ -224,6 +229,66 @@ async def test_a_lure_costs_coins_and_brings_company(explorer_client):
     assert len(came) == 1 and came[0]["kind"] == "MONSTER"
     assert came[0]["anchorName"] == "Stave Hill"
     assert (await c.get("/wallet")).json()["balance"] == 10
+
+
+async def test_a_lamp_works_on_a_full_day_and_says_why_when_it_will_not(explorer_client):
+    """On an ordinary day the world has put something on nearly every named place
+    near the player. A chest or a piece there does not stop a lamp; a creature
+    already there is named, and nothing is charged."""
+    c = explorer_client
+    await seed_discoveries()
+    world_objects.forget_checks()
+    me = (await c.get("/users/me")).json()
+    async with get_session_factory()() as db:
+        await economy.credit(db, uuid.UUID(me["id"]), 200, "ADJUSTMENT")
+        await db.commit()
+    live = await spawned(c)
+
+    def apart(a: dict, b: dict) -> float:
+        return world_objects.haversine_m(a["latitude"], a["longitude"], b["latitude"], b["longitude"])
+
+    creatures = [o for o in live if o["kind"] == "MONSTER"]
+    others = [o for o in live if o["kind"] != "MONSTER" and all(apart(o, m) >= 90 for m in creatures)]
+    assert creatures and others, [(o["kind"], o["anchorName"]) for o in live]
+    creature, other = creatures[0], others[0]
+
+    # Asking first costs nothing and says what would happen.
+    at = {"latitude": creature["latitude"], "longitude": creature["longitude"]}
+    check = (await c.get("/world/objects/lure", params=at)).json()
+    assert check["ok"] is False and check["code"] == "ALREADY_HERE" and check["cost"] == 50
+    assert creature["name"] in check["message"] and creature["anchorName"] in check["message"]
+    r = await c.post("/world/objects/lure", json=at)
+    assert r.status_code == 409 and r.json()["error"]["code"] == "ALREADY_HERE"
+    assert (await c.get("/wallet")).json()["balance"] == 200
+
+    at = {"latitude": other["latitude"], "longitude": other["longitude"]}
+    check = (await c.get("/world/objects/lure", params=at)).json()
+    assert check == {"ok": True, "cost": 50, "placeName": other["anchorName"], "code": None, "message": None}
+    r = await c.post("/world/objects/lure", json=at)
+    assert r.status_code == 200, r.text
+    came = r.json()
+    assert len(came) == 1 and came[0]["kind"] == "MONSTER" and came[0]["anchorName"] == other["anchorName"]
+    assert (await c.get("/wallet")).json()["balance"] == 150
+    # Its creature stands there now.
+    r = await c.post("/world/objects/lure", json=at)
+    assert r.status_code == 409 and r.json()["error"]["code"] == "ALREADY_HERE"
+    assert (await c.get("/wallet")).json()["balance"] == 150
+
+
+async def test_two_lamps_in_the_same_second_each_bring_their_own(explorer_client, monkeypatch):
+    """Lamps were seeded to the second: the second of two took its coins and placed nothing."""
+    c = explorer_client
+    await seed_discoveries()
+    me = (await c.get("/users/me")).json()
+    async with get_session_factory()() as db:
+        await economy.credit(db, uuid.UUID(me["id"]), 100, "ADJUSTMENT")
+        await db.commit()
+    moment = datetime.now(UTC)
+    monkeypatch.setattr(world_objects, "utcnow", lambda: moment)
+    for place in ((51.4990, -0.0480), (51.4950, -0.0450)):  # Stave Hill, The Crown: one tile
+        r = await c.post("/world/objects/lure", json={"latitude": place[0], "longitude": place[1]})
+        assert r.status_code == 200 and len(r.json()) == 1, r.text
+    assert (await c.get("/wallet")).json()["balance"] == 0
 
 
 async def test_starting_over_clears_the_world(explorer_client):

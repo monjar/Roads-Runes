@@ -24,6 +24,7 @@ from app.core.geo import haversine_m
 from app.core.logging import get_logger
 from app.core.security import utcnow
 from app.db.spatial import bbox_filter
+from app.discoveries import osm_import
 from app.discoveries.sensitivity import is_sensitive
 from app.discoveries.service import nearby as discoveries_nearby
 from app.economy import service as economy
@@ -512,6 +513,55 @@ async def _ensure_spawned(
 LURE_REACH_M = 250.0
 
 
+@dataclass(frozen=True)
+class LampSpot:
+    """Where a lamp left at a spot would bring something, or why it would not."""
+
+    place: Any | None  # the Discovery it would come to
+    code: str | None = None
+    message: str | None = None
+
+
+async def lamp_spot(db: AsyncSession, settings: Any, user_id: uuid.UUID, latitude: float, longitude: float) -> LampSpot:
+    """The named place nearest the spot, within reach, that has no creature on it.
+
+    A chest or a piece at the place does not stop a lamp: on an ordinary day the
+    world has put something on most named places near the player, and the lamp
+    used to refuse every one of them while telling the player to try a park. The
+    places of an area nobody has planned in yet are fetched first, as a quest
+    board's are.
+    """
+    await osm_import.ensure_pois(settings, latitude, longitude)
+    places = [
+        d
+        for d in await discoveries_nearby(db, latitude, longitude, LURE_REACH_M, limit=40)
+        if not is_sensitive(d.name, d.tags)
+    ]
+    if not places:
+        return LampSpot(
+            None,
+            "NO_PLACE_NEAR",
+            f"A lamp needs a named place to shine on, like a park, a pub or a landmark. "
+            f"There isn't one within {LURE_REACH_M:.0f} m of here.",
+        )
+    spacing = float(load_config()["minSpacingMeters"])
+    creatures = [
+        o for o in await live_objects(db, user_id, latitude, longitude, LURE_REACH_M + spacing) if o.kind == "MONSTER"
+    ]
+    nearest = places[0]
+    standing = next(
+        (o for o in creatures if haversine_m(nearest.latitude, nearest.longitude, o.latitude, o.longitude) < spacing),
+        None,
+    )
+    if standing is not None:
+        return LampSpot(
+            None,
+            "ALREADY_HERE",
+            f"{standing.payload.get('name', 'Something')} is already at {nearest.name}. No lamp needed.",
+        )
+    return LampSpot(nearest)
+
+
 async def lure(
     db: AsyncSession,
     settings: Any,
@@ -522,30 +572,19 @@ async def lure(
     character_class: str,
     activity: str,
 ) -> list[WorldObject]:
-    """A lamp left out: one thing comes to the place the player picked.
+    """A lamp left out: one creature comes to the place the player picked.
 
-    It goes to the nearest real place within reach of that spot (a park, a pub, a
-    landmark), quota aside, and the coins are taken only if something comes. It
-    used to take the coins first and then top up to quota, which on a full day
-    placed nothing at all.
+    It goes to the nearest named place within reach of that spot (a park, a pub,
+    a landmark), quota aside. The coins are taken after it has come, in the same
+    transaction, so a refusal or a failure costs nothing.
     """
-    cfg = load_config()
-    spacing = float(cfg["minSpacingMeters"])
-    live = await live_objects(db, user_id, latitude, longitude, LURE_REACH_M + spacing)
-    candidates = [
-        d
-        for d in await discoveries_nearby(db, latitude, longitude, LURE_REACH_M, limit=40)
-        if not is_sensitive(d.name, d.tags)
-        and all(haversine_m(d.latitude, d.longitude, o.latitude, o.longitude) >= spacing for o in live)
-    ]
-    if not candidates:
-        raise Conflict(
-            "Nothing would come to that spot. Try a park, a pub or somewhere with a name.",
-            code="NOTHING_TO_LURE",
-        )
+    spot = await lamp_spot(db, settings, user_id, latitude, longitude)
+    if spot.place is None:
+        raise Conflict(spot.message or "", code=spot.code or "NOTHING_TO_LURE")
     cost = int(load_ac_rules()["lure"]["costAC"])
-    await economy.debit(db, user_id, cost, "LURE", payload={"latitude": latitude, "longitude": longitude})
-    place = candidates[0]
+    await economy.can_pay(db, user_id, cost)
+    cfg = load_config()
+    place = spot.place
     anchor = Anchor(
         str(place.id),
         place.name,
@@ -555,9 +594,9 @@ async def lure(
         place.h3_index,
         tags=dict(place.tags or {}),
     )
-    seed = day_seed(
-        user_id, utcnow().date().isoformat(), tile_of(latitude, longitude), f"lure:{utcnow().timestamp():.0f}"
-    )
+    # Every lamp its own seed: one to the second let two lamps a moment apart share
+    # it, and the second took the coins and placed nothing.
+    seed = day_seed(user_id, utcnow().date().isoformat(), tile_of(latitude, longitude), f"lure:{uuid.uuid4().hex}")
     plans = plan_spawns(
         seed=seed,
         kind="MONSTER",
@@ -573,7 +612,11 @@ async def lure(
         activity=normalise(activity),
         centre=None,
     )
-    return await _persist(db, user_id, plans, utcnow(), float(cfg["expiryDays"]), settings.h3_resolution)
+    came = await _persist(db, user_id, plans, utcnow(), float(cfg["expiryDays"]), settings.h3_resolution)
+    if not came:
+        raise Conflict("The lamp went out and nothing came. Your coins were not taken.", code="LAMP_WENT_OUT")
+    await economy.debit(db, user_id, cost, "LURE", payload={"latitude": latitude, "longitude": longitude})
+    return came
 
 
 ROUTE_REACH_M = 150.0

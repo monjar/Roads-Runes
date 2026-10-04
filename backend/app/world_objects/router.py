@@ -10,6 +10,7 @@ from app.core.deps import CurrentUser, DBDep, SettingsDep
 from app.core.errors import NotFound
 from app.core.schemas import APIModel
 from app.economy import service as economy
+from app.economy.rules import load_ac_rules
 from app.inventory import service as inventory
 from app.progression.engine import XPLine, cap_to_day, claim_lines, load_xp_rules
 from app.progression.service import grant, xp_today
@@ -48,6 +49,34 @@ async def objects(
     )
     owned = await service.pieces_owned(db, user.id)
     return [service.to_out(o, owned) for o in live]
+
+
+class LampCheckOut(APIModel):
+    """Whether a lamp would bring something here, asked before any coins are spent."""
+
+    ok: bool
+    cost: int
+    placeName: str | None = None
+    code: str | None = None
+    message: str | None = None
+
+
+@router.get("/lure", response_model=LampCheckOut)
+async def lure_check(
+    user: CurrentUser,
+    db: DBDep,
+    settings: SettingsDep,
+    latitude: float = Query(ge=-90, le=90),
+    longitude: float = Query(ge=-180, le=180),
+) -> LampCheckOut:
+    spot = await service.lamp_spot(db, settings, user.id, latitude, longitude)
+    return LampCheckOut(
+        ok=spot.place is not None,
+        cost=int(load_ac_rules()["lure"]["costAC"]),
+        placeName=spot.place.name if spot.place is not None else None,
+        code=spot.code,
+        message=spot.message,
+    )
 
 
 @router.post("/lure", response_model=list[WorldObjectOut])
