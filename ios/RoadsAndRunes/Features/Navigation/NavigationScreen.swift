@@ -49,7 +49,8 @@ struct NavigationScreen: View {
                 if recorder.recentObjectiveCompletion != nil, let instruction = recorder.progress?.nextInstruction {
                     MapPill(text: "\(TurnArrowView.phrase(for: instruction.sign)) · \(formatter.distance(meters: recorder.progress?.distanceToNextInstruction ?? instruction.distanceMeters))")
                 } else {
-                    ObjectiveBanner(objective: recorder.currentObjective, quest: recorder.quest, title: recorder.title, position: recorder.lastFix?.coordinate, formatter: formatter)
+                    ObjectiveBanner(objective: recorder.currentObjective, quest: recorder.quest, title: recorder.title ?? LoreCopy.free(recorder.activity),
+                                    position: recorder.lastFix?.coordinate, formatter: formatter)
                 }
                 if let stop = recorder.nearbyStop {
                     NearbyStopCard(
@@ -107,10 +108,12 @@ struct NavigationScreen: View {
             .padding(.bottom, 8)
         }
         .background(Theme.Colors.cream.ignoresSafeArea())
-        .confirmationDialog("End this ride?", isPresented: $confirmingEnd, titleVisibility: .visible) {
-            Button("End & save") { Task { await recorder.finish() } }
-            Button("Discard ride", role: .destructive) { recorder.discard() }
-            Button("Keep riding", role: .cancel) {}
+        .confirmationDialog("End this \(journey)?", isPresented: $confirmingEnd, titleVisibility: .visible) {
+            Button("Save \(journey)") { Task { await recorder.finish() } }
+                .accessibilityIdentifier("ride.save")
+            Button("Discard \(journey)", role: .destructive) { recorder.discard() }
+                .accessibilityIdentifier("ride.discard")
+            Button("Keep going", role: .cancel) {}
         } message: {
             Text("\(formatter.distance(meters: recorder.stats.distanceMeters)) · \(formatter.duration(seconds: recorder.stats.elapsedSeconds)) · saved to Health")
         }
@@ -132,9 +135,12 @@ struct NavigationScreen: View {
                 onReroute: { recorder.rerouteNow() }
             )
         } else {
-            TurnCard(progress: recorder.progress, route: recorder.package?.route, state: recorder.state, formatter: formatter)
+            TurnCard(progress: recorder.progress, route: recorder.package?.route, state: recorder.state, formatter: formatter, activity: recorder.activity)
         }
     }
+
+    /// "ride", "run" or "walk": what the screen calls the journey under way.
+    private var journey: String { LoreCopy.journey(recorder.activity) }
 
     private var isOffRoute: Bool {
         recorder.state == .offRoute || recorder.state == .rerouting || recorder.isRerouting
@@ -154,12 +160,12 @@ struct NavigationScreen: View {
 
     private var statsPill: some View {
         HStack(spacing: 0) {
-            NavMetric(title: "\(formatter.distanceUnitLabel) ridden", value: formatter.distanceValue(meters: recorder.stats.distanceMeters).formatted(.number.precision(.fractionLength(1))))
-            NavMetric(title: "\(formatter.distanceUnitLabel) new territory", value: formatter.distanceValue(meters: recorder.newTerritoryMeters).formatted(.number.precision(.fractionLength(1))), accent: true, alignment: .center)
+            NavMetric(title: "\(formatter.distanceUnitLabel) \(LoreCopy.travelled(recorder.activity))", value: formatter.distanceValue(meters: recorder.stats.distanceMeters).formatted(.number.precision(.fractionLength(1))))
+            NavMetric(title: "\(formatter.distanceUnitLabel) newly explored", value: formatter.distanceValue(meters: recorder.newTerritoryMeters).formatted(.number.precision(.fractionLength(1))), accent: true, alignment: .center)
                 .padding(.horizontal, 10)
                 .overlay(alignment: .leading) { Rectangle().fill(Theme.Colors.cream.opacity(0.15)).frame(width: 1) }
                 .overlay(alignment: .trailing) { Rectangle().fill(Theme.Colors.cream.opacity(0.15)).frame(width: 1) }
-            NavMetric(title: "ride time", value: formatter.duration(seconds: recorder.stats.elapsedSeconds), alignment: .trailing)
+            NavMetric(title: "time", value: formatter.duration(seconds: recorder.stats.elapsedSeconds), alignment: .trailing)
             Button { recorder.pause() } label: {
                 Image(systemName: "pause.fill")
                     .font(.system(size: 18, weight: .bold))
@@ -169,7 +175,8 @@ struct NavigationScreen: View {
             }
             .buttonStyle(.pressable)
             .padding(.leading, 18)
-            .accessibilityLabel("Pause ride")
+            .accessibilityLabel("Pause \(journey)")
+            .accessibilityIdentifier("ride.pause")
         }
         .padding(.vertical, 16)
         .padding(.horizontal, 22)
@@ -226,12 +233,13 @@ struct NavigationScreen: View {
             .foregroundStyle(Theme.Colors.cream)
             HStack(spacing: 10) {
                 Button { recorder.resume() } label: {
-                    HStack(spacing: 8) { Image(systemName: "play.fill"); Text("Resume") }
+                    HStack(spacing: 8) { Image(systemName: "play.fill"); Text("Resume \(journey)") }
                 }
                 .buttonStyle(.sage)
+                .accessibilityIdentifier("ride.resume")
                 .frame(maxWidth: .infinity)
                 Button { confirmingEnd = true } label: {
-                    Text("End")
+                    Text("End \(journey)")
                         .font(Theme.Typography.buttonSmall)
                         .foregroundStyle(Theme.Colors.terracottaLight)
                         .frame(maxWidth: .infinity)
@@ -240,6 +248,7 @@ struct NavigationScreen: View {
                 }
                 .buttonStyle(.pressable)
                 .frame(width: 120)
+                .accessibilityIdentifier("ride.end")
             }
         }
         .padding(.vertical, 20)
@@ -287,6 +296,8 @@ struct TurnCard: View {
     let route: RouteOption?
     let state: NavigationState
     let formatter: UnitFormatter
+    /// Ride, run or walk, for "Free run"; nil says "Free journey".
+    var activity: Activity?
 
     var body: some View {
         HStack(spacing: 18) {
@@ -315,7 +326,7 @@ struct TurnCard: View {
             } else {
                 Image(systemName: state == .paused ? "pause.fill" : "location.north.line.fill").font(.system(size: 40, weight: .bold)).foregroundStyle(Theme.Colors.ink).frame(width: 64)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(state == .paused ? "Paused" : (route == nil ? "Free ride" : "Follow the route")).font(Theme.Typography.text(24, .bold)).foregroundStyle(Theme.Colors.ink)
+                    Text(state == .paused ? "Paused" : (route == nil ? LoreCopy.free(activity) : "Follow the route")).font(Theme.Typography.text(24, .bold)).foregroundStyle(Theme.Colors.ink)
                     Text(route == nil ? "Every new road counts." : "Directions start at the first turn.").font(Theme.Typography.text(15)).foregroundStyle(Theme.Colors.muted)
                 }
                 Spacer(minLength: 0)
@@ -440,7 +451,7 @@ struct NearbyStopCard: View {
     }
 }
 
-/// "Seen off: Bog Wraith · +150 coins", for a few seconds, the moment it happens.
+/// "Defeated: Bog Wraith · +150 coins", for a few seconds, the moment it happens.
 struct ClaimToast: View {
     let object: WorldObject
 
@@ -460,7 +471,7 @@ struct ClaimToast: View {
 
     private var verb: String {
         switch object.kind {
-        case .monster: return "Seen off"
+        case .monster: return "Defeated"
         case .chest: return "Opened"
         default: return "Found"
         }
@@ -468,25 +479,25 @@ struct ClaimToast: View {
 }
 
 /// The nearest thing in the world and how the fight is going: "Bog Wraith · 120 m".
-/// A thing fought by effort sits in a ring of its hold, redrawn in tenths with no
+/// A creature fought by effort sits in a ring of its health, redrawn in tenths with no
 /// numbers and no animation. Words under the name, and the note button, show
 /// only at a standstill (Core `Stillness`): nothing to read while moving.
 struct EncounterBanner: View {
     let status: EncounterStatus
     let formatter: UnitFormatter
     var isStill = false
-    /// How near a note has to be written for the word to land.
+    /// How near a note has to be written to strike.
     var wordReach: Double = 120
     var onNote: (String) -> Void = { _ in }
     @State private var writingNote = false
 
     private var loreMethod: KillMethod? { status.object.monster?.killMethods.first { $0.method == .lore } }
 
-    /// The note button: the word, near a thing fought by effort; the old way, the Scribe's way past it.
+    /// The note button: a note, near a creature fought by effort; the old way, the Scribe's way past it.
     private var noteLabel: String? {
         guard isStill, status.object.kind == .monster else { return nil }
         if status.object.monster?.foughtByEffort == true {
-            return status.distanceMeters <= wordReach ? "Write the word" : nil
+            return status.distanceMeters <= wordReach ? "Write a note" : nil
         }
         guard let lore = loreMethod else { return nil }
         // This sheet takes words, not photographs: a way in that needs one is not offered,
@@ -498,9 +509,9 @@ struct EncounterBanner: View {
 
     private var line: String {
         if let wants = status.object.monster?.wants, status.object.monster?.foughtByEffort == true {
-            return LoreCopy.wants(wants)
+            return LoreCopy.weakTo(wants)
         }
-        return status.hint ?? (status.object.kind == .chest ? "pass close by to open it" : "pass close by to pick it up")
+        return status.hint ?? (status.object.kind == .chest ? "Pass close by to open it" : "Pass close by to pick it up")
     }
 
     var body: some View {
@@ -552,7 +563,7 @@ struct EncounterBanner: View {
     }
 }
 
-/// Its hold, as a ring round its face: whole when untouched, drawn in tenths, with
+/// Its health, as a ring round its face: whole when untouched, drawn in tenths, with
 /// no numbers and no animation (docs/ROADMAP.md, 0.6.1).
 struct HoldRing<Content: View>: View {
     let tenths: Int
@@ -570,8 +581,8 @@ struct HoldRing<Content: View>: View {
         .frame(width: 40, height: 40)
         .transaction { $0.animation = nil }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Its hold")
-        .accessibilityValue("\(tenths) tenths left")
+        .accessibilityLabel("Creature health")
+        .accessibilityValue("\(max(0, min(10, tenths)) * 10) percent left")
         .accessibilityIdentifier("encounter.hold")
     }
 }
@@ -580,7 +591,7 @@ struct HoldRing<Content: View>: View {
 struct ObjectiveBanner: View {
     let objective: Objective?
     let quest: Quest?
-    /// Custom adventure name shown in place of "Free ride".
+    /// The journey's own name, or "Free ride".
     var title: String?
     let position: Coordinate?
     let formatter: UnitFormatter
@@ -600,7 +611,7 @@ struct ObjectiveBanner: View {
                     Text("\(Int(objective.progress.fraction * 100))%").font(Theme.Typography.text(16, .bold).monospacedDigit()).foregroundStyle(Theme.Colors.cream)
                 }
             } else {
-                Text(quest == nil ? "\(title ?? "Free ride") · every new road counts" : "All objectives complete · head home")
+                Text(quest == nil ? "\(title ?? LoreCopy.free(nil)) · every new road counts" : "All objectives complete · head home")
                     .font(Theme.Typography.text(14, .semibold)).foregroundStyle(Theme.Colors.cream).lineLimit(1)
                 Spacer(minLength: 0)
             }

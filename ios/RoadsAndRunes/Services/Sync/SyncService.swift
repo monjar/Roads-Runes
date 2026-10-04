@@ -17,6 +17,8 @@ struct PendingReckoning: Codable, Hashable {
     /// "Opened: Old chest": what the phone saw taken, which the server may yet overrule.
     var claimed: [String]
     var objectivesDone: Int
+    /// Ride, run or walk, so the holding screen says which; nil from a build before it was kept.
+    var activity: Activity?
 }
 
 /// Uploads ride data when the network allows and replays anything that

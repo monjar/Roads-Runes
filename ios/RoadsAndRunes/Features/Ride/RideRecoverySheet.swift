@@ -1,10 +1,13 @@
 import RoadsAndRunesCore
 import SwiftUI
 
-/// Spec §72: "We found an unfinished ride. Resume / Finish / Discard".
+/// Spec §72: an unfinished ride, run or walk. Resume / Save / Discard.
 struct RideRecoverySheet: View {
     @Environment(AppContainer.self) private var container
     let state: ActiveRideState
+
+    /// "ride", "run" or "walk", as it was started.
+    private var journey: String { LoreCopy.journey(state.activity.flatMap(Activity.init(rawValue:))) }
 
     var body: some View {
         let formatter = UnitFormatter(units: container.session.units)
@@ -15,13 +18,13 @@ struct RideRecoverySheet: View {
                 Image(systemName: "arrow.counterclockwise").font(.system(size: 28, weight: .bold)).foregroundStyle(Theme.Colors.terracotta)
             }
             .frame(width: 72, height: 72)
-            Text("We found an unfinished ride").font(Theme.Typography.title).foregroundStyle(Theme.Colors.ink).multilineTextAlignment(.center)
+            Text("You have an unfinished \(journey)").font(Theme.Typography.title).foregroundStyle(Theme.Colors.ink).multilineTextAlignment(.center)
             Text("Started \(state.startedAt.formatted(date: .abbreviated, time: .shortened)) · \(formatter.distance(meters: state.stats.distanceMeters)) · \(formatter.duration(seconds: state.stats.elapsedSeconds))")
                 .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).multilineTextAlignment(.center)
             VStack(spacing: Theme.Spacing.sm) {
-                Button("Resume") { Task { await container.rideRecorder.resumeRecovered() } }.buttonStyle(.primary)
-                Button("Finish and save") { Task { await container.rideRecorder.finishRecovered() } }.buttonStyle(.secondaryWide)
-                Button("Discard") { container.rideRecorder.discardRecovered() }
+                Button("Resume \(journey)") { Task { await container.rideRecorder.resumeRecovered() } }.buttonStyle(.primary)
+                Button("Save \(journey)") { Task { await container.rideRecorder.finishRecovered() } }.buttonStyle(.secondaryWide)
+                Button("Discard \(journey)") { container.rideRecorder.discardRecovered() }
                     .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.terracottaDeep)
             }
         }

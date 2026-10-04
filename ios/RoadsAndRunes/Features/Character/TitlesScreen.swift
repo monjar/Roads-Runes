@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Every title there is (docs/ROADMAP.md, 0.6.2): the earned ones to choose from,
 /// the rest with how they are earned. A title is worn as soon as it is earned until
-/// one is chosen here; "Wear the newest" lets go of the choice.
+/// one is chosen here; "Wear newest title" lets go of the choice.
 struct TitlesScreen: View {
     @Environment(AppContainer.self) private var container
     @State private var titles: [TitleInfo] = []
@@ -20,11 +20,11 @@ struct TitlesScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 if missing {
-                    EmptyState(icon: .laurels, title: "Not on this server yet", message: "Titles to choose come with the next server update.")
+                    EmptyState(icon: .laurels, title: "Titles aren't here yet", message: "They arrive with the next server update.")
                 } else if let error {
                     ErrorLine(text: error)
                 }
-                Text("A title is worn as soon as it is earned, until you choose one.")
+                Text("You wear your newest title until you choose one here.")
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
                 let earned = titles.filter(\.earned)
                 if !earned.isEmpty {
@@ -39,7 +39,7 @@ struct TitlesScreen: View {
                     }
                     .card()
                     if pinned {
-                        Button("Wear the newest") { Task { await wear(nil) } }
+                        Button("Wear newest title") { Task { await wear(nil) } }
                             .font(Theme.Typography.captionStrong)
                             .foregroundStyle(Theme.Colors.terracottaDeep)
                             .accessibilityIdentifier("titles.newest")
@@ -54,7 +54,7 @@ struct TitlesScreen: View {
                     .card()
                 }
                 if loaded, titles.isEmpty, !missing, error == nil {
-                    EmptyState(icon: .laurels, title: "No titles yet", message: "Go out once and you are a Passer-by.")
+                    EmptyState(icon: .laurels, title: "No titles yet", message: "Finish your first journey to earn Passer-by.")
                 }
             }
             .padding(22)
@@ -80,7 +80,7 @@ struct TitlesScreen: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title.name).font(Theme.Typography.text(15, .semibold))
                     .foregroundStyle(title.earned ? Theme.Colors.ink : Theme.Colors.muted)
-                Text(title.worn ? (pinned ? "Worn, by choice" : "Worn") : title.how)
+                Text(title.worn ? (pinned ? "Wearing it, by choice" : "Wearing it") : title.how)
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
             }
             Spacer(minLength: 0)

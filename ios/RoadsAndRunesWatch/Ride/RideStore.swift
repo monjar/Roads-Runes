@@ -34,6 +34,12 @@ final class RideStore {
 
     var stops: [WatchStop] { summary?.stops ?? [] }
 
+    /// Ride, run or walk, as the phone started it; nil before a route summary (or from an older phone).
+    var activity: Activity? { summary?.activity.flatMap(Activity.init(rawValue:)) }
+
+    /// "ride", "run" or "walk", so a run is never called a ride on the wrist.
+    var journey: String { LoreCopy.journey(activity) }
+
     /// Where the phone last said the rider was; the map follows it rather than
     /// starting a second GPS on the wrist.
     var riderCoordinate: Coordinate? { update?.coordinate }

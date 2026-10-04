@@ -11,13 +11,13 @@ public enum RideEvent: Hashable, Sendable {
     /// Something has come into sight.
     case sighted(name: String, kind: WorldObjectKind, meters: Double, method: KillMethodKind?)
     case claimed(name: String, kind: WorldObjectKind, coins: Int, set: SetStanding?)
-    /// A monster met and left behind: it got away.
+    /// A creature met and left behind: it escaped.
     case lost(name: String)
-    /// Effort is damage (0.6.1): it has noticed you, and what it wants.
+    /// Effort is damage (0.6.1): it has noticed you, and what it is weak to.
     case engaged(name: String, wants: [String])
-    /// A rune or the word landed on it: the deliberate blows, worth saying.
+    /// A rune ride or a note struck it: the deliberate blows, worth saying.
     case landed(name: String, kind: String)
-    /// Left behind with some of its hold taken: it will remember you.
+    /// Left behind with some of its health taken: weakened, it will remember you.
     case loosened(name: String)
     case objectiveCompleted(title: String, remaining: Int)
     /// The nth new cell in a run of new ground.
@@ -85,34 +85,35 @@ extension RideEvent {
         switch self {
         case .briefing:
             return pill(units: units).map { "\($0)." }
-        case .sighted(let name, let kind, let meters, let method):
+        case .sighted(let name, let kind, let meters, _):
             let distance = Self.spokenDistance(meters, units: units)
             switch kind {
             case .monster:
-                return "\(name), \(distance)." + (method.flatMap(Self.wants).map { " \($0)" } ?? "")
+                // Five words at most: what it is weak to is said when it notices you.
+                return "\(name), \(distance)."
             case .chest: return "A chest, \(distance)."
             default: return "A piece, \(distance)."
             }
         case .claimed(let name, let kind, let coins, let set):
             switch kind {
-            case .monster: return "\(name), gone. \(coins) coins."
+            case .monster: return "\(name) defeated! \(coins) coins."
             case .chest: return "Chest opened. \(coins) coins."
             default:
                 if let set { return "\(name). \(set.line)." }
                 return "\(name). \(coins) coins."
             }
         case .lost(let name):
-            return "\(name) got away."
+            return "\(name) escaped."
         case .engaged(let name, let wants):
-            // "Fen Troll. Wants height." Five words, name first.
+            // "Fen Troll. Weak to climbing." Five words, name first.
             guard let first = wants.first else { return "\(name)." }
-            return "\(name). Wants \(LoreCopy.kind(first))."
+            return "\(name). Weak to \(LoreCopy.kind(first))."
         case .landed(_, let kind):
-            return kind == "RUNE" ? "Rune landed." : "Word landed."
+            return kind == "RUNE" ? "Rune strike." : "Note strike."
         case .loosened(let name):
-            return "\(name), loosened."
+            return "\(name) weakened."
         case .objectiveCompleted(_, let remaining):
-            if remaining == 0 { return "Quest complete. Head home." }
+            if remaining == 0 { return "Quest complete! Head home." }
             return "Objective done. \(RewardCopy.spelled(remaining).capitalized) left."
         case .newGround:
             return nil
@@ -122,12 +123,12 @@ extension RideEvent {
             switch which {
             case .halfway: return "Halfway."
             case .lastKilometre: return units == .imperial ? "Under a mile to go." : "One kilometre to go."
-            case .arrived: return "You are there."
+            case .arrived: return "You've arrived."
             }
         case .hillAhead(let length, _):
             return "A hill ahead: \(formatter.distance(meters: (length / 100).rounded() * 100))."
         case .hillTop:
-            return "That was the worst of it."
+            return "Top of the hill."
         case .offRoute:
             return nil
         case .rerouted:
@@ -154,14 +155,14 @@ extension RideEvent {
             switch which {
             case .halfway: return "Halfway · \(formatter.distance(meters: remaining)) to go"
             case .lastKilometre: return "\(formatter.distance(meters: remaining)) to go"
-            case .arrived: return "You are there"
+            case .arrived: return "You've arrived"
             }
         case .hillAhead(let length, let gain):
             return "A hill ahead · \(formatter.distance(meters: length)) · \(formatter.elevation(meters: gain)) up"
         case .hillTop:
-            return "That was the worst of it"
+            return "Top of the hill"
         case .lost(let name):
-            return "\(name) got away"
+            return "\(name) escaped"
         default:
             return nil
         }
@@ -193,20 +194,6 @@ extension RideEvent {
         case .briefing: return 45
         case .claimed, .objectiveCompleted: return 60
         case .newGround: return 5
-        }
-    }
-
-    /// "It wants a climb.": the monster's first way in, in a few words. A PACE way
-    /// in survives only on things placed before it was retired; it is said as the road.
-    static func wants(_ method: KillMethodKind) -> String? {
-        switch method {
-        // Only a server from before 0.6.1 still deals one; say what it really wants.
-        case .pace: return "It wants a fast kilometre."
-        case .climb: return "It wants a climb."
-        case .rune: return "It wants its rune cut."
-        case .lore: return "It wants the word."
-        case .explore: return "It wants new ground."
-        case .unknown: return nil
         }
     }
 

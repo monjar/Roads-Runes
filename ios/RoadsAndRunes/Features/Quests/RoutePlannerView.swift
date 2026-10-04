@@ -52,7 +52,7 @@ final class RoutePlannerViewModel {
     var showsControls: Bool { rune == nil && (quest == nil || isTweaking) }
 
     var routesHeading: String {
-        if rune != nil { return "Ways to cut it" }
+        if rune != nil { return "Routes for its shape" }
         if quest != nil { return alternatives.count > 1 ? "Ways to \(activity.noun) it" : "The route" }
         return destination == nil ? "Three ways to \(activity.noun) it" : "Ways to get there"
     }
@@ -96,10 +96,10 @@ final class RoutePlannerViewModel {
     /// chosen route's label; quest rides carry the quest title instead.
     var adventureTitle: String? {
         guard quest == nil, let selected else { return nil }
-        if let rune { return "Cut \(rune.prefix(1).uppercased() + rune.dropFirst())" }
+        if let rune { return "\(rune.prefix(1).uppercased() + rune.dropFirst()) rune ride" }
         if let destination { return "\(activity.verb) to \(destination.name)" }
         let asked = request.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !asked.isEmpty else { return "\(selected.label) ride" }
+        guard !asked.isEmpty else { return "\(selected.label) \(activity.noun)" }
         return String((asked.prefix(1).uppercased() + asked.dropFirst()).prefix(120))
     }
 
@@ -195,7 +195,7 @@ final class RoutePlannerViewModel {
 
     func generate() async {
         guard let origin = container.location.lastFix?.coordinate ?? quest?.origin else {
-            error = "Waiting for your location"
+            error = "Can't find your location yet. Try again in a moment."
             return
         }
         isGenerating = true
@@ -232,7 +232,7 @@ final class RoutePlannerViewModel {
             // A typed request always gets an answer on screen, even from a server that
             // said nothing about it: silence looked like the request being ignored.
             understood = Self.understood(from: response.parsedRequest)
-                ?? (request.isEmpty ? nil : "Planned as usual — couldn't read the request")
+                ?? (request.isEmpty ? nil : "Couldn't understand that, so here are the usual routes")
             // "a 12 km loop" beats a slider sitting at 25; move it to what was used.
             if let asked = response.parsedRequest?["distanceKm"]?.objectValue?["target"]?.doubleValue,
                (5...150).contains(asked) {
@@ -334,7 +334,7 @@ struct RoutePlannerView: View {
                     if let quest = model.quest {
                         Eyebrow(text: "\(ClassStyle.name(quest.characterClass)) quest · \(quest.title)", color: ClassStyle.textColor(quest.characterClass))
                     } else {
-                        Eyebrow(text: model.destination == nil ? "Your own adventure" : "Directions", color: Theme.Colors.terracottaDeep)
+                        Eyebrow(text: model.destination == nil ? "Your own journey" : "Directions", color: Theme.Colors.terracottaDeep)
                     }
                 }
                 Text(title(model))
@@ -382,7 +382,7 @@ struct RoutePlannerView: View {
                                     } else {
                                         Image(systemName: "arrow.right").font(.system(size: 16, weight: .bold))
                                     }
-                                    Text(model.isGenerating ? "Planning…" : "Plan")
+                                    Text(model.isGenerating ? "Planning…" : "Plan route")
                                         .font(Theme.Typography.text(15, .semibold))
                                 }
                                 .foregroundStyle(Theme.Colors.cream)
@@ -392,7 +392,8 @@ struct RoutePlannerView: View {
                             }
                             .buttonStyle(.pressable)
                             .disabled(model.isGenerating)
-                            .accessibilityLabel("Generate routes")
+                            .accessibilityLabel("Plan routes")
+                            .accessibilityIdentifier("planner.generate")
                         }
                         if model.isGenerating, let step = model.planningStep {
                             Label(step, systemImage: "hourglass")
@@ -450,7 +451,7 @@ struct RoutePlannerView: View {
                     }
                     if !model.showsControls {
                         Button { withAnimation(.snappy) { model.isTweaking = true } } label: {
-                            Label("Tweak the route", systemImage: "slider.horizontal.3")
+                            Label("Adjust route", systemImage: "slider.horizontal.3")
                         }
                         .buttonStyle(.secondaryWide)
                     }
@@ -495,7 +496,7 @@ struct RoutePlannerView: View {
     }
 
     private func title(_ model: RoutePlannerViewModel) -> String {
-        if model.quest != nil { return model.isTweaking ? "How do you want\nto ride it?" : "Your quest\nroute" }
+        if model.quest != nil { return model.isTweaking ? "How do you want\nto \(model.activity.noun) it?" : "Your quest\nroute" }
         if let destination = model.destination { return "\(model.activity.verb) to\n\(destination.name)" }
         return "What kind of \(model.activity.noun)\ntoday?"
     }

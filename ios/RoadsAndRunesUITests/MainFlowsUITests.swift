@@ -53,11 +53,13 @@ final class MainFlowsUITests: XCTestCase {
         tapOffCentre(start, dx: 0.1)
         allowSystemAlertIfShown()  // background location for the ride
 
-        tapOffCentre(waitFor(app.buttons["Pause ride"], 30), dx: 0.5)
-        tapOffCentre(waitFor(app.buttons["End"]), dx: 0.15)
-        waitFor(app.buttons["End & save"]).tap()
-        let collect = app.buttons["Close the book"]
-        XCTAssertTrue(collect.waitForExistence(timeout: 90), "No adventure summary after the ride")
+        tapOffCentre(waitFor(app.buttons["ride.pause"], 30), dx: 0.5)
+        tapOffCentre(waitFor(app.buttons["ride.end"]), dx: 0.15)
+        // A confirmation dialog's buttons may not carry their identifiers on every iOS:
+        // the label is the fallback.
+        waitFor(app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", "ride.save", "Save ride")).firstMatch).tap()
+        let collect = app.buttons["summary.collect"]
+        XCTAssertTrue(collect.waitForExistence(timeout: 90), "No Journey's end after the ride")
         tapOffCentre(collect, dx: 0.1)
         // Back where the ride began: the quest, now in progress.
         XCTAssertTrue(app.buttons["quest.continue"].waitForExistence(timeout: 30), "The ride did not hand back to its quest")
@@ -86,7 +88,7 @@ final class MainFlowsUITests: XCTestCase {
         field.typeText("Richmond bike ride")
         // The request field is multi-line, so return adds a line rather than dismissing
         // the keyboard: scroll until the button is genuinely hittable before tapping it.
-        let generate = app.buttons["Generate routes"]
+        let generate = app.buttons["planner.generate"]
         scrollTo(generate)
         tapOffCentre(generate, dx: 0.5)
 
@@ -126,7 +128,7 @@ final class MainFlowsUITests: XCTestCase {
         let request = app.textFields[placeholder].exists ? app.textFields[placeholder] : app.textViews[placeholder]
         waitFor(request, 30).tap()
         request.typeText("through 3 cafes")
-        let generate = app.buttons["Generate routes"]
+        let generate = app.buttons["planner.generate"]
         scrollTo(generate)
         tapOffCentre(generate, dx: 0.5)
 
@@ -201,7 +203,7 @@ final class MainFlowsUITests: XCTestCase {
         replaceText(in: waitFor(app.textFields["Developer subject"]), with: "ui-\(UUID().uuidString.prefix(8).lowercased())")
         tapOffCentre(app.buttons["Developer sign in"], dx: 0.5)
         replaceText(in: waitFor(app.textFields["Your name"], 30), with: "Wren")
-        tapOffCentre(waitFor(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Go out as")).firstMatch), dx: 0.1)
+        tapOffCentre(waitFor(app.buttons["onboarding.createCharacter"]), dx: 0.1)
 
         tapOffCentre(waitFor(app.buttons["onboarding.activity.run"], 30), dx: 0.2)
         tapOffCentre(app.buttons["onboarding.activity.continue"], dx: 0.1)
@@ -247,7 +249,7 @@ final class MainFlowsUITests: XCTestCase {
 
     // MARK: - The world (0.6.0 to 0.6.2)
 
-    func testThePrologueComesBeforeTheTrade() throws {
+    func testThePrologueComesBeforeTheClass() throws {
         app.launchEnvironment["RR_SHOW_PROLOGUE"] = "1"
         #if targetEnvironment(simulator)
         XCUIDevice.shared.location = XCUILocation(location: Self.rotherhithe)
@@ -255,11 +257,11 @@ final class MainFlowsUITests: XCTestCase {
         app.launch()
         replaceText(in: waitFor(app.textFields["Developer subject"]), with: "ui-\(UUID().uuidString.prefix(8).lowercased())")
         tapOffCentre(app.buttons["Developer sign in"], dx: 0.5)
-        XCTAssertTrue(app.buttons["prologue.next"].waitForExistence(timeout: 30), "A new player went straight to choosing a trade")
+        XCTAssertTrue(app.buttons["prologue.next"].waitForExistence(timeout: 30), "A new player went straight to choosing a class")
         for _ in 0..<6 where app.buttons["prologue.next"].exists && !app.textFields["Your name"].exists {
             tapOffCentre(app.buttons["prologue.next"], dx: 0.3)
         }
-        XCTAssertTrue(app.textFields["Your name"].waitForExistence(timeout: 20), "The prologue did not lead to the trade")
+        XCTAssertTrue(app.textFields["Your name"].waitForExistence(timeout: 20), "The prologue did not lead to the class")
     }
 
     func testTheSheetHasTitlesAndACodex() throws {
@@ -289,7 +291,7 @@ final class MainFlowsUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["character.deeds"].waitForExistence(timeout: 10), "The sheet has no deeds")
         tapOffCentre(runes, dx: 0.7)
         XCTAssertTrue(app.descendants(matching: .any)["runes.slots"].waitForExistence(timeout: 20), "The runes screen has no slots")
-        XCTAssertTrue(app.staticTexts["No rune held yet"].exists, "A new character holds a rune already")
+        XCTAssertTrue(app.descendants(matching: .any)["runes.empty"].exists, "A new character holds a rune already")
     }
 
     // MARK: - Helpers
@@ -304,7 +306,7 @@ final class MainFlowsUITests: XCTestCase {
         tapOffCentre(app.buttons["Developer sign in"], dx: 0.5)
 
         replaceText(in: waitFor(app.textFields["Your name"], 30), with: "Wren")
-        tapOffCentre(waitFor(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Go out as")).firstMatch), dx: 0.1)
+        tapOffCentre(waitFor(app.buttons["onboarding.createCharacter"]), dx: 0.1)
 
         // How you move: Ride is chosen already; a rider goes on to a bike.
         tapOffCentre(waitFor(app.buttons["onboarding.activity.continue"], 30), dx: 0.1)

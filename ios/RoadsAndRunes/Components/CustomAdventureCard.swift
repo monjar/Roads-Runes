@@ -19,11 +19,11 @@ struct CustomAdventureCard: View {
             }
             .frame(width: compact ? 44 : 64, height: compact ? 44 : 64)
             VStack(alignment: .leading, spacing: 2) {
-                Eyebrow(text: "Your own adventure", color: Theme.Colors.terracottaDeep)
-                Text("Ride somewhere new")
+                Eyebrow(text: "Your own journey", color: Theme.Colors.terracottaDeep)
+                Text("Go somewhere new")
                     .font(compact ? Theme.Typography.cardTitle : Theme.Typography.voice(18, relativeTo: .title3))
                     .foregroundStyle(Theme.Colors.ink)
-                Text("Describe the ride · every new road counts")
+                Text("Describe it · every new road counts")
                     .font(Theme.Typography.caption)
                     .foregroundStyle(Theme.Colors.muted)
                     .lineLimit(1)
@@ -35,6 +35,6 @@ struct CustomAdventureCard: View {
         .padding(.horizontal, 14)
         .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Your own adventure. Ride somewhere new.")
+        .accessibilityLabel("Your own journey. Go somewhere new.")
     }
 }

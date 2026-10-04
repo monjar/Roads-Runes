@@ -104,7 +104,7 @@ final class SessionStore {
             guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
                   let tokenData = credential.identityToken,
                   let token = String(data: tokenData, encoding: .utf8) else {
-                lastError = "Apple did not return an identity token"
+                lastError = "Sign in with Apple didn't finish. Try again."
                 return
             }
             let code = credential.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }

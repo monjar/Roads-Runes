@@ -14,7 +14,7 @@ struct ControlsScreen: View {
                 if confirmingEnd {
                     endPrompt
                 } else {
-                    Text(store.isPaused ? "PAUSED" : "RIDING")
+                    Text(store.isPaused ? "PAUSED" : LoreCopy.going(store.activity).uppercased())
                         .font(.system(size: 12, weight: .bold))
                         .tracking(1.5)
                         .foregroundStyle(store.isPaused ? WatchTheme.secondary : WatchTheme.sageLight)
@@ -37,12 +37,14 @@ struct ControlsScreen: View {
                         .buttonStyle(.plain)
                         .background(WatchTheme.sage, in: Capsule())
                         .foregroundStyle(.white)
-                        .accessibilityLabel(store.isPaused ? "Resume" : "Pause")
+                        .accessibilityLabel(store.isPaused ? "Resume \(store.journey)" : "Pause \(store.journey)")
                         Button {
                             confirmingEnd = true
                         } label: {
-                            Text("End")
+                            Text("End \(store.journey)")
                                 .font(.system(size: 15, weight: .semibold))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 56)
                                 .contentShape(Capsule())
@@ -61,7 +63,7 @@ struct ControlsScreen: View {
 
     private var endPrompt: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("End ride?")
+            Text("End \(store.journey)?")
                 .font(.system(size: 20, weight: .semibold))
             Text("\(store.formatter.distance(meters: store.update?.distanceMeters ?? 0)) · saved to Health")
                 .font(.system(size: 14))
@@ -71,7 +73,7 @@ struct ControlsScreen: View {
                 container.send(.end)
                 confirmingEnd = false
             } label: {
-                Text("End & save")
+                Text("Save \(store.journey)")
                     .font(.system(size: 15, weight: .semibold))
                     .frame(maxWidth: .infinity)
                     .frame(height: 46)
@@ -83,7 +85,7 @@ struct ControlsScreen: View {
             Button {
                 confirmingEnd = false
             } label: {
-                Text("Keep riding")
+                Text("Keep going")
                     .font(.system(size: 15, weight: .semibold))
                     .frame(maxWidth: .infinity)
                     .frame(height: 46)

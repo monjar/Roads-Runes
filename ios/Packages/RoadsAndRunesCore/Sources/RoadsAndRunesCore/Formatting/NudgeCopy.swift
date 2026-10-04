@@ -29,22 +29,23 @@ public enum NudgeCopy {
         }
     }
 
-    /// The evening reminder that today has not been kept yet.
+    /// The evening reminder that today's streak day has not been earned yet.
     public static func streak(days: Int, activity: Activity, bounty: Lure?, nearest: Lure?, units: Units = .metric) -> (title: String, body: String) {
         let formatter = UnitFormatter(units: units)
-        let title = "\(LoreCopy.daysKept(days)). Today not yet."
+        let title = "Keep your \(LoreCopy.streak(days))"
+        let keep = "Go \(units == .imperial ? "0.6 mi" : "1 km") today to keep it."
         if let bounty {
-            return (title, "\(bounty.named) is \(formatter.distance(meters: bounty.meters)) away and pays double. One kilometre keeps the days.")
+            return (title, "\(keep) \(bounty.named) is \(formatter.distance(meters: bounty.meters)) away and pays double.")
         }
         if let nearest {
-            return (title, "One kilometre keeps it alive. \(nearest.named) is \(formatter.distance(meters: nearest.meters)) away.")
+            return (title, "\(keep) \(nearest.named) is \(formatter.distance(meters: nearest.meters)) away.")
         }
-        return (title, "One kilometre keeps it alive. A short \(activity.noun) will do.")
+        return (title, "\(keep) A short \(activity.noun) will do.")
     }
 
     /// The morning reminder: tomorrow's bounty is not placed until the world is looked at, so nothing is said of where.
     public static func bountyMorning() -> (title: String, body: String) {
-        ("Today's bounty is out", "One thing, twice the coins, out for a day or so.")
+        ("Today's bounty is out", "A creature worth double coins, here for about a day.")
     }
 
     /// The things worth naming in tonight's reminder: today's bounty if it is still

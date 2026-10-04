@@ -124,11 +124,11 @@ final class WorldViewModel {
         if cuts.isEmpty { cuts = (try? await container.api.runeCuts()) ?? [] }
     }
 
-    /// Where runes were cut: "Raido, cut by the pond".
+    /// Where rune rides were made: "Raido rune ride, by the pond".
     var cutMarkers: [MapMarker] {
         cuts.map { cut in
             MapMarker(id: "cut-\(cut.id)", coordinate: cut.coordinate, kind: .collectable,
-                      title: cut.placeName.map { "\(cut.name), cut by \($0)" } ?? "\(cut.name), cut",
+                      title: cut.placeName.map { "\(cut.name) rune ride, by \($0)" } ?? "\(cut.name) rune ride",
                       mark: .rune(cut.runeId))
         }
     }
@@ -220,7 +220,7 @@ final class WorldViewModel {
     func claim(_ object: WorldObject) async {
         guard claiming == nil else { return }
         guard let fix = container.location.lastFix else {
-            claimError = "Waiting for your location"
+            claimError = "Can't find your location yet. Try again in a moment."
             return
         }
         claiming = object.id
@@ -273,7 +273,7 @@ final class WorldViewModel {
             for object in came { take(object) }
             guard let first = came.first else {
                 // An older server could take nothing and place nothing; say so.
-                lampError = "Nothing came this time."
+                lampError = "No creature came this time, so no coins were spent."
                 return
             }
             selectedPlace = nil
@@ -521,11 +521,11 @@ final class WorldViewModel {
     }
 
     static func place(from discovery: DiscoverySummary) -> Place {
-        let kind = discovery.category == .unknown ? "Discovery" : discovery.category.rawValue.capitalized
+        let kind = discovery.category == .unknown ? "Place" : discovery.category.rawValue.capitalized
         return Place(
             id: "discovery-\(discovery.id.uuidString)",
             name: discovery.name,
-            category: "\(kind) · \(discovery.discoveredByUser ? "discovered" : "a mystery")",
+            category: "\(kind) · \(discovery.discoveredByUser ? "found" : "hidden place")",
             address: nil,
             mark: .place(discovery.category.rawValue),
             coordinate: discovery.coordinate,

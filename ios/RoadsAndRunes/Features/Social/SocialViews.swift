@@ -206,7 +206,7 @@ struct FriendsView: View {
                         }
                     }
                     if model.friends.isEmpty {
-                        Text("Find friends by name to plan shared adventures and see where they went.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                        Text("Find friends by name to share quests and see where they went.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
                     }
 
                     if !model.feed.isEmpty {
@@ -251,11 +251,11 @@ struct FriendsView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Exact locations are never shared").font(Theme.Typography.label).foregroundStyle(Theme.Colors.ink)
-                Text("Friends see finished adventures, never where you are.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                Text("Friends see finished journeys, never where you are.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
             }
             Spacer()
             VStack(spacing: 4) {
-                Toggle("Rides visible to friends", isOn: visibleToFriends).labelsHidden().tint(Theme.Colors.sage)
+                Toggle("Journeys visible to friends", isOn: visibleToFriends).labelsHidden().tint(Theme.Colors.sage)
                 Text("Visible").font(Theme.Typography.text(11, .semibold, relativeTo: .caption2)).foregroundStyle(Theme.Colors.muted)
             }
         }
@@ -285,7 +285,7 @@ struct FeedRow: View {
     private var verb: String {
         switch event.eventType {
         case .friendQuestCompleted: return "completed"
-        case .friendDiscovery: return "discovered"
+        case .friendDiscovery: return "found"
         case .friendLevelUp: return "reached"
         case .friendNewRegion: return "explored"
         default: return "did"
@@ -338,7 +338,7 @@ struct ProfileView: View {
                         VStack(alignment: .leading, spacing: 14) {
                             HStack(spacing: 8) {
                                 FactTile(value: "\(profile.questsCompleted)", label: "Quests")
-                                FactTile(value: "\(profile.discoveriesFound)", label: "Discoveries")
+                                FactTile(value: "\(profile.discoveriesFound)", label: "Places found")
                                 FactTile(value: profile.overallLevel.map { "\($0)" } ?? "—", label: "Level")
                             }
                             HStack(spacing: 10) {
@@ -346,7 +346,7 @@ struct ProfileView: View {
                                 smallTile("Friendship", friendshipText(profile.friendship))
                             }
                             if !profile.recentAdventures.isEmpty {
-                                SectionHeader(title: "Recent adventures", subtitle: "\(profile.recentAdventures.count)")
+                                SectionHeader(title: "Recent journeys", subtitle: "\(profile.recentAdventures.count)")
                                 ForEach(profile.recentAdventures, id: \.rideId) { adventure in
                                     recentRow(adventure)
                                 }
@@ -447,7 +447,7 @@ struct ProfileView: View {
             }
             .frame(width: 56, height: 56)
             VStack(alignment: .leading, spacing: 2) {
-                Text(adventure.questTitle ?? "Free ride").font(Theme.Typography.voice(16, relativeTo: .headline)).foregroundStyle(Theme.Colors.ink).lineLimit(1)
+                Text(adventure.questTitle ?? LoreCopy.free(nil)).font(Theme.Typography.voice(16, relativeTo: .headline)).foregroundStyle(Theme.Colors.ink).lineLimit(1)
                 Text("\(adventure.completedAt.formatted(.relative(presentation: .named))) · \(f.distance(meters: adventure.distanceMeters)) · \(f.distance(meters: adventure.newTerritoryMeters)) new · +\(adventure.xpAwarded) XP")
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).lineLimit(1)
             }
@@ -504,7 +504,7 @@ struct PartyInviteSheet: View {
             SheetHandle().frame(maxWidth: .infinity)
             Text("Invite to a quest").font(Theme.Typography.title).foregroundStyle(Theme.Colors.ink)
             if quests.isEmpty {
-                Text("Accept a quest first, then invite friends to ride it together.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                Text("Accept a quest first, then invite friends to do it together.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
             }
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 10) {
@@ -573,10 +573,10 @@ struct PartyDetailView: View {
                     if let quest {
                         QuestCard(quest: quest, compact: true, units: container.session.units)
                     }
-                    Text(party.completionRule == .group ? "Everyone finishes together: the quest completes when the last of you does." : "Each of you finishes on your own ride; the party is company.")
+                    Text(party.completionRule == .group ? "Everyone finishes together: the quest completes when the last of you does." : "Each of you finishes on your own journey; the party is company.")
                         .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
 
-                    SectionHeader(title: "Riders")
+                    SectionHeader(title: "Party members")
                     ForEach(party.members) { member in
                         HStack(spacing: 10) {
                             FriendAvatar(name: member.user.displayName, characterClass: member.user.characterClass, size: 40)
@@ -605,7 +605,7 @@ struct PartyDetailView: View {
             Button(leading ? "Cancel the party" : "Leave", role: .destructive) { Task { await act { try await container.api.leaveParty(id: partyId) } } }
             Button("Stay", role: .cancel) {}
         } message: {
-            Text(leading ? "You lead it, so leaving ends it for everyone." : "The others ride on without you.")
+            Text(leading ? "You lead it, so leaving ends it for everyone." : "The others carry on without you.")
         }
         .task { await load() }
         .refreshable { await load() }
@@ -621,7 +621,7 @@ struct PartyDetailView: View {
             }
             if leading, party.status == .forming || party.status == .ready {
                 let joined = party.members.filter { $0.status == "JOINED" || $0.status == "READY" }.count
-                Button(party.status == .ready ? "Start the ride" : "Start with whoever is in (\(joined))") {
+                Button(party.status == .ready ? "Start journey" : "Start with \(joined) ready") {
                     Task { await act { try await container.api.startParty(id: partyId) } }
                 }
                 .buttonStyle(.primary)
@@ -653,7 +653,7 @@ struct PartyDetailView: View {
         switch status {
         case .forming: return "Forming"
         case .ready: return "Ready"
-        case .active: return "Riding"
+        case .active: return "Under way"
         case .completed: return "Completed"
         case .cancelled: return "Cancelled"
         case .unknown: return "Party"
@@ -664,7 +664,7 @@ struct PartyDetailView: View {
         switch status {
         case "INVITED": return "Invited, not yet answered"
         case "JOINED": return "In, not yet ready"
-        case "READY": return "Ready to ride"
+        case "READY": return "Ready to go"
         case "LEFT": return "Left"
         default: return status.capitalized
         }

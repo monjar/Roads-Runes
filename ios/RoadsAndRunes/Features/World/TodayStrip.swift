@@ -55,16 +55,16 @@ struct TodayStrip: View {
     }
 
     private func streakTitle(days: Int, done: Bool) -> String {
-        if done { return "Day \(max(days, 1)) done" }
-        return days == 0 ? "Keep a day" : LoreCopy.daysKept(days)
+        if done { return LoreCopy.streak(max(days, 1)) }
+        return days == 0 ? "Start a streak" : LoreCopy.streak(days)
     }
 
     private func streakLine(days: Int, done: Bool) -> String {
         if done {
             let next = [7, 30].first { $0 > days }
-            return next.map { "\($0 - days) more to a purse" } ?? "back tomorrow"
+            return next.map { "\($0 - days) more \($0 - days == 1 ? "day" : "days") to a bonus" } ?? "Done for today"
         }
-        return days == 0 ? "1 km today counts" : "1 km today keeps it"
+        return days == 0 ? "Go 1 km today" : "Go 1 km today to keep it"
     }
 
     private func nearestLine(_ object: WorldObject) -> String {

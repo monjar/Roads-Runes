@@ -19,13 +19,22 @@ struct ObjectiveCompleteOverlay: View {
         }
     }
 
+    /// The phone sends GONE for a creature (a wire word older Watches know); it reads DEFEATED.
+    private var label: String {
+        switch event.outcome {
+        case "GONE": return "DEFEATED"
+        case .some(let outcome): return outcome
+        case .none: return "DONE"
+        }
+    }
+
     var body: some View {
         VStack(spacing: 6) {
-            // What happened, as the phone draws it: a creature beaten, a chest opened, a find.
+            // What happened, as the phone draws it: a creature defeated, a chest opened, a find.
             MarkView(.token(icon), palette: .watch)
                 .frame(width: 56, height: 56)
-            // GONE, OPENED, FOUND or DONE; an older phone sends none.
-            Text(event.outcome ?? "DONE")
+            // DEFEATED, OPENED, FOUND or DONE; an older phone sends none.
+            Text(label)
                 .font(.system(size: 11, weight: .bold))
                 .tracking(1.2)
                 .padding(.top, 6)

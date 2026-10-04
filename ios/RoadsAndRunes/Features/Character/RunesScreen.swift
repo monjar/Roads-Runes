@@ -3,8 +3,8 @@ import RoadsAndRunesCore
 import SwiftUI
 
 /// Runes as the build (docs/ROADMAP.md, 0.7.0): the slots the level has opened,
-/// what is inscribed in them, every rune held with its rank, its stones and what it
-/// does, and a way to go and cut one. Only inscribed runes act.
+/// what is inscribed in them, every rune held with its rank, its rune stones and what
+/// it does, and a way to go and ride its shape. Only inscribed runes work.
 struct RunesScreen: View {
     @Environment(AppContainer.self) private var container
     @State private var state: RunesState?
@@ -18,7 +18,7 @@ struct RunesScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 if missing {
-                    EmptyState(icon: .runeStone, title: "Not on this server yet", message: "Runes come with the next server update.")
+                    EmptyState(icon: .runeStone, title: "Runes aren't here yet", message: "They arrive with the next server update.")
                 } else if let error {
                     ErrorLine(text: error)
                 }
@@ -28,15 +28,17 @@ struct RunesScreen: View {
                     slots(state)
                     let held = state.runes.filter(\.held)
                     if held.isEmpty {
-                        EmptyState(icon: .runeStone, title: "No rune held yet",
-                                   message: "Rune stones turn up at places on the map. Pick one up and the rune is yours.")
+                        EmptyState(icon: .runeStone, title: "No runes yet",
+                                   message: "Rune stones turn up at places on the map. Pick one up and its rune is yours.")
+                            .accessibilityElement(children: .contain)
+                            .accessibilityIdentifier("runes.empty")
                     } else {
-                        SectionHeader(title: "Held", subtitle: "\(held.count) of \(state.runes.count)")
+                        SectionHeader(title: "Your runes", subtitle: "\(held.count) of \(state.runes.count)")
                         ForEach(held) { rune in row(rune, state: state) }
                     }
                     let ahead = state.runes.filter { !$0.held }
                     if !ahead.isEmpty {
-                        SectionHeader(title: "Not yet found")
+                        SectionHeader(title: "Still to find")
                         ForEach(ahead) { rune in row(rune, state: state) }
                     }
                 } else {
@@ -56,7 +58,7 @@ struct RunesScreen: View {
 
     private struct RuneChoice: Identifiable { let id: String }
 
-    /// Loops, triangles and squares are cut on a bike; a zigzag on foot.
+    /// Loops, triangles and squares are ridden on a bike; a zigzag is run or walked.
     static func cutForms(for activity: Activity) -> Set<String> {
         activity == .run || activity == .walk ? ["ZIGZAG"] : ["LOOP", "TRIANGLE", "SQUARE"]
     }
@@ -83,7 +85,7 @@ struct RunesScreen: View {
                     .accessibilityLabel(runeId.map { "Slot \(index + 1): \($0.capitalized)" } ?? (open ? "Slot \(index + 1): empty" : "Slot \(index + 1): opens at level \(state.slotsAtLevel[index])"))
                 }
             }
-            Text("Only inscribed runes act. Changing them is free, but not while you are out.")
+            Text("Only inscribed runes work. Swap them for free any time you're not on a journey.")
                 .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
         }
         .card()
@@ -105,10 +107,10 @@ struct RunesScreen: View {
                     Text(rune.rule).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.inkSoft)
                         .fixedSize(horizontal: false, vertical: true)
                     if !rune.held, rune.six == "GROUND" {
-                        Text("Found only on its own kind of ground.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                        Text("Found only near \(Self.ground(of: rune.id)).").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
                     }
                     if rune.held, let next = rune.nextRank {
-                        Text("\(rune.shards) of \(next.shards) stones towards \(LoreCopy.roman(rune.rank + 1)) · \(LoreCopy.purse(next.coins))")
+                        Text("\(rune.shards) / \(next.shards) rune stones to rank \(LoreCopy.roman(rune.rank + 1)) · \(LoreCopy.purse(next.coins))")
                             .font(Theme.Typography.caption.monospacedDigit()).foregroundStyle(Theme.Colors.muted)
                     }
                 }
@@ -116,17 +118,17 @@ struct RunesScreen: View {
             }
             if rune.held {
                 HStack(spacing: 8) {
-                    Button(rune.inscribed ? "Take it out" : "Inscribe") { Task { await toggle(rune, state: state) } }
+                    Button(rune.inscribed ? "Remove rune" : "Inscribe rune") { Task { await toggle(rune, state: state) } }
                         .buttonStyle(.surfacePill)
                         .disabled(busy != nil || (!rune.inscribed && state.inscribed.count >= state.slots))
                         .accessibilityIdentifier("rune.\(rune.id).inscribe")
                     if rune.canRaise {
-                        Button("Raise to \(LoreCopy.roman(rune.rank + 1))") { Task { await raise(rune) } }
+                        Button("Rank up") { Task { await raise(rune) } }
                             .buttonStyle(.surfacePill)
                             .disabled(busy != nil)
                     }
                     if let form = rune.roadForm, Self.cutForms(for: container.session.defaultActivity).contains(form) {
-                        Button("Cut it") { cutting = rune.id }
+                        Button("\(container.session.defaultActivity.verb) its shape") { cutting = rune.id }
                             .buttonStyle(.surfacePill)
                             .accessibilityIdentifier("rune.\(rune.id).cut")
                     }
@@ -136,6 +138,19 @@ struct RunesScreen: View {
         }
         .card()
         .accessibilityIdentifier("rune.\(rune.id)")
+    }
+
+    /// Where a Ground Six rune's stones turn up (backend inventory/config/runes.json, `ground`).
+    static func ground(of rune: String) -> String {
+        switch rune {
+        case "laguz": return "water"
+        case "berkano": return "parks, gardens and woods"
+        case "eihwaz": return "old and historic places"
+        case "ehwaz": return "cycleways and bike shops"
+        case "jera": return "farms, orchards and allotments"
+        case "algiz": return "viewpoints and peaks"
+        default: return "its own kind of place"
+        }
     }
 
     private func load() async {
@@ -215,7 +230,7 @@ struct DeedsCard: View {
                     }
                 }
             } else if unavailable {
-                Text("The deeds could not be read just now.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                Text("Couldn't load your deeds. Check your connection and try again later.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
             } else {
                 ProgressView().tint(Theme.Colors.terracotta).frame(maxWidth: .infinity)
             }
@@ -240,7 +255,7 @@ struct DeedsCard: View {
 
     private func line(_ deed: DeedsState.Deed) -> String {
         let now = format(deed.value, deed.unit)
-        guard let next = deed.next else { return "\(now). Every mark made." }
+        guard let next = deed.next else { return "\(now) · every tier reached" }
         return "\(now) · next at \(format(next, deed.unit))"
     }
 

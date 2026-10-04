@@ -14,7 +14,7 @@ struct ActivitySetupView: View {
         VStack(alignment: .leading, spacing: 12) {
             Eyebrow(text: "How you move", color: Theme.Colors.sageDeep)
             Text("How do you\nmostly get around?").font(Theme.Typography.voice(32, relativeTo: .largeTitle)).foregroundStyle(Theme.Colors.ink)
-            Text("Runs and walks count as much as rides: the same map, the same quests, sized for your feet. You can choose differently for any outing.")
+            Text("Runs and walks count as much as rides: the same map and the same quests, sized for your feet. You can change it for any journey.")
                 .font(Theme.Typography.text(13.5)).foregroundStyle(Theme.Colors.muted).lineSpacing(2)
             ForEach([Activity.ride, .run, .walk], id: \.self) { activity in
                 Button {
@@ -50,9 +50,9 @@ struct ActivityCard: View {
 
     private var line: String {
         switch activity {
-        case .run: return "Quests a run long, and things to see off on the way."
+        case .run: return "Run-sized quests, with creatures to defeat on the way."
         case .walk: return "Short loops, parks and places worth a wander."
-        default: return "The whole map, and the bike that decides which roads."
+        default: return "The whole map, with routes that suit your bike."
         }
     }
 

@@ -28,7 +28,7 @@ struct ScribeActions: View {
     var body: some View {
         HStack(spacing: 8) {
             if objective.objectiveType == .photoLocation {
-                action("Photograph", symbol: "camera.fill") { takingPhoto = true }
+                action("Take photo", symbol: "camera.fill") { takingPhoto = true }
             }
             if objective.objectiveType == .writeNote || objective.isNoteRune {
                 action("Write a note", symbol: "square.and.pencil") { writingNote = true }
@@ -76,7 +76,7 @@ struct NoteSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Eyebrow(text: "Scribe", color: Theme.Colors.sageDeep)
+            Eyebrow(text: "Your note", color: Theme.Colors.sageDeep)
             Text(title).font(Theme.Typography.voice(24, relativeTo: .title2)).foregroundStyle(Theme.Colors.ink)
             Text("Stop safely before writing.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
             TextField("What is worth remembering here?", text: $text, axis: .vertical)
@@ -84,7 +84,7 @@ struct NoteSheet: View {
                 .textFieldStyle(CreamFieldStyle())
                 .focused($focused)
             Spacer()
-            Button("Save the note") { onSave(text.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            Button("Save note") { onSave(text.trimmingCharacters(in: .whitespacesAndNewlines)) }
                 .buttonStyle(.primary)
                 .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }

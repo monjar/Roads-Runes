@@ -1,7 +1,7 @@
 import RoadsAndRunesCore
 import SwiftUI
 
-/// Today's bounty on the Quests tab: one thing, twice the purse, out for a day or so.
+/// Today's bounty on the Quests tab: one creature, double coins, here for about a day.
 struct BountyCard: View {
     let bounty: WorldObject
     var distanceMeters: Double?
@@ -36,7 +36,7 @@ struct BountyCard: View {
         if let distanceMeters { parts.append(formatter.distance(meters: distanceMeters)) }
         parts.append(LoreCopy.purse(bounty.rewardAC))
         if let monster = bounty.monster, monster.foughtByEffort, let wants = monster.wants {
-            parts.append(LoreCopy.wants(wants))
+            parts.append(LoreCopy.weakTo(wants))
         } else if let first = bounty.monster?.killMethods.first {
             parts.append(first.hint)
         }

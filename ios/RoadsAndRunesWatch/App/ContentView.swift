@@ -108,7 +108,7 @@ struct IdleScreen: View {
                 .foregroundStyle(WatchTheme.accent)
             Text("Roads & Runes")
                 .font(.system(size: 19, weight: .semibold))
-            Text("Start a ride on your iPhone")
+            Text("Start a journey on your iPhone")
                 .font(.system(size: 14))
                 .foregroundStyle(WatchTheme.secondary)
             HStack(spacing: 8) {

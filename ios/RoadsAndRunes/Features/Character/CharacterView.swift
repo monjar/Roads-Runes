@@ -96,20 +96,22 @@ struct CharacterView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 FactTile(value: exploredArea(model.stats), label: "Explored")
-                FactTile(value: "\(model.stats?.discoveriesFound ?? 0)", label: "Discoveries")
+                FactTile(value: "\(model.stats?.discoveriesFound ?? 0)", label: "Places found")
                 FactTile(value: "\(model.stats?.questsCompleted ?? 0)", label: "Quests")
             }
             if let error = model.error { ErrorLine(text: error) }
 
             let abilities = character?.abilities ?? []
-            SectionHeader(title: "Knacks", subtitle: "\(abilities.filter(\.unlocked).count) of \(abilities.count) learnt")
+            SectionHeader(title: "Skills", subtitle: "\(abilities.filter(\.unlocked).count) of \(abilities.count) learned")
             if let points = character?.unspentAbilityPoints, points > 0 {
-                Text(LoreCopy.knacksToChoose(points))
+                Text(LoreCopy.skillPointsToSpend(points))
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.terracottaDeep)
             }
             VStack(alignment: .leading, spacing: 14) {
                 ForEach(abilities) { state in
-                    KnackRow(state: state, color: classColor) { Task { await model.unlock(state) } }
+                    SkillRow(state: state, color: classColor, className: ClassStyle.name(character?.characterClass ?? .explorer)) {
+                        Task { await model.unlock(state) }
+                    }
                 }
             }
             .card()
@@ -127,7 +129,7 @@ struct CharacterView: View {
                     .accessibilityIdentifier("character.titles")
             }
             if character?.sheet?.inscribed != nil {
-                SectionHeader(title: "Deeds", subtitle: "a record, not points")
+                SectionHeader(title: "Deeds", subtitle: "your lifetime records")
                 DeedsCard()
             }
             if container.session.isEnabled("codex") {

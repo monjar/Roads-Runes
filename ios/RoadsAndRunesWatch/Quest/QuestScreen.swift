@@ -18,7 +18,7 @@ struct QuestScreen: View {
                     .tracking(1)
                     .foregroundStyle(WatchTheme.sageLight)
             }
-            Text(store.questTitle ?? "Free ride")
+            Text(store.questTitle ?? LoreCopy.free(store.activity))
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(WatchTheme.secondary)
                 .lineLimit(2)

@@ -21,7 +21,7 @@ struct OnboardingFlow: View {
                     if prologueDone {
                         CharacterCreationView(onDone: { step = .activity })
                     } else {
-                        PrologueView(finish: "Choose a trade") {
+                        PrologueView(finish: "Choose your class") {
                             Prologue.seen = true
                             prologueDone = true
                         }
@@ -56,11 +56,11 @@ struct WelcomeView: View {
                 Circle().stroke(Theme.Colors.terracotta.opacity(0.28), lineWidth: 1.5).frame(width: 222, height: 222)
                 Circle().stroke(Theme.Colors.terracotta.opacity(0.14), lineWidth: 1).frame(width: 252, height: 252)
                 Image("Logo").resizable().scaledToFit().frame(width: 150, height: 150)
-                    .accessibilityLabel("Rides and Runes")
+                    .accessibilityLabel("Roads & Runes")
             }
             .padding(.bottom, 8)
             Text("Roads & Runes").font(Theme.Typography.voice(40, relativeTo: .largeTitle)).foregroundStyle(Theme.Colors.ink)
-            Text("Every road was written once.\nGo out and read it back.")
+            Text("Explore real roads. Lift the fog,\nmeet its creatures, gather the runes.")
                 .font(Theme.Typography.text(15))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(Theme.Colors.muted)
@@ -127,8 +127,8 @@ struct CharacterCreationView: View {
         ZStack(alignment: .bottom) {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Choose a\ntrade").font(Theme.Typography.voice(32, relativeTo: .largeTitle)).foregroundStyle(Theme.Colors.ink)
-                    Text("Your trade shapes your notices and what pays best. It never locks you out of anything.")
+                    Text("Choose your\nclass").font(Theme.Typography.voice(32, relativeTo: .largeTitle)).foregroundStyle(Theme.Colors.ink)
+                    Text("Your class decides which quests you get and what earns the most. Nothing is ever locked.")
                         .font(Theme.Typography.text(13.5)).foregroundStyle(Theme.Colors.muted).lineSpacing(2)
                     TextField("Your name", text: $name).textFieldStyle(CreamFieldStyle()).padding(.vertical, 4)
                     ForEach(classes) { info in
@@ -155,16 +155,17 @@ struct CharacterCreationView: View {
                     saving = false
                 }
             } label: {
-                Text(saving ? "Creating…" : LoreCopy.goOutAs(ClassStyle.name(selected)))
+                Text(saving ? "Creating…" : LoreCopy.become(ClassStyle.name(selected)))
             }
             .buttonStyle(.primary)
             .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || saving)
+            .accessibilityIdentifier("onboarding.createCharacter")
             .padding(.horizontal, 20)
             .padding(.bottom, 8)
         }
         .task {
             classes = (try? await container.api.classes()) ?? [
-                ClassInfo(id: "EXPLORER", name: "Explorer", tagline: "Chart unknown territory.", description: "New roads and unvisited areas earn the most.", enabled: true),
+                ClassInfo(id: "EXPLORER", name: "Explorer", tagline: "Lift the fog wherever you go.", description: "Exploring new roads and tiles earns the most.", enabled: true),
             ]
         }
     }
@@ -187,9 +188,6 @@ struct ClassCard: View {
                     } else if !info.enabled {
                         Eyebrow(text: "Coming soon", color: Theme.Colors.muted)
                     }
-                }
-                if let guild = info.guild {
-                    Text(guild.capitalizedFirst).font(Theme.Typography.captionStrong).foregroundStyle(ClassStyle.textColor(characterClass))
                 }
                 Text(info.tagline).font(Theme.Typography.text(13)).foregroundStyle(Theme.Colors.inkSoft).lineSpacing(2)
                 Text(info.description).font(Theme.Typography.text(11.5, relativeTo: .caption2)).foregroundStyle(Theme.Colors.muted).lineLimit(2)
@@ -261,10 +259,10 @@ struct LocationPermissionView: View {
                 Circle().fill(Theme.Colors.sage).frame(width: 26, height: 26)
                 Circle().stroke(Theme.Colors.sage.opacity(0.35), lineWidth: 10).frame(width: 52, height: 52)
             }
-            Text("Your position is\nyour character").font(Theme.Typography.voice(30, relativeTo: .largeTitle)).multilineTextAlignment(.center).foregroundStyle(Theme.Colors.ink)
+            Text("Your steps\ndraw the map").font(Theme.Typography.voice(30, relativeTo: .largeTitle)).multilineTextAlignment(.center).foregroundStyle(Theme.Colors.ink)
             Text(
                 "Roads & Runes needs your location to draw the world map, the fog around you and the quests nearby. " +
-                "During a ride it records your route in the background so the map clears and objectives complete even when your phone is locked. " +
+                "During a journey it records your route in the background, so the fog lifts and objectives complete even when your phone is locked. " +
                 "Your live location is never shared."
             )
             .font(Theme.Typography.text(14))

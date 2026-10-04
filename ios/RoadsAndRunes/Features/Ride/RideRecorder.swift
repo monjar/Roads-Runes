@@ -244,13 +244,14 @@ final class RideRecorder {
         let rideId = ride?.id
         let endedClientId = clientRideId
         sync.beginReckoning(PendingReckoning(
-            rideId: rideId, clientRideId: endedClientId, title: quest?.title ?? title ?? "Free \(activity.noun)", endedAt: endedAt,
+            rideId: rideId, clientRideId: endedClientId, title: quest?.title ?? title ?? LoreCopy.free(activity), endedAt: endedAt,
             distanceMeters: stats.distanceMeters, elapsedSeconds: stats.elapsedSeconds, newTerritoryMeters: newTerritoryMeters,
             claimed: eventLog.compactMap { event in
                 guard case .claimed(let name, let kind, _, _) = event else { return nil }
-                return "\(kind == .monster ? "Seen off" : (kind == .chest ? "Opened" : "Found")): \(name)"
+                return "\(kind == .monster ? "Defeated" : (kind == .chest ? "Opened" : "Found")): \(name)"
             },
-            objectivesDone: completedObjectiveIDs.count
+            objectivesDone: completedObjectiveIDs.count,
+            activity: activity
         ))
         analytics.track(.navigationEnded, properties: ["distance": String(Int(stats.distanceMeters))])
         _ = transition(to: .completed)
@@ -572,6 +573,7 @@ final class RideRecorder {
                 handle(objectiveEvents: [event])
             }
         }
+        // Wire words, which older Watches know: the Watch shows GONE as DEFEATED.
         let outcome = object.kind == .monster ? "GONE" : (object.kind == .chest ? "OPENED" : "FOUND")
         objectsOnMap.removeAll { $0.id == object.id }
         // A second piece of a set found on the same ride counts on from the first, and
@@ -586,8 +588,8 @@ final class RideRecorder {
         analytics.track(.worldObjectClaimed, properties: ["kind": object.kind.rawValue, "name": object.name])
     }
 
-    /// A note near a monster. The old way, it is the Scribe's way past it; fought
-    /// by effort, it is the word, and lands on whatever is near.
+    /// A note near a creature. The old way, it is the Scribe's way past it; fought
+    /// by effort, it is a note, and strikes whatever is near.
     func complete(encounter object: WorldObject, note: String?, photoTaken: Bool) {
         guard var tracker = encounterTracker else { return }
         let here = location.lastFix?.coordinate ?? object.coordinate
@@ -600,16 +602,16 @@ final class RideRecorder {
         }
         for case .seenOff(let gone) in result.news { handle(claimed: gone, at: here) }
         // Written at a standstill, so the screen says it, not the voice.
-        if result.news.contains(where: { if case .landed = $0 { return true }; return false }) { show(notice: "The word landed.") }
+        if result.news.contains(where: { if case .landed = $0 { return true }; return false }) { show(notice: "Note strike.") }
         persist(force: true)
     }
 
-    /// The Watch's line: a name and how far; the hold is not put into numbers.
+    /// The Watch's line: a name and how far; its health is not put into numbers.
     private var encounterLine: String? {
         guard let encounter else { return nil }
         let distance = Int(encounter.distanceMeters.rounded())
         if encounter.hold == nil, let progress = encounter.progress, let method = encounter.method {
-            return "\(encounter.object.name) · \(distance) m · \(method.rawValue.lowercased()) \(Int(progress * 100))%"
+            return "\(encounter.object.name) · \(distance) m · \(LoreCopy.effort(method)) \(Int(progress * 100))%"
         }
         return "\(encounter.object.name) · \(distance) m"
     }

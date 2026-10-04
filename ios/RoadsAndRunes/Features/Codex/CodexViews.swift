@@ -2,19 +2,19 @@ import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
-/// The codex (docs/WORLD.md): what the world is, the things that settle in it,
-/// the runes, the people who write the board, and the places found. It lives in
+/// The Codex (docs/WORLD.md): what the world is, the creatures in it, the runes,
+/// the people who write the board, and the places found. It lives in
 /// the Journal; the character sheet opens the same pages.
 struct CodexBrowser<Places: View>: View {
     let codex: Codex?
-    /// Fights by effort are on: a creature's page says what it wants.
+    /// Fights by effort are on: a creature's page says what it is weak to.
     let showWants: Bool
     @ViewBuilder let places: () -> Places
     @State private var chapter = "WORLD"
     @State private var showingPrologue = false
 
     private static var chapters: [(id: String, title: String)] {
-        [("WORLD", "The world"), ("CREATURES", "Things"), ("RUNES", "Runes"), ("PEOPLE", "People"), ("PLACES", "Places")]
+        [("WORLD", "The world"), ("CREATURES", "Creatures"), ("RUNES", "Runes"), ("PEOPLE", "People"), ("PLACES", "Places")]
     }
 
     var body: some View {
@@ -46,7 +46,7 @@ struct CodexBrowser<Places: View>: View {
 
     @ViewBuilder
     private func world(_ codex: Codex) -> some View {
-        Button { showingPrologue = true } label: { Label("The four plates", systemImage: "book.pages") }
+        Button { showingPrologue = true } label: { Label("Read the prologue", systemImage: "book.pages") }
             .buttonStyle(.surfacePill)
             .sheet(isPresented: $showingPrologue) {
                 PrologueView(finish: "Close") { showingPrologue = false }
@@ -56,15 +56,15 @@ struct CodexBrowser<Places: View>: View {
         }
     }
 
-    // MARK: Things that settle
+    // MARK: Creatures
 
     @ViewBuilder
     private func creatures(_ codex: Codex) -> some View {
-        Text("Seen off \(codex.counts.creaturesSeenOff) of \(codex.counts.creaturesTotal) · on the map \(codex.counts.creaturesSeen)")
+        Text("Defeated \(codex.counts.creaturesSeenOff) of \(codex.counts.creaturesTotal) · seen \(codex.counts.creaturesSeen)")
             .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
             .accessibilityIdentifier("codex.creatures.count")
         if codex.creatures.allSatisfy({ $0.state == .unseen }) {
-            EmptyState(icon: .mystery, title: "Nothing met yet", message: "They keep to places nobody is paying attention to.")
+            EmptyState(icon: .mystery, title: "No creatures met yet", message: "Get close to one on the map to add it here.")
         }
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 12) {
             ForEach(codex.creatures) { creature in
@@ -161,7 +161,7 @@ struct CreatureTile: View {
                 .foregroundStyle(creature.state == .unseen ? Theme.Colors.muted : Theme.Colors.ink)
                 .lineLimit(2).multilineTextAlignment(.center)
             if creature.seenOffCount > 0 {
-                Text("seen off \(creature.seenOffCount)").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.sageDeep)
+                Text("defeated \(creature.seenOffCount)").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.sageDeep)
             } else if creature.state == .unseen {
                 Text(creature.hint).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.mutedLight)
                     .lineLimit(2).multilineTextAlignment(.center)
@@ -216,8 +216,9 @@ struct CreaturePage: View {
                     Text("— Enid Sallow").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
                     if showWants {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(LoreCopy.wants(creature.wants, rune: runeName, runeForm: runeForm))
-                            Text(LoreCopy.doesNotMind(creature.minds))
+                            Text(LoreCopy.weakTo(creature.wants))
+                            if !creature.minds.isEmpty { Text(LoreCopy.resists(creature.minds)) }
+                            if let runeName { Text(LoreCopy.runeHow(runeName, form: runeForm)) }
                         }
                         .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.ink)
                     }
@@ -237,15 +238,15 @@ struct CreaturePage: View {
 
     private var facts: some View {
         HStack(spacing: 8) {
-            FactTile(value: "\(creature.seenCount)", label: "On your map")
-            FactTile(value: "\(creature.seenOffCount)", label: "Seen off")
+            FactTile(value: "\(creature.seenCount)", label: "Seen")
+            FactTile(value: "\(creature.seenOffCount)", label: "Defeated")
             FactTile(value: creature.leaves.capitalizedFirst, label: "Leaves")
         }
     }
 
     @ViewBuilder
     private var elders: some View {
-        SectionHeader(title: "Its elders")
+        SectionHeader(title: "Elders")
         ForEach(creature.elders, id: \.tier) { elder in
             HStack(spacing: 12) {
                 MarkView(.creature(Sigil(creature.sigil), tier: elder.tier, unmet: !elder.seen)).frame(width: 44, height: 44)
@@ -260,7 +261,7 @@ struct CreaturePage: View {
     }
 }
 
-/// A rune's page: the stone, what it means, what it comes out as on a road.
+/// A rune's page: the stone, what it means, and the shape that uses it.
 struct RunePage: View {
     let rune: CodexRune
     let six: CodexSix
@@ -276,8 +277,8 @@ struct RunePage: View {
                 Text(rune.name).font(Theme.Typography.voice(30, relativeTo: .largeTitle)).foregroundStyle(Theme.Colors.ink)
                 Eyebrow(text: six.name, color: Theme.Colors.terracottaDeep)
                 Text(rune.gloss).font(Theme.Typography.body).foregroundStyle(Theme.Colors.inkSoft)
-                if let form = LoreCopy.roadForm(rune.roadForm) {
-                    Text("On the road, \(form).").font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.ink)
+                if let action = LoreCopy.shapeAction(rune.roadForm) {
+                    Text("To use it: \(action.lowercased()) near a creature.").font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.ink)
                 }
                 Text(rune.state == .held ? (rune.found > 1 ? "Found \(rune.found) times." : "Found once.") : six.how)
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)

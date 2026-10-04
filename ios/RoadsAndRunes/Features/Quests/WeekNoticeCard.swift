@@ -30,7 +30,7 @@ struct WeekNoticeCard: View {
     }
 
     private var standing: String {
-        if notice.paid { return "Done · paid" }
+        if notice.paid { return "Done · reward paid" }
         var parts = ["\(notice.progress) of \(notice.target)"]
         if let coins = notice.coins { parts.append(LoreCopy.purse(coins)) }
         return parts.joined(separator: " · ")

@@ -106,7 +106,7 @@ struct WorldView: View {
                 HStack {
                     Spacer()
                     VStack(spacing: 12) {
-                        // The frontier chevron (0.7.0, ink fog): which way the nearest unread ground lies.
+                        // The frontier chevron (0.7.0, ink fog): which way the nearest unexplored tile lies.
                         if let bearing = model.frontierBearing {
                             Button { model.goToFrontier() } label: {
                                 Image(systemName: "chevron.up")
@@ -118,7 +118,7 @@ struct WorldView: View {
                                     .overlay(Circle().stroke(Theme.Colors.ink.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [1, 3])))
                             }
                             .buttonStyle(.pressable)
-                            .accessibilityLabel("The nearest unread ground")
+                            .accessibilityLabel("Nearest unexplored area")
                             .accessibilityIdentifier("world.frontier")
                         }
                         IconCircleButton(symbol: "location.fill", size: 48) { model.locateMe() }
@@ -132,7 +132,7 @@ struct WorldView: View {
                                 .shadow(color: Theme.Colors.ink.opacity(0.25), radius: 6, y: 3)
                         }
                         .buttonStyle(.pressable)
-                        .accessibilityLabel("Plan a ride from here")
+                        .accessibilityLabel("Plan a route from here")
                     }
                 }
                 .padding(.horizontal, 16)
@@ -270,7 +270,7 @@ struct MapStyleMenu: View {
                 Button {
                     container.mapPreferences.showMysteries.toggle()
                 } label: {
-                    Label("Undiscovered places (?)", systemImage: container.mapPreferences.showMysteries ? "checkmark" : "questionmark.circle")
+                    Label("Hidden places", systemImage: container.mapPreferences.showMysteries ? "checkmark" : "questionmark.circle")
                 }
                 .accessibilityIdentifier("map.showMysteries")
             }
@@ -288,11 +288,16 @@ struct MapStyleMenu: View {
     /// What each view is for, since the names alone did not say.
     static func title(for style: MapStyle) -> String {
         switch style {
-        case .minimal: return "Minimal · just the streets"
-        case .cycling: return "Cycling · cycleways in green"
-        case .adventure: return "Adventure · trails and parks"
-        case .detailed: return "Detailed · everything"
-        default: return style.rawValue.capitalized
+        case .minimal: return "\(name(for: style)) · just the streets"
+        case .cycling: return "\(name(for: style)) · cycleways in green"
+        case .adventure: return "\(name(for: style)) · trails and parks"
+        case .detailed: return "\(name(for: style)) · everything"
+        default: return name(for: style)
         }
+    }
+
+    /// The style's short name: "Outdoors" for the trails-and-parks style.
+    static func name(for style: MapStyle) -> String {
+        style == .adventure ? "Outdoors" : style.rawValue.capitalized
     }
 }

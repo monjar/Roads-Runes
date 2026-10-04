@@ -2,9 +2,9 @@ import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
-/// A chest, a piece or a monster on the World map: what it is, what it pays and
+/// A chest, a piece or a creature on the World map: what it is, what it pays and
 /// how to get it. Within reach of a chest or a piece the action is to take it;
-/// further off, and for a monster, it is to plan a route there.
+/// further off, and for a creature, it is to plan a route there.
 struct EncounterCard: View {
     let object: WorldObject
     var distanceMeters: Double?
@@ -43,7 +43,7 @@ struct EncounterCard: View {
                 wantsSection(monster)
             } else if let monster = object.monster, !monster.killMethods.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("What it wants").font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink)
+                    Text("How to defeat it").font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink)
                     ForEach(Array(monster.killMethods.enumerated()), id: \.offset) { _, method in
                         HStack(alignment: .top, spacing: 10) {
                             MarkView(.icon(Self.icon(for: method.method), spot: .terracotta))
@@ -61,7 +61,7 @@ struct EncounterCard: View {
                 // Which set, how much of it is held, and whether this piece adds to it.
                 HStack(spacing: 6) {
                     MarkView(.icon(.sparkles, spot: .sage)).frame(width: 16, height: 16)
-                    Text(standing.line + (object.pieceOwned == true ? " · you have this one" : ""))
+                    Text(standing.line + (object.pieceOwned == true ? " · you already have this one" : ""))
                 }
                 .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.sageDeep)
                     .accessibilityIdentifier("encounter.set")
@@ -72,7 +72,7 @@ struct EncounterCard: View {
                     ZStack {
                         HStack(spacing: 10) {
                             MarkView(.icon(object.kind == .chest ? .openChest : .runeStone, spot: .paper)).frame(width: 20, height: 20)
-                            Text(object.kind == .chest ? "Open chest" : "Pick it up")
+                            Text(object.kind == .chest ? "Open chest" : "Pick up \(object.piece ?? "piece")")
                         }
                         .opacity(claiming ? 0 : 1)
                         if claiming { ProgressView().tint(Theme.Colors.cream) }
@@ -99,33 +99,34 @@ struct EncounterCard: View {
         .accessibilityIdentifier("encounterCard")
     }
 
-    /// Effort is damage: what it wants and shrugs at, its hold, its rune and the
-    /// rune's road form, how long since anyone read the place, and how much of the
-    /// ground round it is new. Numbers are fine here: the card is read at rest.
+    /// Effort is damage: what it is weak to and resists, its health, its rune and
+    /// the rune's shape, how long since the player passed, and how much of the
+    /// ground around it is unexplored. Numbers are fine here: the card is read at rest.
     @ViewBuilder
     private func wantsSection(_ monster: MonsterInfo) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("What it wants").font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink)
-            row(.sword, LoreCopy.wants(monster.wants ?? [], rune: Self.runeName(monster.rune), runeForm: monster.roadForm))
+            Text("How to defeat it").font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink)
+            row(.sword, LoreCopy.weakTo(monster.wants ?? []))
                 .accessibilityIdentifier("encounter.wants")
             if let minds = monster.minds, !minds.isEmpty {
-                row(.resist, LoreCopy.doesNotMind(minds)).accessibilityIdentifier("encounter.minds")
+                row(.resist, LoreCopy.resists(minds)).accessibilityIdentifier("encounter.minds")
             }
             if let holdMax = monster.holdMax {
                 let left = monster.holdLeft ?? holdMax
-                row(.heart, left < holdMax ? "Its hold: \(left) of \(holdMax). Loosened." : "Its hold: \(holdMax).")
+                row(.heart, left < holdMax ? "Health \(left) / \(holdMax) · weakened" : "Health \(holdMax) / \(holdMax)")
                     .accessibilityIdentifier("encounter.hold")
             }
-            if let rune = Self.runeName(monster.rune), let form = LoreCopy.roadForm(monster.roadForm) {
-                row(.runeStone, "\(rune). On the road, \(form).")
+            if let rune = Self.runeName(monster.rune) {
+                row(.runeStone, LoreCopy.runeHow(rune, form: monster.roadForm))
+                    .accessibilityIdentifier("encounter.rune")
             }
             if let days = monster.unpassedDays, days >= 30 {
-                row(.hourglass, "You have not passed here in \(days) days.")
+                row(.hourglass, "You haven't been here in \(days) days.")
             }
             if let groundRound, groundRound.of > 0 {
                 row(.treasureMap, groundRound.unread == 0
-                    ? "You have read all the ground round it."
-                    : "\(groundRound.unread) of the \(groundRound.of) patches round it are new ground to you.")
+                    ? "You've explored all the ground around it."
+                    : "\(groundRound.unread) of \(groundRound.of) tiles around it are unexplored.")
                     .accessibilityIdentifier("encounter.ground")
             }
         }
@@ -150,7 +151,7 @@ struct EncounterCard: View {
     /// Within reach it says so; out of reach it says how much closer to get.
     private func howToTakeIt(_ reach: Double) -> String {
         let piece = object.kind == .collectable
-        if inReach { return piece ? "You are close enough to pick it up." : "You are close enough to open it." }
+        if inReach { return piece ? "You're close enough to pick it up." : "You're close enough to open it." }
         let within = "Get within \(formatter.distance(meters: reach))"
         guard let distanceMeters, distanceMeters > reach else { return "\(within) to \(piece ? "pick it up" : "open it")." }
         return "\(within) to \(piece ? "pick it up" : "open it") · \(formatter.distance(meters: distanceMeters - reach)) to go."
@@ -162,7 +163,7 @@ struct EncounterCard: View {
         if let distanceMeters { parts.append(formatter.distance(meters: distanceMeters)) }
         parts.append(LoreCopy.purse(object.rewardAC))
         let days = max(0, Int(object.expiresAt.timeIntervalSinceNow / 86_400))
-        parts.append(days == 0 ? "its last day" : "\(days) day\(days == 1 ? "" : "s") left")
+        parts.append(days == 0 ? "last day" : "\(days) day\(days == 1 ? "" : "s") left")
         return parts.joined(separator: " · ")
     }
 

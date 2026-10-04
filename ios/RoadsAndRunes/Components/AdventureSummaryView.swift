@@ -2,15 +2,15 @@ import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
-/// Adventure Complete (design 13b): the reckoning.
+/// Adventure Complete (design 13b): Journey's end.
 ///
 /// The ride's line draws itself on the map, then what it earned arrives a part at
 /// a time: the XP counts up and the level fills, each line of it lands, then the
-/// coins, then a level gained (its own card), then what was seen off, opened and
+/// coins, then a level gained (its own card), then what was defeated, opened and
 /// found — and what got away, and by how much — then the quest's last word.
 /// With fights decided by effort, the fights come first, the quarry leading. It
 /// was one static sheet with a level-up as a small chip among others. One tap
-/// shows everything at once; "Close the book" is there from the start. Cycling
+/// shows everything at once; "Done" is there from the start. Cycling
 /// stats stay one quiet line (spec §40). Opened again from the Journal it is
 /// simply all there (`animated: false`).
 struct AdventureSummaryView: View {
@@ -100,7 +100,7 @@ struct AdventureSummaryView: View {
                     }
                 }
                 // Read again from the Journal there is nothing left to collect.
-                Button(animated ? LoreCopy.closeTheBook : "Done") {
+                Button(LoreCopy.done) {
                     if animated { Task { await container.nudges.requestAuthorizationIfNeeded() } }
                     onDone()
                 }
@@ -146,7 +146,7 @@ struct AdventureSummaryView: View {
         }
         if !fights.isEmpty {
             await arrive(at: .fight, after: 0.2)
-            // Felt, not tapped on the wrist: a swell for something seen off, a knock for one that got away.
+            // Felt, not tapped on the wrist: a swell for a creature defeated, a knock for one that got away.
             if fights.contains(where: \.seenOff) {
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
             } else {
@@ -223,8 +223,8 @@ struct AdventureSummaryView: View {
     private var header: some View {
         HStack(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 4) {
-                Eyebrow(text: LoreCopy.reckoning, color: Theme.Colors.sageDeep)
-                Text(summary.quest?.title ?? summary.ride.title ?? "Free ride")
+                Eyebrow(text: LoreCopy.journeysEnd, color: Theme.Colors.sageDeep)
+                Text(summary.quest?.title ?? summary.ride.title ?? LoreCopy.free(summary.ride.activity))
                     .font(Theme.Typography.voice(28, relativeTo: .title))
                     .foregroundStyle(Theme.Colors.ink)
                     .lineLimit(2)
@@ -326,10 +326,10 @@ struct AdventureSummaryView: View {
                     .frame(width: 62, height: 62)
                     .background(Theme.Colors.sageDeep, in: Circle())
                 VStack(alignment: .leading, spacing: 2) {
-                    Eyebrow(text: "The roads count again", color: Theme.Colors.sageLight)
-                    Text(levelUp.kind == .classLevel ? "\(className) level \(levelUp.to)" : "Level \(levelUp.to)")
+                    Eyebrow(text: "Level up!", color: Theme.Colors.sageLight)
+                    Text(levelUp.kind == .classLevel ? LoreCopy.classLevel(className, levelUp.to) : "Level \(levelUp.to)")
                         .font(Theme.Typography.voice(22, relativeTo: .title2)).foregroundStyle(Theme.Colors.cream)
-                    Text("from \(levelUp.from)").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.line)
+                    Text("up from \(levelUp.from)").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.line)
                 }
                 Spacer(minLength: 0)
             }
@@ -339,7 +339,7 @@ struct AdventureSummaryView: View {
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("summary.levelUp")
         }
-        let gains = summary.abilitiesUnlocked.map { LoreCopy.newKnack($0.name) } + (summary.titlesUnlocked ?? []).map { "Title: \($0)" }
+        let gains = summary.abilitiesUnlocked.map { LoreCopy.newSkill($0.name) } + (summary.titlesUnlocked ?? []).map { "New title: \($0)" }
         if !gains.isEmpty { chips(gains) }
     }
 
@@ -349,12 +349,12 @@ struct AdventureSummaryView: View {
         return !world.claimed.isEmpty || world.missed.contains { $0.reason == "UNBEATEN" } || summary.streak?.extended == true
     }
 
-    /// Creatures met for the first time on this outing: stamped into the codex.
+    /// Creatures met for the first time on this journey: added to the Codex.
     private var firsts: [CodexFirst] { summary.codexFirsts ?? [] }
 
     private var codexSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Eyebrow(text: "Into the codex", color: Theme.Colors.sageDeep)
+            Eyebrow(text: "Added to the Codex", color: Theme.Colors.sageDeep)
             ForEach(firsts) { first in
                 HStack(spacing: 10) {
                     MarkView(.icon(.spellBook, spot: .sage)).frame(width: 18, height: 18)
@@ -368,22 +368,22 @@ struct AdventureSummaryView: View {
         .accessibilityIdentifier("summary.codex")
     }
 
-    /// Runes woken and found, and deeds reached or beaten on this outing (0.7.0).
+    /// Runes woken and found, and deeds reached or beaten on this journey (0.7.0).
     private var runeLines: [(mark: Mark, text: String)] {
         var out: [(Mark, String)] = []
         for rune in summary.worldObjects?.woken ?? [] {
-            out.append((.rune(rune), "\(rune.capitalized) woke: a rank deeper for this outing."))
+            out.append((.rune(rune), "\(rune.capitalized) woke: one rank stronger for this journey."))
         }
         for found in summary.runesFound ?? [] {
             out.append((.rune(found.rune), found.new
-                ? "\(found.rune.capitalized) is yours now."
-                : "A stone of \(found.rune.capitalized): \(found.shards) towards the next rank."))
+                ? "New rune: \(found.rune.capitalized)!"
+                : "\(found.rune.capitalized) rune stone: \(found.shards) toward its next rank."))
         }
         for reached in summary.deeds?.reached ?? [] {
-            out.append((.icon(.trophy, spot: .gold), "\(reached.name): \(reached.title ?? "a new mark")."))
+            out.append((.icon(.trophy, spot: .gold), "\(reached.name): \(reached.title ?? "new tier reached")!"))
         }
         for record in summary.deeds?.records ?? [] {
-            out.append((.icon(.laurels), "\(record.name): \(Int(record.value.rounded())) \(record.unit), the most yet."))
+            out.append((.icon(.laurels), "\(record.name): \(Int(record.value.rounded())) \(record.unit), a new record!"))
         }
         return out
     }
@@ -404,10 +404,10 @@ struct AdventureSummaryView: View {
         .accessibilityIdentifier("summary.runes")
     }
 
-    /// The outing's entry: a few written lines, in the journal too.
+    /// The journey's entry: a few written lines, in the Journal too.
     private func entrySection(_ entry: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Eyebrow(text: "The entry", color: Theme.Colors.muted)
+            Eyebrow(text: "Journal entry", color: Theme.Colors.muted)
             Text(entry).font(Theme.Typography.text(14)).italic().foregroundStyle(Theme.Colors.inkSoft)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -415,7 +415,7 @@ struct AdventureSummaryView: View {
         .accessibilityIdentifier("summary.entry")
     }
 
-    /// Effort is damage: one report per thing the outing reached, the quarry first.
+    /// Effort is damage: one report per creature the journey reached, the quarry first.
     private var fights: [FightReport] {
         FightCopy.ordered(summary.worldObjects?.fights ?? [], quarryId: summary.quarryId)
     }
@@ -440,7 +440,7 @@ struct AdventureSummaryView: View {
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
-    /// What was seen off, opened and found; what got away and how nearly; the days kept.
+    /// What was defeated, opened and found; what got away and how nearly; the streak.
     @ViewBuilder
     private var worldSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -448,7 +448,7 @@ struct AdventureSummaryView: View {
                 HStack(spacing: 10) {
                     EncounterGlyph(kind: taken.kind, size: 30)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("\(taken.kind == .monster ? "Saw off" : (taken.kind == .chest ? "Opened" : "Found")) \(taken.name)")
+                        Text("\(taken.kind == .monster ? "Defeated" : (taken.kind == .chest ? "Opened" : "Found")) \(taken.name)")
                             .font(Theme.Typography.text(14, .semibold)).foregroundStyle(Theme.Colors.ink).lineLimit(1)
                         if let standing = taken.setStanding {
                             Text(standing.line).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.sageDeep)
@@ -464,13 +464,13 @@ struct AdventureSummaryView: View {
                     .accessibilityIdentifier("summary.setComplete")
             }
             ForEach((summary.worldObjects?.missed ?? []).filter { $0.kind == .monster && $0.reason == "UNBEATEN" }) { missed in
-                Text(RewardCopy.shruggedOff(missed, units: units))
+                Text(RewardCopy.heldOn(missed, units: units))
                     .font(Theme.Typography.text(13)).foregroundStyle(Theme.Colors.inkSoft)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("summary.nearMiss")
             }
             if let notice = summary.weekNotice, notice.paid {
-                Label("The week's notice: done. \(notice.title)", systemImage: "pin.fill")
+                Label("This week's notice done: \(notice.title)", systemImage: "pin.fill")
                     .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.sageDeep)
                     .accessibilityIdentifier("summary.weekNotice")
             }
@@ -489,7 +489,7 @@ struct AdventureSummaryView: View {
     private var questSection: some View {
         if summary.questCompletion != nil, let quest = summary.quest {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Quest completed · all \(quest.requiredObjectives.count) objectives")
+                Text("Quest complete! All \(quest.requiredObjectives.count) objectives done.")
                     .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.sageDeep)
                 if let words = summary.questCompletion?.quest.narrative.completion ?? quest.narrative.completion, !words.isEmpty {
                     Text(words).font(Theme.Typography.text(14)).italic().foregroundStyle(Theme.Colors.inkSoft)
@@ -511,15 +511,16 @@ struct AdventureSummaryView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 FactTile(value: "\(summary.discoveries.count)", label: summary.discoveries.count == 1 ? "New place" : "New places")
-                FactTile(value: formatter.distance(meters: summary.newTerritoryMeters), label: "New territory")
-                FactTile(value: formatter.distance(meters: max(0, summary.ride.distanceMeters - summary.newRoadsMeters)), label: "Known ground")
+                FactTile(value: formatter.distance(meters: summary.newTerritoryMeters), label: "Newly explored")
+                FactTile(value: formatter.distance(meters: max(0, summary.ride.distanceMeters - summary.newRoadsMeters)), label: "Explored before")
             }
             Text("\(formatter.distance(meters: summary.ride.distanceMeters)) · \(formatter.duration(seconds: Double(summary.ride.durationSeconds))) · \(formatter.elevation(meters: summary.ride.elevationGainMeters)) climbed")
                 .font(Theme.Typography.caption)
                 .foregroundStyle(Theme.Colors.muted)
             if !summary.discoveries.isEmpty { chips(summary.discoveries.map(\.name), tint: Theme.Colors.surface, text: Theme.Colors.ink) }
             if !summary.flags.isEmpty {
-                Text("Some data could not be validated: \(summary.flags.joined(separator: ", "))")
+                // Never the flags themselves: they are codes, and say nothing a rider can act on.
+                Text("Part of this \(LoreCopy.journey(summary.ride.activity)) couldn't be checked, so some of it may not count.")
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.terracottaDeep)
             }
             if summary.ride.healthKitWorkoutId != nil {
@@ -555,7 +556,7 @@ struct AdventureSummaryView: View {
         case .sending:
             Label("Sending to Strava…", systemImage: "arrow.up.circle").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
         case .failed(let reason):
-            Text("Strava: \(reason)").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.terracottaDeep)
+            Text("Couldn't send to Strava. \(reason)").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.terracottaDeep)
         case .idle:
             if summary.ride.stravaUploadStatus == "UPLOADED" || summary.ride.stravaUploadStatus == "QUEUED" {
                 Label("Sent to Strava", systemImage: "checkmark.circle.fill").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.sageDeep)
@@ -578,7 +579,7 @@ struct AdventureSummaryView: View {
 
     private var className: String { ClassStyle.name(character?.characterClass ?? .explorer) }
 
-    /// The places found, and an ink mark where something was seen off: the mark of
+    /// The places found, and an ink mark where a creature was defeated: the mark of
     /// what did it.
     private var markers: [MapMarker] {
         let places = summary.discoveries.map { MapMarker(id: $0.id.uuidString, coordinate: $0.coordinate, kind: .discovery, title: $0.name) }
@@ -594,20 +595,20 @@ struct AdventureSummaryView: View {
     private var revealLine: String {
         let area = Double(summary.newCells) * Self.cellAreaKm2
         let areaText = area >= 10 ? "\(Int(area.rounded())) km²" : String(format: "%.1f km²", area)
-        return "\(areaText) revealed · \(summary.newCells) new area\(summary.newCells == 1 ? "" : "s")"
+        return "\(areaText) explored · \(summary.newCells) new tile\(summary.newCells == 1 ? "" : "s")"
     }
 
     private func streakLine(_ streak: StreakOutcome) -> String {
-        var line = LoreCopy.daysKept(streak.days)
+        var line = LoreCopy.streak(streak.days)
         if streak.days > 1, streak.days >= streak.longest { line += ", your longest yet" }
-        if streak.milestone != nil { line += " · a milestone" }
+        if streak.milestone != nil { line += " · a milestone!" }
         return streak.bonusAC > 0 ? "\(line) · \(LoreCopy.earned(streak.bonusAC))" : line
     }
 
     private func storyLine(_ standing: StoryStanding) -> String {
         if standing.arcCompleted {
-            var line = "\(standing.arcTitle) is finished."
-            if let title = standing.reward?.title { line += " You are \(title) now." }
+            var line = "\(standing.arcTitle) complete!"
+            if let title = standing.reward?.title { line += " New title: \(title)." }
             return line
         }
         var line = "\(standing.arcTitle) · \(standing.stepsDone) of \(standing.stepsTotal)."
@@ -615,14 +616,14 @@ struct AdventureSummaryView: View {
         return line
     }
 
-    /// What tomorrow is worth: the next streak purse, or simply the next day.
+    /// What tomorrow is worth: the next streak bonus, or simply the next day.
     private var comeBackLine: String? {
-        guard let streak = summary.streak, streak.days > 0 else { return "Out again tomorrow and the days start to count." }
+        guard let streak = summary.streak, streak.days > 0 else { return "Go out again tomorrow to start a streak." }
         if let next = [7, 30].first(where: { $0 > streak.days }) {
             let left = next - streak.days
-            return "\(left) more \(left == 1 ? "day" : "days") kept for a purse of \(next == 7 ? 100 : 500). A new bounty is out at dawn."
+            return "\(left) more \(left == 1 ? "day" : "days") to a \(LoreCopy.purse(next == 7 ? 100 : 500)) streak bonus. A new bounty comes at dawn."
         }
-        return "\(LoreCopy.daysKept(streak.days)). A new bounty is out at dawn."
+        return "\(LoreCopy.streak(streak.days)). A new bounty comes at dawn."
     }
 }
 
@@ -657,15 +658,15 @@ struct RideHoldingView: View {
             Theme.Colors.cream.ignoresSafeArea()
             VStack(alignment: .leading, spacing: 18) {
                 Spacer(minLength: 0)
-                Eyebrow(text: "Ride saved", color: Theme.Colors.sageDeep)
+                Eyebrow(text: "\((pending.activity ?? .ride).verb) saved", color: Theme.Colors.sageDeep)
                 Text(pending.title)
                     .font(Theme.Typography.voice(32, relativeTo: .largeTitle))
                     .foregroundStyle(Theme.Colors.ink)
                     .lineLimit(3)
                 HStack(spacing: 8) {
-                    FactTile(value: formatter.distance(meters: pending.distanceMeters), label: "Ridden")
+                    FactTile(value: formatter.distance(meters: pending.distanceMeters), label: "Distance")
                     FactTile(value: formatter.duration(seconds: pending.elapsedSeconds), label: "Time")
-                    FactTile(value: formatter.distance(meters: pending.newTerritoryMeters), label: "New ground", valueColor: Theme.Colors.sageDeep)
+                    FactTile(value: formatter.distance(meters: pending.newTerritoryMeters), label: "Newly explored", valueColor: Theme.Colors.sageDeep)
                 }
                 if !pending.claimed.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
@@ -677,16 +678,16 @@ struct RideHoldingView: View {
                 }
                 HStack(spacing: 10) {
                     if !timedOut { ProgressView().tint(Theme.Colors.terracotta) }
-                    Text(timedOut ? "Still counting. It will be in your Journal when it is done." : "Counting the spoils. The server has the last word.")
+                    Text(timedOut ? "Still adding it up. It will be in your Journal when it's ready." : "Adding up your rewards…")
                         .font(Theme.Typography.text(14)).foregroundStyle(Theme.Colors.inkSoft)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.top, 4)
                 Spacer(minLength: 0)
-                Button("Carry on", action: onLeave)
+                Button("Keep exploring", action: onLeave)
                     .buttonStyle(.secondaryWide)
                     .accessibilityIdentifier("holding.leave")
-                Text("The reckoning will find you when it is ready.")
+                Text("Your rewards will show in the Journal when they're ready.")
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
                     .frame(maxWidth: .infinity)
             }

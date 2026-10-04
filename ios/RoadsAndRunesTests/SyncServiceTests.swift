@@ -29,6 +29,16 @@ final class FlakyAPI: RoadsAndRunesAPI, @unchecked Sendable {
     func bounty() async throws -> WorldObject? { try await inner.bounty() }
     func lure(at center: Coordinate) async throws -> [WorldObject] { try await inner.lure(at: center) }
     func lampCheck(at center: Coordinate) async throws -> LampCheck { try await inner.lampCheck(at: center) }
+    func codex() async throws -> Codex { try await inner.codex() }
+    func titles() async throws -> [TitleInfo] { try await inner.titles() }
+    func wearTitle(slug: String?) async throws -> Character { try await inner.wearTitle(slug: slug) }
+    func weekNotice() async throws -> WeekNotice { try await inner.weekNotice() }
+    func runes() async throws -> RunesState { try await inner.runes() }
+    func raiseRune(id: String) async throws -> RunesState { try await inner.raiseRune(id: id) }
+    func inscribe(runes: [String]) async throws -> RunesState { try await inner.inscribe(runes: runes) }
+    func runeCuts() async throws -> [RuneCutInfo] { try await inner.runeCuts() }
+    func deeds() async throws -> DeedsState { try await inner.deeds() }
+    func runeRide(_ request: RuneRideRequest) async throws -> RuneRideResponse { try await inner.runeRide(request) }
     func claimWorldObject(id: UUID, _ request: WorldObjectClaimRequest) async throws -> WorldObjectClaim { try await inner.claimWorldObject(id: id, request) }
     func abilities() async throws -> [AbilityState] { try await inner.abilities() }
     func unlockAbility(id: String) async throws -> Character { try await inner.unlockAbility(id: id) }

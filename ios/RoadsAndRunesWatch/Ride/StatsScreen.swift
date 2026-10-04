@@ -2,7 +2,7 @@ import RoadsAndRunesCore
 import SwiftUI
 
 /// Ride page (design 16a, "speed demoted"): distance first, then time, climb,
-/// new territory in sage, heart rate; speed last and quiet.
+/// newly explored in sage, heart rate; speed last and quiet.
 struct StatsScreen: View {
     @Environment(RideStore.self) private var store
     @Environment(\.isLuminanceReduced) private var isLuminanceReduced
@@ -10,7 +10,7 @@ struct StatsScreen: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: isLuminanceReduced ? 5 : 1)) { context in
             VStack(alignment: .leading, spacing: 0) {
-                Text("RIDE")
+                Text(store.journey.uppercased())
                     .font(.system(size: 11, weight: .semibold))
                     .tracking(0.6)
                     .foregroundStyle(WatchTheme.tertiary)
@@ -29,7 +29,7 @@ struct StatsScreen: View {
                     StatRow(value: store.formatter.duration(seconds: store.elapsedSeconds(at: context.date)), label: "TIME")
                     StatRow(value: "↑ \(store.formatter.elevation(meters: store.update?.elevationGainMeters ?? 0))", label: "CLIMBED")
                     if let fresh = store.update?.newTerritoryMeters {
-                        StatRow(value: store.formatter.distance(meters: fresh), label: "NEW GROUND", color: WatchTheme.sageLight)
+                        StatRow(value: store.formatter.distance(meters: fresh), label: "EXPLORED", color: WatchTheme.sageLight)
                     }
                     if let left = store.update?.remainingMeters {
                         StatRow(value: store.formatter.distance(meters: left), label: "TO GO")

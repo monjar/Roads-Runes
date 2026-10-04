@@ -85,7 +85,8 @@ final class RideAudio: NSObject {
             if !player.isPlaying { player.play() }
         }
         guard sound == .voice else { return }
-        let utterance = AVSpeechUtterance(string: "Bog Wraith, gone. 60 coins.")
+        let line = RideEvent.claimed(name: "Bog Wraith", kind: .monster, coins: 60, set: nil).spoken() ?? ""
+        let utterance = AVSpeechUtterance(string: line)
         utterance.voice = AVSpeechSynthesisVoice(language: "en-GB")
         utterance.preUtteranceDelay = 0.9
         isSpeaking = true
@@ -93,7 +94,7 @@ final class RideAudio: NSObject {
     }
 
     /// A fight, played as a ride would play it, for hearing it on a road before
-    /// one is met (docs/FIELD_TESTS.md): it notices you, a rune lands, it is gone.
+    /// one is met (docs/FIELD_TESTS.md): it notices you, a rune strikes, it is defeated.
     /// `onBeat` is given the wrist taps, for the Watch.
     func playScriptedFight(onBeat: @escaping (FightBeat) -> Void = { _ in }) {
         guard enabled, mode != .off else { return }

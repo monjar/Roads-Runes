@@ -48,7 +48,7 @@ struct QuestsView: View {
                             )
                             .disabled(container.rideRecorder.isActive)
                         }
-                        section("Nearby adventures", model.available, empty: model.isLoading ? "Looking around…" : "Nothing nearby yet. Move around the map or generate more.")
+                        section("Quests nearby", model.available, empty: model.isLoading ? "Looking for quests…" : "No quests nearby yet. Tap Find more quests below.")
                         if !model.recommended.isEmpty {
                             section("For \(ClassStyle.name(model.characterClass))s", model.recommended, empty: "")
                         }
@@ -56,10 +56,10 @@ struct QuestsView: View {
                             section("For anyone", model.forAnyone, empty: "")
                         }
                         if container.session.isEnabled("story_quests") {
-                            section("Story", model.story, empty: "No story step on the board yet.")
+                            section("Story", model.story, empty: "No story quest on the board yet.")
                             Button { showingStory = true } label: {
                                 HStack {
-                                    Text("The arcs so far").font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.terracottaDeep)
+                                    Text("Story progress").font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.terracottaDeep)
                                     Spacer()
                                     Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.Colors.muted)
                                 }
@@ -69,10 +69,11 @@ struct QuestsView: View {
                             }
                             .buttonStyle(.pressable)
                         }
-                        if container.session.isEnabled("party_quests") { section("Party", model.party, empty: "No party quests.") }
-                        section("Completed", model.completed, empty: "Your completed adventures will appear here.", compact: true)
-                        Button("Generate more quests here") { Task { await model.generateMore() } }
+                        if container.session.isEnabled("party_quests") { section("Party", model.party, empty: "No party quests yet.") }
+                        section("Completed", model.completed, empty: "Finished quests appear here.", compact: true)
+                        Button("Find more quests") { Task { await model.generateMore() } }
                             .buttonStyle(.secondaryWide)
+                            .accessibilityIdentifier("quests.findMore")
                     }
                     .padding(.horizontal, 22)
                     .padding(.top, 8)
@@ -237,7 +238,7 @@ struct QuestDetailView: View {
                             }
                         }
                         HStack(spacing: 8) {
-                            FactTile(value: formatter.distance(meters: model.route?.distanceMeters ?? quest.recommendedDistanceKm * 1000), label: "Journey")
+                            FactTile(value: formatter.distance(meters: model.route?.distanceMeters ?? quest.recommendedDistanceKm * 1000), label: "Distance")
                             FactTile(value: formatter.duration(seconds: model.route.map { Double($0.estimatedDurationSeconds) } ?? Double(quest.estimatedDurationMinutes * 60)), label: "At your pace")
                             FactTile(value: "\(quest.rewards.xp ?? quest.baseXP)", label: rewardLabel(quest), valueColor: Theme.Colors.sageDeep)
                         }
@@ -342,24 +343,24 @@ struct QuestDetailView: View {
             HStack(spacing: 10) {
                 switch quest.status {
                 case .available:
-                    Button { Task { await model.accept() } } label: { busyLabel("Accept", busy: model.busy) }
+                    Button { Task { await model.accept() } } label: { busyLabel("Accept quest", busy: model.busy) }
                         .buttonStyle(.secondary)
                         .accessibilityIdentifier("quest.accept")
-                    Button("Begin quest") { showPlanner = true }
+                    Button("Start quest") { showPlanner = true }
                         .buttonStyle(.primary)
                         .accessibilityIdentifier("quest.begin")
                 case .accepted:
-                    Button { Task { await model.abandon() } } label: { busyLabel("Abandon", busy: model.busy) }
+                    Button { Task { await model.abandon() } } label: { busyLabel("Abandon quest", busy: model.busy) }
                         .buttonStyle(.secondary)
                         .accessibilityIdentifier("quest.abandon")
-                    Button("Plan the ride") { showPlanner = true }
+                    Button("Plan route") { showPlanner = true }
                         .buttonStyle(.primary)
                         .accessibilityIdentifier("quest.plan")
                 case .active:
-                    Button { Task { await model.abandon() } } label: { busyLabel("Abandon", busy: model.busy) }
+                    Button { Task { await model.abandon() } } label: { busyLabel("Abandon quest", busy: model.busy) }
                         .buttonStyle(.secondary)
                         .accessibilityIdentifier("quest.abandon")
-                    Button("Continue") { showPlanner = true }
+                    Button("Continue quest") { showPlanner = true }
                         .buttonStyle(.primary)
                         .accessibilityIdentifier("quest.continue")
                 default:

@@ -70,10 +70,10 @@ struct StoryArcsView: View {
                 }
                 if let model {
                     if let error = model.error { ErrorLine(text: error) }
-                    Text("Each step is done in order: finishing one is what opens the next. They wait for you; a step never expires.")
+                    Text("Finish each step to open the next. Steps wait for you and never expire.")
                         .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
                     if model.loaded, model.arcs.isEmpty {
-                        EmptyState(icon: .openBook, title: "Nothing on the board yet", message: "The story will be pinned up here.")
+                        EmptyState(icon: .openBook, title: "No story yet", message: "Story quests show up here when they're ready for you.")
                     }
                     ForEach(model.acts, id: \.number) { act in
                         Eyebrow(text: "Act \(LoreCopy.roman(act.number))\(act.title.map { " · \($0)" } ?? "")", color: Theme.Colors.terracottaDeep)
@@ -84,7 +84,7 @@ struct StoryArcsView: View {
                         }
                     }
                     if !model.ordered.isEmpty {
-                        Eyebrow(text: model.acts.isEmpty ? "Arcs" : "Your trade", color: Theme.Colors.muted).padding(.top, 6)
+                        Eyebrow(text: model.acts.isEmpty ? "Story arcs" : "Your class", color: Theme.Colors.muted).padding(.top, 6)
                     }
                     ForEach(model.ordered) { arc in ArcCard(arc: arc, onOpenQuest: onOpenQuest) }
                 } else {
@@ -155,7 +155,7 @@ private struct ArcCard: View {
     private var lockedReason: String {
         if let afterTitle { return "Opens when \(afterTitle) is finished." }
         guard let characterClass = arc.characterClass else { return "Opens at level \(arc.minLevel)." }
-        return "For \(ClassStyle.name(characterClass))s, from trade level \(arc.minLevel)."
+        return "Opens at \(LoreCopy.classLevel(ClassStyle.name(characterClass), arc.minLevel))."
     }
 }
 
@@ -189,12 +189,12 @@ private struct StepRow: View {
                 // A locked step keeps its words: knowing what is coming is the point.
                 Text(step.description).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
                 if step.state == .waiting {
-                    Text(step.waitingReason ?? "Waiting for somewhere it can be set near you.")
+                    Text(step.waitingReason ?? "Waiting for a good spot near you.")
                         .font(Theme.Typography.captionStrong).foregroundStyle(accent)
                         .accessibilityIdentifier("story.waiting")
                 }
                 if step.state == .open, let questId = step.questId {
-                    Button("On your board now") { onOpenQuest(questId) }
+                    Button("Open quest") { onOpenQuest(questId) }
                         .font(Theme.Typography.captionStrong)
                         .foregroundStyle(accent)
                         .padding(.top, 2)

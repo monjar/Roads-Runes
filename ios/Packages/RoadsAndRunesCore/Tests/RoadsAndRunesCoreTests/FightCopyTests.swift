@@ -9,14 +9,16 @@ final class FightCopyTests: XCTestCase {
                                wouldHaveDone: WouldHaveDone(kind: "CLIMB", units: 13, unit: "m"),
                                expiresAt: t0.addingTimeInterval(3 * 86_400 + 600))
         XCTAssertEqual(FightCopy.line(stag, now: t0),
-                       "Grey Stag got away at 31 of 400. Another 13 m of height would have done it. It is there three more days.")
+                       "Grey Stag escaped, weakened. Health 31 / 400. 13 m more climbing would have defeated it. It stays three more days.")
     }
 
-    func testSeenOffSaysWhatDidIt() {
+    func testDefeatedSaysWhatDidIt() {
         let troll = FightReport(id: UUID(), name: "Fen Troll", outcome: "SEEN_OFF", holdMax: 100, holdBefore: 100, holdAfter: 0, finisher: "WORD")
-        XCTAssertEqual(FightCopy.line(troll), "Fen Troll was seen off. The word did it.")
+        XCTAssertEqual(FightCopy.line(troll), "Fen Troll defeated! Finished with a note.")
         let ground = WouldHaveDone(kind: "GROUND", units: 2, unit: "cells")
-        XCTAssertEqual(FightCopy.wouldHaveDone(ground), "Two more patches of new ground would have done it.")
+        XCTAssertEqual(FightCopy.wouldHaveDone(ground), "Two more unexplored tiles would have defeated it.")
+        let untouched = FightReport(id: UUID(), name: "Mire Hag", outcome: "UNTOUCHED", holdMax: 100, holdBefore: 100, holdAfter: 100)
+        XCTAssertEqual(FightCopy.line(untouched), "You passed Mire Hag without a fight.")
     }
 
     func testTheQuarryLeads() {
@@ -30,8 +32,9 @@ final class FightCopyTests: XCTestCase {
         XCTAssertEqual(FightCopy.ordered(reports, quarryId: nil).map(\.name), ["b", "c", "a"])
     }
 
+    /// docs/VOICE.md: the glossary's "Not" words, and no gore.
     func testNoFightLineUsesAForbiddenWord() {
-        let forbidden = ["beaten", "slain", "killed", "wounded", "HP", "!"]
+        let forbidden = ["seen off", "loosened", "hold", "beaten", "slain", "killed", "wounded", "HP", "the word", "height"]
         let lines = [
             FightCopy.line(FightReport(id: UUID(), name: "X", outcome: "SEEN_OFF", holdMax: 1, holdBefore: 1, holdAfter: 0)),
             FightCopy.line(FightReport(id: UUID(), name: "X", outcome: "LOOSENED", holdMax: 9, holdBefore: 9, holdAfter: 3)),

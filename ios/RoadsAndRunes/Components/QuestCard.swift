@@ -176,7 +176,7 @@ struct CurrentQuestCard: View {
             HStack(spacing: 8) {
                 // The pill is the label: styled from outside, only the word itself took taps.
                 Button(action: onContinue) {
-                    Text("Continue")
+                    Text("Continue quest")
                         .font(Theme.Typography.buttonSmall)
                         .foregroundStyle(Theme.Colors.cream)
                         .frame(maxWidth: .infinity)
@@ -186,7 +186,7 @@ struct CurrentQuestCard: View {
                 .buttonStyle(.pressable)
                 .accessibilityIdentifier("currentQuest.continue")
                 Button(action: onDetails) {
-                    Text("Details")
+                    Text("See details")
                         .font(Theme.Typography.text(13, .semibold))
                         .foregroundStyle(Theme.Colors.cream)
                         .padding(.horizontal, 18)
