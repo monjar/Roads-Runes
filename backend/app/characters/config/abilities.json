@@ -7,6 +7,8 @@
    "effects": [{"type": "XP_DOUBLE_FIRST_CELLS", "perRank": 10}]},
   {"id": "explorer_far_wanderer", "characterClass": "EXPLORER", "name": "Far Wanderer", "description": "New tiles more than 5 km from where the journey began pay 10% more XP, per rank.", "requiredClassLevel": 12, "maxRank": 3,
    "effects": [{"type": "XP_BONUS_FAR_CELLS", "perRank": 0.10}]},
+  {"id": "explorer_fog_breaker", "characterClass": "EXPLORER", "name": "Fog Breaker", "description": "Exploring does 25% more against legends.", "requiredClassLevel": 20, "maxRank": 1,
+   "effects": [{"type": "VS_LEGENDS_PCT", "kind": "GROUND", "perRank": 0.25}]},
 
   {"id": "wizard_arcane_sight", "characterClass": "WIZARD", "name": "Arcane Sight", "description": "A piece on the map is 20% more likely to be a rune stone, per rank.", "requiredClassLevel": 2, "maxRank": 3,
    "effects": [{"type": "RUNE_STONE_CHANCE", "perRank": 0.2}]},
@@ -16,6 +18,8 @@
    "effects": [{"type": "RUNE_REACH_M", "perRank": 500}]},
   {"id": "wizard_second_chance", "characterClass": "WIZARD", "name": "Second Chance", "description": "1 missed optional objective of a finished quest counts as done.", "requiredClassLevel": 12, "maxRank": 1,
    "effects": [{"type": "FORGIVE_OPTIONAL_OBJECTIVE", "perRank": 1}]},
+  {"id": "wizard_rune_master", "characterClass": "WIZARD", "name": "Rune Master", "description": "A rune shape does 25% more against legends.", "requiredClassLevel": 20, "maxRank": 1,
+   "effects": [{"type": "VS_LEGENDS_PCT", "kind": "RUNE", "perRank": 0.25}]},
 
   {"id": "warrior_second_wind", "characterClass": "WARRIOR", "name": "Second Wind", "description": "Once a journey passes 10 km (5 km on foot), distance does 10% more against creatures, per rank.", "requiredClassLevel": 2, "maxRank": 2,
    "effects": [{"type": "LATE_ROAD_PCT", "perRank": 0.10}]},
@@ -25,6 +29,8 @@
    "effects": [{"type": "XP_BONUS_LONG_DISTANCE", "perRank": 0.10}]},
   {"id": "warrior_vanguard", "characterClass": "WARRIOR", "name": "Vanguard", "description": "Everything you do against elders and bounties does 10% more, per rank.", "requiredClassLevel": 12, "maxRank": 2,
    "effects": [{"type": "VS_ELDERS_PCT", "perRank": 0.10}]},
+  {"id": "warrior_giant_toppler", "characterClass": "WARRIOR", "name": "Giant Toppler", "description": "Climbing and distance do 20% more against legends.", "requiredClassLevel": 20, "maxRank": 1,
+   "effects": [{"type": "VS_LEGENDS_PCT", "kind": "CLIMB", "perRank": 0.20}, {"type": "VS_LEGENDS_PCT", "kind": "ROAD", "perRank": 0.20}]},
 
   {"id": "scribe_archivist", "characterClass": "SCRIBE", "name": "Archivist", "description": "A note does 8% more against creatures, per rank.", "requiredClassLevel": 2, "maxRank": 2,
    "effects": [{"type": "DAMAGE_PCT", "kind": "WORD", "perRank": 0.08}]},
@@ -33,5 +39,7 @@
   {"id": "scribe_chronicler", "characterClass": "SCRIBE", "name": "Footnote", "description": "On a journey where you wrote a note, places found pay 20% more XP.", "requiredClassLevel": 8, "maxRank": 1,
    "effects": [{"type": "XP_BONUS_DISCOVERY_WITH_NOTE", "perRank": 0.20}]},
   {"id": "scribe_historian", "characterClass": "SCRIBE", "name": "Historian", "description": "A note does 15% more against creatures at old and cultural places, per rank.", "requiredClassLevel": 12, "maxRank": 2,
-   "effects": [{"type": "WORD_OLD_PLACES_PCT", "perRank": 0.15}]}
+   "effects": [{"type": "WORD_OLD_PLACES_PCT", "perRank": 0.15}]},
+  {"id": "scribe_loremaster", "characterClass": "SCRIBE", "name": "Loremaster", "description": "A note does 25% more against legends, and reaches a legend from 500 m away.", "requiredClassLevel": 20, "maxRank": 1,
+   "effects": [{"type": "VS_LEGENDS_PCT", "kind": "WORD", "perRank": 0.25}, {"type": "LEGEND_WORD_RADIUS_M", "perRank": 500}]}
 ]

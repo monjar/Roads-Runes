@@ -71,7 +71,7 @@ def test_the_sheet_counts_gear_worn_in_an_open_slot_only():
         "KEEPSAKE": "hagstone",
     }
     sheet = build_sheet(character(level=4), {"raido": 1}, worn)
-    assert sheet.version == SHEET_VERSION == 4
+    assert sheet.version == SHEET_VERSION == 5
     assert sheet.gear == {"BELL": "drovers-bell", "LANTERN": "candle-stub"}, "Bag opens at 5, Map case at 13"
     assert sheet.rules["CARRIED_SCALE"] == 2.5, "Raido × the Drover's Bell"
     assert sheet.rules["NEW_TILE_RINGS"] == 1

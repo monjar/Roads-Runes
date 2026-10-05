@@ -76,7 +76,7 @@ def loop_trace(centre, radius: float, *, laps: int = 1, spacing: float = 10.0, s
 
 
 def test_the_road_and_ground_sixes_each_change_one_rule_and_say_it():
-    ids = {r["id"] for r in catalog.book()["runes"]}
+    ids = {r["id"] for r in catalog.book()["runes"] if r["six"] != "HARD"}
     assert ids == {
         "raido",
         "sowilo",

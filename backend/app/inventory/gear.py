@@ -1,4 +1,5 @@
-"""Gear (config/gear.json): five slots, fifteen items, the consumables, and the one
+"""Gear (config/gear.json): five slots, fifteen items, the consumables (a sixth, the
+treasure map, in 0.8.0), and the one
 function that merges what runes and gear do into the sheet's rules. Pure.
 
 An item is a rule, never a damage percentage. The same rule from a rune and an
@@ -19,7 +20,7 @@ CONFIG = Path(__file__).parent / "config" / "gear.json"
 
 RARITIES = ("COMMON", "RARE", "LEGENDARY")
 SLOTS = ("BELL", "LANTERN", "BAG", "MAP_CASE", "KEEPSAKE")
-CONSUMABLES = ("LAMP", "MAP_FRAGMENT", "REST_TOKEN", "SEALED_CHEST_COMMON", "SEALED_CHEST_RARE")
+CONSUMABLES = ("LAMP", "MAP_FRAGMENT", "REST_TOKEN", "SEALED_CHEST_COMMON", "SEALED_CHEST_RARE", "TREASURE_MAP")
 SEALED = {"SEALED_CHEST_COMMON": "COMMON", "SEALED_CHEST_RARE": "RARE"}
 
 # How two values of the same rule combine (docs/ROADMAP.md 0.7.2, §1).
@@ -35,7 +36,7 @@ GEAR_RULES = LARGEST | ADDED | SCALES
 def book() -> dict[str, Any]:
     data = json.loads(CONFIG.read_text())
     assert [s["id"] for s in data["slots"]] == list(SLOTS), "the five slots, in order"
-    assert [c["id"] for c in data["consumables"]] == list(CONSUMABLES), "the five consumables, in order"
+    assert [c["id"] for c in data["consumables"]] == list(CONSUMABLES), "the consumables, in order"
     ids = [i["id"] for i in data["items"]]
     assert len(ids) == len(set(ids)), "item ids must be unique"
     pairs = {(i["slot"], i["rarity"]) for i in data["items"]}

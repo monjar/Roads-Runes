@@ -9,8 +9,12 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, JSONType, TimestampMixin, TZDateTime, UUIDPrimaryKeyMixin
 
-KINDS = ("CHEST", "COLLECTABLE", "MONSTER")
-STATUSES = ("SPAWNED", "CLAIMED", "EXPIRED")
+# 0.8.0: a LAIR (seven tiles round a park, world_objects/lairs.py), and buried
+# treasure: a CHEST that is HIDDEN until a journey passes it (inventory/treasure.py).
+# A hidden thing is never shown: every query for the map asks for SPAWNED.
+KINDS = ("CHEST", "COLLECTABLE", "MONSTER", "LAIR")
+HIDDEN = "HIDDEN"
+STATUSES = ("SPAWNED", "CLAIMED", "EXPIRED", HIDDEN)
 
 
 class WorldObject(UUIDPrimaryKeyMixin, TimestampMixin, Base):

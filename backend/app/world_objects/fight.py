@@ -34,6 +34,17 @@ Gear (0.7.2) changes two numbers, read from `cfg` (CharacterSheet.fight_cfg):
 * `finishUnder`: after the fold, a thing met and left with 0 < hold ≤ that share
   of its hold is defeated (the Unrung Bell). What was left is added to the last
   blow that landed, whose kind is the finisher (none, if nothing landed).
+
+The Hard Six (0.8.0) change two more, through the same `cfg`:
+
+* `engageMeters` is widened by Nauthiz (ENGAGE_M), so more is met.
+* `climbSharedMeters` (Uruz, CLIMB_SHARED_M): climbing done within that many
+  metres of a thing counts in full against it, wherever on the outing it was
+  done. Without it, height climbed before contact is only part of the opening
+  blow; with it, each such band is a CLIMB blow of its own, landing at contact
+  (and after contact, a band climbed within that distance counts even outside
+  its ground). Every thing is folded on its own, so the same climb counts for
+  every thing within reach of it.
 """
 
 from __future__ import annotations
@@ -202,6 +213,8 @@ def resolve(
     band_m = float(cfg["climbBandMeters"])
     road_cap = float(cfg["roadCapMeters"])
     road_resolution = int(cfg.get("roadCellResolution", 11))
+    # Uruz: height climbed this near it counts in full, before contact too.
+    climb_shared = float(cfg.get("climbSharedMeters", 0.0))
 
     blows: list[Blow] = []
     before = {"ROAD": 0.0, "GROUND": 0.0, "CLIMB": 0.0}
@@ -254,9 +267,12 @@ def resolve(
                     if b in climbed_bands:
                         continue
                     climbed_bands.add(b)
-                    if i < contact:
+                    shared = climb_shared > 0 and distances[i] <= climb_shared
+                    if i < contact and shared:
+                        blows.append(Blow("CLIMB", contact, band_m))
+                    elif i < contact:
                         before["CLIMB"] += band_m
-                    elif inside[i]:
+                    elif inside[i] or shared:
                         blows.append(Blow("CLIMB", i, band_m))
             last_band = band
 

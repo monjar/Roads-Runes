@@ -1,5 +1,5 @@
 {
-  "_comment": "Runes as the build (docs/ROADMAP.md, 0.7.0 and Appendix H). A rune is held from its first stone; two more stones and some coins raise it a rank, I to III. Only inscribed runes act, each changing one rule; a rank widens the rule's number and never adds a damage percentage. `values` are by rank (I, II, III); a woken rune counts one rank higher for that outing, so a fourth value is its rank III woken. The Ground Six are only found on their own kind of ground (`ground`). Ids are lore/config/runes.json's.",
+  "_comment": "Runes as the build (docs/ROADMAP.md, 0.7.0 and Appendix H). A rune is held from its first stone; two more stones and some coins raise it a rank, I to III. Only inscribed runes act, each changing one rule; a rank widens the rule's number and never adds a damage percentage. `values` are by rank (I, II, III); a woken rune counts one rank higher for that outing, so a fourth value is its rank III woken. The Ground Six are only found on their own kind of ground (`ground`). The Hard Six (0.8.0) are never found as stones: a legend leaves one when it is defeated, and a lair's great chest gives Ingwaz. Ids are lore/config/runes.json's.",
   "slotsAtLevel": [
     1,
     10,
@@ -247,6 +247,78 @@
         }
       },
       "text": "A bounty you weaken keeps its double coins and stays {n} day{s} longer."
+    },
+    {
+      "id": "uruz",
+      "six": "HARD",
+      "rule": "CLIMB_SHARED_M",
+      "values": [
+        500,
+        750,
+        1000,
+        1250
+      ],
+      "text": "Climbing counts against every creature within {v} m, not just one."
+    },
+    {
+      "id": "isa",
+      "six": "HARD",
+      "rule": "WEAKENED_STAYS_DAYS",
+      "values": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "text": "A weakened creature stays {n} more days."
+    },
+    {
+      "id": "nauthiz",
+      "six": "HARD",
+      "rule": "ENGAGE_M",
+      "values": [
+        250,
+        300,
+        350,
+        400
+      ],
+      "text": "Creatures within {v} m of your journey count as met (usually 150 m)."
+    },
+    {
+      "id": "hagalaz",
+      "six": "HARD",
+      "rule": "FIND_RADIUS_M",
+      "values": [
+        150,
+        200,
+        250,
+        300
+      ],
+      "text": "Hidden places within {v} m of your journey are found."
+    },
+    {
+      "id": "thurisaz",
+      "six": "HARD",
+      "rule": "ELDER_CARRIED_SCALE",
+      "values": [
+        1.5,
+        2.0,
+        2.5,
+        3.0
+      ],
+      "text": "Against elders and legends, your opening blow is {v}× stronger."
+    },
+    {
+      "id": "ingwaz",
+      "six": "HARD",
+      "rule": "PICKUP_REACH_M",
+      "values": [
+        60,
+        80,
+        100,
+        120
+      ],
+      "text": "Rune stones and chests within {v} m of your journey are picked up."
     }
   ]
 }

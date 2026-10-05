@@ -102,7 +102,7 @@ async def test_gear_is_worn_in_its_own_open_slot_and_not_changed_on_a_journey(ex
     assert worn["slots"][0]["item"]["itemId"] == "tin-bell" and worn["slots"][0]["item"]["equipped"]
     assert {i["itemId"] for i in worn["bag"]} == {"candle-stub", "tinkers-satchel"}
     sheet = (await c.get("/character")).json()["sheet"]
-    assert sheet["version"] == 4 and sheet["gear"] == {"BELL": "tin-bell"} and sheet["rules"]["SIGHT_M"] == 500
+    assert sheet["version"] == 5 and sheet["gear"] == {"BELL": "tin-bell"} and sheet["rules"]["SIGHT_M"] == 500
     assert sheet["lootFindPct"] == 0
     # A ride starts with what it carries, and nothing changes until it is over.
     r = await c.post("/rides", json={"clientRideId": str(uuid.uuid4()), "startedAt": NOW.isoformat()})

@@ -61,6 +61,18 @@
     {"id": "COINS", "name": "Odd Coins", "formerly": ["Milled Coins"], "pieces": ["Farthing", "Groat", "Shilling", "Crown"]},
     {"id": "GROUND", "name": "Ground Six", "onGround": true, "pieces": ["Laguz", "Berkano", "Eihwaz", "Ehwaz", "Jera", "Algiz"]}
   ],
+  "_lairs": "0.8.0: a lair is seven tiles round a park (its tile and the six around it), offered at level `minLevel` 2 to 6 km from where the player usually starts, one at a time and one a fortnight. Visit `need` of them by `lifeDays` and its great chest opens: `coins` (outside the per-journey cap), a Rare item, a Rare sealed chest, and Ingwaz the first time.",
+  "lairs": {
+    "minLevel": 8,
+    "ringMeters": [2000, 6000],
+    "need": 5,
+    "lifeDays": 14,
+    "everyDays": 14,
+    "coins": 250,
+    "categories": ["NATURE"],
+    "tags": {"leisure": ["park", "garden", "nature_reserve", "common"], "landuse": ["forest", "meadow", "grass", "recreation_ground"], "natural": ["wood", "heath", "grassland"]},
+    "rune": "ingwaz"
+  },
   "combat": {
     "_comment": "Effort is damage (app/world_objects/fight.py, docs/ROADMAP.md Appendix C). Starting values, to be tuned by backend/scripts/replay_fights.py against real outings. Nothing here is a time or a speed.",
     "engageMeters": 150,

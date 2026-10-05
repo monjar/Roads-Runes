@@ -60,6 +60,7 @@ class WorldObjectCandidate:
     latitude: float
     longitude: float
     expires_at: datetime | None = None
+    bounty: bool = False
 
 
 @dataclass
@@ -85,6 +86,8 @@ class GenerationContext:
     poi_visibility_bonus: float = 0.0
     activity: str = "RIDE"  # RIDE | RUN | WALK (core/activity.py)
     world_objects: list[WorldObjectCandidate] = field(default_factory=list)
+    # The legend awake (0.8.0), kind LEGEND, for a step that asks for damage to it.
+    legend: WorldObjectCandidate | None = None
 
 
 @dataclass
@@ -391,8 +394,10 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
     target_object: WorldObjectCandidate | None = None
     if "worldObject" in rules:
         kind = str(rules["worldObject"].get("kind", "MONSTER"))
+        # A bounty step (0.8.0) points only at the day's bounty.
+        bounty_only = bool(rules["worldObject"].get("bounty"))
         pool = sorted(
-            (o for o in ctx.world_objects if o.kind == kind),
+            (o for o in ctx.world_objects if o.kind == kind and (o.bounty or not bounty_only)),
             key=lambda o: haversine_m(ctx.latitude, ctx.longitude, o.latitude, o.longitude),
         )
         if not pool:
@@ -403,6 +408,15 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
         farthest_m = max(
             farthest_m, haversine_m(ctx.latitude, ctx.longitude, target_object.latitude, target_object.longitude)
         )
+
+    # The legend awake (0.8.0): a step that asks for damage to it needs one.
+    legend = ctx.legend if "legendDamage" in rules else None
+    if "legendDamage" in rules:
+        if legend is None:
+            return None
+        variables["legendName"] = legend.name
+        variables["legendDamage"] = int(rules["legendDamage"])
+        farthest_m = max(farthest_m, haversine_m(ctx.latitude, ctx.longitude, legend.latitude, legend.longitude))
 
     explored_region_cells: list[str] = []
     order = 0
@@ -499,6 +513,20 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
                     "discoveryId": carry_to.id,
                 },
             }
+        elif otype == "LAIR_VISIT":
+            if target_object is None or target_object.kind != "LAIR":
+                return None
+            obj.latitude, obj.longitude = target_object.latitude, target_object.longitude
+            obj.radius_meters = 500.0
+            obj.target_count = int(rules.get("lairNeed", 5))
+            obj.extra = {"kind": "LAIR", "objectName": target_object.name, "objectId": target_object.id}
+        elif otype == "WOUND_BOSS":
+            if legend is None:
+                return None
+            obj.latitude, obj.longitude = legend.latitude, legend.longitude
+            obj.radius_meters = 1000.0
+            obj.target_value = float(rules["legendDamage"])
+            obj.extra = {"kind": "LEGEND", "legendId": legend.id, "legendName": legend.name}
         elif otype in ("SLAY_MONSTER", "OPEN_CHEST", "COLLECT"):
             wanted = int(rules.get("worldObject", {}).get("count", 1))
             obj.target_count = 1 if otype == "SLAY_MONSTER" else wanted

@@ -39,8 +39,11 @@ def book() -> dict[str, Any]:
         assert len(weights) == len(gear.RARITIES), tier
     assert set(data["consumableWeights"]) == {"LAMP", "MAP_FRAGMENT", "REST_TOKEN", "SEALED_CHEST"}
     prices = data["stall"]["prices"]
-    assert {"COMMON", "RARE", *gear.CONSUMABLES} <= set(prices), "every stall offer has a price"
+    assert {"COMMON", "RARE", *data["stall"]["consumableWeights"]} <= set(prices), "every stall offer has a price"
     assert set(data["stall"]["consumableWeights"]) <= set(gear.CONSUMABLES)
+    # A treasure map is never sold: it comes from legends and chests (0.8.0).
+    assert "TREASURE_MAP" not in data["stall"]["consumableWeights"]
+    assert 0 <= float(data["treasureMap"]["chestChance"]) <= 1
     return data
 
 
@@ -131,6 +134,24 @@ def roll(
         rare_from = int(rules["sealedChestRareFromTier"])
         picked = "SEALED_CHEST_RARE" if tier >= rare_from else "SEALED_CHEST_COMMON"
     return Drop("CONSUMABLE", consumable=picked)
+
+
+def treasure_map_drops(object_id: str, source: str, tier: int) -> bool:
+    """Whether a chest leaves a treasure map besides whatever else it holds (0.8.0):
+    a tier-3 chest, three times in ten, seeded by the chest."""
+    rules = book()["treasureMap"]
+    if source != "CHEST" or int(tier) < int(rules["chestTier"]):
+        return False
+    return random.Random(f"treasure-map:{object_id}").random() < float(rules["chestChance"])
+
+
+def treasure_item(key: str, had_legendaries: set[str] | frozenset[str] = frozenset()) -> str:
+    """What buried treasure holds besides coins: always an item, its rarity drawn
+    with a tier-3 chest's weights, seeded by the ledger key."""
+    rng = random.Random(f"loot:{key}")
+    tier = int(book()["treasureMap"]["rarityTier"])
+    rarity = rng.choices(gear.RARITIES, weights=rarity_weights(tier), k=1)[0]
+    return _gear(rng, rarity, set(had_legendaries))[0]
 
 
 def sealed_item(key: str, rarity: str, had_legendaries: set[str] | frozenset[str] = frozenset()) -> str:

@@ -69,7 +69,7 @@ class InventoryOut(APIModel):
     slots: list[SlotOut]
     bag: list[GearItemOut]
     bagSize: int
-    # Always all five, with a count of 0 for none.
+    # Always all of them (six from 0.8.0), with a count of 0 for none.
     consumables: list[ConsumableOut]
     finishesSinceRare: int = 0
     # Paid on this call: the levels reached before 0.7.2, once. Empty otherwise.
@@ -89,7 +89,8 @@ class ItemFoundOut(APIModel):
     icon: str
     rarity: str | None = None
     slot: str | None = None
-    # MONSTER, CHEST, QUEST or BOUNTY (and STALL for a purchase).
+    # MONSTER, CHEST, QUEST or BOUNTY (and STALL for a purchase); 0.8.0: LEGEND,
+    # LAIR (a great chest) or TREASURE (buried treasure).
     source: str
     fromName: str | None = None
     # Into a full bag an item is sold on the spot, for this.
@@ -119,7 +120,22 @@ class ConsumableUseOut(APIModel):
     longitude: float | None = None
     # A sealed chest: what it held.
     itemFound: ItemFoundOut | None = None
+    # A treasure map (0.8.0): the clue, and the buried treasure it leads to (never
+    # where that is).
+    clue: str | None = None
+    treasureId: uuid.UUID | None = None
     inventory: InventoryOut
+
+
+class TreasureClueOut(APIModel):
+    """An open clue (0.8.0): what it says, when it was buried, and where the map was
+    read, which the clue's "of here" means. Never where the treasure is."""
+
+    treasureId: uuid.UUID
+    clue: str
+    buriedAt: datetime
+    fromLatitude: float | None = None
+    fromLongitude: float | None = None
 
 
 class StallOfferOut(APIModel):

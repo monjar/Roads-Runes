@@ -21,6 +21,7 @@ from app.inventory.models import (  # noqa: F401
     RuneCut,
     RuneHolding,
 )
+from app.legends.models import OldOne  # noqa: F401
 from app.notifications.models import DeviceToken  # noqa: F401
 from app.progression.models import CharacterTitle, RewardEvent, XPEvent  # noqa: F401
 from app.quests.models import (  # noqa: F401

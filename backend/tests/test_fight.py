@@ -206,13 +206,25 @@ def test_the_shared_fixtures_are_current():
         f = case["foe"]
         pts = [FightPoint(lat, lon, alt, ok) for lat, lon, alt, ok, _ in case["points"]]
         foe = Foe(
-            f["latitude"], f["longitude"], f["hold"], f["hold"], tuple(f["wants"]), tuple(f["minds"]), f["roadForm"]
-        )
+            f["latitude"], f["longitude"], f["hold"], f.get("holdBefore", f["hold"]), tuple(f["wants"]),
+            tuple(f["minds"]), f["roadForm"],
+        )  # fmt: skip
         hit = RuneHit(*case["runeHit"]) if case["runeHit"] else None
-        # 0.7.2: a case may carry the sheet's rules (the Unrung Bell, the Atlas).
-        cfg = CharacterSheet(rules=case.get("rules") or {}).fight_cfg(CFG)
+        # 0.7.2: a case may carry the sheet's rules (the Unrung Bell, the Atlas); 0.8.0 the
+        # Hard Six's (Nauthiz, Uruz), Thurisaz against an elder, and a legend's phase.
+        rules = case.get("rules") or {}
+        cfg = CharacterSheet(rules=rules).fight_cfg(CFG)
+        pct = dict(case["pct"])
+        if case.get("elder") and rules.get("ELDER_CARRIED_SCALE"):
+            cfg = {**cfg, "carriedFraction": cfg["carriedFraction"] * rules["ELDER_CARRIED_SCALE"]}
+        if case.get("legend"):
+            assert case["elder"] is True
+            radius = case.get("legendWordRadiusMeters", 0)
+            cfg = {**cfg, "wordRadiusMeters": max(cfg["wordRadiusMeters"], radius)}
+            for kind, more in (case.get("vsLegendsPct") or {}).items():
+                pct[kind] = pct.get(kind, 0.0) + more
         report = fight.resolve(
-            pts, foe, activity=case["activity"], damage_pct=case["pct"], cfg=cfg,
+            pts, foe, activity=case["activity"], damage_pct=pct, cfg=cfg,
             new_cell_indices=case["newCellIndices"], rune_hit=hit, word_indices=case["wordIndices"],
         )  # fmt: skip
         assert report.outcome == case["expect"]["outcome"], case["name"]
@@ -220,4 +232,7 @@ def test_the_shared_fixtures_are_current():
         assert report.finisher == case["expect"]["finisher"], case["name"]
         for kind, amount in case["expect"]["damage"].items():
             assert abs(report.damage.get(kind, 0.0) - amount) < 0.01, (case["name"], kind)
-    assert {"FINISH_UNDER", "GROUND_CELL_SCALE"} <= {r for c in stored["cases"] for r in c.get("rules", {})}
+    assert {"FINISH_UNDER", "GROUND_CELL_SCALE", "ENGAGE_M", "CLIMB_SHARED_M", "ELDER_CARRIED_SCALE"} <= {
+        r for c in stored["cases"] for r in c.get("rules", {})
+    }
+    assert any(c.get("legend") and c.get("vsLegendsPct") for c in stored["cases"])

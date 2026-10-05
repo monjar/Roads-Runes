@@ -25,7 +25,7 @@ def catalogue() -> list[dict[str, Any]]:
     names = [t["name"] for t in titles]
     assert len(names) == len(set(names)), "two titles share a name"
     for t in titles:
-        assert t["source"] in ("LEVEL", "ARC", "DEED", "CAST"), t["slug"]
+        assert t["source"] in ("LEVEL", "ARC", "DEED", "CAST", "LEGEND"), t["slug"]
         assert t.get("how"), f"{t['slug']} does not say how it is earned"
     return titles
 
@@ -57,6 +57,11 @@ def level_title(level: int) -> dict[str, Any] | None:
 def level_titles_between(old_level: int, new_level: int) -> list[dict[str, Any]]:
     """Level titles reached by going from one level to another, lowest first."""
     return [t for t in level_titles() if old_level < t["level"] <= new_level]
+
+
+def legend_title(legend_id: str) -> dict[str, Any] | None:
+    """The bane title for defeating a legend (0.8.0): "Bane of the Fog Dragon"."""
+    return next((t for t in catalogue() if t["source"] == "LEGEND" and t.get("legend") == legend_id), None)
 
 
 def arc_title(arc_slug: str) -> dict[str, Any] | None:

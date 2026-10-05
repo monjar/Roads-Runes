@@ -165,6 +165,14 @@ class AdventureSummary(APIModel):
     # absent otherwise: a missed pledge is never mentioned), and letters found again.
     pledge: dict[str, Any] | None = None
     letters: list[dict[str, Any]] | None = None
+    # 0.8.0: what the journey did to the legend ({"id", "name", "icon", "phaseBefore",
+    # "phaseAfter", "healthLeft", "healthMax", "damage", "kinds", "phaseBroken",
+    # "defeated", "rewards", "line", ...}), a lair's tiles visited, buried treasure
+    # found, and a legend that woke after it. Each absent when there was none.
+    legend: dict[str, Any] | None = None
+    lair: dict[str, Any] | None = None
+    treasureFound: dict[str, Any] | None = None
+    legendWoke: dict[str, Any] | None = None
 
 
 class RideGeometry(APIModel):

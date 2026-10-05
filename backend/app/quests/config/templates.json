@@ -2097,6 +2097,106 @@
       ],
       "completion": "Dagaz, cut. The day has two sides; you have been round both.",
       "waitingReason": "Waiting for somewhere to cut a square near you."
+    },
+    {
+      "id": "ANY_LAIR_VISIT",
+      "characterClass": "ANY",
+      "questType": "LAIR_VISIT",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "worldObject": {
+          "kind": "LAIR"
+        },
+        "lairNeed": 5
+      },
+      "objectives": [
+        {
+          "type": "LAIR_VISIT",
+          "title": "Visit 5 of the 7 tiles of the lair at {objectPlace}",
+          "required": true
+        }
+      ],
+      "narrative": [
+        {
+          "title": "{objectName}",
+          "description": "There's a lair at {objectPlace}. Visit 5 of its 7 tiles before it ends and its great chest is yours."
+        }
+      ],
+      "completion": "The lair is yours, and so is its great chest!",
+      "waitingReason": "Waiting for a lair near you. Lairs come at level 8."
+    },
+    {
+      "id": "ANY_WOUND_BOSS",
+      "characterClass": "ANY",
+      "questType": "WOUND_BOSS",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "legendDamage": 300
+      },
+      "objectives": [
+        {
+          "type": "WOUND_BOSS",
+          "title": "Do {legendDamage} damage to {legendName} on one journey",
+          "required": true
+        }
+      ],
+      "narrative": [
+        {
+          "title": "{legendName}",
+          "description": "{legendName} has settled in near you. Do {legendDamage} damage to it on one journey and show it who's in charge."
+        }
+      ],
+      "completion": "That got its attention!",
+      "waitingReason": "Waiting for a legend to wake. Defeat three creatures to wake one."
+    },
+    {
+      "id": "ANY_DOUBLE_PAY",
+      "characterClass": "ANY",
+      "questType": "SLAY_MONSTER",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "worldObject": {
+          "kind": "MONSTER",
+          "bounty": true
+        }
+      },
+      "objectives": [
+        {
+          "type": "SLAY_MONSTER",
+          "title": "Defeat today's bounty, the {objectName} at {objectPlace}",
+          "required": true,
+          "radiusMeters": 150
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Double Pay",
+          "description": "Today's bounty is the {objectName} at {objectPlace}, and it pays double. Go and collect."
+        }
+      ],
+      "completion": "Bounty defeated, and paid twice over!",
+      "waitingReason": "Waiting for today's bounty. Open the map to find it."
     }
   ]
 }

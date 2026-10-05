@@ -28,6 +28,9 @@ def book() -> dict[str, Any]:
         rules.add(rune["rule"])
         if rune["six"] == "GROUND":
             assert rune.get("ground"), f"{rune['id']} is a Ground rune with no ground"
+        # The Hard Six are taken, never picked up: no ground, and no stone on the map.
+        assert rune["six"] != "HARD" or not rune.get("ground"), f"{rune['id']} is a Hard rune with ground"
+        assert rune["six"] == known[rune["id"]]["six"], f"{rune['id']} is in another six in the lore"
     return data
 
 
@@ -95,6 +98,10 @@ def _matches(ground: dict[str, Any], category: str | None, tags: dict[str, Any])
 def ground_runes_at(category: str | None, tags: dict[str, Any] | None) -> list[str]:
     """The Ground Six whose own kind of ground this place is."""
     return [r["id"] for r in book()["runes"] if r["six"] == "GROUND" and _matches(r["ground"], category, tags or {})]
+
+
+def hard_six() -> list[str]:
+    return [r["id"] for r in book()["runes"] if r["six"] == "HARD"]
 
 
 def road_six() -> list[str]:

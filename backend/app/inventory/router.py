@@ -25,6 +25,7 @@ from app.inventory.schemas import (
     SlotOut,
     StallOfferOut,
     StallOut,
+    TreasureClueOut,
     UseIn,
     WearIn,
 )
@@ -241,9 +242,10 @@ async def sell(item_id: uuid.UUID, user: CurrentUser, db: DBDep) -> InventoryOut
 async def use(
     consumable_id: str, user: CurrentUser, db: DBDep, settings: SettingsDep, payload: UseIn | None = None
 ) -> ConsumableUseOut:
-    """Uses a map piece (needs where you are) or opens a sealed chest. 409 NONE_LEFT,
-    NO_HIDDEN_PLACE, OPEN_LATER (during a journey), BAG_FULL, NOT_USED_HERE (a lamp
-    or a rest token)."""
+    """Uses a map piece or a treasure map (both need where you are) or opens a sealed
+    chest. 409 NONE_LEFT, NO_HIDDEN_PLACE, OPEN_LATER (during a journey), BAG_FULL,
+    NOT_USED_HERE (a lamp or a rest token), NEEDS_LOCATION; a treasure map also
+    ONE_AT_A_TIME (a clue is still open) and NO_PLACE_FOR_TREASURE."""
     character = await get_character(db, user)
     result = await service.use_consumable(
         db,
@@ -254,6 +256,16 @@ async def use(
         longitude=payload.longitude if payload else None,
     )
     return ConsumableUseOut(**result, inventory=await inventory_out(db, character))
+
+
+@router.get("/inventory/treasure", response_model=list[TreasureClueOut], tags=["inventory"])
+async def treasure(user: CurrentUser, db: DBDep) -> list[TreasureClueOut]:
+    """The open treasure clues (0.8.0): one at a time, so empty or one. A clue is
+    never a place on the map."""
+    from app.inventory import treasure as buried
+
+    await get_character(db, user)
+    return [TreasureClueOut(**buried.clue_out(o)) for o in await buried.open_clues(db, user.id)]
 
 
 @router.get("/inventory/stall", response_model=StallOut, tags=["inventory"])

@@ -37,7 +37,9 @@ TILES_PER_DEGREE = 10
 # skips what is already known, so the second pass only adds the new kinds.
 # v3: kept the tags that say a place is a memorial, a church, a cemetery or private
 # (app/discoveries/sensitivity.py), so every tile is fetched again once.
-TILE_VERSION = "v3"
+# v4 (0.8.0): kept how high a peak is (`ele`, for the Hill King) and what a path is
+# (`highway`, for the Trail Wyrm), so every tile is fetched again once more.
+TILE_VERSION = "v4"
 RETRY_AFTER = timedelta(minutes=15)
 # Quest generation waits this long for the tile the rider is in; the import carries on after.
 FIRST_TILE_WAIT_SECONDS = 15.0
@@ -74,6 +76,9 @@ KEEP_TAGS = (
     "access",
     "healthcare",
     "artwork_type",
+    # Where a legend lives (app/legends/anchors.py): how high, and what kind of path.
+    "ele",
+    "highway",
 )
 
 BBox = tuple[float, float, float, float]  # (south, west, north, east)

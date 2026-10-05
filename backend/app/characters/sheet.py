@@ -9,8 +9,10 @@ untrained character would.
 0.6.1 carried the trade's base only; 0.6.2 adds the current trade's knacks
 (characters/config/abilities.json); 0.7.0 the inscribed runes' rules; 0.7.2
 (version 4) the gear worn in open slots, whose rules merge with the runes' into
-the one `rules` dict (inventory/gear.py merge_rules), and better finds. Every
-field added since version 1 is optional on the phone.
+the one `rules` dict (inventory/gear.py merge_rules), and better finds; 0.8.0
+(version 5) the capstone skills against legends (`vs_legends_pct`, by kind, and
+how far a note reaches a legend). Every field added since version 1 is optional
+on the phone.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ from typing import Any
 
 from app.characters.models import Character
 
-SHEET_VERSION = 4
+SHEET_VERSION = 5
 KINDS = ("ROAD", "GROUND", "CLIMB", "RUNE", "WORD")
 
 # Today's class eases, as effort: a Warrior climbs and keeps going, an Explorer
@@ -63,6 +65,10 @@ class CharacterSheet:
     # from Common to Rare.
     gear: dict[str, str] = field(default_factory=dict)
     loot_find_pct: float = 0.0
+    # 0.8.0: the capstone skills, against legends only: a percentage by kind of
+    # effort ({"GROUND": 0.25}), and how far a note reaches a legend (Loremaster).
+    vs_legends_pct: dict[str, float] = field(default_factory=dict)
+    legend_word_radius_m: float = 0.0
 
     @classmethod
     def neutral(cls) -> CharacterSheet:
@@ -88,6 +94,8 @@ class CharacterSheet:
             "rules": out["rules"],
             "gear": out["gear"],
             "lootFindPct": out["loot_find_pct"],
+            "vsLegendsPct": out["vs_legends_pct"],
+            "legendWordRadiusMeters": out["legend_word_radius_m"],
         }
 
     @classmethod
@@ -112,6 +120,8 @@ class CharacterSheet:
             rules={k: float(v) for k, v in (data.get("rules") or {}).items()},
             gear={str(k): str(v) for k, v in (data.get("gear") or {}).items()},
             loot_find_pct=float(data.get("lootFindPct", 0.0)),
+            vs_legends_pct={k: float(v) for k, v in (data.get("vsLegendsPct") or {}).items()},
+            legend_word_radius_m=float(data.get("legendWordRadiusMeters", 0.0)),
         )
 
     def woken(self, rune_id: str) -> CharacterSheet:
@@ -135,8 +145,9 @@ class CharacterSheet:
         """The combat constants with what the inscribed runes and the gear change:
         the opening blow (Raido, the Drover's Bell), how far the word reaches
         (Ansuz), "does not mind" on the first outings of the day (Dagaz), a creature
-        left under a tenth defeated (the Unrung Bell) and what a new tile counts
-        for (the Cartographer's Atlas)."""
+        left under a tenth defeated (the Unrung Bell), what a new tile counts
+        for (the Cartographer's Atlas), how near counts as met (Nauthiz) and how
+        far climbing is shared (Uruz)."""
         out = dict(cfg)
         if self.rules.get("CARRIED_SCALE"):
             out["carriedFraction"] = float(cfg["carriedFraction"]) * self.rules["CARRIED_SCALE"]
@@ -148,7 +159,36 @@ class CharacterSheet:
             out["wordRadiusMeters"] = max(float(cfg["wordRadiusMeters"]), self.rules["WORD_RADIUS_M"])
         if self.rules.get("MINDS_NEUTRAL_FIRST") and first_outings_today <= self.rules["MINDS_NEUTRAL_FIRST"]:
             out["minds"] = 1.0
+        if self.rules.get("ENGAGE_M"):
+            out["engageMeters"] = max(float(cfg["engageMeters"]), self.rules["ENGAGE_M"])
+        if self.rules.get("CLIMB_SHARED_M"):
+            out["climbSharedMeters"] = float(self.rules["CLIMB_SHARED_M"])
         return out
+
+    def foe_cfg(self, cfg: dict[str, Any], *, elder: bool) -> dict[str, Any]:
+        """The constants against one thing, after `fight_cfg`: Thurisaz makes the
+        opening blow on an elder, a bounty or a legend that many times stronger
+        (the fraction is scaled; the cap on it is not)."""
+        scale = float(self.rules.get("ELDER_CARRIED_SCALE", 0.0))
+        if not elder or scale <= 0:
+            return cfg
+        return {**cfg, "carriedFraction": float(cfg.get("carriedFraction", 0.0)) * scale}
+
+    def legend_cfg(self, cfg: dict[str, Any]) -> dict[str, Any]:
+        """The constants against a legend, after `fight_cfg`: an elder's, and a note
+        reaching as far as the Loremaster's."""
+        out = self.foe_cfg(cfg, elder=True)
+        if self.legend_word_radius_m:
+            out = {**out, "wordRadiusMeters": max(float(out["wordRadiusMeters"]), self.legend_word_radius_m)}
+        return out
+
+    def pct_against_legend(self, *, made_good_m: float, foot: bool) -> dict[str, float]:
+        """The build against a legend: as against an elder (a legend is one, for
+        Vanguard), plus the capstone skills' percentages, kind by kind."""
+        pct = self.pct_against(elder=True, old_place=False, made_good_m=made_good_m, foot=foot)
+        for kind, extra in self.vs_legends_pct.items():
+            pct[kind] = pct.get(kind, 0.0) + extra
+        return pct
 
     def pct_against(self, *, elder: bool, old_place: bool, made_good_m: float, foot: bool) -> dict[str, float]:
         """The build against one thing on one outing: the sheet's own percentages,
@@ -218,4 +258,19 @@ def build_sheet(
         vs_elders_pct=catalog.effect_total(knacks, "VS_ELDERS_PCT"),
         late_road_pct=catalog.effect_total(knacks, "LATE_ROAD_PCT"),
         word_old_places_pct=catalog.effect_total(knacks, "WORD_OLD_PLACES_PCT"),
+        vs_legends_pct=_vs_legends(knacks),
+        legend_word_radius_m=catalog.effect_total(knacks, "LEGEND_WORD_RADIUS_M"),
     )
+
+
+def _vs_legends(knacks: dict[str, int]) -> dict[str, float]:
+    """The capstones' percentages against legends, by kind: an effect that names a
+    kind is that kind's; one that names none is every kind's."""
+    from app.characters import catalog
+
+    out = catalog.effects_by_kind(knacks, "VS_LEGENDS_PCT")
+    every = catalog.effect_total_kindless(knacks, "VS_LEGENDS_PCT")
+    if every:
+        for kind in KINDS:
+            out[kind] = out.get(kind, 0.0) + every
+    return {k: round(v, 4) for k, v in out.items() if v}

@@ -36,8 +36,8 @@ from app.inventory import service as inventory
 from app.lore import catalog as lore
 from app.rides.validation import CleanPoint
 from app.world_objects import claims, fight, variants
-from app.world_objects.models import WorldObject
-from app.world_objects.schemas import KillMethodOut, MonsterOut, WorldObjectOut
+from app.world_objects.models import HIDDEN, WorldObject
+from app.world_objects.schemas import KillMethodOut, LairOut, MonsterOut, WorldObjectOut
 from app.world_objects.spawner import Anchor, SpawnPlan, day_seed, plan_spawns, tile_of
 
 # Spawning is checked at most once per (user, tile, day) per process; the map is
@@ -83,8 +83,10 @@ class ClaimOutcome:
     fights: list[dict[str, Any]] = field(default_factory=list)
     blows: list[tuple[int, bool, float]] = field(default_factory=list)
     flags: list[str] = field(default_factory=list)
-    # Inscribed runes woken on the outing (0.7.0).
+    # Inscribed runes woken on the outing (0.7.0), and where each was cut: (lat, lon,
+    # the fix it ended on), for a legend's fold (0.8.0).
     woken: list[str] = field(default_factory=list)
+    woken_at: list[tuple[float, float, int]] = field(default_factory=list)
 
     def counted_of(self, kind: str) -> list[WorldObject]:
         return [o for o in [*self.claimed, *self.tapped] if o.kind == kind]
@@ -222,7 +224,16 @@ def to_out(obj: WorldObject, owned: dict[str, set[str]] | None = None) -> WorldO
         pieceOwned=in_set.get("pieceOwned"),
         claimRadiusMeters=load_config()["claimRadiusMeters"].get(obj.kind),
         displayName=variants.display_name(payload) or None,
+        lair=_lair_out(obj),
     )
+
+
+def _lair_out(obj: WorldObject) -> LairOut | None:
+    if obj.kind != "LAIR":
+        return None
+    from app.world_objects.lairs import lair_out
+
+    return LairOut(**lair_out(obj))
 
 
 async def expire_stale(db: AsyncSession, user_id: uuid.UUID) -> None:
@@ -355,7 +366,8 @@ async def live_objects(
 
 async def get_object(db: AsyncSession, user_id: uuid.UUID, object_id: uuid.UUID) -> WorldObject:
     obj = await db.get(WorldObject, object_id)
-    if obj is None or obj.user_id != user_id:
+    # Buried treasure (0.8.0) is found by its clue on a journey, never looked up.
+    if obj is None or obj.user_id != user_id or obj.status == HIDDEN:
         raise NotFound("We couldn't find that on your map. It may have gone.")
     return obj
 
@@ -997,10 +1009,20 @@ async def _overlaps_another(db: AsyncSession, ride: Any) -> bool:
 
 
 def _wound(
-    obj: WorldObject, ride_id: str, day: str, report: fight.FightReport, ended: datetime, *, bounty_keeps_days: int = 0
+    obj: WorldObject,
+    ride_id: str,
+    day: str,
+    report: fight.FightReport,
+    ended: datetime,
+    *,
+    bounty_keeps_days: int = 0,
+    stays_extra_days: int = 0,
 ) -> None:
     """Writes what this ride took off it. Keyed by ride, so a rerun replaces rather
-    than adds, and reassigned, because the JSON column does not see edits in place."""
+    than adds, and reassigned, because the JSON column does not see edits in place.
+
+    Isa (0.8.0, `stays_extra_days`): a weakened thing stays that many days more,
+    and the week's cap moves out by as many."""
     cfg = combat_config()
     rides = wounds_of(obj)
     rides[ride_id] = {
@@ -1013,8 +1035,8 @@ def _wound(
     obj.payload = {**(obj.payload or {}), "wounds": {"rides": rides}}
     # A loosened thing stays a little longer, out of stubbornness: two days from
     # this outing, never more than a week from when it first appeared.
-    stays = ended + timedelta(days=float(cfg["loosenedStaysDays"]))
-    cap = obj.spawned_at + timedelta(days=float(cfg["maxLifeDays"]))
+    stays = ended + timedelta(days=float(cfg["loosenedStaysDays"]) + stays_extra_days)
+    cap = obj.spawned_at + timedelta(days=float(cfg["maxLifeDays"]) + stays_extra_days)
     obj.expires_at = max(obj.expires_at, min(stays, cap))
     if obj.bounty and bounty_keeps_days:
         # Algiz: a loosened bounty keeps its double purse, and stays a little longer.
@@ -1064,12 +1086,18 @@ async def claim_from_ride(
     coords = [(p.latitude, p.longitude) for p in points]
     activity = normalise(ride.activity)
     held = await pieces_owned(db, ride.user_id)
+    rules = getattr(sheet, "rules", None) or {}
     # The Wrecker's Light: a chest opens when the journey passes within its reach.
-    chest_reach = float((getattr(sheet, "rules", None) or {}).get("CHEST_REACH_M", 0.0))
+    chest_reach = float(rules.get("CHEST_REACH_M", 0.0))
+    # Ingwaz (0.8.0): rune stones and chests are picked up from further away.
+    pickup_reach = float(rules.get("PICKUP_REACH_M", 0.0))
     for obj in live:
+        if obj.kind not in ("CHEST", "COLLECTABLE", "MONSTER"):
+            # A lair is visited tile by tile (world_objects/lairs.py), never passed or fought.
+            continue
         distance = claims.min_distance_to_path_m(obj.latitude, obj.longitude, coords)
         if obj.kind in ("CHEST", "COLLECTABLE"):
-            passed_within = float(cfg["claimRadiusMeters"][obj.kind]) * 1.25
+            passed_within = max(float(cfg["claimRadiusMeters"][obj.kind]) * 1.25, pickup_reach)
             if obj.kind == "CHEST":
                 passed_within = max(passed_within, chest_reach)
             if distance <= passed_within:
@@ -1139,31 +1167,9 @@ async def _fight_by_effort(
     min_len = float(base_cfg.get("runeMinLengthMeters", 300))
     max_len = float(base_cfg.get("runeMaxLengthMeters", 4000))
 
-    # Waking (0.7.0): an inscribed rune's road form cut on an outing planned to cut it
-    # (a rune ride) wakes it. Once per outing, it counts a rank deeper and lands on
-    # everything in reach. A shape an ordinary outing happens to make wakes nothing:
-    # street grids make squares, and the replay found three ordinary outings in five
-    # would have woken one by chance.
-    woken: list[tuple[float, float, int]] = []
-    planned = await _planned_rune(db, ride)
-    for rune_id in [r for r in sheet.inscribed if r == planned]:
-        form = runes_catalog.road_form(rune_id)
-        if form not in runes_catalog.CUT_FORMS:
-            continue
-        found = claims.match_anywhere(
-            coords, form, threshold=sheet.rune_threshold, min_length_m=min_len, max_length_m=max_len
-        )
-        if found is None:
-            continue
-        lat, lon, index = found
-        sheet = sheet.woken(rune_id)
-        woken.append((lat, lon, index))
-        outcome.woken.append(rune_id)
-        if user_id is not None:
-            await inventory.record_cut(
-                db, user_id, ride_id=ride_uuid, rune_id=rune_id, latitude=lat, longitude=lon, source="WAKING", woke=True,
-                at=points[index].timestamp if index < len(points) else ended,
-            )  # fmt: skip
+    sheet, woken, woken_ids = await woken_on(db, ride, sheet, points, coords, ended, record=True)
+    outcome.woken.extend(woken_ids)
+    outcome.woken_at.extend(woken)
 
     first_today = await _outings_today_before(db, ride) + 1
     cfg = sheet.fight_cfg(base_cfg, first_outings_today=first_today)
@@ -1205,8 +1211,9 @@ async def _fight_by_effort(
                 if near:
                     hit = fight.RuneHit(fight.WOKEN, near[0][2])
             # The build against this one: elders and bounties, an old place, a long outing.
+            elder = obj.tier >= 2 or bool(obj.bounty)
             pct = sheet.pct_against(
-                elder=obj.tier >= 2 or bool(obj.bounty),
+                elder=elder,
                 old_place=obj.anchor_discovery_id in old_places,
                 made_good_m=made_good,
                 foot=activity in ("RUN", "WALK"),
@@ -1216,7 +1223,7 @@ async def _fight_by_effort(
                 foe,
                 activity=activity,
                 damage_pct=pct,
-                cfg=cfg,
+                cfg=sheet.foe_cfg(cfg, elder=elder),
                 new_cell_indices=new_cell_indices,
                 rune_hit=hit,
                 word_indices=words,
@@ -1247,18 +1254,65 @@ async def _fight_by_effort(
             }
         )
         keeps = int(sheet.rules.get("BOUNTY_KEEPS_PURSE", 0))
+        isa = int(sheet.rules.get("WEAKENED_STAYS_DAYS", 0))
         if report.outcome == "SEEN_OFF":
             _wound(obj, ride_id, day, report, ended)
             if obj.status == "SPAWNED":
                 _claim(obj, ride, ended, {"method": "EFFORT", "finisher": report.finisher, **report.to_dict()})
                 outcome.claimed.append(obj)
         elif report.taken >= 1:
-            _wound(obj, ride_id, day, report, ended, bounty_keeps_days=keeps)
+            _wound(obj, ride_id, day, report, ended, bounty_keeps_days=keeps, stays_extra_days=isa)
             outcome.fights[-1]["expiresAt"] = obj.expires_at.isoformat()
             if obj.status == "SPAWNED":
                 outcome.missed.append((obj, "LOOSENED"))
         elif obj.status == "SPAWNED":
             outcome.missed.append((obj, "UNTOUCHED"))
+
+
+async def woken_on(
+    db: AsyncSession,
+    ride: Any,
+    sheet: Any,
+    points: list[CleanPoint],
+    coords: list[tuple[float, float]],
+    ended: datetime,
+    *,
+    record: bool,
+) -> tuple[Any, list[tuple[float, float, int]], list[str]]:
+    """Waking (0.7.0): an inscribed rune's road form cut on an outing planned to cut it
+    (a rune ride) wakes it. Once per outing, it counts a rank deeper and lands on
+    everything in reach. A shape an ordinary outing happens to make wakes nothing:
+    street grids make squares, and the replay found three ordinary outings in five
+    would have woken one by chance.
+
+    Returns the sheet with the woken runes a rank deeper, where each was cut (lat,
+    lon, the fix it ended on) and which. `record` writes the cut on the map, once."""
+    base_cfg = combat_config()
+    min_len = float(base_cfg.get("runeMinLengthMeters", 300))
+    max_len = float(base_cfg.get("runeMaxLengthMeters", 4000))
+    user_id = getattr(ride, "user_id", None)
+    woken: list[tuple[float, float, int]] = []
+    ids: list[str] = []
+    planned = await _planned_rune(db, ride)
+    for rune_id in [r for r in sheet.inscribed if r == planned]:
+        form = runes_catalog.road_form(rune_id)
+        if form not in runes_catalog.CUT_FORMS:
+            continue
+        found = claims.match_anywhere(
+            coords, form, threshold=sheet.rune_threshold, min_length_m=min_len, max_length_m=max_len
+        )
+        if found is None:
+            continue
+        lat, lon, index = found
+        sheet = sheet.woken(rune_id)
+        woken.append((lat, lon, index))
+        ids.append(rune_id)
+        if record and user_id is not None:
+            await inventory.record_cut(
+                db, user_id, ride_id=getattr(ride, "id", None), rune_id=rune_id, latitude=lat, longitude=lon,
+                source="WAKING", woke=True, at=points[index].timestamp if index < len(points) else ended,
+            )  # fmt: skip
+    return sheet, woken, ids
 
 
 async def _planned_rune(db: AsyncSession, ride: Any) -> str | None:
@@ -1434,6 +1488,8 @@ async def claim_by_tap(
     # Two taps at once must not both find it there.
     await db.refresh(obj, with_for_update=True)
     now = utcnow()
+    if obj.kind == "LAIR":
+        raise Conflict("A lair can't be opened by hand. Visit its tiles on your journeys.", code="OBJECT_NOT_CLAIMABLE")
     if obj.kind not in TAP_KINDS:
         raise Conflict("Creatures can't be tapped. Ride near one to fight it.", code="OBJECT_NOT_CLAIMABLE")
     if obj.status != "SPAWNED" or obj.expires_at < now:

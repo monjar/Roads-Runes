@@ -32,6 +32,19 @@ async def _once(db: AsyncSession, user_id: uuid.UUID, key: str) -> bool:
     return seen is None
 
 
+async def first_time(db: AsyncSession, user_id: uuid.UUID, key: str) -> bool:
+    """True while nothing has been written under this ledger key (legends, lairs and
+    buried treasure pay once by their keys, 0.8.0)."""
+    return await _once(db, user_id, key)
+
+
+def note_paid(
+    user_id: uuid.UUID, kind: str, key: str, *, ride_id: uuid.UUID | None, payload: dict[str, Any]
+) -> ItemEvent:
+    """The ledger line that makes a key paid."""
+    return ItemEvent(user_id=user_id, kind=kind, key=key, ride_id=ride_id, payload=payload)
+
+
 async def holdings(db: AsyncSession, character: Character) -> dict[str, RuneHolding]:
     rows = await db.execute(select(RuneHolding).where(RuneHolding.character_id == character.id))
     return {h.rune_id: h for h in rows.scalars()}
@@ -520,6 +533,63 @@ async def drop_for(
     return found
 
 
+async def give_item(
+    db: AsyncSession,
+    character: Character,
+    rarity: str,
+    *,
+    key: str,
+    source: str,
+    ride_id: uuid.UUID | None = None,
+    from_name: str | None = None,
+    item_id: str | None = None,
+) -> dict[str, Any]:
+    """A guaranteed item (a legend's phase, a lair's great chest, buried treasure),
+    of this rarity in a slot seeded by the key; a Legendary already had is the Rare
+    of its slot. The caller pays it once by its key. Returns an ItemFoundOut."""
+    sheet = await sheet_for(db, character)
+    had = await legendaries_had(db, character.user_id)
+    chosen = item_id or loot.sealed_item(key, rarity, had)
+    item = await add_gear(
+        db,
+        character,
+        chosen,
+        source=source,
+        key=key,
+        ride_id=ride_id,
+        sell_scale=float(sheet.rules.get("SELL_SCALE", 1.0)),
+    )
+    return item_found(source=source, item=item, from_name=from_name)
+
+
+async def give_consumable(
+    db: AsyncSession, character: Character, cid: str, *, source: str, from_name: str | None = None
+) -> dict[str, Any]:
+    """One consumable into the bag; the caller pays it once by its key."""
+    await add_consumables(db, character, {cid: 1})
+    return item_found(source=source, consumable=cid, from_name=from_name)
+
+
+async def map_for(
+    db: AsyncSession, character: Character, obj: Any, *, ride_id: uuid.UUID | None = None
+) -> dict[str, Any] | None:
+    """A treasure map from a tier-3 chest, three times in ten (0.8.0): seeded by the
+    chest and given once (`map:{objectId}`). Returns an ItemFoundOut, or None."""
+    if obj.kind != "CHEST" or not loot.treasure_map_drops(str(obj.id), obj.kind, int(obj.tier or 1)):
+        return None
+    key = f"map:{obj.id}"
+    if not await _once(db, character.user_id, key):
+        return None
+    from app.world_objects.variants import display_name
+
+    found = await give_consumable(
+        db, character, "TREASURE_MAP", source="CHEST", from_name=display_name(obj.payload or {}) or None
+    )
+    db.add(ItemEvent(user_id=character.user_id, kind="DROP", key=key, ride_id=ride_id, payload=found))
+    await db.flush()
+    return found
+
+
 async def grant_quest_items(
     db: AsyncSession, character: Character, quest: Any, *, ride_id: uuid.UUID | None = None
 ) -> list[dict[str, Any]]:
@@ -707,8 +777,8 @@ async def use_consumable(
     latitude: float | None = None,
     longitude: float | None = None,
 ) -> dict[str, Any]:
-    """Uses a map piece or opens a sealed chest. A lamp is lit from the map and a
-    rest token is used by itself, so neither is used here."""
+    """Uses a map piece or a treasure map (0.8.0), or opens a sealed chest. A lamp is
+    lit from the map and a rest token is used by itself, so neither is used here."""
     held = await consumable_counts(db, character)
     if held.get(cid, 0) <= 0:
         raise _none_left()
@@ -721,6 +791,13 @@ async def use_consumable(
             raise Conflict("A map piece needs to know where you are. Turn on your location and try again.",
                            code="NEEDS_LOCATION")  # fmt: skip
         return await _use_map_piece(db, settings, character, latitude, longitude)
+    if cid == "TREASURE_MAP":
+        from app.inventory import treasure
+
+        if latitude is None or longitude is None:
+            raise Conflict("A treasure map needs to know where you are. Turn on your location and try again.",
+                           code="NEEDS_LOCATION")  # fmt: skip
+        return await treasure.bury(db, settings, character, latitude, longitude)
     return await _open_sealed(db, character, cid)
 
 

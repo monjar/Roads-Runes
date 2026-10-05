@@ -35,6 +35,7 @@ from app.quests.schemas import ObjectiveEventIn, ObjectiveOut, ObjectiveProgress
 from app.quests.state_machine import assert_transition
 from app.quests.templates import ANY_CLASS, all_templates
 from app.users.models import User
+from app.world_objects import lairs
 from app.world_objects import service as world_objects
 from app.world_objects.models import WorldObject
 
@@ -194,10 +195,20 @@ async def build_context(
     # Places come from OpenStreetMap the first time an area is used, so quests work anywhere.
     await osm_import.ensure_pois(settings, latitude, longitude)
     pois = await discoveries_nearby(db, latitude, longitude, 30_000 * (1 + poi_bonus), limit=800)
+    # A lair, from level 8 (0.8.0), for the step that sends the player to one.
+    try:
+        async with db.begin_nested():
+            await lairs.ensure_offered(db, settings, character, near=(latitude, longitude))
+    except Exception as exc:  # noqa: BLE001 - a board without a lair, never no board
+        log.error("lair_offer_failed", error=str(exc)[:200])
     # And the chests, pieces and monsters already placed here, for the quests that point at them.
     placed = await world_objects.ensure_spawned(
         db, settings, user.id, latitude, longitude, 6000, character_class=character.character_class, activity=activity
     )
+    # The legend awake (0.8.0), for the step that asks for damage to it.
+    from app.legends.models import AWAKE, OldOne
+
+    awake = await db.scalar(select(OldOne).where(OldOne.character_id == character.id, OldOne.status == AWAKE))
     completed = [
         r
         for (r,) in (
@@ -240,9 +251,17 @@ async def build_context(
                 o.latitude,
                 o.longitude,
                 o.expires_at,
+                bounty=bool(o.bounty),
             )
             for o in placed
         ],
+        legend=(
+            WorldObjectCandidate(
+                str(awake.id), "LEGEND", awake.name, awake.anchor_name, awake.latitude, awake.longitude, None
+            )
+            if awake is not None
+            else None
+        ),
     )
 
 
@@ -262,7 +281,8 @@ def _persist(user: User, generated: GeneratedQuest, now: datetime) -> QuestInsta
         quest_type=generated.quest_type,
         character_class=generated.character_class,
         activity=generated.activity,
-        title=generated.title,
+        # A place's name can be long; Postgres holds a string to its column.
+        title=generated.title[:120],
         description=generated.description,
         narrative=generated.narrative,
         difficulty=generated.difficulty,
@@ -280,7 +300,7 @@ def _persist(user: User, generated: GeneratedQuest, now: datetime) -> QuestInsta
         quest.objectives.append(
             QuestObjective(
                 objective_type=o.objective_type,
-                title=o.title,
+                title=o.title[:160],
                 latitude=o.latitude,
                 longitude=o.longitude,
                 radius_meters=o.radius_meters,

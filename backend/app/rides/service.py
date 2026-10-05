@@ -235,6 +235,10 @@ async def summary(db: AsyncSession, user: User, ride: Ride) -> AdventureSummary 
         entryWritten=result.get("entryWritten"),
         pledge=result.get("pledge"),
         letters=result.get("letters"),
+        legend=result.get("legend"),
+        lair=result.get("lair"),
+        treasureFound=result.get("treasureFound"),
+        legendWoke=result.get("legendWoke"),
     )
 
 

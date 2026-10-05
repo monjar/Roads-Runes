@@ -136,10 +136,13 @@ async def discoveries_along(
     ride_id: uuid.UUID,
     at: datetime,
     stride: int = 5,
+    radius_m: float | None = None,
 ) -> list[Discovery]:
-    """Discoveries the rider passed within DISCOVERY_RADIUS_M of, not previously found."""
+    """Discoveries the rider passed within DISCOVERY_RADIUS_M of (or `radius_m`, when
+    Hagalaz widens it, 0.8.0), not previously found."""
     if not points:
         return []
+    reach = max(DISCOVERY_RADIUS_M, float(radius_m or 0.0))
     lats = [p[0] for p in points]
     lons = [p[1] for p in points]
     centre_lat, centre_lon = (max(lats) + min(lats)) / 2, (max(lons) + min(lons)) / 2
@@ -150,7 +153,7 @@ async def discoveries_along(
             haversine_m(centre_lat, centre_lon, max(lats), max(lons)),
             haversine_m(centre_lat, centre_lon, min(lats), min(lons)),
         )
-        + DISCOVERY_RADIUS_M
+        + reach
     )
     candidates = await nearby(db, centre_lat, centre_lon, min(radius, 60000), limit=2000)
     if not candidates:
@@ -162,7 +165,7 @@ async def discoveries_along(
         if c.id in found:
             continue
         for lat, lon in sampled:
-            if haversine_m(lat, lon, c.latitude, c.longitude) <= DISCOVERY_RADIUS_M:
+            if haversine_m(lat, lon, c.latitude, c.longitude) <= reach:
                 hits.append(c)
                 break
     for c in hits:

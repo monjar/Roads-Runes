@@ -29,6 +29,11 @@ TRANSACTION_KINDS = (
     "ITEM_SOLD",
     "LEVEL_REWARD",
     "ADJUSTMENT",
+    # 0.8.0: a legend's phase broken, a lair's great chest, buried treasure found;
+    # each paid outside the per-journey cap.
+    "LEGEND",
+    "LAIR",
+    "TREASURE",
 )
 
 

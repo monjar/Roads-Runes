@@ -34,6 +34,9 @@ OBJECTIVE_TYPES = (
     # taken from one place to another.
     "INSCRIBE_RUNE",
     "CARRY",
+    # 0.8.0: a lair's great chest opened, and so much damage to the legend on one journey.
+    "LAIR_VISIT",
+    "WOUND_BOSS",
 )
 
 DIFFICULTIES = ("EASY", "MODERATE", "HARD", "EPIC")

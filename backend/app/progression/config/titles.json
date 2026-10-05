@@ -1,5 +1,5 @@
 {
-  "_comment": "Every title there is, by slug (docs/ROADMAP.md, 0.6.2). Written only through progression.service.award_title. `how` is shown for a title not yet earned. Level titles are degrees of being known; `renamed` maps the seven old level titles to them for the 0009 backfill.",
+  "_comment": "Every title there is, by slug (docs/ROADMAP.md, 0.6.2; a legend's bane, 0.8.0). Written only through progression.service.award_title. `how` is shown for a title not yet earned. Level titles are degrees of being known; `renamed` maps the seven old level titles to them for the 0009 backfill.",
   "titles": [
     {"slug": "level-1", "name": "Passer-by", "source": "LEVEL", "level": 1, "how": "Finish your first journey."},
     {"slug": "level-5", "name": "Familiar Face", "source": "LEVEL", "level": 5, "how": "Reach level 5."},
@@ -16,6 +16,7 @@
     {"slug": "arc-what-the-stones-remember", "name": "Stone Reader", "source": "ARC", "arc": "what-the-stones-remember", "how": "Finish What the Stones Remember as a Wizard."},
     {"slug": "arc-the-iron-hours", "name": "Ironbound", "source": "ARC", "arc": "the-iron-hours", "how": "Finish The Iron Hours as a Warrior."},
     {"slug": "arc-a-record-of-small-things", "name": "Keeper of Small Things", "source": "ARC", "arc": "a-record-of-small-things", "how": "Finish A Record of Small Things as a Scribe."},
+    {"slug": "arc-double-pay", "name": "Holds the Ground", "source": "ARC", "arc": "double-pay", "how": "Finish Act III, What Holds the Ground."},
     {"slug": "cast-ada-pym", "name": "On the Board", "source": "CAST", "cast": "ada-pym", "count": 10, "how": "Finish 10 of Ada Pym's notices."},
     {"slug": "cast-tam-hurdle", "name": "Mended", "source": "CAST", "cast": "tam-hurdle", "count": 5, "how": "Finish 5 of Tam Hurdle's notices."},
     {"slug": "cast-enid-sallow", "name": "Footnoted", "source": "CAST", "cast": "enid-sallow", "count": 5, "how": "Finish 5 of Enid Sallow's notices."},
@@ -45,7 +46,12 @@
     {"slug": "deed-ink-2", "name": "Note-Taker", "source": "DEED", "deed": "INK", "tier": 2, "how": "Write 10 notes."},
     {"slug": "deed-ink-3", "name": "Margin-Writer", "source": "DEED", "deed": "INK", "tier": 3, "how": "Write 30 notes."},
     {"slug": "deed-ink-4", "name": "Ink-Stained", "source": "DEED", "deed": "INK", "tier": 4, "how": "Write 75 notes."},
-    {"slug": "deed-ink-5", "name": "The Record", "source": "DEED", "deed": "INK", "tier": 5, "how": "Write 200 notes."}
+    {"slug": "deed-ink-5", "name": "The Record", "source": "DEED", "deed": "INK", "tier": 5, "how": "Write 200 notes."},
+    {"slug": "legend-fog-dragon", "name": "Bane of the Fog Dragon", "source": "LEGEND", "legend": "fog-dragon", "how": "Defeat the Fog Dragon."},
+    {"slug": "legend-water-wyrm", "name": "Bane of the Water Wyrm", "source": "LEGEND", "legend": "water-wyrm", "how": "Defeat the Water Wyrm."},
+    {"slug": "legend-hill-king", "name": "Bane of the Hill King", "source": "LEGEND", "legend": "hill-king", "how": "Defeat the Hill King."},
+    {"slug": "legend-trail-wyrm", "name": "Bane of the Trail Wyrm", "source": "LEGEND", "legend": "trail-wyrm", "how": "Defeat the Trail Wyrm."},
+    {"slug": "legend-rune-golem", "name": "Bane of the Rune Golem", "source": "LEGEND", "legend": "rune-golem", "how": "Defeat the Rune Golem."}
   ],
   "renamed": {
     "Novice": "Passer-by",

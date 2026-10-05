@@ -4,7 +4,7 @@
     "ROAD": {"name": "the Road Six", "how": "Found anywhere, as rune stones on the map."},
     "GROUND": {"name": "the Ground Six", "how": "Found only on their own kind of ground."},
     "TRADE": {"name": "the Trade Six", "how": "Given by your class at the end of a chapter."},
-    "HARD": {"name": "the Hard Six", "how": "Taken from the old ones and the elders."}
+    "HARD": {"name": "the Hard Six", "how": "Left by legends when you defeat them, and one in a lair's great chest."}
   },
   "runes": [
     {"id": "fehu", "name": "Fehu", "order": 1, "six": "TRADE", "gloss": "The toll-rune. What a road is owed.", "lends": "coin", "roadForm": null},

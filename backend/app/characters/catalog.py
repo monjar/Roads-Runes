@@ -48,6 +48,9 @@ READ_EFFECTS = frozenset(
         "FOG_REVEAL_RADIUS_CELLS",
         "RUNE_STONE_CHANCE",
         "FORGIVE_OPTIONAL_OBJECTIVE",
+        # 0.8.0: the capstones, against legends only (characters/sheet.py).
+        "VS_LEGENDS_PCT",
+        "LEGEND_WORD_RADIUS_M",
     }
 )
 
@@ -70,6 +73,20 @@ def effect_total(character_abilities: dict[str, int], effect_type: str, kind: st
             continue
         for effect in ability.get("effects", []):
             if effect.get("type") == effect_type and (kind is None or effect.get("kind") == kind):
+                total += float(effect.get("perRank", 0)) * rank
+    return total
+
+
+def effect_total_kindless(character_abilities: dict[str, int], effect_type: str) -> float:
+    """`effect_total` over the effects of this type that name no kind: an effect
+    on every kind of effort at once."""
+    total = 0.0
+    for ability_id, rank in character_abilities.items():
+        ability = abilities_by_id().get(ability_id)
+        if not ability:
+            continue
+        for effect in ability.get("effects", []):
+            if effect.get("type") == effect_type and not effect.get("kind"):
                 total += float(effect.get("perRank", 0)) * rank
     return total
 

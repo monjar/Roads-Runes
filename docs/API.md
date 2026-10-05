@@ -320,7 +320,8 @@ A piece (`COLLECTABLE`) carries its set: `setId`, `piece`, `setName`, `setSize`,
 player, `setOwned` (how many different pieces of it they hold) and `pieceOwned` (they already hold this
 one, so it is coins and not progress).
 
-`kind` is `CHEST`, `COLLECTABLE` or `MONSTER`; `status` is `SPAWNED`, `CLAIMED` or `EXPIRED`.
+`kind` is `CHEST`, `COLLECTABLE`, `MONSTER` or (0.8.0) `LAIR`; `status` is `SPAWNED`, `CLAIMED` or
+`EXPIRED` (buried treasure is `HIDDEN` and never listed).
 `claimRadiusMeters` is how close the player must be to take it, and null for a monster.
 
 ### `POST /world/objects/{id}/claim`
@@ -682,6 +683,165 @@ A journey that passes within 60 m of a letter written at least `letterMinAgeDays
 
 (`"in October 2025."` when it was written in another year; `[]` when none). A flagged journey finds letters too: they are not a reward.
 
+## Legends, lairs and treasure (0.8.0)
+
+On screen a boss is a **legend**; the code keeps `old_ones` / `OldOne`. No flag: a legend
+is fought whether `effort_combat` is on or off.
+
+### Legends
+
+One legend is awake at a time. It wakes, with no scheduler, after a journey is processed
+and on `GET /legends`, when none is awake and the player has defeated 3 creatures since a
+legend last woke or fell asleep (ever, for the first). A legend asleep wakes again first,
+with the health it had; otherwise the next in this order that can live somewhere near the
+player, skipping those defeated: the Fog Dragon, the Water Wyrm, the Hill King, the Trail
+Wyrm, the Rune Golem (`backend/app/world_objects/config/legends.json`). After all five, the
+second round: "The Fog Dragon II", each phase a quarter more health (625).
+
+Where it lives: 2 to 8 km from where the player usually starts, only where the routing
+engine finds a way for how they move (the route must end within 300 m of it), never at a
+sensitive place. The Fog Dragon lies at the edge of the biggest connected block of
+unexplored tiles in that ring (its tile next to explored ground nearest the block's
+middle); the Water Wyrm at water with a trail within 200 m; the Hill King at the highest
+viewpoint by its `ele` tag (else the nearest); the Trail Wyrm on a trail (a named route
+first); the Rune Golem at an old place.
+
+Health is three phases of 500. A journey that comes within reach (`engageMeters`, 150 m, or
+Nauthiz's) folds the fight model against the **current phase** only: weak to = `wants`,
+resists = `minds`, its ground 1 km. A legend counts as an elder (Vanguard, Thurisaz), and
+the capstones add their percentages. At most one phase breaks per journey and per day:
+damage past a break is lost and the next phase starts full; a phase that would break on a
+day one already broke is left with 1 (`heldOver`). A phase's `rune` says what lands as a
+rune: `ANY` (any rune shape ridden near it, or a woken rune), `WOKEN` (only a rune woken on
+a rune ride), or a rune id (`dagaz`: only its shape, `roadForm`). `stopIsNote`: a stop of
+3 minutes within a note's reach counts as a note. Each journey's wound is kept by ride id;
+a rerun replaces it.
+
+Left alone, a legend heals 50 (a tenth of a phase) per full week since it was last hit (or
+woke), worked out on read, never above the phase's health and never un-breaking a phase.
+After 4 weeks untouched it falls asleep (`DORMANT`, off the map) with what it had healed. It
+never takes anything from the player.
+
+Pay, once each by `legend:{id}:phase:{n}`: a phase broken pays 150 coins (`LEGEND`, outside
+the per-journey cap), 300 XP (`LEGEND_PHASE`), a Rare item and a treasure map. The third
+phase is the defeat instead: 400 coins, 800 XP (`LEGEND_DEFEATED`), a Legendary item (the
+Rare of its slot when that Legendary was had), a treasure map, its Hard rune (as a stone
+towards the next rank if held) and the title "Bane of the Fog Dragon" (`source: LEGEND`).
+
+`LegendOut`:
+
+```json
+{"id": "uuid", "speciesId": "fog-dragon", "name": "The Fog Dragon", "icon": "fogDragon",
+ "flavour": "...", "page": "...", "livesAt": "the biggest stretch of unexplored tiles near you",
+ "latitude": 51.51, "longitude": -0.06, "anchorName": "Near Burgess Park", "status": "AWAKE|DORMANT|DEFEATED",
+ "phase": 1,
+ "phases": [{"n": 1, "weakTo": ["GROUND"], "resists": ["WORD"], "healthMax": 500, "healthLeft": 360,
+             "broken": false, "rune": null, "roadForm": null, "stopIsNote": false}],
+ "healthLeft": 1360, "healthMax": 1500, "moved": false, "wokeAt": "...", "lastHitAt": "...",
+ "defeatedAt": null, "healsPerWeek": 50, "rune": "hagalaz", "sleepsAfterDays": 28, "sleepsAt": "...",
+ "phaseBrokenToday": false, "round": 1, "journeys": null}
+```
+
+- `GET /legends?latitude&longitude` → `{"awake": LegendOut|null, "defeated": [LegendSummary], "sleeping":
+  [LegendSummary], "creaturesUntilNext": 2|null}` (null while one is awake). Wakes one first if it is due.
+  The position is optional: it is used only when the player has no journey counted yet (otherwise a
+  legend lives near where they usually start).
+  `LegendSummary` = `{"id", "speciesId", "name", "icon", "status", "rune", "wokeAt", "defeatedAt"}`.
+- `GET /legends/{id}` → `LegendOut` with `journeys: [{"rideId", "date": "2026-10-05", "damage": 140,
+  "phase": 1}]`. 404 `NO_SUCH_LEGEND`.
+- `POST /legends/{id}/move` → `LegendOut`: the one free move ("Can't reach it? Move it once."),
+  somewhere else it may live at least 500 m away. 409 `ALREADY_MOVED`, `NOT_AWAKE`, `NOWHERE_ELSE`.
+
+`GET /world/objects` is unchanged: the legend comes from `/legends`.
+
+### Lairs
+
+A world object of kind `LAIR`, at most one live, offered from level 8 (on `GET /world/objects`,
+the quest board, and after a journey) at a park or green place 2 to 6 km from where the
+player usually starts; one a fortnight. Its seven tiles are its own and the six around it;
+entering five of them (on any journeys, not metres inside) within 14 days opens its **great
+chest**, once (`lair:{id}`): 250 coins (`LAIR`, outside the cap), a Rare item, a Rare sealed
+chest, and on the first lair ever the Ingwaz rune. `WorldObject` gains
+
+```json
+"lair": {"cells": [[51.48, -0.08], ...], "visited": [0, 3], "need": 5, "endsAt": "..."}
+```
+
+(`cells` are the tiles' middles; `visited` are indices into them). A lair cannot be claimed by
+hand (409 `OBJECT_NOT_CLAIMABLE`); it leaves the map once its chest is open or it ends.
+
+### Treasure maps
+
+A consumable `TREASURE_MAP` (`Inventory.consumables` now lists six), from every phase broken
+and three tier-3 chests in ten (by hand too: `POST /world/objects/{id}/claim` gains
+`itemsFound`, the drop and the map). Never sold at the stall.
+
+- `POST /inventory/consumables/TREASURE_MAP/use` `{"latitude", "longitude"}` → `ConsumableUse` with
+  `"clue": "Buried by water, in a green place, about 2 km north-east of here."` and `"treasureId"`.
+  It buries a chest (kind `CHEST`, status `HIDDEN`) 1 to 4 km away at a non-sensitive place that has
+  something to say about it (water, high ground, a green place, something old); the clue is made from
+  those facts and never from a name. 409 `ONE_AT_A_TIME` (a clue is open), `NO_PLACE_FOR_TREASURE`
+  (the map is kept), `NEEDS_LOCATION`, `NONE_LEFT`.
+- `GET /inventory/treasure` → `[{"treasureId", "clue", "buriedAt", "fromLatitude", "fromLongitude"}]`, the
+  open clue (one at a time). `from…` is where the map was read, which the clue's "of here" means.
+
+A hidden chest is never in `GET /world/objects` or `GET /world`, and `GET /world/objects/{id}` is 404 for
+it. A journey passing within 40 m opens it, once (`treasure:{id}`): 120 coins (`TREASURE`, outside the cap)
+and an item of a tier-3 chest's rarity, never nothing. Hot and cold is not built.
+
+### The Hard Six
+
+Six more runes can be held and inscribed (`GET /runes` lists them, `six: "HARD"`). They are never
+stones on the map: a legend leaves one when defeated, and the first great chest holds Ingwaz.
+
+| rune | rule | I / II / III / woken | where it acts |
+|---|---|---|---|
+| uruz | `CLIMB_SHARED_M` | 500 / 750 / 1000 / 1250 | the fold: climbing within v m of a creature counts in full against it, before contact too |
+| isa | `WEAKENED_STAYS_DAYS` | 2 / 3 / 4 / 5 | a weakened creature stays v days longer (the week's cap too) |
+| nauthiz | `ENGAGE_M` | 250 / 300 / 350 / 400 | `engageMeters` = max(150, v) |
+| hagalaz | `FIND_RADIUS_M` | 150 / 200 / 250 / 300 | hidden places within v m of the journey are found |
+| thurisaz | `ELDER_CARRIED_SCALE` | 1.5 / 2 / 2.5 / 3 | the opening blow × v against elders, bounties and legends |
+| ingwaz | `PICKUP_REACH_M` | 60 / 80 / 100 / 120 | chests and pieces within v m of the journey are picked up |
+
+### Capstone skills
+
+One per class at class level 20, rank 1, against legends only: Fog Breaker (Explorer,
+exploring +25%), Rune Master (Wizard, a rune shape +25%), Giant Toppler (Warrior, climbing
+and distance +20%), Loremaster (Scribe, a note +25% and reaching a legend from 500 m). The
+sheet is version 5: `vsLegendsPct` (`{"GROUND": 0.25}`, by kind; an effect naming no kind is
+every kind's) and `legendWordRadiusMeters`.
+
+### Act III
+
+`GET /quests/story` gains act 3, "What Holds the Ground": Habits (two ordinary steps), The
+Lair (`LAIR_VISIT`: a lair's great chest opened on the journey; `progressTarget` 5, progress
+the tiles visited), The One That Stayed (`WOUND_BOSS`: 300 damage to the legend on one
+journey; `extra.legendId`), Double Pay (today's bounty defeated). A step that cannot be set
+waits ("Waiting for a lair near you. Lairs come at level 8.").
+
+### On the ride summary
+
+```json
+"legend": {"id": "uuid", "speciesId": "fog-dragon", "name": "The Fog Dragon", "icon": "fogDragon",
+           "phaseBefore": 1, "phaseAfter": 2, "healthLeft": 1000, "healthMax": 1500,
+           "phaseHealthLeft": 500, "phaseHealthMax": 500, "damage": 140, "kinds": {"GROUND": 120, "CARRIED": 20},
+           "phaseBroken": true, "defeated": false, "heldOver": false,
+           "rewards": {"coins": 150, "xp": 300, "items": [ItemFound], "rune": null, "title": null}|null,
+           "line": "Phase broken! The Fog Dragon is down to its second phase."},
+"lair": {"id": "uuid", "name": "The lair at Burgess Park", "visited": 3, "need": 5, "tiles": 7, "newTiles": 2,
+         "done": false, "endsAt": "...", "rewards": null, "line": "3 / 5 of the lair's tiles visited."},
+"treasureFound": {"id": "uuid", "name": "Buried treasure", "clue": "...", "coins": 120, "item": ItemFound,
+                  "line": "You found the buried treasure!"},
+"legendWoke": {"id": "uuid", "speciesId": "fog-dragon", "name": "The Fog Dragon", "icon": "fogDragon",
+               "line": "A legend has woken: the Fog Dragon"}
+```
+
+Each is null when there was none. `legend` is there when the journey came within reach (with
+`damage: 0` and "took no damage this time" when nothing landed); `rewards` is set only on the
+journey that paid. Their coins are in `acBreakdown` (`LEGEND`, `LAIR`, `TREASURE`), the legend's XP
+in `xpBreakdown`, its title in `titlesUnlocked`, and a Hard rune given in `runesFound`. `ItemFound.source`
+may also be `LEGEND`, `LAIR` or `TREASURE`.
+
 ## Routes
 
 ### `POST /routes/rune` (0.7.0)
@@ -926,6 +1086,7 @@ What a ride pays:
   the first time on this outing, for the reckoning's codex stamp.
 - `pledge` and `letters` (0.7.3): a pledge this journey kept (absent otherwise; a missed pledge is
   never mentioned) and the letters it found again. See **Between rides**.
+- `legend`, `lair`, `treasureFound` and `legendWoke` (0.8.0). See **Legends, lairs and treasure**.
 
 - `GET /rides` paginated, newest first. `GET /rides/{id}`. `GET /rides/{id}/geometry` → `{"coordinates": [...], "encodedPolyline": "..."}`.
 - `PATCH /rides/{id}` `{"visibility": "FRIENDS", "title": "...", "notes": "..."}`

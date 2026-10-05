@@ -12,6 +12,7 @@ from app.economy.router import router as wallet_router
 from app.exploration.router import router as world_router
 from app.integrations.router import router as integrations_router
 from app.inventory.router import router as runes_router
+from app.legends.router import router as legends_router
 from app.lore.router import router as codex_router
 from app.notifications.router import router as devices_router
 from app.progression.engine import max_level
@@ -68,5 +69,6 @@ for r in (
     runes_router,
     pledge_router,
     letters_router,
+    legends_router,
 ):
     api_router.include_router(r)

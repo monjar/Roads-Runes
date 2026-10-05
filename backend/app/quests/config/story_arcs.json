@@ -10,6 +10,11 @@
       "id": 2,
       "title": "Five More Cuts",
       "description": "One rune read at a crossing is a start. There are five more on the roads round here, half-worn. Enid Sallow has the list."
+    },
+    {
+      "id": 3,
+      "title": "What Holds the Ground",
+      "description": "Legends have woken round here: big creatures that settle in and stay. Ada Pym has a few jobs to help you get the better of them."
     }
   ],
   "arcs": [
@@ -509,6 +514,110 @@
         "ac": 100,
         "rune": "dagaz",
         "title": "Five Cuts"
+      }
+    },
+    {
+      "slug": "habits",
+      "title": "Habits",
+      "act": 3,
+      "chapter": 1,
+      "track": "MAIN",
+      "after": "the-cut-of-dagaz",
+      "giver": "ada-pym",
+      "description": "Before the big jobs, the good habits. Get out somewhere green, then go round for a cup of something.",
+      "characterClass": null,
+      "minLevel": 1,
+      "quests": [
+        {
+          "slug": "habits-a-green-hour",
+          "title": "A Green Hour",
+          "description": "Spend a while somewhere green. The legends are not going anywhere.",
+          "completion": "A good hour. That is a habit worth keeping.",
+          "templateId": "ANY_GREEN_HOUR"
+        },
+        {
+          "slug": "habits-the-coffee-loop",
+          "title": "The Coffee Loop",
+          "description": "A loop with a café on it. Every good journey has somewhere to stop.",
+          "completion": "Out, round and back, with a cup on the way. Ready for bigger things.",
+          "templateId": "ANY_COFFEE_LOOP"
+        }
+      ],
+      "reward": {
+        "ac": 100
+      }
+    },
+    {
+      "slug": "the-lair",
+      "title": "The Lair",
+      "act": 3,
+      "chapter": 2,
+      "track": "MAIN",
+      "after": "habits",
+      "giver": "ada-pym",
+      "description": "Something has made a lair in a park near you. Visit its tiles and the great chest it keeps is yours.",
+      "characterClass": null,
+      "minLevel": 1,
+      "quests": [
+        {
+          "slug": "the-lair-visit-its-tiles",
+          "title": "Visit the Lair",
+          "description": "There's a lair at {objectPlace}. Visit 5 of its 7 tiles before it ends.",
+          "completion": "The lair is yours, and so is its great chest!",
+          "templateId": "ANY_LAIR_VISIT"
+        }
+      ],
+      "reward": {
+        "ac": 150
+      }
+    },
+    {
+      "slug": "the-one-that-stayed",
+      "title": "The One That Stayed",
+      "act": 3,
+      "chapter": 3,
+      "track": "MAIN",
+      "after": "the-lair",
+      "giver": "ada-pym",
+      "description": "One of the legends has settled in near you and has no plans to leave. Time to give it a good push.",
+      "characterClass": null,
+      "minLevel": 1,
+      "quests": [
+        {
+          "slug": "the-one-that-stayed-give-it-a-push",
+          "title": "Give It a Push",
+          "description": "Do {legendDamage} damage to {legendName} on one journey. Find out what it's weak to first.",
+          "completion": "That got its attention!",
+          "templateId": "ANY_WOUND_BOSS"
+        }
+      ],
+      "reward": {
+        "ac": 200
+      }
+    },
+    {
+      "slug": "double-pay",
+      "title": "Double Pay",
+      "act": 3,
+      "chapter": 4,
+      "track": "MAIN",
+      "after": "the-one-that-stayed",
+      "giver": "ada-pym",
+      "description": "Every day the board puts up a bounty that pays double. Take one, and you will have done everything Ada asked.",
+      "characterClass": null,
+      "minLevel": 1,
+      "quests": [
+        {
+          "slug": "double-pay-the-bounty",
+          "title": "Today's Bounty",
+          "description": "Today's bounty is the {objectName} at {objectPlace}. It pays double.",
+          "completion": "Bounty defeated, and paid twice over!",
+          "templateId": "ANY_DOUBLE_PAY"
+        }
+      ],
+      "reward": {
+        "ac": 300,
+        "title": "Holds the Ground"
       }
     }
   ]

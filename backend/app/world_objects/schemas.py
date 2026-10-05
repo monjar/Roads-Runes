@@ -42,6 +42,13 @@ class MonsterOut(APIModel):
     grudge: dict[str, str] | None = None
 
 
+class LairOut(APIModel):
+    cells: list[list[float]]
+    visited: list[int]
+    need: int
+    endsAt: datetime
+
+
 class WorldObjectOut(APIModel):
     id: uuid.UUID
     kind: str
@@ -69,6 +76,9 @@ class WorldObjectOut(APIModel):
     claimRadiusMeters: float | None = None
     # The name to show: a variant in front of a creature's ("Stubborn Fen Troll"), 0.7.2.
     displayName: str | None = None
+    # A lair (kind LAIR, 0.8.0): its seven tiles' middles as [lat, lon], which are
+    # visited (indices into `cells`), how many it needs and when it ends.
+    lair: LairOut | None = None
 
 
 class ClaimIn(APIModel):
@@ -91,6 +101,9 @@ class ClaimResultOut(APIModel):
     setCompleted: dict[str, Any] | None = None
     # What the chest held besides coins, if anything (ItemFoundOut), 0.7.2.
     itemFound: dict[str, Any] | None = None
+    # 0.8.0: everything it held, `itemFound` and a treasure map (a tier-3 chest,
+    # sometimes) alike.
+    itemsFound: list[dict[str, Any]] = []
 
 
 class ClaimedOut(APIModel):

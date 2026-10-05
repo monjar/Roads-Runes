@@ -7,6 +7,7 @@ from fastapi import APIRouter, Query
 from app.characters.service import get_character, get_rider_profile, maybe_character
 from app.core.deps import CurrentUser, DBDep, SettingsDep
 from app.core.errors import NotFound
+from app.core.logging import get_logger
 from app.core.schemas import APIModel
 from app.economy import service as economy
 from app.economy.rules import load_ac_rules
@@ -14,10 +15,11 @@ from app.inventory import service as inventory
 from app.progression.engine import XPLine, cap_to_day, claim_lines, load_xp_rules
 from app.progression.service import grant, xp_today
 from app.quests import service as quests
-from app.world_objects import service
+from app.world_objects import lairs, service
 from app.world_objects.schemas import ClaimIn, ClaimResultOut, WorldObjectOut
 
 router = APIRouter(prefix="/world/objects", tags=["world"])
+log = get_logger(__name__)
 
 
 class LureIn(APIModel):
@@ -36,6 +38,13 @@ async def objects(
 ) -> list[WorldObjectOut]:
     character = await get_character(db, user)
     profile = await get_rider_profile(db, user.id)
+    # A lair is offered from level 8 (0.8.0); it is one of the world's objects, so it
+    # comes back with the rest. A failure here is a map without a lair, never no map.
+    try:
+        async with db.begin_nested():
+            await lairs.ensure_offered(db, settings, character, near=(latitude, longitude))
+    except Exception as exc:  # noqa: BLE001
+        log.error("lair_offer_failed", error=str(exc)[:200])
     live = await service.ensure_spawned(
         db,
         settings,
@@ -142,8 +151,10 @@ async def claim(
     rune_id = inventory.rune_of_piece(obj.payload) if obj.kind == "COLLECTABLE" else None
     if rune_id:
         await inventory.add_stone(db, character, rune_id, key=f"stone:{obj.id}")
-    # A chest opened by hand may hold an item (0.7.2), as one passed on a ride does.
+    # A chest opened by hand may hold an item (0.7.2), as one passed on a ride does,
+    # and a tier-3 one sometimes a treasure map besides (0.8.0).
     found = await inventory.drop_for(db, character, obj, sheet=sheet)
+    treasure_map = await inventory.map_for(db, character, obj)
     finished = await quests.on_object_claimed(db, settings, user, obj)
     return ClaimResultOut(
         object=service.to_out(obj, await service.pieces_owned(db, user.id)),
@@ -154,4 +165,5 @@ async def claim(
         levelUps=reward.level_ups,
         setCompleted=set_done,
         itemFound=found,
+        itemsFound=[f for f in (found, treasure_map) if f],
     )

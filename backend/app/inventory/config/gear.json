@@ -52,6 +52,8 @@
     {"id": "SEALED_CHEST_COMMON", "name": "Sealed chest (Common)", "icon": "chest",
      "text": "Holds one Common item. Open it when your journey is over."},
     {"id": "SEALED_CHEST_RARE", "name": "Sealed chest (Rare)", "icon": "chest",
-     "text": "Holds one Rare item. Open it when your journey is over."}
+     "text": "Holds one Rare item. Open it when your journey is over."},
+    {"id": "TREASURE_MAP", "name": "Treasure map", "icon": "treasureMap",
+     "text": "Buries a treasure 1 to 4 km away and gives you a clue to find it. One clue at a time."}
   ]
 }

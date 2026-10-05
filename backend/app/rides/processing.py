@@ -32,8 +32,9 @@ from app.economy.streaks import StreakOutcome, streak_lines, update_streak
 from app.exploration.cells import cell_for, traverse
 from app.exploration.service import ExplorationOutcome, record_traversal
 from app.inventory import catalog as runes_catalog
-from app.inventory import deeds
+from app.inventory import deeds, treasure
 from app.inventory import service as inventory
+from app.legends import service as legends
 from app.lore.service import creature_tallies
 from app.progression.engine import RideRewardInput, compute_ride_xp
 from app.progression.service import grant
@@ -45,6 +46,7 @@ from app.rides.models import Ride, RidePoint, RideRoute
 from app.rides.validation import CleanPoint, check_cell_plausibility, validate_points
 from app.social.service import publish
 from app.users.models import User
+from app.world_objects import lairs
 from app.world_objects import service as world_objects
 from app.world_objects.claims import match_rune
 from app.world_objects.service import ClaimOutcome
@@ -89,8 +91,12 @@ def evaluate_objectives(
     resolution: int,
     client_events: list[dict[str, Any]],
     claims: ClaimOutcome | None = None,
+    legend: dict[str, Any] | None = None,
+    lair: dict[str, Any] | None = None,
 ) -> list[QuestObjective]:
-    """Server-authoritative objective evaluation against the GPS trace."""
+    """Server-authoritative objective evaluation against the GPS trace. `legend` and
+    `lair` are what this journey did to the legend and a lair (0.8.0), as the
+    summary has them."""
     completed: list[QuestObjective] = []
     coords = [(p.latitude, p.longitude) for p in points]
     start = coords[0] if coords else None
@@ -221,6 +227,16 @@ def evaluate_objectives(
             gathered = len(claims.counted_of("COLLECTABLE")) if claims else 0
             o.progress_current = float(min(o.progress_target, gathered))
             done = gathered >= (o.target_count or 1)
+        elif t == "LAIR_VISIT":
+            # A lair's great chest opened on this journey (its fifth tile visited).
+            visited = int((lair or {}).get("visited") or 0)
+            o.progress_current = float(min(o.progress_target, visited))
+            done = bool(lair and lair.get("done"))
+        elif t == "WOUND_BOSS":
+            # So much damage to the legend on this one journey.
+            damage = float((legend or {}).get("damage") or 0)
+            o.progress_current = min(o.progress_target, damage)
+            done = damage >= float(o.progress_target or 0) > 0
         if done:
             o.status = "COMPLETED"
             o.provisional = False
@@ -380,17 +396,23 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             )
         )
 
-    discoveries: list[Discovery] = []
-    if points and not validation.suspicious:
-        discoveries = await discoveries_along(
-            db, ride.user_id, [(p.latitude, p.longitude) for p in points], ride.id, ended
-        )
-
     # The character as the ride began, not as it is now (characters/sheet.py).
     if ride.loadout_snapshot:
         sheet = CharacterSheet.from_dict(ride.loadout_snapshot)
     else:
         sheet = await inventory.sheet_for(db, character)
+
+    discoveries: list[Discovery] = []
+    if points and not validation.suspicious:
+        discoveries = await discoveries_along(
+            db,
+            ride.user_id,
+            [(p.latitude, p.longitude) for p in points],
+            ride.id,
+            ended,
+            # Hagalaz (0.8.0): hidden places further from the journey are found.
+            radius_m=float(sheet.rules.get("FIND_RADIUS_M", 0.0)) or None,
+        )
 
     # What the player had met before this outing, for the codex stamp after it.
     met_before = {
@@ -401,14 +423,14 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
 
     # What the trace passed or beat. Same gate as XP: a suspicious ride wins nothing.
     claims = ClaimOutcome()
+    # Where on the trace each new cell was first entered: new ground, as blows.
+    new_cell_indices = (
+        sorted(traversal.cells[c].first_seq for c in exploration.new_cells if c in traversal.cells)
+        if traversal is not None
+        else []
+    )
     if points and not validation.suspicious:
         effort = is_enabled(settings, "effort_combat")
-        # Where on the trace each new cell was first entered: new ground, as blows.
-        new_cell_indices = (
-            sorted(traversal.cells[c].first_seq for c in exploration.new_cells if c in traversal.cells)
-            if traversal is not None
-            else []
-        )
         claims = await world_objects.claim_from_ride(
             db,
             ride,
@@ -444,6 +466,10 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             found = await inventory.drop_for(db, character, obj, sheet=sheet, ride_id=ride.id)
             if found:
                 items_found.append(found)
+            # A tier-3 chest sometimes holds a treasure map besides (0.8.0).
+            treasure_map = await inventory.map_for(db, character, obj, ride_id=ride.id)
+            if treasure_map:
+                items_found.append(treasure_map)
 
     # Ground read without being passed: a ring round each new cell (Cartographer,
     # and a Candle Stub worn), and round each place found (Kenaz, inscribed).
@@ -452,6 +478,44 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             await _reveal_rings(db, settings, character, sheet, exploration, discoveries)
         except Exception as exc:  # noqa: BLE001
             log.error("reveal_failed", ride_id=str(ride.id), error=str(exc)[:200])
+
+    # Legends, lairs and buried treasure (0.8.0), before the quest, whose new
+    # objectives read them. Each in its own savepoint: a failure is a Journey's end
+    # without it, never a lost journey.
+    legend: dict[str, Any] | None = None
+    lair: dict[str, Any] | None = None
+    treasure_found: dict[str, Any] | None = None
+    if character is not None and points and not validation.suspicious:
+        legend = await _guarded(
+            db,
+            character,
+            "legend_failed",
+            ride,
+            legends.fold_ride(
+                db,
+                character,
+                ride,
+                points,
+                new_cell_indices=new_cell_indices,
+                sheet=sheet,
+                ended=ended,
+            ),
+        )
+        entered = set(traversal.cells) if traversal is not None else set()
+        lair = await _guarded(
+            db,
+            character,
+            "lair_failed",
+            ride,
+            lairs.progress_on_ride(db, character, ride, entered, ride.started_at or ended, ended),
+        )
+        treasure_found = await _guarded(
+            db,
+            character,
+            "treasure_failed",
+            ride,
+            treasure.open_on_ride(db, character, ride, [(p.latitude, p.longitude) for p in points], ended),
+        )
 
     quest: QuestInstance | None = None
     quest_completed = False
@@ -475,6 +539,8 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
                 resolution=settings.h3_resolution,
                 client_events=list(ride.objective_events or []),
                 claims=claims,
+                legend=legend,
+                lair=lair,
             )
             for o in objectives_completed:
                 # A rune cut for a quest is a cut like any other: on the map, in the Hand.
@@ -535,6 +601,9 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             wrote_note=_wrote_note(ride),
             days_away=await _days_away(db, ride),
         )
+    # What a legend's phase paid (0.8.0): its XP, levels and title join the journey's.
+    reward = merge_paid_xp(reward, legend)
+
     # Where this leaves them in the arc, if the quest was a step of one: the last
     # step is the arc's ending, with a title, a purse and XP of its own, paid once.
     arc_coins = 0
@@ -588,13 +657,24 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             # Paid by settle_arc, outside the per-ride cap; shown with the rest.
             coins["acAwarded"] += arc_coins
             coins["acBreakdown"].append({"kind": "STORY_ARC", "ac": arc_coins, "detail": {"arc": arc["arcTitle"]}})
-        for found in items_found:
+        # A legend's phase, a lair's great chest and buried treasure (0.8.0): paid by
+        # their own code, outside the per-ride cap; shown with the rest.
+        for kind, paid, name in (
+            ("LEGEND", (legend or {}).get("rewards"), (legend or {}).get("name")),
+            ("LAIR", (lair or {}).get("rewards"), (lair or {}).get("name")),
+            ("TREASURE", treasure_found, (treasure_found or {}).get("name")),
+        ):
+            if paid and int(paid.get("coins") or 0) > 0:
+                coins["acAwarded"] += int(paid["coins"])
+                coins["acBreakdown"].append({"kind": kind, "ac": int(paid["coins"]), "detail": {"name": name}})
+        for found in [*items_found, *paid_items(legend, lair, treasure_found)]:
             if found.get("soldOnTheSpot") and found.get("soldFor"):
                 # Paid by inventory.add_gear, outside the per-ride cap; shown with the rest.
                 coins["acAwarded"] += int(found["soldFor"])
                 coins["acBreakdown"].append(
                     {"kind": "ITEM_SOLD", "ac": int(found["soldFor"]), "detail": {"name": found["name"]}}
                 )
+        coins["walletBalance"] = await economy.balance(db, ride.user_id)
 
     if quest_completed and quest is not None:
         await publish(
@@ -629,7 +709,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         "worldObjects": claims.to_dict(),
         "quarryId": str(ride.quarry_id) if ride.quarry_id else None,
         "codexFirsts": first_meetings(claims, met_before),
-        "runesFound": runes_found,
+        "runesFound": runes_found + paid_runes(legend, lair),
         "itemsFound": items_found,
         "streak": streak.to_dict(),
         "newCells": len(exploration.new_cells),
@@ -650,6 +730,11 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         ],
         "droppedPoints": validation.dropped_points,
         "flags": flags,
+        # 0.8.0: what the journey did to the legend, a lair's tiles visited, and
+        # buried treasure found. Absent when there was none.
+        **({"legend": legend} if legend else {}),
+        **({"lair": lair} if lair else {}),
+        **({"treasureFound": treasure_found} if treasure_found else {}),
     }
     # The entry: a few written lines about the outing. A failure here is a ride
     # without an entry, never a lost ride.
@@ -738,7 +823,85 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         summary = {**summary, "letters": letters_found}
         ride.processing_result = summary
         await db.flush()
+
+    # A legend wakes (0.8.0) when three creatures have been defeated since the last
+    # one: this journey's count now that it is processed.
+    if character is not None and not validation.suspicious:
+        woke = None
+        try:
+            async with db.begin_nested():
+                engine = await legends.engine_for(settings)
+                near = (points[0].latitude, points[0].longitude) if points else None
+                woke = await legends.maybe_wake(db, settings, engine, character, near=near)
+        except Exception as exc:  # noqa: BLE001
+            log.error("legend_wake_failed", ride_id=str(ride.id), error=str(exc)[:200])
+            await _settle_after_failure(db, character)
+        if woke is not None:
+            summary = {**summary, "legendWoke": legends.woke_line(woke)}
+            ride.processing_result = summary
+            await db.flush()
+        # A lair from level 8, one a fortnight: one may be due now this journey is counted.
+        near = (points[0].latitude, points[0].longitude) if points else None
+        await _guarded(db, character, "lair_offer_failed", ride, lairs.ensure_offered(db, settings, character, near))
     return summary
+
+
+async def _guarded(db: AsyncSession, character: Character, event: str, ride: Ride, work: Any) -> Any:
+    """Runs one 0.8.0 step in its own savepoint: a failure is logged and is a
+    Journey's end without that part, never a lost journey."""
+    try:
+        async with db.begin_nested():
+            return await work
+    except Exception as exc:  # noqa: BLE001
+        log.error(event, ride_id=str(ride.id), error=str(exc)[:200])
+        await _settle_after_failure(db, character)
+        return None
+
+
+async def _settle_after_failure(db: AsyncSession, character: Character) -> None:
+    """A rolled-back savepoint expires what it touched; the character is read again
+    now, so nothing later in the processing loads it lazily."""
+    try:
+        await db.refresh(character)
+    except Exception as exc:  # noqa: BLE001
+        log.error("character_refresh_failed", error=str(exc)[:200])
+
+
+def merge_paid_xp(reward: dict[str, Any], legend: dict[str, Any] | None) -> dict[str, Any]:
+    """Folds what a legend's phase granted (its `_xp`, popped) into the journey's reward."""
+    paid = (legend or {}).get("rewards") or {}
+    extra = paid.pop("_xp", None)
+    if not extra:
+        return reward
+    titles = [*reward.get("titlesUnlocked", []), *extra["titlesUnlocked"]]
+    if paid.get("title") and paid["title"] not in titles:
+        titles.append(paid["title"])
+    return {
+        **reward,
+        "xpAwarded": reward.get("xpAwarded", 0) + extra["xpAwarded"],
+        "xpBreakdown": [*reward.get("xpBreakdown", []), *extra["xpBreakdown"]],
+        "levelUps": [*reward.get("levelUps", []), *extra["levelUps"]],
+        "abilitiesUnlocked": [*reward.get("abilitiesUnlocked", []), *extra["abilitiesUnlocked"]],
+        "titlesUnlocked": titles,
+    }
+
+
+def paid_items(*outcomes: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """The items a legend, a lair or buried treasure gave on this journey."""
+    out: list[dict[str, Any]] = []
+    for outcome in outcomes:
+        if not outcome:
+            continue
+        paid = outcome.get("rewards") if "rewards" in outcome else outcome
+        out += list((paid or {}).get("items") or [])
+        if (paid or {}).get("item"):
+            out.append(paid["item"])
+    return out
+
+
+def paid_runes(*outcomes: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """A Hard rune a legend left or a great chest held, as `runesFound` shows a stone."""
+    return [r for o in outcomes if o and (r := (o.get("rewards") or {}).get("rune"))]
 
 
 async def _reveal_rings(
