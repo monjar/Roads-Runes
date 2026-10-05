@@ -1,10 +1,12 @@
 import MapKit
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
 /// The ride as a map (design 7a, the page the iPhone has and the Watch did not):
-/// the route in terracotta, the stops on it, and the rider in sage, held close
-/// enough to see the next junction.
+/// the route in terracotta, the stops on it, the game near it (creatures, chests,
+/// rune stones and objective places, as small marks; 0.7.2), and the rider in
+/// sage, held close enough to see the next junction.
 ///
 /// Everything here comes from the phone — the line with the route summary, the
 /// position with each navigation update — so the Watch never runs its own GPS
@@ -23,12 +25,25 @@ struct MapScreen: View {
                     MapPolyline(coordinates: store.routePath)
                         .stroke(WatchTheme.accent, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
                 }
+                // What is opened or defeated on the way comes off (`RideStore.worldMarks`).
+                ForEach(store.worldMarks) { mark in
+                    Annotation(mark.name, coordinate: mark.coordinate.clLocation) {
+                        MarkView(WristMarks.mark(mark), palette: .watch)
+                            .frame(width: WristMarks.size(mark), height: WristMarks.size(mark))
+                    }
+                    .annotationTitles(.hidden)
+                }
                 ForEach(store.stops) { stop in
                     Annotation(stop.name, coordinate: stop.coordinate.clLocation) {
-                        Circle()
-                            .fill(stop.requested ? WatchTheme.accent : WatchTheme.tertiary)
-                            .stroke(.black, lineWidth: 1.5)
-                            .frame(width: 10, height: 10)
+                        if let mark = WristMarks.stop(stop) {
+                            MarkView(mark, palette: .watch)
+                                .frame(width: 16, height: 16)
+                        } else {
+                            Circle()
+                                .fill(stop.requested ? WatchTheme.accent : WatchTheme.tertiary)
+                                .stroke(.black, lineWidth: 1.5)
+                                .frame(width: 10, height: 10)
+                        }
                     }
                     .annotationTitles(.hidden)
                 }

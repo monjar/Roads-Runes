@@ -21,6 +21,11 @@ final class SessionStore {
     /// need to know how this player moves before they have asked for anything.
     private(set) var riderProfile: RiderProfile?
     private(set) var config: AppConfig?
+    /// What you carry (0.7.2): nil until asked, and on a server without it.
+    private(set) var inventory: InventoryState?
+    /// What the levels already reached gave, paid on the first look after 0.7.2:
+    /// shown once ("Rewards for the levels you've reached"), then cleared.
+    var levelRewardsToShow: [LevelReward] = []
     var lastError: String?
     /// From creating a character until the rider has set up a bike and answered
     /// the location prompt (spec §96 steps 4–5); the tabs wait until then.
@@ -169,6 +174,23 @@ final class SessionStore {
         self.character = character
     }
 
+    /// Asks for the bag again. The first answer after 0.7.2 says what the levels
+    /// already reached gave; a brand-new character's first level is not worth a sheet.
+    func refreshInventory() async {
+        guard let fresh = try? await api.inventory() else { return }
+        take(inventory: fresh)
+    }
+
+    /// The bag as the server now has it, from any answer that carries it.
+    func take(inventory fresh: InventoryState) {
+        var kept = fresh
+        if let paid = fresh.levelRewardsPaid, !paid.isEmpty, (character?.overallLevel ?? 1) > 1 {
+            levelRewardsToShow = paid
+        }
+        kept.levelRewardsPaid = nil
+        inventory = kept
+    }
+
     /// Switches class, keeping level, XP, coins and discoveries. Returns the server's
     /// reason when it refuses (a cooldown, an empty purse), nil on success.
     func changeClass(to characterClass: CharacterClass) async -> String? {
@@ -189,6 +211,7 @@ final class SessionStore {
         do {
             try await api.resetCharacter()
             character = nil
+            inventory = nil
             user = try? await api.me()
             isOnboarding = false
             state = .needsCharacter
@@ -203,6 +226,8 @@ final class SessionStore {
         try? await api.logout()
         user = nil
         character = nil
+        inventory = nil
+        levelRewardsToShow = []
         isOnboarding = false
         state = .signedOut
     }

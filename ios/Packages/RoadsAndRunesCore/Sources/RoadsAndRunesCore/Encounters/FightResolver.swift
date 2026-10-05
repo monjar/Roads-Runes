@@ -146,9 +146,11 @@ public enum FightResolver {
         var roadFresh = true
         var climbedBands: Set<Int> = []
         var lastBand: Int?
+        // Each new tile counts for `groundCellScale` (the Cartographer's Atlas, 0.7.2), before contact and after.
+        let tile = cfg.groundCellScale > 0 ? cfg.groundCellScale : 1
         for (i, p) in points.enumerated() {
             if newCells.contains(i) {
-                if i < contact { before["GROUND", default: 0] += 1 } else if inside[i] { blows.append(Blow(kind: "GROUND", index: i, units: 1)) }
+                if i < contact { before["GROUND", default: 0] += tile } else if inside[i] { blows.append(Blow(kind: "GROUND", index: i, units: tile)) }
             }
             guard p.ok else {
                 anchor = nil
@@ -216,6 +218,7 @@ public enum FightResolver {
         }.map(\.element)
 
         var hold = foe.holdBefore
+        var lastLanded: String?
         for var blow in blows {
             if blow.kind != carried_ {
                 blow.amount = blow.units * perUnit(blow.kind, foe, activity: activity, pct: pct, cfg: cfg)
@@ -229,12 +232,23 @@ public enum FightResolver {
                 hold -= blow.amount
             }
             report.damage[blow.kind, default: 0] += blow.amount
+            if blow.amount > 0 { lastLanded = blow.kind }
             if blow.kind == "RUNE" { report.runeLanded = true }
             if blow.kind == "WORD" { report.wordLanded = true }
             if hold <= 0 {
                 report.finisher = blow.kind
                 break
             }
+        }
+        // The Unrung Bell (0.7.2): left with no more than this share of its most, it is
+        // defeated, whatever took it there. What was left goes on the last blow that
+        // landed, whose kind is the finisher (as world_objects/fight.py does).
+        if finished(holdLeft: hold, holdMax: foe.holdMax, under: cfg.finishUnder) {
+            if let last = lastLanded {
+                report.damage[last, default: 0] += hold
+                report.finisher = last
+            }
+            hold = 0
         }
         if hold <= 0 {
             report.outcome = "SEEN_OFF"
@@ -244,6 +258,11 @@ public enum FightResolver {
         report.holdAfter = max(1, hold.rounded())
         report.outcome = report.taken >= 1 ? "LOOSENED" : "UNTOUCHED"
         return report
+    }
+
+    /// `FINISH_UNDER` f: after the fold, `0 < holdLeft <= f × holdMax` is defeated.
+    public static func finished(holdLeft: Double, holdMax: Double, under f: Double) -> Bool {
+        f > 0 && holdLeft > 0 && holdLeft <= f * holdMax
     }
 
     private static let carried_ = carried

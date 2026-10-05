@@ -39,9 +39,48 @@ extension Mark {
 }
 
 extension Sigil {
-    /// A creature the server named no face for: drawn as a dragon's head.
+    /// A creature the server named no face for: drawn as a dragon's head. From 0.7.2
+    /// the server names its icon, and that is drawn first.
     init(_ sigil: CreatureSigil?) {
-        self.init(body: sigil?.body ?? "shade", feature: sigil?.feature ?? "hood", mark: sigil?.mark ?? "mist")
+        self.init(body: sigil?.body ?? "shade", feature: sigil?.feature ?? "hood", mark: sigil?.mark ?? "mist", icon: sigil?.icon)
+    }
+}
+
+/// The faces of what you carry (0.7.2): gear by its icon (or its id), a
+/// consumable, a find, a stall offer, a level's reward, each ringed by rarity.
+extension Mark {
+    static func of(_ item: GearItem) -> Mark {
+        .item(GameIcon.named(item.icon, or: .forItem(item.itemId)), rarity: item.rarity)
+    }
+
+    static func of(_ stack: ConsumableStack) -> Mark {
+        .item(GameIcon.named(stack.icon, or: .forConsumable(stack.id)), rarity: stack.id == ConsumableId.sealedChestRare ? ItemRarity.rare : nil)
+    }
+
+    static func of(_ found: ItemFound) -> Mark {
+        let fallback: GameIcon = found.isGear ? .forItem(found.itemId ?? "") : .forConsumable(found.consumable ?? "")
+        return .item(GameIcon.named(found.icon, or: fallback), rarity: found.rarity)
+    }
+
+    static func of(_ offer: StallOffer) -> Mark {
+        let fallback: GameIcon = offer.isGear ? .forItem(offer.itemId ?? "") : .forConsumable(offer.consumable ?? "")
+        return .item(GameIcon.named(offer.icon, or: fallback), rarity: offer.rarity)
+    }
+
+    static func of(_ reward: QuestRewardItem) -> Mark {
+        .item(GameIcon.named(reward.icon, or: .forItem(reward.itemId)), rarity: reward.rarity)
+    }
+
+    static func of(_ reward: LevelReward) -> Mark {
+        let fallback: GameIcon
+        switch reward.kind {
+        case "SLOT": fallback = .sparkles
+        case "RUNE_SLOT": fallback = .runeStone
+        case "STALL": fallback = .shop
+        case "TITLE": fallback = .laurels
+        default: fallback = .forConsumable(reward.consumable ?? "")
+        }
+        return .token(GameIcon.named(reward.icon, or: fallback))
     }
 }
 

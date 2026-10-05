@@ -2,16 +2,20 @@ import CoreGraphics
 import Foundation
 
 /// A creature's face, as the server describes it: a body, a feature and what
-/// it stands on (`world_objects.json`, `sigil`).
+/// it stands on (`world_objects.json`, `sigil`). From 0.7.2 the server names the
+/// icon too (a `GameIcon` raw name), so a new creature needs no new pair here.
 public struct Sigil: Hashable, Sendable, Codable {
     public let body: String
     public let feature: String
     public let mark: String
+    /// The `GameIcon` raw name ("hedgeDragon"); nil from a server before 0.7.2.
+    public let icon: String?
 
-    public init(body: String, feature: String, mark: String) {
+    public init(body: String, feature: String, mark: String, icon: String? = nil) {
         self.body = body
         self.feature = feature
         self.mark = mark
+        self.icon = icon
     }
 }
 
@@ -49,7 +53,7 @@ public enum Mark: Hashable, Sendable {
         case let .rune(id): return "rune:\(id)"
         case let .crest(id): return "crest:\(id)"
         case let .creature(sigil, tier, bounty, unmet):
-            return "creature:\(sigil.body)/\(sigil.feature)/\(sigil.mark)/\(tier)/\(bounty)/\(unmet)"
+            return "creature:\(sigil.body)/\(sigil.feature)/\(sigil.mark)/\(sigil.icon ?? "-")/\(tier)/\(bounty)/\(unmet)"
         case let .chest(tier): return "chest:\(tier)"
         case .coin: return "coin"
         case .purse: return "purse"
@@ -85,12 +89,31 @@ public extension Mark {
     static let pin = Mark.place("PIN")
     /// A lamp left out.
     static let lamp = Mark.token(.lantern, ring: .gold)
+
+    /// An item or a find on a token, its ring by rarity: plain for Common, blue
+    /// for Rare, gold for Legendary (0.7.2).
+    static func item(_ icon: GameIcon, rarity: String?) -> Mark {
+        .token(icon, ring: Spot.forRarity(rarity))
+    }
+}
+
+public extension Spot {
+    /// The ring of an item's token: none for Common, scribe blue for Rare, gold for Legendary.
+    static func forRarity(_ rarity: String?) -> Spot? {
+        switch rarity?.uppercased() {
+        case "RARE": return .scribe
+        case "LEGENDARY": return .gold
+        default: return nil
+        }
+    }
 }
 
 public extension GameIcon {
     /// A creature's icon from its sigil: each of the twelve has its own body and
     /// feature, so the pair names it without the server sending a species.
     static func forSigil(_ sigil: Sigil) -> GameIcon {
+        // The server's own name for it first (0.7.2): the twenty-four by name.
+        if let named = sigil.icon.flatMap(GameIcon.init(rawValue:)) { return named }
         switch (sigil.body, sigil.feature) {
         case ("wisp", "hood"): return .ghost
         case ("hulk", "horns"): return .troll
@@ -129,8 +152,72 @@ public extension GameIcon {
         case "gutter-drake": return .wyvern
         case "lamp-sprite": return .fairy
         case "cinder-hound": return .wolfHead
+        // The twelve that came in 0.7.2.
+        case "hedge-dragon": return .hedgeDragon
+        case "hill-wyvern": return .hillWyvern
+        case "culvert-imp": return .culvertImp
+        case "bridge-ogre": return .bridgeOgre
+        case "stile-boggart": return .stileBoggart
+        case "milestone-goblin": return .milestoneGoblin
+        case "gatehouse-gargoyle": return .gatehouseGargoyle
+        case "bramble-wolf": return .brambleWolf
+        case "rooftop-griffin": return .rooftopGriffin
+        case "marsh-wisp": return .marshWisp
+        case "stone-giant": return .stoneGiant
+        case "tavern-brownie": return .tavernBrownie
         default: return .dragonHead
         }
+    }
+
+    /// An item of gear by its id (`gear.json`), for what knows only the id. The
+    /// server sends the icon by name as well; that wins where it is known.
+    static func forItem(_ id: String) -> GameIcon {
+        switch id {
+        case "tin-bell": return .tinBell
+        case "drovers-bell": return .droversBell
+        case "unrung-bell": return .unrungBell
+        case "candle-stub": return .candleStub
+        case "bullseye-lantern": return .bullseyeLantern
+        case "wreckers-light": return .wreckersLight
+        case "saddle-roll": return .saddleRoll
+        case "tinkers-satchel": return .tinkersSatchel
+        case "poachers-pocket": return .poachersPocket
+        case "folded-map": return .foldedMap
+        case "pedlars-roadbook": return .pedlarsRoadbook
+        case "cartographers-atlas": return .cartographersAtlas
+        case "hagstone": return .hagstone
+        case "rowan-twig": return .rowanTwig
+        case "runesmiths-nail": return .runesmithsNail
+        default: return .sparkles
+        }
+    }
+
+    /// A consumable by its id: a lamp, a map piece, a rest token, a sealed chest.
+    static func forConsumable(_ id: String) -> GameIcon {
+        switch id.uppercased() {
+        case "LAMP": return .lantern
+        case "MAP_FRAGMENT": return .treasureMap
+        case "REST_TOKEN": return .restToken
+        case "SEALED_CHEST_COMMON", "SEALED_CHEST_RARE", "SEALED_CHEST": return .chest
+        default: return .sparkles
+        }
+    }
+
+    /// A gear slot, drawn faint while it is empty: the plainest thing worn in it.
+    static func forSlot(_ slot: String) -> GameIcon {
+        switch slot.uppercased() {
+        case "BELL": return .tinBell
+        case "LANTERN": return .bullseyeLantern
+        case "BAG": return .tinkersSatchel
+        case "MAP_CASE": return .foldedMap
+        case "KEEPSAKE": return .hagstone
+        default: return .sparkles
+        }
+    }
+
+    /// An icon the server named, or `fallback` when it named none this app knows.
+    static func named(_ raw: String?, or fallback: GameIcon) -> GameIcon {
+        raw.flatMap(GameIcon.init(rawValue:)) ?? fallback
     }
 
     /// A class's icon.

@@ -12,6 +12,10 @@ struct ContentView: View {
             Color.black.ignoresSafeArea()
             if store.hasRoute || store.isRiding {
                 RidePages()
+            } else if let end = store.journeyEnd {
+                JourneyEndCard(end: end, token: store.journeyEndToken) {
+                    store.dismissJourneyEnd()
+                }
             } else {
                 IdleScreen()
             }
@@ -48,6 +52,12 @@ enum TurnHaptics {
     /// A fight beat: one tap, never one a turn uses.
     static func play(_ beat: FightBeat) {
         tap(beat.tap)
+    }
+
+    /// Journey's end has come: the journey is over, so no turn is near to be
+    /// mistaken for it, and it takes the game's own success tap.
+    static func journeyEnded() {
+        tap(.success)
     }
 
     static func tap(_ tap: WristTap) {

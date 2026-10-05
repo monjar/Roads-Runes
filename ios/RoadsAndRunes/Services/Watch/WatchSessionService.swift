@@ -3,8 +3,8 @@ import RoadsAndRunesCore
 import WatchConnectivity
 
 /// iPhone side of the Watch link (docs/WATCH.md). Sends the route summary
-/// once, throttled navigation updates, and objective events; receives
-/// pause/resume/end commands and heart-rate samples.
+/// once, throttled navigation updates, objective events and Journey's end;
+/// receives pause/resume/end commands and heart-rate samples.
 final class WatchSessionService: NSObject, WCSessionDelegate {
     var onCommand: ((WatchCommand) -> Void)?
     var onHeartRate: ((Int) -> Void)?
@@ -50,6 +50,19 @@ final class WatchSessionService: NSObject, WCSessionDelegate {
         guard let message = try? WatchMessages.objectiveCompleted(event) else { return }
         let session = WCSession.default
         guard session.activationState == .activated else { return }
+        if session.isReachable {
+            session.sendMessage(message, replyHandler: nil) { _ in session.transferUserInfo(message) }
+        } else {
+            session.transferUserInfo(message)
+        }
+    }
+
+    /// Journey's end, once the server has counted the journey: sent now if the
+    /// Watch is there, else queued for when it is (it lets one go once old).
+    func send(journeyEnd end: WatchJourneyEnd) {
+        guard let message = try? WatchMessages.journeyEnd(end) else { return }
+        let session = WCSession.default
+        guard session.activationState == .activated, session.isWatchAppInstalled else { return }
         if session.isReachable {
             session.sendMessage(message, replyHandler: nil) { _ in session.transferUserInfo(message) }
         } else {

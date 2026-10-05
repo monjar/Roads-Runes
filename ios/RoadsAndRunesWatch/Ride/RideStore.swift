@@ -34,6 +34,26 @@ final class RideStore {
 
     var stops: [WatchStop] { summary?.stops ?? [] }
 
+    /// The game near the route (creatures, chests, rune stones, objective places),
+    /// less what has been opened, defeated or done since. None from an older phone.
+    var worldMarks: [WatchWorldMark] {
+        (summary?.worldMarks ?? []).filter { !goneMarkIds.contains($0.id) }
+    }
+
+    /// Everything the phone has said is gone on this journey; it only grows until the journey ends.
+    private(set) var goneMarkIds: Set<UUID> = []
+
+    /// The fight for the Quest page: the quarry, else the nearest creature being
+    /// fought. None from an older phone, or when nothing is being fought.
+    var fight: WatchFight? { update?.fight }
+
+    /// Journey's end, from the phone once the server has counted it; shown on the
+    /// idle face until Done. A count so the same totals twice still show twice.
+    private(set) var journeyEnd: WatchJourneyEnd?
+    private(set) var journeyEndToken: Int = 0
+    /// Heard of later than this after the journey ended, Journey's end is let go.
+    static let journeyEndKeptFor: TimeInterval = 3600
+
     /// Ride, run or walk, as the phone started it; nil before a route summary (or from an older phone).
     var activity: Activity? { summary?.activity.flatMap(Activity.init(rawValue:)) }
 
@@ -142,6 +162,11 @@ final class RideStore {
     func apply(summary newSummary: WatchRouteSummary, receivedAt: Date = Date()) {
         // A new route (a reroute included) numbers its turns from the start again.
         if newSummary.instructions != summary?.instructions { turnCues.reset() }
+        // A new journey, not a reroute of this one: the last one's ends are old news.
+        if summary == nil {
+            goneMarkIds = []
+            journeyEnd = nil
+        }
         summary = newSummary
         lastUpdateAt = receivedAt
         optimisticPaused = nil
@@ -162,12 +187,14 @@ final class RideStore {
             currentInstruction = instruction
             currentDistanceToInstruction = newUpdate.distanceToInstructionMeters
         }
+        if let gone = newUpdate.goneMarkIds { goneMarkIds.formUnion(gone) }
         if newUpdate.state == .active, let cue = turnCues.update(instruction: newUpdate.instruction, distanceMeters: newUpdate.distanceToInstructionMeters) {
             turnCue = cue
             turnCueToken += 1
         }
         if newUpdate.state.isTerminal {
             courseFromPositions.reset()
+            goneMarkIds = []
             summary = nil
             currentInstruction = nil
             currentDistanceToInstruction = nil
@@ -185,6 +212,22 @@ final class RideStore {
 
     func clearObjective() {
         pendingObjective = nil
+    }
+
+    /// Journey's end has come. Let go when it is old: heard of long after, or
+    /// ended before the journey now under way began.
+    func apply(journeyEnd end: WatchJourneyEnd, receivedAt: Date = Date()) {
+        if let ended = end.endedAt {
+            if receivedAt.timeIntervalSince(ended) > Self.journeyEndKeptFor { return }
+            if isRiding, ended < receivedAt.addingTimeInterval(-elapsedSeconds(at: receivedAt) - 60) { return }
+        }
+        journeyEnd = end
+        journeyEndToken += 1
+    }
+
+    /// Done: back to the idle face.
+    func dismissJourneyEnd() {
+        journeyEnd = nil
     }
 
     /// Accepts "METRIC" / "imperial" / nil; unknown values leave the current setting alone.
@@ -205,6 +248,7 @@ final class RideStore {
     /// The rider ended the ride from the watch; drop the route so the idle screen shows.
     func markEnded() {
         summary = nil
+        goneMarkIds = []
         currentInstruction = nil
         currentDistanceToInstruction = nil
         optimisticPaused = nil
@@ -215,6 +259,8 @@ final class RideStore {
     func reset() {
         courseFromPositions.reset()
         summary = nil
+        goneMarkIds = []
+        journeyEnd = nil
         update = nil
         lastUpdateAt = nil
         pendingObjective = nil

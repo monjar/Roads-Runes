@@ -6,11 +6,14 @@ public struct CreatureSigil: Codable, Hashable, Sendable {
     public var body: String
     public var feature: String
     public var mark: String
+    /// The `GameIcon` raw name to draw it with (0.7.2); nil from an older server.
+    public var icon: String?
 
-    public init(body: String, feature: String, mark: String) {
+    public init(body: String, feature: String, mark: String, icon: String? = nil) {
         self.body = body
         self.feature = feature
         self.mark = mark
+        self.icon = icon
     }
 }
 
@@ -98,6 +101,8 @@ public struct CodexCreature: Codable, Hashable, Sendable, Identifiable {
     public var seenOffCount: Int
     public var firstSeenAt: Date?
     public var lastSeenOffAt: Date?
+    /// What it leaves, and how many of it were defeated (0.7.2): "a green scale" ×3.
+    public var trophies: CreatureTrophies? = nil
 }
 
 public enum RuneState: String, SafeEnum {

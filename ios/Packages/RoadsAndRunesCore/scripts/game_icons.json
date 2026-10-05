@@ -12,6 +12,20 @@
   "wyvern": "lorc/wyvern",
   "fairy": "delapouite/fairy",
   "wolfHead": "lorc/wolf-head",
+
+  "hedgeDragon": "delapouite/spiked-dragon-head",
+  "hillWyvern": "delapouite/pterodactylus",
+  "culvertImp": "lorc/imp",
+  "bridgeOgre": "delapouite/ogre",
+  "stileBoggart": "delapouite/goblin-head",
+  "milestoneGoblin": "caro-asercion/goblin",
+  "gatehouseGargoyle": "delapouite/gargoyle",
+  "brambleWolf": "lorc/wolf-howl",
+  "rooftopGriffin": "delapouite/griffin-symbol",
+  "marshWisp": "lorc/spark-spirit",
+  "stoneGiant": "delapouite/giant",
+  "tavernBrownie": "cathelineau/bad-gnome",
+
   "dragonHead": "lorc/dragon-head",
   "crown": "delapouite/imperial-crown",
 
@@ -68,5 +82,22 @@
   "shop": "delapouite/shop",
   "cycling": "delapouite/cycling",
   "hiking": "delapouite/hiking",
-  "run": "lorc/run"
+  "run": "lorc/run",
+
+  "tinBell": "lorc/ringing-bell",
+  "droversBell": "delapouite/cow",
+  "unrungBell": "lorc/bell-shield",
+  "candleStub": "lorc/candle-holder",
+  "bullseyeLantern": "delapouite/old-lantern",
+  "wreckersLight": "delapouite/lighthouse",
+  "saddleRoll": "delapouite/saddle",
+  "tinkersSatchel": "lorc/knapsack",
+  "poachersPocket": "lorc/swap-bag",
+  "foldedMap": "lorc/folded-paper",
+  "pedlarsRoadbook": "delapouite/notebook",
+  "cartographersAtlas": "delapouite/atlas",
+  "hagstone": "delapouite/stone-wheel",
+  "rowanTwig": "lorc/elderberry",
+  "runesmithsNail": "lorc/nails",
+  "restToken": "delapouite/night-sleep"
 }

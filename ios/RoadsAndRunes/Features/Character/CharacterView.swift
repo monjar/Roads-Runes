@@ -17,6 +17,7 @@ final class CharacterViewModel {
 
     func load() async {
         await container.session.refreshCharacter()
+        await container.session.refreshInventory()
         bikes = (try? await container.api.bikes()) ?? []
         riderProfile = try? await container.api.riderProfile()
         stats = try? await container.api.explorationStats()
@@ -137,6 +138,15 @@ struct CharacterView: View {
                 NavigationLink { RunesScreen() } label: { moreRow("Runes", icon: .runeStone) }
                     .buttonStyle(.pressable)
                     .accessibilityIdentifier("character.runes")
+            }
+            // A 0.7.2 server has a bag: the inventory answered, or the sheet names the gear worn.
+            if container.session.inventory != nil || character?.sheet?.gear != nil {
+                NavigationLink { GearScreen() } label: { moreRow("Gear", icon: .tinBell) }
+                    .buttonStyle(.pressable)
+                    .accessibilityIdentifier("character.gear")
+                NavigationLink { StallScreen() } label: { moreRow("The stall", icon: .shop) }
+                    .buttonStyle(.pressable)
+                    .accessibilityIdentifier("character.stall")
             }
             if character?.titlePinned != nil {
                 NavigationLink { TitlesScreen() } label: { moreRow("Titles", icon: .laurels) }

@@ -47,6 +47,13 @@ final class FlakyAPI: RoadsAndRunesAPI, @unchecked Sendable {
     func updateBike(id: UUID, _ patch: BikeIn) async throws -> Bike { try await inner.updateBike(id: id, patch) }
     func deleteBike(id: UUID) async throws { try await inner.deleteBike(id: id) }
     func riderProfile() async throws -> RiderProfile { try await inner.riderProfile() }
+    func inventory() async throws -> InventoryState { try await inner.inventory() }
+    func wearGear(_ choice: GearChoice) async throws -> InventoryState { try await inner.wearGear(choice) }
+    func sellItem(id: UUID) async throws -> SellResult { try await inner.sellItem(id: id) }
+    func useConsumable(id: String, _ request: ConsumableUseRequest) async throws -> ConsumableUseResult { try await inner.useConsumable(id: id, request) }
+    func stall() async throws -> Stall { try await inner.stall() }
+    func buyOffer(id: String) async throws -> InventoryState { try await inner.buyOffer(id: id) }
+    func levelRewards() async throws -> [LevelStep] { try await inner.levelRewards() }
     func updateRiderProfile(_ profile: RiderProfile) async throws -> RiderProfile { try await inner.updateRiderProfile(profile) }
     func world(center: Coordinate, radiusMeters: Double) async throws -> WorldSnapshot { try await inner.world(center: center, radiusMeters: radiusMeters) }
     func exploration(in box: BoundingBox) async throws -> ExplorationResponse { try await inner.exploration(in: box) }

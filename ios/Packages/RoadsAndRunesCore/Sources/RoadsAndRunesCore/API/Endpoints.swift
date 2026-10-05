@@ -106,6 +106,17 @@ public enum Endpoints {
     public static func riderProfile() -> Endpoint { Endpoint(method: .get, path: "/character/rider-profile") }
     public static func updateRiderProfile(_ body: RiderProfile) throws -> Endpoint { try .json(.put, "/character/rider-profile", body: body) }
 
+    // MARK: What you carry (0.7.2)
+    public static func inventory() -> Endpoint { Endpoint(method: .get, path: "/inventory") }
+    public static func wearGear(_ body: GearChoice) throws -> Endpoint { try .json(.put, "/inventory/gear", body: body) }
+    public static func sellItem(id: UUID) -> Endpoint { Endpoint(method: .post, path: "/inventory/items/\(id.uuidString)/sell") }
+    public static func useConsumable(id: String, _ body: ConsumableUseRequest) throws -> Endpoint {
+        try .json(.post, "/inventory/consumables/\(id)/use", body: body)
+    }
+    public static func stall() -> Endpoint { Endpoint(method: .get, path: "/inventory/stall") }
+    public static func buyOffer(id: String) -> Endpoint { Endpoint(method: .post, path: "/inventory/stall/\(id)/buy") }
+    public static func levelRewards() -> Endpoint { Endpoint(method: .get, path: "/inventory/levels") }
+
     // MARK: World
     public static func world(center: Coordinate, radiusMeters: Double) -> Endpoint {
         Endpoint(method: .get, path: "/world", query: [

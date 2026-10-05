@@ -193,7 +193,7 @@ final class WorldViewModel {
         out += objects.map { object in
             MapMarker(
                 id: "object-\(object.id.uuidString)", coordinate: object.coordinate, kind: Self.markerKind(for: object),
-                title: object.name, inReach: isWithinReach(object), mark: .of(object)
+                title: object.shownName, inReach: isWithinReach(object), mark: .of(object)
             )
         }
         return out
@@ -251,10 +251,18 @@ final class WorldViewModel {
             )
             take(result.object)
             selectedObject = nil
-            let detail = result.setCompleted.map { "\($0.name) complete · \(LoreCopy.earned($0.bonusAC))" } ?? result.object.setStanding?.line
+            var detail = result.setCompleted.map { "\($0.name) complete · \(LoreCopy.earned($0.bonusAC))" } ?? result.object.setStanding?.line
+            // What the chest held besides coins (0.7.2).
+            if let found = result.itemFound { detail = [detail, Self.findLine(found)].compactMap { $0 }.joined(separator: " · ") }
             show(claimed: result.object, quest: result.questCompleted?.title, detail: detail)
+            // Opened mid-journey: the wrist shows the find in its overlay too.
+            if container.rideRecorder.isActive, let found = result.itemFound {
+                container.watch.send(objectiveCompleted: .found(name: found.name, icon: found.icon, rarity: found.rarity,
+                                                                       detail: found.soldOnTheSpot ? "Sold: your bag was full" : nil))
+            }
             container.analytics.track(.worldObjectClaimed, properties: ["kind": object.kind.rawValue, "name": object.name, "method": "TAP"])
             await container.session.refreshCharacter()
+            if result.itemFound != nil { await container.session.refreshInventory() }
         } catch let error as APIError where error.errorCode == APIErrorCode.objectGone {
             // Already opened, on a ride or another phone: it should not still be on the map.
             var gone = object
@@ -298,9 +306,18 @@ final class WorldViewModel {
             open(first)
             container.analytics.track(.worldObjectClaimed, properties: ["kind": "LAMP", "name": place.name, "method": "LAMP"])
             await container.session.refreshCharacter()
+            // A lamp from the bag may have gone instead of coins.
+            if lampCheck?.usesLampFromBag == true { await container.session.refreshInventory() }
         } catch {
             lampError = error.localizedDescription
         }
+    }
+
+    /// "Found: Candle Stub", or the line for a find a full bag could not hold.
+    static func findLine(_ found: ItemFound) -> String {
+        found.soldOnTheSpot
+            ? "\(found.name) sold on the spot: your bag was full. \(LoreCopy.earned(found.soldFor ?? 0))"
+            : "Found: \(found.name)"
     }
 
     /// The object as the server now has it replaces whatever the map was holding.
@@ -337,6 +354,16 @@ final class WorldViewModel {
         if let objects = try? await container.api.worldObjects(near: here, radiusMeters: 6000) {
             placedObjects = objects
             container.nudges.note(objects: objects, around: here)
+            // The last world loaded, for a ride started where there is no signal (0.7.2).
+            let combat = container.session.config?.combat
+            let sheet = container.session.character?.sheet
+            try? container.worldCache.update { world in
+                world.center = here
+                world.radiusMeters = 6000
+                world.objects = objects
+                if let combat { world.combat = combat }
+                if let sheet { world.sheet = sheet }
+            }
         } else {
             objectsLoadedAt = nil
         }

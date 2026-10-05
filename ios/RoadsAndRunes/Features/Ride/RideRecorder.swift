@@ -70,6 +70,9 @@ final class RideRecorder {
     private let cellIndexing: H3CellIndexing
     private let activeRideStore: FileActiveRideStore
     private let routePackages: FileRoutePackageStore
+    /// The last world loaded, beside the route packages: a ride that starts with no
+    /// signal takes its creatures, chests and ground from here (0.7.2).
+    private let worldCache: FileWorldCacheStore
     private let analytics: AnalyticsSink
     private let session: SessionStore
 
@@ -109,12 +112,15 @@ final class RideRecorder {
     /// Places near the route the rider has not found yet, and the ones already called out.
     @ObservationIgnored private var unfoundPlaces: [DiscoverySummary] = []
     @ObservationIgnored private var announcedPlaces: Set<UUID> = []
+    /// What the fights were armed with, saved with the ride so recovery can fold them again.
+    @ObservationIgnored private var fightSetup: FightSetupState?
     private let audio: RideAudio
 
     init(api: any RoadsAndRunesAPI, location: LocationService, health: HealthKitService, watch: WatchSessionService, sync: SyncService,
          persistence: PersistenceService, cellIndexing: H3CellIndexing, activeRideStore: FileActiveRideStore, routePackages: FileRoutePackageStore,
-         analytics: AnalyticsSink, session: SessionStore, audio: RideAudio) {
+         worldCache: FileWorldCacheStore, analytics: AnalyticsSink, session: SessionStore, audio: RideAudio) {
         self.audio = audio
+        self.worldCache = worldCache
         self.api = api
         self.location = location
         self.health = health
@@ -260,6 +266,7 @@ final class RideRecorder {
         _ = transition(to: .completed)
         sendWatchUpdate(force: true)
         cleanup()
+        // Journey's end reaches the Watch when the summary does (`SyncService.onSummary`).
         await sync.completeRide(rideId: rideId, rideClientId: endedClientId, completion: completion)
     }
 
@@ -286,6 +293,7 @@ final class RideRecorder {
         progressTracker = nil
         objectiveTracker = nil
         encounterTracker = nil
+        fightSetup = nil
         encounter = nil
         recentClaim = nil
         quarryId = nil
@@ -382,11 +390,34 @@ final class RideRecorder {
         persist()
     }
 
+    /// How far the chests, pieces and monsters round the start are looked for.
+    static let encounterRadiusMeters = 8000.0
+
     /// The chests, pieces and monsters around the start, for live feedback on the way.
+    /// With no signal they come from the last world loaded (0.7.2), minus anything
+    /// that has gone since; with signal they are kept there for next time.
     private func loadEncounters(around coordinate: Coordinate?) async {
         guard let coordinate else { return }
-        let objects = (try? await api.worldObjects(near: coordinate, radiusMeters: 8000)) ?? []
-        encounterTracker = EncounterTracker(objects: objects, activity: activity)
+        let cached = worldCache.load()
+        let sheet = ride?.loadout ?? session.character?.sheet ?? cached?.sheet
+        let objects: [WorldObject]
+        if let fresh = try? await api.worldObjects(near: coordinate, radiusMeters: Self.encounterRadiusMeters) {
+            objects = fresh
+            let combat = session.config?.combat
+            let current = session.character?.sheet
+            try? worldCache.update { world in
+                world.center = coordinate
+                world.radiusMeters = Self.encounterRadiusMeters
+                world.objects = fresh
+                if let combat { world.combat = combat }
+                if let current { world.sheet = current }
+            }
+        } else {
+            objects = cached?.objects(near: coordinate, radiusMeters: Self.encounterRadiusMeters) ?? []
+            if cached != nil { AppLog.navigation.info("encounters_from_cache \(objects.count, privacy: .public)") }
+        }
+        // A bell worn (`SIGHT_M`) or Kenaz inscribed sights things further out.
+        encounterTracker = EncounterTracker(objects: objects, activity: activity, sightMeters: sheet?.sightMeters)
         objectsOnMap = objects.filter { $0.status == .spawned }
     }
 
@@ -395,9 +426,12 @@ final class RideRecorder {
     /// ground already read round the route. Missing any, the ride says nothing of
     /// fights and the reckoning tells the server's verdict.
     private func armFights(for package: RoutePackage, start: Coordinate?) async {
+        // Offline, the constants, the sheet and the ground already read come from the last world loaded.
+        let cached = worldCache.load()
         guard let tracker = encounterTracker, tracker.objects.contains(where: { $0.monster?.foughtByEffort == true }),
-              let constants = session.config?.combat, let sheet = ride?.loadout ?? session.character?.sheet else { return }
-        let resolution = session.config?.h3Resolution ?? ExplorationDefaults.h3Resolution
+              let constants = session.config?.combat ?? cached?.combat,
+              let sheet = ride?.loadout ?? session.character?.sheet ?? cached?.sheet else { return }
+        let resolution = session.config?.h3Resolution ?? cached?.h3Resolution ?? ExplorationDefaults.h3Resolution
         var box = package.mapRegion
         if let start {
             box.minLat = min(box.minLat, start.latitude); box.maxLat = max(box.maxLat, start.latitude)
@@ -408,16 +442,34 @@ final class RideRecorder {
         let dLat = pad / 111_195
         let dLon = pad / (111_195 * max(0.2, cos(((box.minLat + box.maxLat) / 2) * .pi / 180)))
         let fetched = BoundingBox(minLat: box.minLat - dLat, minLon: box.minLon - dLon, maxLat: box.maxLat + dLat, maxLon: box.maxLon + dLon)
-        guard let read = try? await api.exploration(in: fetched), read.h3Resolution == resolution else { return }
-        let known = Set(read.cells.filter { $0.state == .visited || $0.state == .explored }.map(\.h3))
-        // Cells are fetched by their centres: stay a cell's width inside the box.
-        let inset = 400.0 / 111_195
-        let bounds = BoundingBox(minLat: fetched.minLat + inset, minLon: fetched.minLon + inset * 1.6,
+        let known: Set<String>
+        let bounds: BoundingBox
+        if let read = try? await api.exploration(in: fetched), read.h3Resolution == resolution {
+            known = Set(read.cells.filter { $0.state == .visited || $0.state == .explored }.map(\.h3))
+            // Cells are fetched by their centres: stay a cell's width inside the box.
+            let inset = 400.0 / 111_195
+            bounds = BoundingBox(minLat: fetched.minLat + inset, minLon: fetched.minLon + inset * 1.6,
                                  maxLat: fetched.maxLat - inset, maxLon: fetched.maxLon - inset * 1.6)
-        encounterTracker = EncounterTracker(objects: tracker.objects, activity: activity, fights: FightTracker.Setup(
+            try? worldCache.update { world in
+                world.exploredCells = known.sorted()
+                world.h3Resolution = resolution
+                world.cellsBounds = bounds
+                world.combat = constants
+                world.sheet = sheet
+            }
+        } else if let offline = cached?.cells(resolution: resolution, covering: fetched) {
+            // No signal: the ground read last time, trusted only where it was read.
+            known = offline.cells
+            bounds = offline.bounds
+        } else {
+            return
+        }
+        let setup = FightTracker.Setup(
             constants: constants, sheet: sheet, activity: activity, knownCells: known, groundResolution: resolution,
             indexing: cellIndexing, readBounds: bounds
-        ))
+        )
+        fightSetup = FightSetupState(setup)
+        encounterTracker = EncounterTracker(objects: tracker.objects, activity: activity, fights: setup, sightMeters: sheet.sightMeters)
     }
 
     /// What a fight said. Only the quarry speaks, or else the nearest thing being
@@ -531,7 +583,7 @@ final class RideRecorder {
             let distance = GeoMath.distance(position, object.coordinate)
             if distance <= EncounterTracker.monsterNearMeters {
                 metMonsters.insert(object.id)
-            } else if distance > EncounterTracker.inSightMeters, metMonsters.remove(object.id) != nil {
+            } else if distance > tracker.sightMeters, metMonsters.remove(object.id) != nil {
                 emit(.lost(name: object.name), at: now)
             }
         }
@@ -588,7 +640,8 @@ final class RideRecorder {
             standing = SetStanding(name: before.name, owned: min(before.of, before.owned + (piecesTaken[setId]?.count ?? 0)), of: before.of)
         }
         emit(.claimed(name: Self.shortName(object), kind: object.kind, coins: object.rewardAC, set: standing), at: lastFix?.timestamp ?? Date())
-        watch.send(objectiveCompleted: WatchObjectiveCompleted(title: object.name, coins: object.rewardAC, detail: standing?.line, outcome: outcome))
+        watch.send(objectiveCompleted: WatchObjectiveCompleted(title: object.name, coins: object.rewardAC, detail: standing?.line, outcome: outcome,
+                                                               icon: WatchArt.claimIcon(for: object)))
         analytics.track(.worldObjectClaimed, properties: ["kind": object.kind.rawValue, "name": object.name])
     }
 
@@ -905,8 +958,15 @@ final class RideRecorder {
         guard let package else { return }
         let objectives = (quest?.sortedObjectives ?? []).map { WatchObjective(objective: $0) }
         let stops = package.pois.prefix(12).map {
-            WatchStop(id: $0.discoveryId, name: $0.name, latitude: $0.latitude, longitude: $0.longitude, requested: $0.requested == true)
+            WatchStop(id: $0.discoveryId, name: $0.name, latitude: $0.latitude, longitude: $0.longitude, requested: $0.requested == true,
+                      category: $0.category.rawValue)
         }
+        // The game near the route, and each objective still to do where it is.
+        let pending = (quest?.sortedObjectives ?? []).filter { !completedObjectiveIDs.contains($0.id) && $0.status != .completed }
+        let worldMarks = WatchWorldMarks.select(
+            objects: objectsOnMap, route: package.route.path, start: lastFix?.coordinate ?? package.route.path.first,
+            objectives: pending, quarryId: quarryId, icon: WatchArt.icon(for:)
+        )
         watch.send(
             summary: WatchRouteSummary(
                 questTitle: quest?.title,
@@ -915,12 +975,16 @@ final class RideRecorder {
                 totalDistanceMeters: package.route.distanceMeters,
                 routeCoordinates: Self.thinned(package.route.coordinates),
                 stops: Array(stops),
-                activity: activity.rawValue
+                activity: activity.rawValue,
+                worldMarks: worldMarks
             ),
             units: units
         )
     }
 
+    /// Journey's end on the wrist, once the server has counted the journey: the
+    /// summary arrives on `sync` some seconds after the upload, or not at all while
+    /// offline (then the Watch simply stays idle).
     /// A route can be thousands of points; a watch screen is 200 across and the
     /// message has to fit in a WatchConnectivity payload. Keep every nth point, and
     /// always the last one so the line ends where the ride does.
@@ -949,9 +1013,17 @@ final class RideRecorder {
             latitude: lastFix?.coordinate.latitude, longitude: lastFix?.coordinate.longitude,
             encounterLine: encounterLine, newTerritoryMeters: newTerritoryMeters,
             remainingMeters: state == .active ? progress?.distanceRemaining : nil,
-            courseDegrees: course.course
+            courseDegrees: course.course,
+            fight: encounterTracker?.watchFight(quarryId: quarryId, from: lastFix?.coordinate, icon: WatchArt.icon(for:)),
+            goneMarkIds: watchGoneMarkIds
         )
         watch.send(update: update, force: force)
+    }
+
+    /// What has been opened, defeated or done on this ride, for the Watch map to take off.
+    private var watchGoneMarkIds: [UUID]? {
+        let gone = (encounterTracker?.claimedIDs ?? []).union(completedObjectiveIDs)
+        return gone.isEmpty ? nil : gone.sorted { $0.uuidString < $1.uuidString }
     }
 
     // MARK: - Persistence & recovery (spec §72)
@@ -965,7 +1037,8 @@ final class RideRecorder {
             navigationState: state, startedAt: startedAt, updatedAt: now, stats: stats,
             pendingCells: exploration?.pendingUpload ?? [], visitedCells: Array(exploration?.visitedCells ?? []),
             completedObjectiveIDs: Array(completedObjectiveIDs), pendingObjectiveEvents: pendingObjectiveEvents,
-            lastFix: lastFix, lastSegmentIndex: progress?.nearestSegmentIndex ?? 0, title: title, activity: activity.rawValue
+            lastFix: lastFix, lastSegmentIndex: progress?.nearestSegmentIndex ?? 0, title: title, activity: activity.rawValue,
+            game: encounterTracker?.gameState(quarryId: quarryId, fights: fightSetup)
         )
         try? activeRideStore.save(snapshot)
         persistence.save()
@@ -999,6 +1072,7 @@ final class RideRecorder {
             exploration?.restore(visitedCells: saved.visitedCells, pendingUpload: saved.pendingCells)
             progressTracker?.reset(toSegment: saved.lastSegmentIndex)
         }
+        restoreGameLayer(saved)
         if let rideId = saved.rideId, let serverRide = try? await api.ride(id: rideId) { ride = serverRide }
         location.startTracking(mode: batteryMode)
         health.beginWorkout(startDate: Date())
@@ -1028,9 +1102,27 @@ final class RideRecorder {
             self.package = package
             quest = package.quest
         }
+        // What the phone claimed before the crash goes with the ride.
+        restoreGameLayer(saved)
         machine = NavigationStateMachine(state: .recovery)
         state = .recovery
         await finish()
+    }
+
+    /// The game layer back after a crash (0.7.2): the same things in play, what was
+    /// claimed kept, and the fights folded again over the fixes saved so far. A
+    /// snapshot from before 0.7.2 has none, and the ride goes on without it.
+    private func restoreGameLayer(_ saved: ActiveRideState) {
+        guard let game = saved.game else { return }
+        let fixes = persistence.points(rideClientId: saved.clientRideId).map {
+            LocationFix(coordinate: Coordinate(latitude: $0.latitude, longitude: $0.longitude), timestamp: $0.timestamp, altitude: $0.altitude,
+                        horizontalAccuracy: $0.horizontalAccuracy, speed: $0.speed, heartRate: $0.heartRate)
+        }
+        let tracker = EncounterTracker(restoring: game, activity: activity, indexing: cellIndexing, replaying: fixes)
+        encounterTracker = tracker
+        fightSetup = game.fights
+        quarryId = game.quarryId
+        objectsOnMap = tracker.objects.filter { !tracker.claimedIDs.contains($0.id) }
     }
 
     func discardRecovered() {

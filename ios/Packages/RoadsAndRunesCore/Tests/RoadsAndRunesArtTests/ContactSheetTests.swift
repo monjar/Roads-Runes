@@ -32,7 +32,26 @@ final class ContactSheetTests: XCTestCase {
         ("gutter-drake", Sigil(body: "wyrm", feature: "wings", mark: "wall")),
         ("lamp-sprite", Sigil(body: "wisp", feature: "ember", mark: "lamp")),
         ("cinder-hound", Sigil(body: "beast", feature: "ember", mark: "ash")),
+        // The twelve from 0.7.2 name their icon; their body and feature may repeat an older pair.
+        ("hedge-dragon", Sigil(body: "wyrm", feature: "wings", mark: "tree", icon: "hedgeDragon")),
+        ("hill-wyvern", Sigil(body: "wyrm", feature: "wings", mark: "mist", icon: "hillWyvern")),
+        ("culvert-imp", Sigil(body: "shade", feature: "horns", mark: "water", icon: "culvertImp")),
+        ("bridge-ogre", Sigil(body: "hulk", feature: "horns", mark: "water", icon: "bridgeOgre")),
+        ("stile-boggart", Sigil(body: "shade", feature: "hood", mark: "tree", icon: "stileBoggart")),
+        ("milestone-goblin", Sigil(body: "shade", feature: "hook", mark: "wall", icon: "milestoneGoblin")),
+        ("gatehouse-gargoyle", Sigil(body: "armour", feature: "wings", mark: "wall", icon: "gatehouseGargoyle")),
+        ("bramble-wolf", Sigil(body: "beast", feature: "thorns", mark: "tree", icon: "brambleWolf")),
+        ("rooftop-griffin", Sigil(body: "bird", feature: "crown", mark: "wall", icon: "rooftopGriffin")),
+        ("marsh-wisp", Sigil(body: "wisp", feature: "ember", mark: "reeds", icon: "marshWisp")),
+        ("stone-giant", Sigil(body: "hulk", feature: "moss", mark: "wall", icon: "stoneGiant")),
+        ("tavern-brownie", Sigil(body: "shade", feature: "hood", mark: "lamp", icon: "tavernBrownie")),
     ]
+
+    static let items = ["tin-bell", "drovers-bell", "unrung-bell", "candle-stub", "bullseye-lantern", "wreckers-light",
+                        "saddle-roll", "tinkers-satchel", "poachers-pocket", "folded-map", "pedlars-roadbook",
+                        "cartographers-atlas", "hagstone", "rowan-twig", "runesmiths-nail"]
+    static let consumables = ["LAMP", "MAP_FRAGMENT", "REST_TOKEN", "SEALED_CHEST_COMMON", "SEALED_CHEST_RARE"]
+    static let slots = ["BELL", "LANTERN", "BAG", "MAP_CASE", "KEEPSAKE"]
 
     func testEveryPathParsesAndStaysOnItsGrid() throws {
         func check(_ source: String, grid: CGSize, _ name: String) throws {
@@ -58,11 +77,39 @@ final class ContactSheetTests: XCTestCase {
     }
 
     func testEveryCreatureHasItsOwnIcon() {
+        XCTAssertEqual(Self.sigils.count, 24)
         let icons = Self.sigils.map { GameIcon.forSigil($0.1) }
         XCTAssertEqual(Set(icons).count, Self.sigils.count, "two creatures share a face")
         for (id, sigil) in Self.sigils {
             XCTAssertEqual(GameIcon.forSigil(sigil), GameIcon.forSpecies(id), id)
+            XCTAssertNotEqual(GameIcon.forSpecies(id), .dragonHead, "\(id) has no face of its own")
         }
+    }
+
+    /// The server names the icon (0.7.2); a name this app does not know falls back to the pair.
+    func testASigilsOwnIconWinsAndAnUnknownOneFallsBack() {
+        XCTAssertEqual(GameIcon.forSigil(Sigil(body: "hulk", feature: "horns", mark: "water", icon: "bridgeOgre")), .bridgeOgre)
+        XCTAssertEqual(GameIcon.forSigil(Sigil(body: "hulk", feature: "horns", mark: "water", icon: "notYetDrawn")), .troll)
+        let old = try? JSONDecoder().decode(Sigil.self, from: Data(#"{"body": "wisp", "feature": "hood", "mark": "reeds"}"#.utf8))
+        XCTAssertNil(old?.icon)
+        XCTAssertEqual(old.map(GameIcon.forSigil), .ghost)
+        XCTAssertNotEqual(Mark.creature(Sigil(body: "hulk", feature: "horns", mark: "water")).id,
+                          Mark.creature(Sigil(body: "hulk", feature: "horns", mark: "water", icon: "bridgeOgre")).id,
+                          "two faces must not share a cached drawing")
+    }
+
+    /// Every item, consumable and slot has its own drawing, and none is the fallback.
+    func testEveryItemConsumableAndSlotHasAnIcon() {
+        let items = Self.items.map(GameIcon.forItem)
+        XCTAssertEqual(Set(items).count, 15, "two items share a face")
+        XCTAssertFalse(items.contains(.sparkles))
+        XCTAssertFalse(Self.consumables.map(GameIcon.forConsumable).contains(.sparkles))
+        XCTAssertEqual(GameIcon.forConsumable("REST_TOKEN"), .restToken)
+        XCTAssertFalse(Self.slots.map(GameIcon.forSlot).contains(.sparkles))
+        XCTAssertEqual(GameIcon.named("hagstone", or: .sparkles), .hagstone)
+        XCTAssertEqual(GameIcon.named(nil, or: .chest), .chest)
+        XCTAssertEqual(Spot.forRarity("LEGENDARY"), .gold)
+        XCTAssertNil(Spot.forRarity("COMMON"))
     }
 
     func testEveryIconParsesAndStaysOnItsGrid() throws {
@@ -88,8 +135,13 @@ final class ContactSheetTests: XCTestCase {
         let places = ["NATURE", "LANDMARK", "PUB", "CAFE", "FOOD", "VIEWPOINT", "HISTORICAL", "CULTURAL", "MUSEUM",
                       "TRAIL", "WATER", "BRIDGE", "SHOP", "CYCLING", "SOMEWHERE"].map { Mark.place($0) }
         let icons = GameIcon.allCases.map { Mark.icon($0) }
+        // 0.7.2: the fifteen items in their three rarities, the consumables and the empty slots.
+        let rarities = ["COMMON", "RARE", "LEGENDARY"]
+        let gear = Self.items.enumerated().map { Mark.item(GameIcon.forItem($0.element), rarity: rarities[$0.offset % 3]) }
+            + Self.consumables.map { Mark.item(GameIcon.forConsumable($0), rarity: $0.hasSuffix("RARE") ? "RARE" : nil) }
+            + Self.slots.map { Mark.icon(GameIcon.forSlot($0)) }
         for (name, marks) in [("runes", runes), ("crests", crests), ("creatures", creatures), ("elders", elders), ("things", things),
-                               ("places", places), ("icons", icons)] {
+                               ("places", places), ("icons", icons), ("gear", gear)] {
             for (paletteName, palette) in [("phone", InkPalette.phone), ("watch", InkPalette.watch)] {
                 let url = Self.outputDirectory.appendingPathComponent("\(name)-\(paletteName).png")
                 try Self.sheet(marks, palette: palette, to: url)

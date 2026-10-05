@@ -90,6 +90,7 @@ enum AppTab: Int, CaseIterable, Identifiable {
 }
 
 struct MainTabView: View {
+    @Environment(AppContainer.self) private var container
     @State private var tab: AppTab = .world
     /// A quest a World marker pointed at, for the Quests tab to open.
     @State private var questToOpen: UUID?
@@ -124,6 +125,14 @@ struct MainTabView: View {
         .animation(.snappy(duration: 0.3), value: tabBar.isHidden)
         .background(Theme.Colors.cream.ignoresSafeArea())
         .environment(tabBar)
+        // The first look at the bag after 0.7.2 pays the levels already reached: said once.
+        .task { await container.session.refreshInventory() }
+        .sheet(isPresented: Binding(
+            get: { !container.session.levelRewardsToShow.isEmpty && !container.rideRecorder.isActive },
+            set: { shown in if !shown { container.session.levelRewardsToShow = [] } }
+        )) {
+            LevelRewardsSheet(rewards: container.session.levelRewardsToShow) { container.session.levelRewardsToShow = [] }
+        }
     }
 }
 

@@ -36,7 +36,7 @@ struct AdventureSummaryView: View {
 
     /// The order things arrive in.
     private enum Stage: Int, Comparable {
-        case trace, fight, xp, lines, coins, levels, world, codex, runes, quest, entry, rest
+        case trace, fight, xp, lines, coins, levels, world, codex, runes, items, quest, entry, rest
 
         static func < (lhs: Stage, rhs: Stage) -> Bool { lhs.rawValue < rhs.rawValue }
     }
@@ -84,8 +84,9 @@ struct AdventureSummaryView: View {
                             if stage >= .world { worldSection.id(Stage.world) }
                             if stage >= .codex, !firsts.isEmpty { codexSection.id(Stage.codex) }
                             if stage >= .runes, !runeLines.isEmpty { runesSection.id(Stage.runes) }
+                            if stage >= .items, !finds.isEmpty { itemsSection.id(Stage.items) }
                             if stage >= .quest { questSection.id(Stage.quest) }
-                            if stage >= .entry, let entry = summary.entry, !entry.isEmpty { entrySection(entry).id(Stage.entry) }
+                            if stage >= .entry, let entry = summary.entryToRead, !entry.isEmpty { entrySection(entry).id(Stage.entry) }
                             if stage >= .rest { restSection.id(Stage.rest) }
                         }
                         .padding(.horizontal, 22)
@@ -189,8 +190,12 @@ struct AdventureSummaryView: View {
             await arrive(at: .runes, after: 0.5)
             UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
         }
+        if !finds.isEmpty {
+            await arrive(at: .items, after: 0.5)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        }
         if hasQuest { await arrive(at: .quest, after: 0.6) }
-        if summary.entry?.isEmpty == false { await arrive(at: .entry, after: 0.5) }
+        if summary.entryToRead?.isEmpty == false { await arrive(at: .entry, after: 0.5) }
         await arrive(at: .rest, after: 0.6)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
@@ -330,6 +335,16 @@ struct AdventureSummaryView: View {
                     Text(levelUp.kind == .classLevel ? LoreCopy.classLevel(className, levelUp.to) : "Level \(levelUp.to)")
                         .font(Theme.Typography.voice(22, relativeTo: .title2)).foregroundStyle(Theme.Colors.cream)
                     Text("up from \(levelUp.from)").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.line)
+                    // What the level gave (0.7.2): "Lantern slot opens", "2 lamps".
+                    if let rewards = levelUp.rewards, !rewards.isEmpty {
+                        VStack(alignment: .leading, spacing: 5) {
+                            ForEach(Array(rewards.enumerated()), id: \.offset) { _, reward in
+                                LevelRewardLine(reward: reward, textColor: Theme.Colors.cream)
+                            }
+                        }
+                        .padding(.top, 6)
+                        .accessibilityIdentifier("summary.levelRewards")
+                    }
                 }
                 Spacer(minLength: 0)
             }
@@ -344,7 +359,7 @@ struct AdventureSummaryView: View {
     }
 
     private var hasWorld: Bool {
-        if summary.weekNotice?.paid == true { return true }
+        if summary.weekNotice?.paid == true || summary.streak?.restTokenUsed == true { return true }
         guard let world = summary.worldObjects else { return summary.streak?.extended == true }
         return !world.claimed.isEmpty || world.missed.contains { $0.reason == "UNBEATEN" } || summary.streak?.extended == true
     }
@@ -478,8 +493,65 @@ struct AdventureSummaryView: View {
                 Label(streakLine(streak), systemImage: "flame.fill")
                     .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.terracottaDeep)
             }
+            if summary.streak?.restTokenUsed == true {
+                HStack(spacing: 8) {
+                    MarkView(.icon(.restToken, spot: .sage)).frame(width: 18, height: 18)
+                    Text("You missed a day, so a rest token kept your streak going.")
+                        .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.sageDeep)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("summary.restToken")
+            }
         }
         .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    /// Gear and things to use found on this journey (0.7.2); a find the full bag could
+    /// not hold was sold where it was found, and says so.
+    private var finds: [ItemFound] { summary.itemsFound ?? [] }
+
+    private var itemsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Eyebrow(text: finds.count == 1 ? "Found on this journey" : "Found on this journey · \(finds.count)", color: Theme.Colors.sageDeep)
+            ForEach(Array(finds.enumerated()), id: \.offset) { _, found in
+                HStack(alignment: .top, spacing: 10) {
+                    MarkView(.of(found)).frame(width: 34, height: 34)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(found.name).font(Theme.Typography.text(15, .semibold)).foregroundStyle(Theme.Colors.ink)
+                            RarityTag(rarity: found.rarity)
+                        }
+                        if let from = Self.from(found) {
+                            Text(from).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                        }
+                        if found.soldOnTheSpot {
+                            Text("Sold on the spot: your bag was full. \(LoreCopy.earned(found.soldFor ?? 0))")
+                                .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.terracottaDeep)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("summary.soldOnTheSpot")
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .transition(.scale(scale: 0.95).combined(with: .opacity))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("summary.items")
+    }
+
+    /// "From Fen Troll", "From a chest", "A quest reward".
+    static func from(_ found: ItemFound) -> String? {
+        if let name = found.fromName, !name.isEmpty { return "From \(name)" }
+        switch found.source?.uppercased() {
+        case "MONSTER": return "From a creature"
+        case "CHEST": return "From a chest"
+        case "QUEST": return "A quest reward"
+        case "BOUNTY": return "From the bounty"
+        default: return nil
+        }
     }
 
     private var hasQuest: Bool { summary.questCompletion != nil && summary.quest != nil }

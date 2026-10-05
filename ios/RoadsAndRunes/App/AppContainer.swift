@@ -15,6 +15,8 @@ final class AppContainer {
     let persistence: PersistenceService
     let cellIndexing: H3CellIndexing
     let routePackages: FileRoutePackageStore
+    /// The last world loaded, kept beside the route packages for a ride started offline (0.7.2).
+    let worldCache: FileWorldCacheStore
     let activeRideStore: FileActiveRideStore
     let watch: WatchSessionService
     let sync: SyncService
@@ -40,9 +42,17 @@ final class AppContainer {
         let health = HealthKitService(enabled: !inMemory && !uiTesting)
         let watch = WatchSessionService()
         let session = SessionStore(api: resolvedAPI)
-        let routePackages = FileRoutePackageStore(directory: directory.appendingPathComponent("routes", isDirectory: true))
+        let routes = directory.appendingPathComponent("routes", isDirectory: true)
+        let routePackages = FileRoutePackageStore(directory: routes)
+        // In tests the last world is kept apart, so one test's world is not another's.
+        let worldCache = FileWorldCacheStore(directory: inMemory
+            ? FileManager.default.temporaryDirectory.appendingPathComponent("rr-world-\(UUID().uuidString)", isDirectory: true)
+            : routes)
         let activeRideStore = FileActiveRideStore(directory: directory)
-        if uiTesting { try? activeRideStore.clear() }
+        if uiTesting {
+            try? activeRideStore.clear()
+            try? worldCache.clear()
+        }
         let pendingURL = inMemory || uiTesting ? nil : directory.appendingPathComponent("pending-reckoning.json")
         let sync = SyncService(api: resolvedAPI, persistence: persistence, session: session, analytics: analytics, pendingURL: pendingURL)
         let preferences = MapPreferencesStore()
@@ -52,8 +62,8 @@ final class AppContainer {
         let audio = RideAudio(enabled: !inMemory && !Self.isPreview && wantsAudio) { preferences.rideSound }
         let recorder = RideRecorder(
             api: resolvedAPI, location: location, health: health, watch: watch, sync: sync, persistence: persistence,
-            cellIndexing: H3CellIndexing(), activeRideStore: activeRideStore, routePackages: routePackages, analytics: analytics, session: session,
-            audio: audio
+            cellIndexing: H3CellIndexing(), activeRideStore: activeRideStore, routePackages: routePackages, worldCache: worldCache,
+            analytics: analytics, session: session, audio: audio
         )
         self.api = resolvedAPI
         self.analytics = analytics
@@ -64,6 +74,7 @@ final class AppContainer {
         self.session = session
         self.cellIndexing = H3CellIndexing()
         self.routePackages = routePackages
+        self.worldCache = worldCache
         self.activeRideStore = activeRideStore
         self.sync = sync
         self.rideRecorder = recorder
@@ -79,6 +90,12 @@ final class AppContainer {
                 case .end: await recorder.finish()
                 }
             }
+        }
+        // Journey's end on the wrist, whenever the counted summary arrives. One for a
+        // journey that ended over an hour ago would only puzzle the rider.
+        sync.onSummary = { [weak watch] summary in
+            if let ended = summary.ride.endedAt, Date().timeIntervalSince(ended) > 3600 { return }
+            watch?.send(journeyEnd: WatchJourneyEnd(summary: summary, placeIcon: WatchArt.icon(for:)))
         }
         watch.onHeartRate = { [weak recorder] bpm in
             Task { @MainActor in recorder?.record(heartRate: bpm) }

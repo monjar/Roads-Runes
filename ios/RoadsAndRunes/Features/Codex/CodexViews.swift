@@ -237,10 +237,21 @@ struct CreaturePage: View {
     private var runeForm: String? { runes.first { $0.id == creature.rune }?.roadForm }
 
     private var facts: some View {
-        HStack(spacing: 8) {
-            FactTile(value: "\(creature.seenCount)", label: "Seen")
-            FactTile(value: "\(creature.seenOffCount)", label: "Defeated")
-            FactTile(value: creature.leaves.capitalizedFirst, label: "Leaves")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                FactTile(value: "\(creature.seenCount)", label: "Seen")
+                FactTile(value: "\(creature.seenOffCount)", label: "Defeated")
+                FactTile(value: creature.leaves.capitalizedFirst, label: "Leaves")
+            }
+            // What it has left behind, counted (0.7.2): "Left behind: a green scale ×3".
+            if let trophies = creature.trophies, trophies.count >= 1 {
+                HStack(spacing: 8) {
+                    MarkView(.icon(.trophy, spot: .gold)).frame(width: 18, height: 18)
+                    Text(trophies.line).font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.ink)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("codex.trophies")
+            }
         }
     }
 

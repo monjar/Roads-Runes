@@ -186,11 +186,14 @@ public struct LevelUp: Codable, Hashable, Sendable {
     public var kind: LevelKind
     public var from: Int
     public var to: Int
+    /// What the levels gained gave (0.7.2): "Lantern slot opens", "2 lamps".
+    public var rewards: [LevelReward]?
 
-    public init(kind: LevelKind, from: Int, to: Int) {
+    public init(kind: LevelKind, from: Int, to: Int, rewards: [LevelReward]? = nil) {
         self.kind = kind
         self.from = from
         self.to = to
+        self.rewards = rewards
     }
 }
 

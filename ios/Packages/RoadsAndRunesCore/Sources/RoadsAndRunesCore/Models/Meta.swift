@@ -52,6 +52,17 @@ public enum APIErrorCode {
     public static let objectNotClaimable = "OBJECT_NOT_CLAIMABLE"
     public static let gpsTooWeak = "GPS_TOO_WEAK"
     public static let claimTooFast = "CLAIM_TOO_FAST"
+    // What you carry (0.7.2).
+    public static let wrongSlot = "WRONG_SLOT"
+    public static let slotLocked = "SLOT_LOCKED"
+    public static let loadoutLocked = "LOADOUT_LOCKED"
+    public static let takeOffFirst = "TAKE_OFF_FIRST"
+    public static let noneLeft = "NONE_LEFT"
+    public static let noHiddenPlace = "NO_HIDDEN_PLACE"
+    public static let openLater = "OPEN_LATER"
+    public static let stallClosed = "STALL_CLOSED"
+    public static let alreadyBought = "ALREADY_BOUGHT"
+    public static let insufficientCoins = "INSUFFICIENT_AC"
 }
 
 public struct StravaStatus: Codable, Hashable, Sendable {

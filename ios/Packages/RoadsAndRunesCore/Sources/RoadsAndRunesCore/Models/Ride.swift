@@ -33,6 +33,8 @@ public struct Ride: Codable, Hashable, Identifiable, Sendable {
     public var loadout: CharacterSheet? = nil
     /// The thing the outing was planned for.
     public var quarryId: UUID? = nil
+    /// The model-written entry, when one was written (0.7.2, `chronicle_llm`).
+    public var entryWritten: EntryWritten? = nil
 
     public init(
         id: UUID, clientRideId: UUID, status: RideStatus, title: String? = nil, startedAt: Date, endedAt: Date? = nil,
@@ -249,6 +251,16 @@ public struct AdventureSummary: Codable, Hashable, Sendable {
     /// 0.7.0: rune stones picked up, and what the outing did for the deeds.
     public var runesFound: [RuneFound]? = nil
     public var deeds: DeedsOutcome? = nil
+    /// 0.7.2: gear and consumables found (sold on the spot when the bag was full),
+    /// and the model-written entry when one was written.
+    public var itemsFound: [ItemFound]? = nil
+    public var entryWritten: EntryWritten? = nil
+
+    /// The entry to read: the model's lines when there are some, else the composed one.
+    public var entryToRead: String? {
+        if let written = entryWritten?.text, !written.isEmpty { return written }
+        return entry
+    }
 
     public init(ride: Ride, quest: Quest? = nil, questCompletion: QuestCompletion? = nil, xpAwarded: Int, xpBreakdown: [XPBreakdownEntry], newCells: Int, newTerritoryMeters: Double, newRoadsMeters: Double, discoveries: [DiscoverySummary], levelUps: [LevelUp], abilitiesUnlocked: [Ability], titlesUnlocked: [String]? = nil, flags: [String], acAwarded: Int? = nil, acBreakdown: [ACBreakdownEntry]? = nil, walletBalance: Int? = nil, worldObjects: WorldObjectOutcome? = nil, streak: StreakOutcome? = nil) {
         self.streak = streak
@@ -285,8 +297,16 @@ public struct AdventureEntry: Codable, Hashable, Identifiable, Sendable {
     public var photos: [String]
     /// The outing's written lines (0.6.2).
     public var entry: String?
+    /// The model-written entry (0.7.2), shown in place of `entry` when present.
+    public var entryWritten: EntryWritten? = nil
 
     public var id: UUID { ride.id }
+
+    /// The entry to read: the model's lines when there are some (here or on the ride), else the composed one.
+    public var entryToRead: String? {
+        if let written = (entryWritten ?? ride.entryWritten)?.text, !written.isEmpty { return written }
+        return entry
+    }
 
     public init(ride: Ride, quest: Quest? = nil, xpAwarded: Int, discoveries: [DiscoverySummary], newTerritoryMeters: Double, newCells: Int? = nil, levelUps: [LevelUp]? = nil, notes: String? = nil, photos: [String] = [], entry: String? = nil) {
         self.entry = entry

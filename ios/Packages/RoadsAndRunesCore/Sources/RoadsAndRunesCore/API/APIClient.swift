@@ -273,6 +273,18 @@ public actor APIClient: RoadsAndRunesAPI {
     public func riderProfile() async throws -> RiderProfile { try await request(Endpoints.riderProfile()) }
     public func updateRiderProfile(_ profile: RiderProfile) async throws -> RiderProfile { try await request(try Endpoints.updateRiderProfile(profile)) }
 
+    // MARK: What you carry
+
+    public func inventory() async throws -> InventoryState { try await request(Endpoints.inventory()) }
+    public func wearGear(_ choice: GearChoice) async throws -> InventoryState { try await request(try Endpoints.wearGear(choice)) }
+    public func sellItem(id: UUID) async throws -> SellResult { try await request(Endpoints.sellItem(id: id)) }
+    public func useConsumable(id: String, _ request: ConsumableUseRequest) async throws -> ConsumableUseResult {
+        try await self.request(try Endpoints.useConsumable(id: id, request))
+    }
+    public func stall() async throws -> Stall { try await request(Endpoints.stall()) }
+    public func buyOffer(id: String) async throws -> InventoryState { try await request(Endpoints.buyOffer(id: id)) }
+    public func levelRewards() async throws -> [LevelStep] { try await request(Endpoints.levelRewards()) }
+
     // MARK: World
 
     public func world(center: Coordinate, radiusMeters: Double) async throws -> WorldSnapshot {

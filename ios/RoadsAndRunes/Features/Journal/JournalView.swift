@@ -352,7 +352,7 @@ struct AdventureRow: View {
                 }
                 Text(meta(f)).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).lineLimit(1)
                 // The first line of the entry, for a journal that reads like one.
-                if let written = entry.entry, let first = written.split(separator: ".").first, !first.isEmpty {
+                if let written = entry.entryToRead, let first = written.split(separator: ".").first, !first.isEmpty {
                     Text(first + ".").font(Theme.Typography.caption).italic().foregroundStyle(Theme.Colors.inkSoft).lineLimit(1)
                 }
             }
@@ -483,7 +483,8 @@ struct AdventureDetailView: View {
                     Spacer(minLength: 8)
                     Text("+\(entry.xpAwarded) XP").font(Theme.Typography.text(22, .bold)).foregroundStyle(Theme.Colors.sageDeep)
                 }
-                if let written = entry.entry, !written.isEmpty {
+                // The model's lines when it wrote some (0.7.2), else the composed entry.
+                if let written = entry.entryToRead, !written.isEmpty {
                     Text(written).font(Theme.Typography.text(15)).italic().foregroundStyle(Theme.Colors.inkSoft)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("journal.entry")

@@ -10,15 +10,6 @@ struct ObjectiveCompleteOverlay: View {
     let token: Int
     let dismiss: () -> Void
 
-    private var icon: GameIcon {
-        switch event.outcome {
-        case "GONE": return .sword
-        case "OPENED": return .openChest
-        case "FOUND": return .runeStone
-        default: return .flag
-        }
-    }
-
     /// The phone sends GONE for a creature (a wire word older Watches know); it reads DEFEATED.
     private var label: String {
         switch event.outcome {
@@ -30,8 +21,9 @@ struct ObjectiveCompleteOverlay: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            // What happened, as the phone draws it: a creature defeated, a chest opened, a find.
-            MarkView(.token(icon), palette: .watch)
+            // What happened, as the phone draws it: the creature defeated, a chest
+            // opened, a find; an item found ringed by its rarity.
+            MarkView(WristMarks.claim(event), palette: .watch)
                 .frame(width: 56, height: 56)
             // DEFEATED, OPENED, FOUND or DONE; an older phone sends none.
             Text(label)
@@ -44,6 +36,11 @@ struct ObjectiveCompleteOverlay: View {
                 .lineLimit(2)
                 .minimumScaleFactor(0.7)
                 .padding(.horizontal, 10)
+            // An item found: Common, Rare or Legendary.
+            if let rarity = WristMarks.rarityWord(event.rarity) {
+                Text(rarity)
+                    .font(.system(size: 13, weight: .semibold))
+            }
             if let detail = event.detail {
                 Text(detail)
                     .font(.system(size: 13, weight: .medium))

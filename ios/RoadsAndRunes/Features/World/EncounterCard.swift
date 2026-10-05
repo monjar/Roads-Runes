@@ -27,8 +27,11 @@ struct EncounterCard: View {
                 EncounterGlyph(object: object, size: 48)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
-                        Text(object.name).font(Theme.Typography.voice(20, relativeTo: .title3)).foregroundStyle(Theme.Colors.ink).lineLimit(2)
+                        Text(object.shownName).font(Theme.Typography.voice(20, relativeTo: .title3)).foregroundStyle(Theme.Colors.ink).lineLimit(2)
                         if object.isBounty { Eyebrow(text: "Bounty", color: Theme.Colors.terracottaDeep) }
+                        if let variant = object.monster?.variant {
+                            Eyebrow(text: variant.name, color: Theme.Colors.sageDeep).accessibilityIdentifier("encounter.variant")
+                        }
                     }
                     Text(facts).font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.muted).lineLimit(2)
                     if let flavour = object.monster?.flavour {
@@ -38,6 +41,15 @@ struct EncounterCard: View {
                 Spacer(minLength: 0)
                 IconCircleButton(symbol: "xmark", background: Theme.Colors.surface, size: 34, action: onClose)
                     .accessibilityLabel("Close")
+                    .accessibilityIdentifier("encounter.close")
+            }
+            // A variant says what it changes; a creature back for a second go says so (0.7.2).
+            if let variant = object.monster?.variant, let text = variant.text, !text.isEmpty {
+                row(.sparkles, text).accessibilityIdentifier("encounter.variantText")
+            }
+            if let grudge = object.monster?.grudge {
+                row(.crossedSwords, grudge.line ?? "It got away twice. Now it's back, and grumpier.")
+                    .accessibilityIdentifier("encounter.grudge")
             }
             if let monster = object.monster, monster.foughtByEffort {
                 wantsSection(monster)

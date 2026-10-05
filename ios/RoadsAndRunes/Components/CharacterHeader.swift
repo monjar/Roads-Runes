@@ -57,8 +57,13 @@ struct CharacterHeader: View {
                     }
                     HStack(spacing: 8) {
                         if let coins = character.activeCoins {
-                            CoinPill(coins: coins, foreground: Theme.Colors.cream)
-                                .accessibilityIdentifier("character.coins")
+                            // The purse opens its coin history (0.7.2).
+                            NavigationLink { CoinHistoryScreen() } label: {
+                                CoinPill(coins: coins, foreground: Theme.Colors.cream)
+                            }
+                            .buttonStyle(.pressable)
+                            .accessibilityHint("Shows your coin history")
+                            .accessibilityIdentifier("character.coins")
                         }
                         if let days = character.streakDays, days > 0 {
                             HStack(spacing: 4) {
@@ -86,17 +91,30 @@ struct CharacterHeader: View {
                 foreground: Theme.Colors.cream,
                 secondary: Theme.Colors.cream
             )
-            XPBar(
-                title: nil,
-                level: character.overallLevel,
-                xp: character.overallXP,
-                floorXP: character.overallLevelFloorXP,
-                nextXP: character.nextOverallLevelXP,
-                fill: Theme.Colors.cream.opacity(0.7),
-                track: Theme.Colors.ink.opacity(0.25),
-                foreground: Theme.Colors.cream.opacity(0.9),
-                secondary: Theme.Colors.cream.opacity(0.9)
-            )
+            // The level opens what each level gives (0.7.2).
+            NavigationLink { LevelsScreen() } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    XPBar(
+                        title: nil,
+                        level: character.overallLevel,
+                        xp: character.overallXP,
+                        floorXP: character.overallLevelFloorXP,
+                        nextXP: character.nextOverallLevelXP,
+                        fill: Theme.Colors.cream.opacity(0.7),
+                        track: Theme.Colors.ink.opacity(0.25),
+                        foreground: Theme.Colors.cream.opacity(0.9),
+                        secondary: Theme.Colors.cream.opacity(0.9)
+                    )
+                    HStack(spacing: 4) {
+                        Text("What each level gives")
+                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
+                    }
+                    .font(Theme.Typography.captionStrong)
+                    .foregroundStyle(Theme.Colors.cream.opacity(0.9))
+                }
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("character.levels")
         }
         .foregroundStyle(Theme.Colors.cream)
         .padding(.horizontal, 22)

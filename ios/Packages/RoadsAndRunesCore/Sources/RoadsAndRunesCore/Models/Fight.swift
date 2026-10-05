@@ -19,20 +19,32 @@ public struct CharacterSheet: Codable, Hashable, Sendable {
     public var lateRoadAfterMeters: Double?
     public var wordOldPlacesPct: Double?
     /// 0.7.0: the runes inscribed, by rank, and the rules they make ("CARRIED_SCALE": 2).
+    /// From 0.7.2 the gear worn adds its rules here too, merged on the server.
     public var inscribed: [String: Int]?
     public var rules: [String: Double]?
+    /// 0.7.2 (sheet version 4): the gear worn, item id by slot, and how much better finds are.
+    public var gear: [String: String]? = nil
+    public var lootFindPct: Double? = nil
 
-    /// The combat constants with what the inscribed runes change that the phone can
-    /// follow: the opening blow (Raido) and how far the word reaches (Ansuz).
+    /// The combat constants with what the inscribed runes and the gear change that
+    /// the phone can follow: the opening blow (Raido, the Drover's Bell), how far the
+    /// word reaches (Ansuz), finishing what is nearly done (the Unrung Bell) and
+    /// what each new tile counts for (the Cartographer's Atlas).
     public func fightConstants(_ cfg: CombatConstants) -> CombatConstants {
-        var out = cfg
-        if let scale = rules?["CARRIED_SCALE"], scale > 0 { out.carriedFraction = cfg.carriedFraction * scale }
-        if let reach = rules?["WORD_RADIUS_M"] { out.wordRadiusMeters = max(cfg.wordRadiusMeters, reach) }
-        return out
+        cfg.with(rules: rules)
     }
 
-    /// Things are sighted further out with Kenaz inscribed.
-    public var sightMeters: Double? { rules?["REVEAL_RINGS"] != nil ? 600 : nil }
+    /// Things are sighted further out with Kenaz inscribed (600 m) or a bell worn (`SIGHT_M`).
+    public var sightMeters: Double? {
+        let kenaz: Double? = rules?["REVEAL_RINGS"] != nil ? 600 : nil
+        let bell = rules?["SIGHT_M"].flatMap { $0 > 0 ? $0 : nil }
+        switch (kenaz, bell) {
+        case let (k?, b?): return max(k, b)
+        case let (k?, nil): return k
+        case let (nil, b?): return b
+        default: return nil
+        }
+    }
 
     /// The build against one thing on this outing, as the server works it out
     /// (`CharacterSheet.pct_against`). The phone does not know which places are old,
@@ -87,8 +99,25 @@ public struct CombatConstants: Codable, Hashable, Sendable {
     public var wordMinChars: Int = 12
     public var runeReachMeters: Double = 1000
     public var minOutingMeters: Double = 500
+    /// Not on the wire: set from the sheet's rules (0.7.2). A creature left with
+    /// health at or under this fraction of its most is defeated (`FINISH_UNDER`, 0 = off).
+    public var finishUnder: Double = 0
+    /// Not on the wire: what one new tile counts for as exploring (`GROUND_CELL_SCALE`).
+    public var groundCellScale: Double = 1
 
     public init() {}
+
+    /// These constants with the sheet's rules applied, as the server's `fight_cfg`
+    /// and fold apply them: scales multiply, reaches and the finish take the larger.
+    public func with(rules: [String: Double]?) -> CombatConstants {
+        var out = self
+        guard let rules else { return out }
+        if let scale = rules["CARRIED_SCALE"], scale > 0 { out.carriedFraction = carriedFraction * scale }
+        if let reach = rules["WORD_RADIUS_M"] { out.wordRadiusMeters = max(wordRadiusMeters, reach) }
+        if let under = rules["FINISH_UNDER"], under > 0 { out.finishUnder = max(finishUnder, under) }
+        if let scale = rules["GROUND_CELL_SCALE"], scale > 0 { out.groundCellScale = groundCellScale * scale }
+        return out
+    }
 
     private enum CodingKeys: String, CodingKey {
         case engageMeters, groundMeters, breakOffMeters, strideMeters, maxJumpMeters, maxAccuracyMeters

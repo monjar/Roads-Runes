@@ -34,6 +34,9 @@ struct QuestCard: View {
                     PosterLine(poster: poster)
                 }
                 Text(facts).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).lineLimit(1)
+                if let reward = quest.rewards.rewardItems.first {
+                    QuestItemRewardLine(item: reward)
+                }
             }
             Spacer(minLength: 0)
             Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundStyle(Theme.Colors.muted)
@@ -63,6 +66,21 @@ struct QuestCard: View {
             "\(objectives) objective\(objectives == 1 ? "" : "s")",
             "\(quest.rewards.xp ?? quest.baseXP) XP",
         ].joined(separator: " · ")
+    }
+}
+
+/// The item a quest gives when it is done (0.7.2), with its mark: "Reward: Pedlar's Road-book · Rare".
+struct QuestItemRewardLine: View {
+    let item: QuestRewardItem
+
+    var body: some View {
+        HStack(spacing: 6) {
+            MarkView(.of(item)).frame(width: 20, height: 20)
+            Text("Reward: \(item.name)").font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.ink).lineLimit(1)
+            RarityTag(rarity: item.rarity)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("quest.itemReward")
     }
 }
 

@@ -64,6 +64,14 @@ extension MockAPI {
             var summary = SampleData.sampleAdventureSummary
             summary.ride = ride
             summary.quest = ride.questId.flatMap { self.storedQuests[$0] }
+            // What 0.7.2 adds to Journey's end: finds, what the level gave, a rest token.
+            summary.itemsFound = SampleData.sampleItemsFound
+            summary.levelUps = summary.levelUps.map { levelUp in
+                var levelUp = levelUp
+                if levelUp.kind == .overall { levelUp.rewards = SampleData.sampleLevelSteps.first { $0.level == levelUp.to }?.rewards }
+                return levelUp
+            }
+            summary.streak = StreakOutcome(days: 4, longest: 6, extended: true, restTokenUsed: true)
             return summary
         }
     }
@@ -96,9 +104,13 @@ extension MockAPI {
                 .filter { $0.status == .processed || $0.status == .flagged }
                 .sorted { $0.startedAt > $1.startedAt }
                 .map { ride in
-                    AdventureEntry(ride: ride, quest: ride.questId.flatMap { self.storedQuests[$0] }, xpAwarded: 420,
-                                   discoveries: SampleData.sampleDiscoveries, newTerritoryMeters: 12600, newCells: 34,
-                                   levelUps: [], notes: self.rideNotes[ride.id], photos: [])
+                    var entry = AdventureEntry(ride: ride, quest: ride.questId.flatMap { self.storedQuests[$0] }, xpAwarded: 420,
+                                               discoveries: SampleData.sampleDiscoveries, newTerritoryMeters: 12600, newCells: 34,
+                                               levelUps: [], notes: self.rideNotes[ride.id], photos: [],
+                                               entry: "Out past the water and back by the long way. One chest, and the troll stayed asleep.")
+                    entry.entryWritten = EntryWritten(lines: ["You went the long way round by the water.",
+                                                              "A chest gave up its coins, and the troll never woke."], by: "model")
+                    return entry
                 }
             return Page(items: Array(entries.prefix(limit ?? 25)))
         }

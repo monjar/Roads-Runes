@@ -3,7 +3,7 @@ import OSLog
 import RoadsAndRunesCore
 import WatchConnectivity
 
-/// Receives route summaries, navigation updates and objective events from
+/// Receives route summaries, navigation updates, objective events and Journey's end from
 /// the iPhone; sends commands and heart-rate samples back. Keeps the last
 /// instruction when the phone drops and never invents navigation.
 final class PhoneSessionService: NSObject, WCSessionDelegate {
@@ -70,6 +70,9 @@ final class PhoneSessionService: NSObject, WCSessionDelegate {
             case .encounterBeat:
                 let beat = try WatchMessages.encounterBeat(from: message)
                 Task { @MainActor in TurnHaptics.play(beat.beat) }
+            case .journeyEnd:
+                let end = try WatchMessages.journeyEnd(from: message)
+                Task { @MainActor in self.store.apply(journeyEnd: end, receivedAt: receivedAt) }
             case .command, .heartRate:
                 break
             }

@@ -1,29 +1,40 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
 /// Quest page (design 16a): diamond and QUEST eyebrow in sage, the quest name,
-/// the current objective, the distance to it, progress.
+/// the fight beside it (0.7.2), the current objective, the distance to it, progress.
 struct QuestScreen: View {
     @Environment(RideStore.self) private var store
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(WatchTheme.sageLight)
-                    .frame(width: 10, height: 10)
-                    .rotationEffect(.degrees(45))
-                Text("QUEST")
-                    .font(.system(size: 11, weight: .bold))
-                    .tracking(1)
-                    .foregroundStyle(WatchTheme.sageLight)
+            HStack(alignment: .top, spacing: 6) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(WatchTheme.sageLight)
+                            .frame(width: 10, height: 10)
+                            .rotationEffect(.degrees(45))
+                        Text("QUEST")
+                            .font(.system(size: 11, weight: .bold))
+                            .tracking(1)
+                            .foregroundStyle(WatchTheme.sageLight)
+                    }
+                    Text(store.questTitle ?? LoreCopy.free(store.activity))
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(WatchTheme.secondary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                        .padding(.top, 2)
+                }
+                // The fight: a mark and a ring, nothing more to read on the move.
+                if let fight = store.fight {
+                    Spacer(minLength: 0)
+                    FightRing(fight: fight)
+                        .frame(width: 42, height: 42)
+                }
             }
-            Text(store.questTitle ?? LoreCopy.free(store.activity))
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(WatchTheme.secondary)
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
-                .padding(.top, 2)
             if let encounter = store.encounterLine {
                 Text(encounter)
                     .font(.system(size: 12, weight: .semibold))
@@ -79,5 +90,28 @@ struct QuestScreen: View {
     private func split(_ distance: String) -> (value: String, unit: String) {
         guard let space = distance.lastIndex(of: " ") else { return (distance, "") }
         return (String(distance[..<space]), String(distance[distance.index(after: space)...]))
+    }
+}
+
+/// The creature being fought, inside its health drawn as ten ticks (`HoldRing`):
+/// redrawn in whole tenths, with no numbers and no animation. Defeated, the ring
+/// is empty and the mark fades.
+struct FightRing: View {
+    let fight: WatchFight
+
+    var body: some View {
+        ZStack {
+            HoldRing(fraction: Self.fraction(tenths: fight.tenthsLeft), palette: .watch, lineWidth: 3)
+            MarkView(WristMarks.fight(fight), palette: .watch)
+                .padding(7)
+                .opacity(fight.defeated ? 0.45 : 1)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(fight.defeated ? "\(fight.name), defeated" : "\(fight.name), health \(fight.tenthsLeft) of 10")
+    }
+
+    /// Half a tenth under the count, so the ring's rounding up lands on it exactly.
+    static func fraction(tenths: Int) -> Double {
+        tenths <= 0 ? 0 : (Double(min(10, tenths)) - 0.5) / 10
     }
 }

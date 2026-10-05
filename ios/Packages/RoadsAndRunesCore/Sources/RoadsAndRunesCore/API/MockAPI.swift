@@ -15,6 +15,8 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     public private(set) var rerouteRequests: [RerouteRequest] = []
     /// While set, reroutes fail with this (a planner that cannot be reached), however many are asked for.
     public var rerouteFailure: APIError?
+    /// While true every call fails as a phone with no signal does, for the offline paths.
+    public var offline = false
 
     let lock = NSLock()
     var user: User
@@ -37,6 +39,11 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     var storedParties: [UUID: Party]
     var strava = StravaStatus(connected: false, uploadMode: .never, enabled: true)
     var exploredCells: [ExplorationCell]
+    /// What you carry (0.7.2): the bag, this week's stall, and whether the levels
+    /// already reached have been paid yet (the first `inventory()` pays them).
+    var storedInventory: InventoryState = SampleData.sampleInventory
+    var stallBought: Set<String> = []
+    var levelRewardsUnpaid = true
 
     public init(hasCharacter: Bool = true) {
         var user = SampleData.sampleUser
@@ -74,6 +81,7 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
         }
         lock.lock()
         defer { lock.unlock() }
+        if offline { throw APIError.network(URLError(.notConnectedToInternet)) }
         if let error = failNext {
             failNext = nil
             throw error
@@ -171,6 +179,9 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
             character.unspentAbilityPoints = 0
             self.storedCharacter = character
             self.user.hasCharacter = true
+            self.storedInventory = InventoryState(slots: SampleData.gearSlots(level: 1), consumables: SampleData.consumables([:]))
+            self.stallBought = []
+            self.levelRewardsUnpaid = true
             return character
         }
     }
@@ -210,6 +221,9 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
             self.storedCharacter = nil
             self.storedCoins = 0
             self.storedTransactions = []
+            self.storedInventory = InventoryState(slots: SampleData.gearSlots(level: 1), consumables: SampleData.consumables([:]))
+            self.stallBought = []
+            self.levelRewardsUnpaid = true
             self.user.hasCharacter = false
         }
     }
@@ -246,15 +260,25 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
             object.claimedAt = Date()
             self.storedObjects[id] = object
             self.storedCoins += object.rewardAC
-            return WorldObjectClaim(object: object, acAwarded: object.rewardAC, walletBalance: self.storedCoins)
+            // A chest holds a lamp as well (0.7.2), so the find has something to show.
+            var found: ItemFound?
+            if object.kind == .chest {
+                self.give(ConsumableId.lamp, count: 1)
+                found = ItemFound(kind: "CONSUMABLE", consumable: ConsumableId.lamp, name: "Lamp", icon: "lantern", source: "CHEST", fromName: object.name)
+            }
+            return WorldObjectClaim(object: object, acAwarded: object.rewardAC, walletBalance: self.storedCoins, itemFound: found)
         }
     }
     public func lure(at center: Coordinate) async throws -> [WorldObject] {
         try await run {
-            if self.storedCoins < 50 {
+            // A lamp from the bag first (0.7.2), then coins.
+            if self.takeConsumable(ConsumableId.lamp) {
+                // nothing to pay
+            } else if self.storedCoins < 50 {
                 throw APIError.server(code: "INSUFFICIENT_AC", message: "That costs 50 coins and you have \(self.storedCoins)", status: 409)
+            } else {
+                self.storedCoins -= 50
             }
-            self.storedCoins -= 50
             let lured = WorldObject(
                 id: UUID(),
                 kind: .monster,
@@ -272,7 +296,10 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
         }
     }
     public func lampCheck(at center: Coordinate) async throws -> LampCheck {
-        try await run { LampCheck(ok: true, cost: 50, placeName: "the towpath") }
+        try await run {
+            let lamps = self.storedInventory.count(of: ConsumableId.lamp)
+            return LampCheck(ok: true, cost: lamps > 0 ? 0 : 50, placeName: "the towpath", lampsInBag: lamps)
+        }
     }
     public func abilities() async throws -> [AbilityState] { try await run { try self.requireCharacter().abilities } }
     public func unlockAbility(id: String) async throws -> Character {

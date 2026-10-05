@@ -54,10 +54,13 @@ public struct EncounterTracker: Sendable {
     private var lastStatus: [UUID: EncounterStatus] = [:]
     private let activity: Activity
     public private(set) var fights: FightTracker?
+    /// How far off something comes into sight: 400 m, or further with Kenaz or a bell (`SIGHT_M`).
+    public let sightMeters: Double
 
-    public init(objects: [WorldObject], activity: Activity, fights: FightTracker.Setup? = nil) {
+    public init(objects: [WorldObject], activity: Activity, fights: FightTracker.Setup? = nil, sightMeters: Double? = nil) {
         self.objects = objects.filter { $0.status == .spawned }
         self.activity = activity
+        self.sightMeters = max(Self.inSightMeters, sightMeters ?? 0)
         if let fights {
             let tracker = FightTracker(objects: self.objects, setup: fights)
             self.fights = tracker.isEmpty ? nil : tracker
@@ -125,7 +128,7 @@ public struct EncounterTracker: Sendable {
             case .unknown:
                 continue
             }
-            if distance <= Self.inSightMeters, nearest == nil || distance < nearest!.distanceMeters {
+            if distance <= sightMeters, nearest == nil || distance < nearest!.distanceMeters {
                 nearest = status
             }
         }
@@ -148,6 +151,56 @@ public struct EncounterTracker: Sendable {
         }
         claimedIDs.insert(objectId)
         return (event, [])
+    }
+
+    // MARK: - Crash recovery (0.7.2)
+
+    /// What this tracker holds that a crash must not lose: what was in play, what
+    /// was claimed, and the events still to be sent with the ride.
+    public func gameState(quarryId: UUID?, fights setup: FightSetupState?) -> RideGameState {
+        RideGameState(objects: objects, claimedIDs: Array(claimedIDs), events: events, quarryId: quarryId, sightMeters: sightMeters,
+                      fights: setup)
+    }
+
+    /// The game layer put back after a crash: the same things in play, what was
+    /// claimed and noted kept, and the outing so far folded again, silently, so the
+    /// fights stand where they stood. Something the outing reached after the last
+    /// save is claimed by the replay and joins the events, as it would have.
+    public init(restoring game: RideGameState, activity: Activity, indexing: any CellIndexing, replaying fixes: [LocationFix]) {
+        self.init(objects: game.objects, activity: activity, fights: game.fights?.setup(activity: activity, indexing: indexing),
+                  sightMeters: game.sightMeters)
+        claimedIDs = Set(game.claimedIDs)
+        events = game.events
+        // A note lands on what is near when it was written: put each back at its time.
+        let notes = game.events
+            .filter { $0.method == KillMethodKind.lore.rawValue && !($0.note ?? "").isEmpty }
+            .sorted { $0.occurredAt < $1.occurredAt }
+        var next = 0
+        var gain = 0.0
+        var lastAltitude: Double?
+        for fix in fixes {
+            while next < notes.count, notes[next].occurredAt < fix.timestamp {
+                replay(note: notes[next].note ?? "")
+                next += 1
+            }
+            if let altitude = fix.altitude {
+                if let last = lastAltitude, altitude > last { gain += altitude - last }
+                lastAltitude = altitude
+            }
+            _ = update(position: fix.coordinate, timestamp: fix.timestamp, altitude: fix.altitude, elevationGainMeters: gain,
+                       accuracy: fix.horizontalAccuracy)
+        }
+        while next < notes.count {
+            replay(note: notes[next].note ?? "")
+            next += 1
+        }
+    }
+
+    private mutating func replay(note: String) {
+        guard var tracker = fights else { return }
+        let news = tracker.wrote(note: note)
+        fights = tracker
+        for case .seenOff(let object) in news { claimedIDs.insert(object.id) }
     }
 
     // MARK: - Internals

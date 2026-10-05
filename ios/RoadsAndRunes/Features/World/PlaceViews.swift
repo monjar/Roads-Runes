@@ -208,12 +208,15 @@ extension PlaceCard {
     func lampSection(cost: Int) -> some View {
         let purse = container.session.character?.activeCoins ?? 0
         let refused = lampCheck.map { !$0.ok } ?? false
+        // A lamp in the bag is used before coins (0.7.2): no price, and the purse does not matter.
+        let fromBag = lampCheck?.usesLampFromBag == true
+        let cannotPay = !fromBag && purse < cost
         Divider().overlay(Theme.Colors.line)
         HStack(alignment: .top, spacing: 10) {
             MarkView(.lamp).frame(width: 34, height: 34)
             VStack(alignment: .leading, spacing: 3) {
                 Text("Light a lamp").font(Theme.Typography.text(15, .semibold)).foregroundStyle(Theme.Colors.ink)
-                Text(lampLine(cost: cost, purse: purse))
+                Text(lampLine(cost: cost, purse: purse, fromBag: fromBag))
                     .font(Theme.Typography.caption).foregroundStyle(refused ? Theme.Colors.terracottaDeep : Theme.Colors.muted)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("place.lampLine")
@@ -222,22 +225,26 @@ extension PlaceCard {
         Button(action: onLamp) {
             HStack(spacing: 8) {
                 if leavingLamp { ProgressView().tint(Theme.Colors.ink) } else { IconShape(.lantern).frame(width: 18, height: 18) }
-                Text("Light a lamp · \(LoreCopy.purse(cost))")
+                Text(fromBag ? "Light a lamp" : "Light a lamp · \(LoreCopy.purse(cost))")
             }
             .font(Theme.Typography.text(14, .semibold)).foregroundStyle(Theme.Colors.ink)
             .frame(maxWidth: .infinity).frame(height: 40)
             .background(Theme.Colors.surface, in: Capsule())
         }
         .buttonStyle(.pressable)
-        .disabled(leavingLamp || purse < cost || refused)
-        .opacity(purse < cost || refused ? 0.5 : 1)
+        .disabled(leavingLamp || cannotPay || refused)
+        .opacity(cannotPay || refused ? 0.5 : 1)
         .accessibilityIdentifier("place.lamp")
         if let lampError { ErrorLine(text: lampError) }
     }
 
-    private func lampLine(cost: Int, purse: Int) -> String {
+    private func lampLine(cost: Int, purse: Int, fromBag: Bool) -> String {
         if let lampCheck, !lampCheck.ok {
             return lampCheck.message ?? "A lamp won't work here. Try a park, a pub or a landmark."
+        }
+        if fromBag {
+            let place = lampCheck?.placeName.map { " A creature will come to \($0)." } ?? ""
+            return "Uses a lamp from your bag.\(place)"
         }
         if purse < cost {
             return "A lamp costs \(cost) coins and you have \(purse). Open chests and defeat creatures to earn more."

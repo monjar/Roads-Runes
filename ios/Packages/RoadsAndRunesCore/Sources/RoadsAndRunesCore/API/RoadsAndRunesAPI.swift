@@ -46,6 +46,21 @@ public protocol RoadsAndRunesAPI: Sendable {
     func riderProfile() async throws -> RiderProfile
     func updateRiderProfile(_ profile: RiderProfile) async throws -> RiderProfile
 
+    // MARK: What you carry (0.7.2)
+    /// The slots, the bag and the consumables. The first call after 0.7.2 pays every
+    /// level already reached and says so in `levelRewardsPaid`, once.
+    func inventory() async throws -> InventoryState
+    /// Wear an item in its slot, or take the slot's item off (`itemId` nil).
+    func wearGear(_ choice: GearChoice) async throws -> InventoryState
+    func sellItem(id: UUID) async throws -> SellResult
+    /// Use a map piece or open a sealed chest (a lamp is used by `lure`, a rest token by itself).
+    func useConsumable(id: String, _ request: ConsumableUseRequest) async throws -> ConsumableUseResult
+    /// This week's four offers, or when the stall opens.
+    func stall() async throws -> Stall
+    func buyOffer(id: String) async throws -> InventoryState
+    /// What each of the fifty levels gives, and which are reached.
+    func levelRewards() async throws -> [LevelStep]
+
     // MARK: World
     func world(center: Coordinate, radiusMeters: Double) async throws -> WorldSnapshot
     func exploration(in box: BoundingBox) async throws -> ExplorationResponse

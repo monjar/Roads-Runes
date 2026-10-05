@@ -46,6 +46,8 @@ public enum RewardCopy {
         case "SET_COMPLETED": return "Set complete"
         case "STORY_ARC": return "Story arc finished"
         case "WEEK_NOTICE": return "This week's notice"
+        case "ITEM_SOLD": return "Sold on the spot"
+        case "LEVEL_REWARD": return "Level reward"
         default: return humanised(kind)
         }
     }

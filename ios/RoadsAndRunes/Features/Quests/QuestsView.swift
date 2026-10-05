@@ -279,6 +279,9 @@ struct QuestDetailView: View {
                             FactTile(value: formatter.duration(seconds: model.route.map { Double($0.estimatedDurationSeconds) } ?? Double(quest.estimatedDurationMinutes * 60)), label: "At your pace")
                             FactTile(value: "\(quest.rewards.xp ?? quest.baseXP)", label: rewardLabel(quest), valueColor: Theme.Colors.sageDeep)
                         }
+                        ForEach(Array(quest.rewards.rewardItems.enumerated()), id: \.offset) { _, item in
+                            QuestItemRewardLine(item: item)
+                        }
                         HStack(spacing: 8) {
                             SuitabilityChip(difficulty: quest.difficulty)
                             Text(suitabilityLine(quest)).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).lineLimit(2)
