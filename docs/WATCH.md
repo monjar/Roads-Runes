@@ -92,6 +92,19 @@ with a mark for each thing (creatures defeated, chests, coins, XP, a level,
 up to six finds) and a Done button that returns to the idle screen. One that
 arrives more than an hour late is dropped.
 
+## Legends (0.8.0)
+
+While a legend is the quarry or the nearest foe, the Quest page draws its mark
+inside three arcs, one per phase: broken ones filled gold, the current one
+draining in tenths, the rest whole and dim; no numbers. A phase broken is one
+success tap (a fight tap, never a turn tap) and the overlay: the legend's
+mark in a gold ring, "PHASE BROKEN!", and how many phases are left. On the map
+the legend is the largest mark, gold-ringed; a lair is one mark at its middle.
+Journey's end on the wrist adds the legend's line, the lair's count or its
+great chest, and buried treasure found. The complication shows the legend's
+mark while it is the quarry. `WatchFight` gains optional `phase`/`phases`;
+the overlay's outcome `PHASE`; marks of kind `LEGEND` and `LAIR`.
+
 ## Before a journey (0.7.3)
 
 The idle screen is **Next up**: the streak, the bounty's mark and how far,

@@ -72,6 +72,10 @@ alone and invent no new lore, cast lines or mysteries for it.
 | A note to your future self at a place | **letter**; the button is **Leave a letter** | message, cairn |
 | A real reward set against coins | **savings goal** | treasury |
 | The picture of a journey to send someone | **share card** | — |
+| A great creature that takes several journeys | a **legend** ("A legend has woken: the Fog Dragon"); its health comes in three **phases**, and breaking one is "**Phase broken!**" | boss, old one, raid |
+| Seven tiles round a park to visit | a **lair** ("Visit 5 of its 7 tiles in 14 days") | dungeon |
+| A map with no marker, only a clue | **treasure map**, its **clue**, the **buried treasure** | riddle, fragment |
+| A lair's reward | a **great chest** | strongbox |
 
 Keep as they are: XP, level, runes, **inscribe**, rank, bounty, quest, quest
 board, Codex, Journal, deeds, titles, the fog, lamp, gear, bag.
