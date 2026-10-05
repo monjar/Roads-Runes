@@ -66,6 +66,10 @@ extension Mark {
     }
 
     static func of(_ offer: StallOffer) -> Mark {
+        // A look (0.9.0): the ink swirl for an ink, the class crest's laurels for a frame.
+        if offer.isCosmetic {
+            return .token(GameIcon.named(offer.icon, or: offer.lookKind == .ink ? .inkSwirl : .laurels), ring: .gold)
+        }
         let fallback: GameIcon = offer.isGear ? .forItem(offer.itemId ?? "") : .forConsumable(offer.consumable ?? "")
         return .item(GameIcon.named(offer.icon, or: fallback), rarity: offer.rarity)
     }

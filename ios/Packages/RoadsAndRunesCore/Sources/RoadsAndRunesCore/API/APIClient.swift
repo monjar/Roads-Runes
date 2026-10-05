@@ -295,6 +295,23 @@ public actor APIClient: RoadsAndRunesAPI {
         return open.clues
     }
 
+    // MARK: The parish (0.9.0)
+
+    public func districts() async throws -> [District] { try await request(Endpoints.districts()) }
+    public func district(id: String) async throws -> District { try await request(Endpoints.district(id: id)) }
+    /// Outside every district the server answers null or 404: nil either way.
+    public func districtHere(at point: Coordinate) async throws -> District? {
+        do {
+            let found: District? = try await request(Endpoints.districtHere(at: point))
+            return found
+        } catch let error as APIError {
+            if case .server(_, _, let status) = error, status == 404 { return nil }
+            throw error
+        }
+    }
+    public func atlas(year: Int) async throws -> Atlas { try await request(Endpoints.atlas(year: year)) }
+    public func setLook(_ choice: LookChoice) async throws -> InventoryState { try await request(try Endpoints.setLook(choice)) }
+
     // MARK: Between rides (0.7.3)
 
     public func pledges(today: String) async throws -> PledgeState { try await request(Endpoints.pledges(today: today)) }

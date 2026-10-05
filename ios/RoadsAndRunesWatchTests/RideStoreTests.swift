@@ -441,4 +441,92 @@ final class RideStoreTests: XCTestCase {
         XCTAssertEqual(JourneyEndCard.lines(for: visiting).map(\.text), ["Lair: 3 of 5 tiles"])
         XCTAssertEqual(JourneyEndCard.lines(for: visiting).first?.mark, .token(.lair, ring: .sage))
     }
+
+    // MARK: Districts (0.9.0)
+
+    private func moving(_ speed: Double?, district: String?, state: NavigationState = .active) -> WatchNavigationUpdate {
+        WatchNavigationUpdate(state: state, instruction: instruction(1), distanceToInstructionMeters: 400, distanceMeters: 4_000,
+                              elapsedSeconds: 900, elevationGainMeters: 40, speedMps: speed, timestamp: Date(), districtName: district)
+    }
+
+    func testADistrictIsNamedOnceAtTheNextStandstillNeverWhileMoving() throws {
+        let store = RideStore()
+        let t0 = Date(timeIntervalSince1970: 200_000)
+        store.apply(summary: summary(), receivedAt: t0)
+        let riverlands = "Rotherhithe, the Riverlands"
+        // Riding into Rotherhithe: nothing to read while moving.
+        store.apply(update: moving(6.2, district: riverlands), receivedAt: t0.addingTimeInterval(10))
+        XCTAssertNil(store.districtLine(at: t0.addingTimeInterval(11)))
+        store.apply(update: moving(5.8, district: riverlands), receivedAt: t0.addingTimeInterval(20))
+        XCTAssertNil(store.districtLine(at: t0.addingTimeInterval(40)))
+
+        // Stopping: once still for five seconds it is named, even though the phone,
+        // with nothing new to say, sends no more updates.
+        let stop = try WatchMessages.navigationUpdate(from: WatchMessages.navigationUpdate(moving(0.3, district: riverlands)))
+        store.apply(update: stop, receivedAt: t0.addingTimeInterval(60))
+        XCTAssertNil(store.districtLine(at: t0.addingTimeInterval(63)), "not still for long enough")
+        XCTAssertEqual(store.districtLine(at: t0.addingTimeInterval(65)), riverlands)
+        store.apply(update: moving(0, district: riverlands), receivedAt: t0.addingTimeInterval(70))
+        XCTAssertEqual(store.districtLine(at: t0.addingTimeInterval(75)), riverlands, "it stays while the rider stands")
+        // Old news is not shown: the phone has been quiet too long to know.
+        XCTAssertNil(store.districtLine(at: t0.addingTimeInterval(70 + RideStore.staleAfter + 1)))
+
+        // Moving off: it goes, and this journey does not name it again.
+        store.apply(update: moving(4.5, district: riverlands), receivedAt: t0.addingTimeInterval(90))
+        XCTAssertNil(store.districtLine(at: t0.addingTimeInterval(90)))
+        store.apply(update: moving(0, district: riverlands), receivedAt: t0.addingTimeInterval(200))
+        XCTAssertNil(store.districtLine(at: t0.addingTimeInterval(210)), "once per district per journey")
+
+        // The next district is named at its own standstill.
+        let fog = "Bermondsey, in the fog"
+        store.apply(update: moving(6, district: fog), receivedAt: t0.addingTimeInterval(300))
+        store.apply(update: moving(0.2, district: fog), receivedAt: t0.addingTimeInterval(310))
+        XCTAssertEqual(store.districtLine(at: t0.addingTimeInterval(316)), fog)
+    }
+
+    func testANewJourneyNamesTheDistrictsAgainAndAnOlderPhoneNamesNone() {
+        let store = RideStore()
+        let t0 = Date(timeIntervalSince1970: 300_000)
+        let riverlands = "Rotherhithe, the Riverlands"
+        store.apply(summary: summary(), receivedAt: t0)
+        store.apply(update: moving(0, district: riverlands), receivedAt: t0)
+        store.apply(update: moving(0, district: riverlands), receivedAt: t0.addingTimeInterval(6))
+        XCTAssertEqual(store.districtLine(at: t0.addingTimeInterval(6)), riverlands)
+        // Paused: the footer says so instead, and the line waits.
+        store.apply(update: moving(0, district: riverlands, state: .paused), receivedAt: t0.addingTimeInterval(8))
+        XCTAssertTrue(store.isPaused)
+        store.apply(update: moving(5, district: riverlands), receivedAt: t0.addingTimeInterval(20))
+        store.apply(update: moving(nil, district: nil, state: .completed), receivedAt: t0.addingTimeInterval(30))
+        XCTAssertNil(store.districtLine(at: t0.addingTimeInterval(40)), "no journey, no district")
+
+        // The next journey through the same district names it again.
+        store.apply(summary: summary(), receivedAt: t0.addingTimeInterval(1_000))
+        store.apply(update: moving(0.1, district: riverlands), receivedAt: t0.addingTimeInterval(1_010))
+        XCTAssertEqual(store.districtLine(at: t0.addingTimeInterval(1_016)), riverlands)
+
+        // An older phone sends no district: nothing is named.
+        let older = RideStore()
+        older.apply(summary: summary(), receivedAt: t0)
+        older.apply(update: moving(0, district: nil), receivedAt: t0)
+        older.apply(update: moving(0, district: nil), receivedAt: t0.addingTimeInterval(10))
+        XCTAssertNil(older.districtLine(at: t0.addingTimeInterval(20)))
+    }
+
+    func testJourneysEndSaysWhichDistrictsBecameYoursAndWhichAreComplete() throws {
+        var full = end(endedAt: nil)
+        full.districts = ["Rotherhithe", "Bermondsey"]
+        full.completedDistricts = ["Rotherhithe"]
+        let decoded = try WatchMessages.journeyEnd(from: WatchMessages.journeyEnd(full))
+        let lines = JourneyEndCard.lines(for: decoded)
+        XCTAssertEqual(Array(lines.map(\.text).prefix(4)), ["Level up!", "District complete!", "Yours: Rotherhithe, Bermondsey", "2 creatures defeated"])
+        XCTAssertEqual(lines[1].detail, "Rotherhithe")
+        XCTAssertEqual(lines[1].mark, .token(.laurels, ring: .gold))
+        XCTAssertEqual(lines[2].mark, .token(.flag, ring: .sage))
+
+        let two = WatchJourneyEnd(completedDistricts: ["Rotherhithe", "Deptford"])
+        XCTAssertEqual(JourneyEndCard.lines(for: two).map(\.text), ["2 districts complete!"])
+        XCTAssertEqual(JourneyEndCard.lines(for: two).first?.detail, "Rotherhithe, Deptford")
+        // None, or an older phone: no district lines.
+        XCTAssertEqual(JourneyEndCard.lines(for: WatchJourneyEnd(districts: [], completedDistricts: nil)).map(\.text), ["Saved to your Journal"])
+    }
 }

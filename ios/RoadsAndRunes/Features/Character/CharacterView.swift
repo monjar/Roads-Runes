@@ -72,7 +72,7 @@ struct CharacterView: View {
                     if let model {
                         VStack(spacing: 0) {
                             if let character = model.character {
-                                CharacterHeader(character: character)
+                                CharacterHeader(character: character, crestFrame: container.session.inventory?.look?.crestFrame)
                             }
                             sheet(model)
                         }
@@ -147,6 +147,12 @@ struct CharacterView: View {
                 NavigationLink { StallScreen() } label: { moreRow("The stall", icon: .shop) }
                     .buttonStyle(.pressable)
                     .accessibilityIdentifier("character.stall")
+            }
+            // Your route ink, marker frame and crest frame (0.9.0), on a server that has them.
+            if container.session.inventory?.look != nil || container.session.inventory?.cosmetics != nil {
+                NavigationLink { LookScreen() } label: { moreRow("Look", icon: .inkSwirl) }
+                    .buttonStyle(.pressable)
+                    .accessibilityIdentifier("character.look")
             }
             if character?.titlePinned != nil {
                 NavigationLink { TitlesScreen() } label: { moreRow("Titles", icon: .laurels) }

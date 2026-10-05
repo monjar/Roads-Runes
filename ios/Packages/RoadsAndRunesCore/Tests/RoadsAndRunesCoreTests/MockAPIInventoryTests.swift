@@ -97,7 +97,7 @@ final class MockAPIInventoryTests: XCTestCase {
         let api = MockAPI()
         let stall = try await api.stall()
         XCTAssertTrue(stall.open)
-        XCTAssertEqual(stall.offers.count, 4)
+        XCTAssertEqual(stall.offers.count, 5, "four, and (0.9.0) a look")
         let poor = await code { try await api.buyOffer(id: "w41-2") }
         XCTAssertEqual(poor, APIErrorCode.insufficientCoins)
         api.storedCoins = 100

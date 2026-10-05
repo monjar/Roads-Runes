@@ -52,6 +52,9 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     /// Legends, lairs and treasure (0.8.0): the legend awake and those defeated, and the open clues.
     var storedLegends: LegendsState = SampleData.sampleLegends
     var storedClues: [TreasureClue] = []
+    /// The parish (0.9.0): the districts passed through, by id, and the Atlas.
+    var storedDistricts: [District] = SampleData.sampleDistricts
+    var storedAtlas: Atlas = SampleData.sampleAtlas
 
     public init(hasCharacter: Bool = true) {
         var user = SampleData.sampleUser
@@ -81,6 +84,13 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         storedLegends = legends
+    }
+
+    /// Sets the districts as a test wants them.
+    public func setDistricts(_ districts: [District]) {
+        lock.lock()
+        defer { lock.unlock() }
+        storedDistricts = districts
     }
 
     /// Puts something in the world, or replaces what is there, for a test to ride past.

@@ -72,6 +72,9 @@ struct NextUpCard: View {
     let activity: Activity
     /// Today's pledge, as a row under the card's line (0.7.3).
     var pledge: Pledge? = nil
+    /// The district here, when it is close to a milestone (0.9.0):
+    /// "Rotherhithe is 47% explored. 3% to make it yours."
+    var district: String?
     let onAction: () -> Void
 
     private var formatter: UnitFormatter { UnitFormatter(units: units) }
@@ -82,6 +85,18 @@ struct NextUpCard: View {
             if let pledge {
                 Divider().overlay(Theme.Colors.line)
                 PledgeRow(pledge: pledge)
+            }
+            if let district {
+                Divider().overlay(Theme.Colors.line)
+                HStack(spacing: 8) {
+                    MarkView(.icon(.village, spot: .sage)).frame(width: 18, height: 18)
+                    Text(district)
+                        .font(Theme.Typography.text(12, .semibold, relativeTo: .caption)).foregroundStyle(Theme.Colors.sageText)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("nextUp.district")
             }
         }
         .padding(.vertical, 10)

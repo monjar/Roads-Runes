@@ -67,6 +67,17 @@ struct NavigationScreen: View {
                 .font(.system(size: 11, weight: .bold))
                 .tracking(1.5)
                 .foregroundStyle(WatchTheme.secondary)
+        } else if let district = store.districtLine(at: date) {
+            // A district new to this journey, named at a standstill (0.9.0), in
+            // the speed's place: nothing to read while moving.
+            Text(district)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(WatchTheme.sageLight)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+                .padding(.horizontal, 6)
+                .accessibilityIdentifier("watch.navigation.district")
         } else if let speed = store.update?.speedMps {
             (Text(store.formatter.speedValue(metersPerSecond: speed).formatted(.number.precision(.fractionLength(1)))).bold().foregroundStyle(.white)
                 + Text(" \(store.formatter.speedUnitLabel)").foregroundStyle(WatchTheme.secondary))

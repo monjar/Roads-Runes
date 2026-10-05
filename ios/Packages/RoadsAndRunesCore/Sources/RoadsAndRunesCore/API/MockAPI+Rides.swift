@@ -72,6 +72,9 @@ extension MockAPI {
                 return levelUp
             }
             summary.streak = StreakOutcome(days: 4, longest: 6, extended: true, restTokenUsed: true)
+            // The parish (0.9.0): the districts passed through, and the week's pay.
+            summary.districts = SampleData.sampleDistrictOutcomes
+            summary.districtPay = SampleData.sampleDistrictPay
             return summary
         }
     }
@@ -163,7 +166,10 @@ extension MockAPI {
 
     // MARK: Friends & feed
 
-    public func storyArcs() async throws -> [StoryArc] { try await run { SampleData.sampleStoryArcs } }
+    /// The authored arcs, and (0.9.0) Midsummer's arc, open for another nine days.
+    public func storyArcs() async throws -> [StoryArc] {
+        try await run { SampleData.sampleStoryArcs + [SampleData.sampleSeasonArc(endsAt: Date().addingTimeInterval(9 * 86_400))] }
+    }
     public func weekNotice() async throws -> WeekNotice { try await run { SampleData.sampleWeekNotice } }
     public func runes() async throws -> RunesState { try await run { self.storedRunes } }
     public func raiseRune(id: String) async throws -> RunesState {

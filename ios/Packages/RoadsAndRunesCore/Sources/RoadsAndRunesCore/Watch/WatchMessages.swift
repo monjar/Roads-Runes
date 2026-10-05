@@ -120,6 +120,11 @@ public struct WatchNavigationUpdate: Codable, Hashable, Sendable {
     /// World marks (and objective places) opened, defeated or done on this ride,
     /// all of them so far, so the Watch map can take them off. Nil from an older phone.
     public var goneMarkIds: [UUID]?
+    /// The district the rider is in, with its title (0.9.0): "Rotherhithe, the
+    /// Riverlands" or "Rotherhithe, in the fog". The Watch names each one once a
+    /// journey, at a standstill (`DistrictNaming`, by `speedMps`), never while
+    /// moving. Nil while the phone does not know, and from an older phone.
+    public var districtName: String?
 
     public init(
         state: NavigationState, instruction: Instruction? = nil, distanceToInstructionMeters: Double? = nil,
@@ -127,8 +132,9 @@ public struct WatchNavigationUpdate: Codable, Hashable, Sendable {
         distanceMeters: Double, elapsedSeconds: Double, elevationGainMeters: Double, heartRate: Int? = nil,
         speedMps: Double? = nil, latitude: Double? = nil, longitude: Double? = nil, timestamp: Date = Date(),
         encounterLine: String? = nil, newTerritoryMeters: Double? = nil, remainingMeters: Double? = nil,
-        courseDegrees: Double? = nil, fight: WatchFight? = nil, goneMarkIds: [UUID]? = nil
+        courseDegrees: Double? = nil, fight: WatchFight? = nil, goneMarkIds: [UUID]? = nil, districtName: String? = nil
     ) {
+        self.districtName = districtName
         self.fight = fight
         self.goneMarkIds = goneMarkIds
         self.courseDegrees = courseDegrees

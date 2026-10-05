@@ -28,6 +28,8 @@ final class AppContainer {
     let pledges: PledgeStore
     /// The legend awake and the treasure maps' clues (0.8.0).
     let legends: LegendStore
+    /// The districts passed through and the one here (0.9.0).
+    let districts: DistrictStore
 
     /// Pending Strava OAuth code delivered through the URL scheme.
     var pendingStravaCode: String?
@@ -88,6 +90,7 @@ final class AppContainer {
         self.nudges = nudges
         self.pledges = PledgeStore(api: resolvedAPI, session: session, nudges: nudges)
         self.legends = LegendStore(api: resolvedAPI, worldCache: worldCache)
+        self.districts = DistrictStore(api: resolvedAPI)
         // Signature haptics (0.8.0) at rest only, and never from tests or previews.
         SignatureHapticsPlayer.shared.isRiding = { [weak recorder] in recorder?.isActive ?? false }
         SignatureHapticsPlayer.shared.enabled = !inMemory && !uiTesting && !Self.isPreview

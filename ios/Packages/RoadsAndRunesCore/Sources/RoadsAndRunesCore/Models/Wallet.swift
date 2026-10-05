@@ -31,6 +31,9 @@ public enum WalletTransactionKind: String, SafeEnum {
     case stall = "STALL"
     case itemSold = "ITEM_SOLD"
     case levelReward = "LEVEL_REWARD"
+    /// 0.9.0: a district completed, and the week's pay for the districts that are yours.
+    case district = "DISTRICT"
+    case districtPay = "DISTRICT_PAY"
     case unknown = "UNKNOWN"
 
     /// The line in coin history, in plain words (docs/VOICE.md).
@@ -54,6 +57,8 @@ public enum WalletTransactionKind: String, SafeEnum {
         case .stall: return "Bought at the stall"
         case .itemSold: return "Item sold"
         case .levelReward: return "Level reward"
+        case .district: return "District complete"
+        case .districtPay: return "Weekly pay from your districts"
         case .unknown: return "Coins"
         }
     }

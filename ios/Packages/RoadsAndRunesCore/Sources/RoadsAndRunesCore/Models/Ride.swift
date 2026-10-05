@@ -271,6 +271,16 @@ public struct AdventureSummary: Codable, Hashable, Sendable {
     public var treasureFound: TreasureFinds?
     /// A legend that woke at the end of this journey: "A legend has woken: the Fog Dragon".
     public var legendWoke: LegendWoke?
+    /// 0.9.0: the districts this journey passed through (new tiles, became yours,
+    /// District complete!) and the week's pay for those that are yours, on the
+    /// first journey of an ISO week.
+    public var districts: [DistrictOutcome]?
+    public var districtPay: DistrictPay?
+
+    /// The districts this journey made yours, by name.
+    public var districtsMadeYours: [String] { (districts ?? []).filter(\.becameYours).map(\.name) }
+    /// The districts this journey completed, by name.
+    public var districtsCompleted: [String] { (districts ?? []).filter(\.completed).map(\.name) }
 
     /// Buried treasure opened on this journey, however the server sent it.
     public var treasures: [TreasureFound] { treasureFound?.finds ?? [] }

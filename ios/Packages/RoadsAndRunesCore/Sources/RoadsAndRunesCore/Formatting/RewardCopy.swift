@@ -48,6 +48,8 @@ public enum RewardCopy {
         case "WEEK_NOTICE": return "This week's notice"
         case "ITEM_SOLD": return "Sold on the spot"
         case "LEVEL_REWARD": return "Level reward"
+        case "DISTRICT": return "District complete"
+        case "DISTRICT_PAY": return "Weekly pay from your districts"
         default: return humanised(kind)
         }
     }

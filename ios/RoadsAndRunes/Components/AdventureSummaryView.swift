@@ -37,7 +37,7 @@ struct AdventureSummaryView: View {
 
     /// The order things arrive in.
     private enum Stage: Int, Comparable {
-        case trace, fight, legend, xp, lines, coins, levels, world, lair, treasure, codex, runes, items, quest, entry, rest
+        case trace, fight, legend, xp, lines, coins, levels, world, districts, lair, treasure, codex, runes, items, quest, entry, rest
 
         static func < (lhs: Stage, rhs: Stage) -> Bool { lhs.rawValue < rhs.rawValue }
     }
@@ -88,6 +88,8 @@ struct AdventureSummaryView: View {
                             if stage >= .world { worldSection.id(Stage.world) }
                             // A pledge kept (0.7.3): said once, with the thing's mark. A missed one is never mentioned.
                             if stage >= .world, let kept = summary.pledge, kept.kept { PledgeKeptLine(kept: kept) }
+                            // The districts passed through, made yours or completed, and the week's pay (0.9.0).
+                            if stage >= .districts, hasDistricts { districtsSection.id(Stage.districts) }
                             // A lair's tiles, or its great chest; buried treasure found (0.8.0).
                             if stage >= .lair, let lair = summary.lair { LairOutcomeSection(outcome: lair).id(Stage.lair) }
                             if stage >= .treasure, !summary.treasures.isEmpty { TreasureFoundSection(finds: summary.treasures).id(Stage.treasure) }
@@ -207,6 +209,14 @@ struct AdventureSummaryView: View {
             try? await Task.sleep(for: .milliseconds(700))
         }
         if hasWorld { await arrive(at: .world, after: 0.5) }
+        if hasDistricts {
+            await arrive(at: .districts, after: 0.5)
+            // A district made yours or completed is a celebration; new tiles alone are not.
+            if !summary.districtsMadeYours.isEmpty || !summary.districtsCompleted.isEmpty {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                try? await Task.sleep(for: .milliseconds(600))
+            }
+        }
         if let lair = summary.lair {
             await arrive(at: .lair, after: 0.5)
             // The great chest opens: two knocks and a rattle.
@@ -403,6 +413,54 @@ struct AdventureSummaryView: View {
         if summary.weekNotice?.paid == true || summary.streak?.restTokenUsed == true { return true }
         guard let world = summary.worldObjects else { return summary.streak?.extended == true }
         return !world.claimed.isEmpty || world.missed.contains { $0.reason == "UNBEATEN" } || summary.streak?.extended == true
+    }
+
+    /// The districts this journey passed through, and the week's pay (0.9.0).
+    private var hasDistricts: Bool { !(summary.districts ?? []).isEmpty || (summary.districtPay?.coins ?? 0) > 0 }
+
+    private var districtsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Eyebrow(text: "Districts", color: Theme.Colors.sageDeep)
+            ForEach(summary.districts ?? []) { district in
+                HStack(alignment: .top, spacing: 10) {
+                    MarkView(.icon(.village, spot: district.completed || district.becameYours ? Spot.sage : nil)).frame(width: 24, height: 24)
+                    VStack(alignment: .leading, spacing: 2) {
+                        if district.completed {
+                            Text("\(DistrictCopy.complete) \(district.name)")
+                                .font(Theme.Typography.text(15, .bold)).foregroundStyle(Theme.Colors.sageDeep)
+                                .accessibilityIdentifier("summary.districtComplete")
+                        } else if district.becameYours {
+                            Text(DistrictCopy.becameYours(district.name))
+                                .font(Theme.Typography.text(15, .bold)).foregroundStyle(Theme.Colors.sageDeep)
+                                .accessibilityIdentifier("summary.districtYours")
+                        }
+                        Text(DistrictCopy.outcome(district))
+                            .font(Theme.Typography.text(14, district.completed || district.becameYours ? .regular : .semibold))
+                            .foregroundStyle(district.completed || district.becameYours ? Theme.Colors.inkSoft : Theme.Colors.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if district.becameYours, !district.completed {
+                            Text("It pays coins every week while you keep visiting.")
+                                .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("summary.district")
+            }
+            if let pay = summary.districtPay, pay.coins > 0 {
+                HStack(spacing: 8) {
+                    MarkView(.coin).frame(width: 16, height: 16)
+                    Text(DistrictCopy.pay(pay)).font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.terracottaDeep)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("summary.districtPay")
+            }
+        }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("summary.districts")
     }
 
     /// Creatures met for the first time on this journey: added to the Codex.
@@ -754,6 +812,8 @@ struct AdventureSummaryView: View {
         }
         var line = "\(standing.arcTitle) · \(standing.stepsDone) of \(standing.stepsTotal)."
         if let next = standing.nextTitle { line += " Next: \(next)." }
+        // A festival's arc (0.9.0) closes with its window.
+        if standing.isSeason, !standing.arcCompleted, let ends = standing.closesAt { line += " \(SeasonCopy.ends(ends))." }
         return line
     }
 

@@ -69,4 +69,11 @@ public struct Stillness: Sendable {
         if stillSince == nil { stillSince = now }
         return now.timeIntervalSince(stillSince!) >= Self.seconds
     }
+
+    /// Still by `now` on the speeds so far, with no newer one: the Watch (0.9.0)
+    /// asks between the phone's updates, which stop coming when the rider does.
+    public func isStill(at now: Date) -> Bool {
+        guard let stillSince else { return false }
+        return now.timeIntervalSince(stillSince) >= Self.seconds
+    }
 }

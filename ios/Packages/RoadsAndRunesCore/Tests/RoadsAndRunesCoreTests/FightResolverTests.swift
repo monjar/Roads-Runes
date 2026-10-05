@@ -49,6 +49,8 @@ final class FightResolverTests: XCTestCase {
             var holdBefore: Double?
             /// 0.8.0: an elder, a bounty or a legend (Thurisaz); a legend's phase and the capstones against it.
             var elder: Bool?
+            /// 0.9.0: the creature the journey was planned for (Tiwaz, `QUARRY_CARRIED_SCALE`).
+            var quarry: Bool?
             var legend: LegendCase?
             var vsLegendsPct: [String: Double]?
             var legendWordRadiusMeters: Double?
@@ -84,7 +86,7 @@ final class FightResolverTests: XCTestCase {
             sheet.legendWordRadiusMeters = c.legendWordRadiusMeters
             let cfg = sheet.fightConstants(fixture.combat)
             var pct = c.pct
-            var against = sheet.foeConstants(cfg, elder: c.elder ?? false)
+            var against = sheet.foeConstants(cfg, elder: c.elder ?? false, quarry: c.quarry ?? false)
             if let spec = c.legend {
                 // The legend's phase as the ride fights it (`Legend.foe`), and the build against a legend.
                 let phase = LegendPhase(n: spec.phase, weakTo: spec.weakTo, resists: spec.resists, healthMax: spec.healthMax,
@@ -101,7 +103,7 @@ final class FightResolverTests: XCTestCase {
                 XCTAssertEqual(foe.holdMax, c.foe.hold, c.name)
                 XCTAssertEqual(foe.holdBefore, c.foe.holdBefore ?? c.foe.hold, c.name)
                 (pct, against) = FightTracker.against(object, sheet: sheet, cfg: cfg, madeGoodMeters: 0,
-                                                      onFoot: ["RUN", "WALK"].contains(c.activity.uppercased()))
+                                                      onFoot: ["RUN", "WALK"].contains(c.activity.uppercased()), quarry: c.quarry ?? false)
             }
             let hit = c.runeHit.map { FightResolver.RuneHit(shape: $0[0].stringValue ?? "", index: $0[1].intValue ?? 0) }
             let report = FightResolver.resolve(points, foe: foe, activity: c.activity, pct: pct, cfg: against,

@@ -174,7 +174,14 @@ extension MockAPI {
             self.storedCoins -= offer.price
             self.storedTransactions.insert(WalletTransaction(id: UUID(), amount: -offer.price, kind: .stall, createdAt: Date()), at: 0)
             self.stallBought.insert(id)
-            if let itemId = offer.itemId {
+            if offer.isCosmetic, let itemId = offer.itemId {
+                // A look (0.9.0): owned, not worn, and never in the bag.
+                var owned = self.storedInventory.cosmetics ?? []
+                if !owned.contains(where: { $0.itemId == itemId }) {
+                    owned.append(Cosmetic(itemId: itemId, name: CosmeticCatalog.name(itemId), color: offer.color, source: "STALL"))
+                }
+                self.storedInventory.cosmetics = owned
+            } else if let itemId = offer.itemId {
                 _ = self.receive(SampleData.gearItem(itemId, source: "STALL"), source: "STALL")
             } else if let consumable = offer.consumable {
                 self.give(consumable, count: 1)

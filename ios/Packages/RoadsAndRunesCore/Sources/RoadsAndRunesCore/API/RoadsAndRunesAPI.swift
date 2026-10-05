@@ -71,6 +71,18 @@ public protocol RoadsAndRunesAPI: Sendable {
     /// The treasure maps' clues still open (one at a time).
     func treasureClues() async throws -> [TreasureClue]
 
+    // MARK: The parish (0.9.0)
+    /// The districts this player has passed through, last passed first.
+    func districts() async throws -> [District]
+    /// One district with its ledger.
+    func district(id: String) async throws -> District
+    /// The district at a point; nil outside every district.
+    func districtHere(at point: Coordinate) async throws -> District?
+    /// Every journey of a year on one map, its days, and its numbers.
+    func atlas(year: Int) async throws -> Atlas
+    /// Wear an ink, a marker frame or a crest frame; the inventory after.
+    func setLook(_ choice: LookChoice) async throws -> InventoryState
+
     // MARK: Between rides (0.7.3)
     /// Today's pledge and tomorrow's; `today` is the phone's own date, "YYYY-MM-DD".
     func pledges(today: String) async throws -> PledgeState

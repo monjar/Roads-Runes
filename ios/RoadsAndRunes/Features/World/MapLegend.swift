@@ -26,6 +26,8 @@ struct MapLegend: View {
         Entry(mark: .legend(icon: "fogDragon"), name: "Legend",
               what: "A great creature that takes several journeys. Tap it to see its health and what it is weak to."),
         Entry(mark: .lair, name: "Lair", what: "Seven tiles round a park. Visit five of them in time to open its great chest."),
+        Entry(mark: .icon(.village, spot: .sage), name: "District",
+              what: "The names of districts you've been through, shown when you zoom out. Explore half of one to make it yours."),
         Entry(mark: .chest(tier: 1), name: "Chest", what: "Get close, then tap Open for coins."),
         Entry(mark: .rune("raido"), name: "Rune stone", what: "Get close and pick it up to collect its rune."),
         Entry(mark: .quest, name: "Quest", what: "A quest from the board. Tap it to read it."),

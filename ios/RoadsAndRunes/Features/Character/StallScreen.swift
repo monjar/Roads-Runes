@@ -36,7 +36,7 @@ struct StallScreen: View {
                         ForEach(stall.offers) { offer in offerRow(offer) }
                     } else {
                         EmptyState(icon: .shop, title: "The stall opens at level \(stall.opensAtLevel)",
-                                   message: "Reach level \(stall.opensAtLevel) to buy gear, lamps and map pieces here. Four new things every week.")
+                                   message: "Reach level \(stall.opensAtLevel) to buy gear, lamps and map pieces here. New things every week.")
                             .accessibilityIdentifier("stall.closed")
                     }
                 } else if !missing, error == nil {
@@ -53,20 +53,36 @@ struct StallScreen: View {
         .refreshable { await load() }
     }
 
-    /// "Four things this week. New ones in 3 days."
+    /// "Five things this week. New ones in 3 days."
     private func weekLine(_ stall: Stall) -> String {
-        guard let resets = stall.resetsAt else { return "Four things this week." }
+        let words = ["No", "One", "Two", "Three", "Four", "Five", "Six"]
+        let count = words.indices.contains(stall.offers.count) ? words[stall.offers.count] : "\(stall.offers.count)"
+        let things = "\(count) \(stall.offers.count == 1 ? "thing" : "things") this week."
+        guard let resets = stall.resetsAt else { return things }
         let days = max(0, Int(ceil(resets.timeIntervalSinceNow / 86_400)))
         switch days {
-        case 0, 1: return "Four things this week. New ones tomorrow."
-        default: return "Four things this week. New ones in \(days) days."
+        case 0, 1: return "\(things) New ones tomorrow."
+        default: return "\(things) New ones in \(days) days."
         }
     }
 
     private func offerRow(_ offer: StallOffer) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
-                MarkView(.of(offer)).frame(width: 44, height: 44).opacity(offer.bought ? 0.45 : 1)
+                Group {
+                    if offer.lookKind == .ink, let hex = CosmeticCatalog.inkHex(offer.itemId, color: offer.color) {
+                        // An ink shows its colour.
+                        Circle().fill(Color(hex: hex)).overlay(Circle().stroke(Theme.Colors.ink.opacity(0.3), lineWidth: 1))
+                            .padding(4)
+                    } else if offer.lookKind == .markerFrame {
+                        MarkerFrameSample(frame: LookStyle.MarkerFrame(offer.itemId))
+                    } else if offer.lookKind == .crestFrame {
+                        FramedCrest(characterClass: container.session.character?.characterClass ?? .explorer, size: 36, frameId: offer.itemId)
+                    } else {
+                        MarkView(.of(offer))
+                    }
+                }
+                .frame(width: 44, height: 44).opacity(offer.bought ? 0.45 : 1)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text(offer.name).font(Theme.Typography.text(16, .semibold)).foregroundStyle(Theme.Colors.ink)
@@ -74,6 +90,8 @@ struct StallScreen: View {
                     }
                     if let slot = offer.slot {
                         Text(GearSlotId.name(slot)).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                    } else if let kind = offer.lookKind {
+                        Text(kind.name).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
                     }
                     Text(offer.text).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.inkSoft)
                         .fixedSize(horizontal: false, vertical: true)
@@ -123,7 +141,11 @@ struct StallScreen: View {
         defer { buying = nil }
         do {
             container.session.take(inventory: try await container.api.buyOffer(id: offer.id))
-            notice = offer.isGear ? "Bought \(offer.name). It's in your bag." : "Bought \(offer.name.lowercased())."
+            if offer.isCosmetic {
+                notice = "Bought \(offer.name). Wear it from Look on your character."
+            } else {
+                notice = offer.isGear ? "Bought \(offer.name). It's in your bag." : "Bought \(offer.name.lowercased())."
+            }
             error = nil
             await container.session.refreshCharacter()
             await load()

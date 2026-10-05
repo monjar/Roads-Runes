@@ -52,18 +52,24 @@ public struct CharacterSheet: Codable, Hashable, Sendable {
 
     /// The constants against one thing, after `fightConstants` (`CharacterSheet.foe_cfg`):
     /// Thurisaz makes the opening blow on an elder, a bounty or a legend that many
-    /// times stronger (the fraction is scaled; its cap is not).
-    public func foeConstants(_ cfg: CombatConstants, elder: Bool) -> CombatConstants {
-        guard elder, let scale = rules?["ELDER_CARRIED_SCALE"], scale > 0 else { return cfg }
+    /// times stronger, and Tiwaz (0.9.0, `QUARRY_CARRIED_SCALE`) the opening blow on
+    /// the journey's quarry, the creature it was planned for (each scales the
+    /// fraction; its cap is not).
+    public func foeConstants(_ cfg: CombatConstants, elder: Bool, quarry: Bool = false) -> CombatConstants {
         var out = cfg
-        out.carriedFraction = cfg.carriedFraction * scale
+        if elder, let scale = rules?["ELDER_CARRIED_SCALE"], scale > 0 {
+            out.carriedFraction *= scale
+        }
+        if quarry, let scale = rules?["QUARRY_CARRIED_SCALE"], scale > 0 {
+            out.carriedFraction *= scale
+        }
         return out
     }
 
     /// The constants against a legend (`CharacterSheet.legend_cfg`): an elder's, and
     /// a note reaching as far as the Loremaster's.
-    public func legendConstants(_ cfg: CombatConstants) -> CombatConstants {
-        var out = foeConstants(cfg, elder: true)
+    public func legendConstants(_ cfg: CombatConstants, quarry: Bool = false) -> CombatConstants {
+        var out = foeConstants(cfg, elder: true, quarry: quarry)
         if let reach = legendWordRadiusMeters, reach != 0 { out.wordRadiusMeters = max(out.wordRadiusMeters, reach) }
         return out
     }

@@ -55,6 +55,9 @@ final class RideStore {
     /// Heard of later than this after the journey ended, Journey's end is let go.
     static let journeyEndKeptFor: TimeInterval = 3600
 
+    /// Which district the rider is in, named once a journey at a standstill (0.9.0).
+    private var districts = DistrictNaming()
+
     /// Ride, run or walk, as the phone started it; nil before a route summary (or from an older phone).
     var activity: Activity? { summary?.activity.flatMap(Activity.init(rawValue:)) }
 
@@ -189,6 +192,14 @@ final class RideStore {
         staleness(at: now) > Self.staleAfter
     }
 
+    /// The district to name at `now` (0.9.0): one new to this journey, while the
+    /// rider stands (Core `Stillness`, from the speeds the phone sends), never while
+    /// moving, and not on what may be old news.
+    func districtLine(at now: Date = Date()) -> String? {
+        guard isRiding, !isStale(at: now) else { return nil }
+        return districts.line(at: now)
+    }
+
     /// Elapsed ride seconds, ticking locally between phone updates while riding.
     func elapsedSeconds(at now: Date = Date()) -> Double {
         guard let update = update else { return 0 }
@@ -205,6 +216,7 @@ final class RideStore {
         if summary == nil {
             goneMarkIds = []
             journeyEnd = nil
+            districts = DistrictNaming()
         }
         summary = newSummary
         lastUpdateAt = receivedAt
@@ -230,6 +242,7 @@ final class RideStore {
             currentDistanceToInstruction = newUpdate.distanceToInstructionMeters
         }
         if let gone = newUpdate.goneMarkIds { goneMarkIds.formUnion(gone) }
+        districts.update(district: newUpdate.districtName, speedMps: newUpdate.speedMps, at: receivedAt)
         if newUpdate.state == .active, let cue = turnCues.update(instruction: newUpdate.instruction, distanceMeters: newUpdate.distanceToInstructionMeters) {
             turnCue = cue
             turnCueToken += 1
@@ -237,6 +250,7 @@ final class RideStore {
         if newUpdate.state.isTerminal {
             courseFromPositions.reset()
             goneMarkIds = []
+            districts = DistrictNaming()
             summary = nil
             currentInstruction = nil
             currentDistanceToInstruction = nil
@@ -337,6 +351,7 @@ final class RideStore {
     func markEnded() {
         summary = nil
         goneMarkIds = []
+        districts = DistrictNaming()
         currentInstruction = nil
         currentDistanceToInstruction = nil
         optimisticPaused = nil
@@ -349,6 +364,7 @@ final class RideStore {
         courseFromPositions.reset()
         summary = nil
         goneMarkIds = []
+        districts = DistrictNaming()
         journeyEnd = nil
         update = nil
         lastUpdateAt = nil

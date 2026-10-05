@@ -331,10 +331,18 @@ public struct WatchJourneyEnd: Codable, Hashable, Sendable {
     public var legend: WatchEndLine?
     public var lair: WatchEndLine?
     public var treasureFound: WatchEndLine?
+    /// 0.9.0, nil when there are none and from an older phone (an older Watch
+    /// ignores them): the districts this journey made yours, by name ("Yours:
+    /// Rotherhithe, Bermondsey"), and those it completed ("District complete!").
+    public var districts: [String]?
+    public var completedDistricts: [String]?
 
     public init(activity: String? = nil, creaturesDefeated: Int = 0, chestsOpened: Int = 0, coins: Int = 0, xp: Int = 0,
                 levelReached: Int? = nil, finds: [WatchFind] = [], endedAt: Date? = nil,
-                legend: WatchEndLine? = nil, lair: WatchEndLine? = nil, treasureFound: WatchEndLine? = nil) {
+                legend: WatchEndLine? = nil, lair: WatchEndLine? = nil, treasureFound: WatchEndLine? = nil,
+                districts: [String]? = nil, completedDistricts: [String]? = nil) {
+        self.districts = districts
+        self.completedDistricts = completedDistricts
         self.activity = activity
         self.creaturesDefeated = creaturesDefeated
         self.chestsOpened = chestsOpened
@@ -384,7 +392,10 @@ public struct WatchJourneyEnd: Codable, Hashable, Sendable {
             endedAt: summary.ride.endedAt,
             legend: legend,
             lair: lair,
-            treasureFound: treasure
+            treasureFound: treasure,
+            // 0.9.0: "Yours: Rotherhithe, Bermondsey" and "District complete!".
+            districts: Self.districtNames(summary.districtsMadeYours),
+            completedDistricts: Self.districtNames(summary.districtsCompleted)
         )
     }
 }

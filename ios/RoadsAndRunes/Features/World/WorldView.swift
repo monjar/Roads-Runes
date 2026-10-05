@@ -39,6 +39,8 @@ struct WorldView: View {
             await container.pledges.refresh()
             // The legend awake (0.8.0), for its mark and Next up.
             await container.legends.refresh()
+            // The districts passed through (0.9.0), for their names when zoomed out.
+            await container.districts.refresh()
         }
         // The map in the hand needs to know thirty metres from fifty; put away, it
         // goes back to the coarse fix that costs nothing. Neither touches a ride's GPS.
@@ -60,6 +62,8 @@ struct WorldView: View {
             guard let fix, let model else { return }
             if model.center == nil { model.center = fix.coordinate }
             Task { await model.load(around: fix.coordinate) }
+            // Which district this is, for Next up (0.9.0); the ride asks for its own.
+            if !container.rideRecorder.isActive { Task { await container.districts.noticePosition(fix.coordinate) } }
             if !container.rideRecorder.isActive, withAnimation(.snappy, { model.noticeReach() }) {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
             }
@@ -74,6 +78,7 @@ struct WorldView: View {
             if let summary {
                 Task { await container.pledges.journeyEnded(summary) }
                 Task { await container.legends.journeyEnded(summary) }
+                Task { await container.districts.journeyEnded(summary) }
             }
             guard summary == nil, let model, let center = model.center else { return }
             Task { await model.load(around: center, force: true) }
@@ -92,6 +97,9 @@ struct WorldView: View {
                 reach: model.reach,
                 lairTiles: model.lairTiles,
                 markers: model.markers + model.cutMarkers,
+                // District names, quiet and only zoomed out; the rider in the frame worn (0.9.0).
+                labels: container.districts.labels,
+                riderFrame: container.session.inventory?.look?.markerFrame,
                 emphasis: styleKey.emphasis,
                 onRegionChanged: { center, _ in Task { await model.load(around: center) } },
                 onMarkerTap: { marker in withAnimation(.snappy) { model.tapMarker(marker) } },
@@ -195,7 +203,8 @@ struct WorldView: View {
                             onNearest: {}
                         )
                         NextUpCard(next: model.nextUp, units: model.units, activity: container.session.defaultActivity,
-                                   pledge: container.pledges.isOn ? container.pledges.today : nil) {
+                                   pledge: container.pledges.isOn ? container.pledges.today : nil,
+                                   district: container.districts.milestoneLine) {
                             act(on: model.nextUp, model)
                         }
                     }

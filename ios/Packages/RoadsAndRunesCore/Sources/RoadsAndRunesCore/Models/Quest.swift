@@ -236,8 +236,27 @@ public struct StoryStanding: Codable, Hashable, Sendable {
     public var arcCompleted: Bool
     public var nextTitle: String?
     public var reward: Reward?
+    /// 0.9.0: the arc's track, and for a festival's arc its season and when it ends.
+    public var track: String?
+    public var season: String?
+    public var endsAt: Date?
+    /// A festival's arc: its festival's day ("2026-06-24"), as the server keys the year's arc.
+    public var window: String?
 
-    public init(arcSlug: String? = nil, arcTitle: String, stepTitle: String? = nil, stepsDone: Int, stepsTotal: Int, arcCompleted: Bool, nextTitle: String? = nil, reward: Reward? = nil) {
+    public var isSeason: Bool { track == "SEASON" || season != nil || window != nil }
+
+    /// When the festival's arc closes: `endsAt`, or fourteen days from its window's day.
+    public var closesAt: Date? {
+        if let endsAt { return endsAt }
+        guard let window, let day = ISO8601.parse(String(window.prefix(10))) else { return nil }
+        return day.addingTimeInterval(Double(SeasonCopy.windowDays) * 86_400)
+    }
+
+    public init(arcSlug: String? = nil, arcTitle: String, stepTitle: String? = nil, stepsDone: Int, stepsTotal: Int, arcCompleted: Bool, nextTitle: String? = nil, reward: Reward? = nil,
+                track: String? = nil, season: String? = nil, endsAt: Date? = nil) {
+        self.track = track
+        self.season = season
+        self.endsAt = endsAt
         self.arcSlug = arcSlug
         self.arcTitle = arcTitle
         self.stepTitle = stepTitle
@@ -394,6 +413,10 @@ public struct StoryArc: Codable, Hashable, Identifiable, Sendable {
     public var after: String?
     public var giver: String?
     public var reward: StoryStanding.Reward?
+    /// A festival's arc (0.9.0, track SEASON): which festival ("MIDSUMMER") and when
+    /// its window closes. A missed one comes back next year.
+    public var season: String?
+    public var endsAt: Date?
 
     public var id: String { slug }
 
@@ -401,10 +424,14 @@ public struct StoryArc: Codable, Hashable, Identifiable, Sendable {
     public var isComplete: Bool { !quests.isEmpty && completedCount == quests.count }
     /// The campaign, as opposed to a trade's own arc.
     public var isCampaign: Bool { track == "MAIN" }
+    /// A festival's arc (0.9.0).
+    public var isSeason: Bool { track == "SEASON" || season != nil }
 
     public init(slug: String, title: String, description: String, characterClass: CharacterClass? = nil, minLevel: Int, unlocked: Bool, quests: [StoryStep],
                 track: String? = nil, act: Int? = nil, actTitle: String? = nil, chapter: Int? = nil, after: String? = nil, giver: String? = nil,
-                reward: StoryStanding.Reward? = nil) {
+                reward: StoryStanding.Reward? = nil, season: String? = nil, endsAt: Date? = nil) {
+        self.season = season
+        self.endsAt = endsAt
         self.slug = slug
         self.title = title
         self.description = description

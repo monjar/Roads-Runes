@@ -123,6 +123,20 @@ public enum Endpoints {
     public static func moveLegend(id: UUID) -> Endpoint { Endpoint(method: .post, path: "/legends/\(id.uuidString)/move", timeout: 60) }
     public static func treasureClues() -> Endpoint { Endpoint(method: .get, path: "/inventory/treasure") }
 
+    // MARK: The parish (0.9.0)
+    public static func districts() -> Endpoint { Endpoint(method: .get, path: "/districts") }
+    public static func district(id: String) -> Endpoint {
+        let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        return Endpoint(method: .get, path: "/districts/\(escaped)")
+    }
+    public static func districtHere(at point: Coordinate) -> Endpoint {
+        Endpoint(method: .get, path: "/districts/here", query: [QueryItem("lat", String(point.latitude)), QueryItem("lon", String(point.longitude))])
+    }
+    public static func atlas(year: Int) -> Endpoint {
+        Endpoint(method: .get, path: "/journal/atlas", query: [QueryItem("year", String(year))], timeout: 60)
+    }
+    public static func setLook(_ body: LookChoice) throws -> Endpoint { try .json(.put, "/inventory/look", body: body) }
+
     // MARK: Between rides (0.7.3)
     /// `today` is the phone's own date ("2026-10-05"): the server's day is UTC's.
     public static func pledges(today: String) -> Endpoint { Endpoint(method: .get, path: "/pledge", query: [QueryItem("today", today)]) }

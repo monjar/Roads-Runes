@@ -9,6 +9,7 @@ import SwiftUI
 /// The map itself is not interactive: it lives inside a scrolling sheet, where a
 /// pan belongs to the page. A tap on a stop is the one gesture it takes.
 struct RouteMapPreview: View {
+    @Environment(AppContainer.self) private var container
     let route: RouteOption
     var camera: MapCamera?
     var focused: RoutePOI?
@@ -24,6 +25,8 @@ struct RouteMapPreview: View {
             zoom: 13,
             route: route.path,
             markers: markers,
+            // The route in the ink worn (0.9.0).
+            routeColor: LookStyle.routeColor(container.session.inventory),
             emphasis: .cycling,
             interactive: false,
             onMarkerTap: { marker in

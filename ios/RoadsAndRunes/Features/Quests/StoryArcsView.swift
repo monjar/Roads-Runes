@@ -40,10 +40,13 @@ final class StoryArcsModel {
     /// The trade's own arcs (and any arc from a server before tracks): whatever is
     /// live, then what can be started, then what is still locked.
     var ordered: [StoryArc] {
-        arcs.filter { !$0.isCampaign }.sorted { a, b in
+        arcs.filter { !$0.isCampaign && !$0.isSeason }.sorted { a, b in
             (rank(a), a.minLevel, a.title) < (rank(b), b.minLevel, b.title)
         }
     }
+
+    /// The festivals' arcs (0.9.0), while their windows are open.
+    var seasons: [StoryArc] { arcs.filter(\.isSeason) }
 
     func title(of slug: String?) -> String? { arcs.first { $0.slug == slug }?.title }
 
@@ -74,6 +77,9 @@ struct StoryArcsView: View {
                         .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
                     if model.loaded, model.arcs.isEmpty {
                         EmptyState(icon: .openBook, title: "No story yet", message: "Story quests show up here when they're ready for you.")
+                    }
+                    ForEach(model.seasons) { arc in
+                        SeasonArcCard(arc: arc, onOpenQuest: onOpenQuest)
                     }
                     ForEach(model.acts, id: \.number) { act in
                         Eyebrow(text: "Act \(LoreCopy.roman(act.number))\(act.title.map { " · \($0)" } ?? "")", color: Theme.Colors.terracottaDeep)

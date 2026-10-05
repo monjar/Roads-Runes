@@ -77,7 +77,9 @@ public extension SampleData {
         ],
         bagSize: InventoryState.defaultBagSize,
         consumables: consumables(["LAMP": 2, "MAP_FRAGMENT": 1, "REST_TOKEN": 1, "SEALED_CHEST_COMMON": 1, "TREASURE_MAP": 1]),
-        finishesSinceRare: 2
+        finishesSinceRare: 2,
+        look: sampleLook,
+        cosmetics: sampleCosmetics
     )
 
     /// What the levels below 8 gave, paid on the first call after 0.7.2.
@@ -112,7 +114,7 @@ public extension SampleData {
         return LevelStep(level: level, reached: level <= 8, rewards: rewards)
     }
 
-    /// This week's four: two gear, two consumables.
+    /// This week's five: two gear, two consumables and (0.9.0) a look.
     static let sampleStall = Stall(
         open: true, opensAtLevel: 3, week: "2026-W41", resetsAt: referenceDate.addingTimeInterval(4 * 86_400),
         offers: [
@@ -124,6 +126,7 @@ public extension SampleData {
                        text: "Light it at a place on the map and a creature comes.", price: 40),
             StallOffer(id: "w41-3", kind: "CONSUMABLE", consumable: "MAP_FRAGMENT", name: "Map piece", icon: "treasureMap",
                        text: "Reveals the tiles round the nearest hidden place.", price: 60),
+            sampleCosmeticOffer,
         ]
     )
 

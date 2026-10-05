@@ -66,6 +66,9 @@ public enum APIErrorCode {
     /// 0.8.0: a legend's one free move is used; a second treasure map while one is open.
     public static let alreadyMoved = "ALREADY_MOVED"
     public static let oneAtATime = "ONE_AT_A_TIME"
+    /// 0.9.0: a look worn that the player does not own, or one of another kind.
+    public static let notOwned = "LOOK_NOT_OWNED"
+    public static let wrongLook = "WRONG_LOOK"
 }
 
 public struct StravaStatus: Codable, Hashable, Sendable {
@@ -159,6 +162,10 @@ public enum FeatureFlag {
     public static let fogOfWar = "fog_of_war"
     public static let storyQuests = "story_quests"
     public static let strava = "strava"
+    /// 0.7.3: the Outdoors style drawn as ink on paper (the World and, from 0.9.0, the Atlas).
+    public static let parchmentMap = "parchment_map"
+    /// 0.9.0: Wikidata's line on a place, "From Wikidata: …".
+    public static let placeLore = "place_lore"
 }
 
 /// `GET /health`.

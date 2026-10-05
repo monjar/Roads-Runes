@@ -92,6 +92,8 @@ struct PlaceCard: View {
     var onLamp: () -> Void = {}
     /// A letter to your future self, left here (0.7.3).
     @State private var writingLetter = false
+    /// Place lore (0.9.0): Wikidata's line on one of the game's places, with its credit.
+    @State private var lore: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -104,6 +106,12 @@ struct PlaceCard: View {
                     }
                     if let address = place.address {
                         Text(address).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).lineLimit(2)
+                    }
+                    if let lore {
+                        Text(lore).font(Theme.Typography.caption).italic().foregroundStyle(Theme.Colors.inkSoft)
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("place.lore")
                     }
                 }
                 Spacer(minLength: 0)
@@ -136,6 +144,11 @@ struct PlaceCard: View {
         .padding(18)
         .background(Theme.Colors.cream, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
         .shadow(color: Theme.Colors.ink.opacity(0.18), radius: 12, y: 4)
+        .task(id: place.id) {
+            lore = nil
+            guard case .discovery(let id) = place.source else { return }
+            lore = (try? await container.api.discovery(id: id))?.loreLine
+        }
     }
 
     private var facts: String {

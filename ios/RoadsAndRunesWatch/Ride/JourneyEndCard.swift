@@ -68,9 +68,10 @@ struct JourneyEndCard: View {
     /// At most this many finds are listed; the rest are on the phone.
     static let findsShown = 6
 
-    /// The level first, then the legend, then what was taken from the world and
-    /// the lair, the purse and XP, then what was found, buried treasure first.
-    /// Nothing to say still says where it went.
+    /// The level first, then the legend, then the districts completed and made
+    /// yours (0.9.0), then what was taken from the world and the lair, the purse
+    /// and XP, then what was found, buried treasure first. Nothing to say still
+    /// says where it went.
     static func lines(for end: WatchJourneyEnd) -> [Line] {
         var lines: [(Mark, String, String?)] = []
         if let level = end.levelReached {
@@ -78,6 +79,13 @@ struct JourneyEndCard: View {
         }
         if let legend = end.legend {
             lines.append((WristMarks.legendLine(legend), legend.text, legend.detail))
+        }
+        if let completed = end.completedDistricts, !completed.isEmpty {
+            let text = completed.count == 1 ? "District complete!" : "\(completed.count) districts complete!"
+            lines.append((.token(.laurels, ring: .gold), text, completed.joined(separator: ", ")))
+        }
+        if let yours = end.districts, !yours.isEmpty {
+            lines.append((.token(.flag, ring: .sage), "Yours: \(yours.joined(separator: ", "))", nil))
         }
         if end.creaturesDefeated > 0 {
             lines.append((.token(.sword), "\(end.creaturesDefeated) \(end.creaturesDefeated == 1 ? "creature" : "creatures") defeated", nil))

@@ -121,16 +121,26 @@ final class JournalViewModel {
 }
 
 enum JournalSection: Int, CaseIterable, Hashable {
-    case adventures, discoveries, map, stats
+    case adventures, discoveries, map, districts, stats
 
     /// The second segment is the codex (docs/WORLD.md) when it is on: the places
-    /// found are its last chapter.
+    /// found are its last chapter. The map grew into the Atlas (0.9.0), with the
+    /// districts beside it.
     func title(codex: Bool) -> String {
         switch self {
         case .adventures: return "Journeys"
         case .discoveries: return codex ? "Codex" : "Places"
-        case .map: return "Map"
+        case .map: return "Atlas"
+        case .districts: return "Districts"
         case .stats: return "Stats"
+        }
+    }
+
+    var identifier: String? {
+        switch self {
+        case .map: return "journal.segment.atlas"
+        case .districts: return "journal.segment.districts"
+        default: return nil
         }
     }
 }
@@ -156,7 +166,8 @@ struct JournalView: View {
                             Text("\(exploredArea(stats)) explored · \(stats.discoveriesFound) \(stats.discoveriesFound == 1 ? "place" : "places") found").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
                         }
                     }
-                    SegmentedPill(options: JournalSection.allCases, title: { $0.title(codex: codexOn) }, selection: $section)
+                    SegmentedPill(options: JournalSection.allCases, title: { $0.title(codex: codexOn) }, selection: $section,
+                                  identifier: { $0.identifier })
                     if let model {
                         if let error = model.error { ErrorLine(text: error) }
                         switch section {
@@ -169,7 +180,10 @@ struct JournalView: View {
                             } else {
                                 discoveries(model)
                             }
-                        case .map: mapSection(model)
+                        case .map:
+                            AtlasSection(journal: model)
+                            mapSection(model)
+                        case .districts: DistrictsSection()
                         case .stats: StatsView(stats: model.stats, units: model.units)
                         }
                     } else {
@@ -305,9 +319,9 @@ struct JournalView: View {
 
     // MARK: Map
 
+    /// Under the Atlas: the tiles explored, and what the paper means.
     @ViewBuilder
     private func mapSection(_ model: JournalViewModel) -> some View {
-        mapCard(model, height: 360)
         if let stats = model.stats {
             HStack(spacing: 8) {
                 FactTile(value: "\(stats.cellsVisited)", label: "Tiles visited")
@@ -507,7 +521,8 @@ struct AdventureDetailView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("journal.entry")
                 }
-                MapLibreView(styleURL: Config.mapStyleURL(for: .adventure), center: geometry?.path.first ?? entry.quest?.origin, zoom: 12, cells: [], route: geometry?.path ?? [], markers: markers)
+                MapLibreView(styleURL: Config.mapStyleURL(for: .adventure), center: geometry?.path.first ?? entry.quest?.origin, zoom: 12, cells: [],
+                             route: geometry?.path ?? [], markers: markers, routeColor: LookStyle.routeColor(container.session.inventory))
                     .frame(height: 220)
                     .background(Theme.Colors.surface)
                     .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
@@ -627,6 +642,12 @@ struct DiscoveryDetailView: View {
                     }
                     if let description = discovery.description {
                         Text(description).font(Theme.Typography.text(14)).foregroundStyle(Theme.Colors.inkSoft).lineSpacing(3)
+                    }
+                    // Place lore (0.9.0): Wikidata's line, with its credit.
+                    if let lore = discovery.loreLine {
+                        Text(lore).font(Theme.Typography.caption).italic().foregroundStyle(Theme.Colors.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("place.lore")
                     }
                     let marker = MapMarker(id: discovery.id.uuidString, coordinate: discovery.coordinate, kind: .discovery, title: discovery.name)
                     MapLibreView(styleURL: Config.mapStyleURL(for: .adventure), center: discovery.coordinate, zoom: 14, cells: [], route: [], markers: [marker])

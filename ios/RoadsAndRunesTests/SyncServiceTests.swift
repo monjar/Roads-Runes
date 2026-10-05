@@ -65,6 +65,11 @@ final class FlakyAPI: RoadsAndRunesAPI, @unchecked Sendable {
     func legend(id: UUID) async throws -> Legend { try await inner.legend(id: id) }
     func moveLegend(id: UUID) async throws -> Legend { try await inner.moveLegend(id: id) }
     func treasureClues() async throws -> [TreasureClue] { try await inner.treasureClues() }
+    func districts() async throws -> [District] { try await inner.districts() }
+    func district(id: String) async throws -> District { try await inner.district(id: id) }
+    func districtHere(at point: Coordinate) async throws -> District? { try await inner.districtHere(at: point) }
+    func atlas(year: Int) async throws -> Atlas { try await inner.atlas(year: year) }
+    func setLook(_ choice: LookChoice) async throws -> InventoryState { try await inner.setLook(choice) }
     func updateRiderProfile(_ profile: RiderProfile) async throws -> RiderProfile { try await inner.updateRiderProfile(profile) }
     func world(center: Coordinate, radiusMeters: Double) async throws -> WorldSnapshot { try await inner.world(center: center, radiusMeters: radiusMeters) }
     func exploration(in box: BoundingBox) async throws -> ExplorationResponse { try await inner.exploration(in: box) }

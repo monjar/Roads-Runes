@@ -65,6 +65,16 @@ public struct Discovery: Codable, Hashable, Identifiable, Sendable {
 
     public var coordinate: Coordinate { Coordinate(latitude: latitude, longitude: longitude) }
 
+    /// Place lore (0.9.0, `place_lore`): Wikidata's one-line description of the place,
+    /// kept in its tags as `lore` at import once it passed the server's checks.
+    public var lore: String? {
+        guard let text = tags?["lore"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+        return text
+    }
+
+    /// "From Wikidata: a park in south-east London", with its credit.
+    public var loreLine: String? { lore.map { "From Wikidata: \($0)" } }
+
     public var summary: DiscoverySummary {
         DiscoverySummary(id: id, name: name, category: category, latitude: latitude, longitude: longitude, source: source, discoveredByUser: discoveredByUser, discoveredAt: discoveredAt)
     }

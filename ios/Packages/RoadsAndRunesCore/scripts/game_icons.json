@@ -107,5 +107,13 @@
   "trailWyrm": "delapouite/sand-snake",
   "runeGolem": "delapouite/golem-head",
   "greatChest": "delapouite/chest",
-  "lair": "delapouite/mountain-cave"
+  "lair": "delapouite/mountain-cave",
+
+  "village": "delapouite/village",
+  "calendar": "delapouite/calendar",
+  "inkSwirl": "lorc/ink-swirl",
+  "springFestival": "lorc/daisy",
+  "midsummer": "lorc/sun",
+  "harvest": "lorc/wheat",
+  "midwinter": "lorc/snowflake-2"
 }

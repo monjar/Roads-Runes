@@ -104,3 +104,10 @@ The game's pictures are icons from [game-icons.net](https://game-icons.net), use
 | `runeGolem` | [golem-head](https://game-icons.net/1x1/delapouite/golem-head.html) | Delapouite | CC BY 3.0 |
 | `greatChest` | [chest](https://game-icons.net/1x1/delapouite/chest.html) | Delapouite | CC BY 3.0 |
 | `lair` | [mountain-cave](https://game-icons.net/1x1/delapouite/mountain-cave.html) | Delapouite | CC BY 3.0 |
+| `village` | [village](https://game-icons.net/1x1/delapouite/village.html) | Delapouite | CC BY 3.0 |
+| `calendar` | [calendar](https://game-icons.net/1x1/delapouite/calendar.html) | Delapouite | CC BY 3.0 |
+| `inkSwirl` | [ink-swirl](https://game-icons.net/1x1/lorc/ink-swirl.html) | Lorc | CC BY 3.0 |
+| `springFestival` | [daisy](https://game-icons.net/1x1/lorc/daisy.html) | Lorc | CC BY 3.0 |
+| `midsummer` | [sun](https://game-icons.net/1x1/lorc/sun.html) | Lorc | CC BY 3.0 |
+| `harvest` | [wheat](https://game-icons.net/1x1/lorc/wheat.html) | Lorc | CC BY 3.0 |
+| `midwinter` | [snowflake-2](https://game-icons.net/1x1/lorc/snowflake-2.html) | Lorc | CC BY 3.0 |

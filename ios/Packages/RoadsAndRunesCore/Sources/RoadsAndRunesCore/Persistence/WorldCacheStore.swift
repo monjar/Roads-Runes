@@ -33,23 +33,27 @@ public struct FightSetupState: Codable, Hashable, Sendable {
     public var knownCells: [String]
     public var groundResolution: Int
     public var readBounds: BoundingBox?
+    /// The creature the journey was planned for (0.9.0, Tiwaz); nil in an older snapshot.
+    public var quarryId: UUID?
 
-    public init(constants: CombatConstants, sheet: CharacterSheet, knownCells: [String], groundResolution: Int, readBounds: BoundingBox? = nil) {
+    public init(constants: CombatConstants, sheet: CharacterSheet, knownCells: [String], groundResolution: Int, readBounds: BoundingBox? = nil,
+                quarryId: UUID? = nil) {
         self.constants = constants
         self.sheet = sheet
         self.knownCells = knownCells
         self.groundResolution = groundResolution
         self.readBounds = readBounds
+        self.quarryId = quarryId
     }
 
     public init(_ setup: FightTracker.Setup) {
         self.init(constants: setup.constants, sheet: setup.sheet, knownCells: setup.knownCells.sorted(), groundResolution: setup.groundResolution,
-                  readBounds: setup.readBounds)
+                  readBounds: setup.readBounds, quarryId: setup.quarryId)
     }
 
     public func setup(activity: Activity, indexing: any CellIndexing) -> FightTracker.Setup {
         FightTracker.Setup(constants: constants, sheet: sheet, activity: activity, knownCells: Set(knownCells), groundResolution: groundResolution,
-                           indexing: indexing, readBounds: readBounds)
+                           indexing: indexing, readBounds: readBounds, quarryId: quarryId)
     }
 }
 

@@ -36,6 +36,8 @@ struct XPBar: View {
 /// heraldic mark on cream, name, class and level, title, class XP.
 struct CharacterHeader: View {
     let character: Character
+    /// The crest frame worn (0.9.0); nil is the crest alone.
+    var crestFrame: String?
 
     private var color: Color { ClassStyle.color(character.characterClass) }
 
@@ -47,7 +49,8 @@ struct CharacterHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(spacing: 16) {
-                ClassEmblem(characterClass: character.characterClass, size: 84, inverted: true)
+                FramedCrest(characterClass: character.characterClass, size: crestFrame == nil ? 84 : 76, frameId: crestFrame)
+                    .accessibilityIdentifier("character.crest")
                 VStack(alignment: .leading, spacing: 4) {
                     Text(character.name).font(Theme.Typography.voice(30, relativeTo: .largeTitle)).lineLimit(1).minimumScaleFactor(0.7)
                     Text(classLine).font(Theme.Typography.text(14, .semibold))

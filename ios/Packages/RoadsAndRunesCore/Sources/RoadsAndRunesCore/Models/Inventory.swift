@@ -171,21 +171,27 @@ public struct InventoryState: Codable, Hashable, Sendable {
     public var finishesSinceRare: Int?
     /// Non-empty once: on the first call after 0.7.2, for every level already reached.
     public var levelRewardsPaid: [LevelReward]?
+    /// 0.9.0: the ink, marker frame and crest frame worn, and every look owned. Nil
+    /// from an older server.
+    public var look: Look?
+    public var cosmetics: [Cosmetic]?
 
     public static let defaultBagSize = 20
 
     public init(slots: [GearSlot], bag: [GearItem] = [], bagSize: Int = Self.defaultBagSize, consumables: [ConsumableStack] = [],
-                finishesSinceRare: Int? = nil, levelRewardsPaid: [LevelReward]? = nil) {
+                finishesSinceRare: Int? = nil, levelRewardsPaid: [LevelReward]? = nil, look: Look? = nil, cosmetics: [Cosmetic]? = nil) {
         self.slots = slots
         self.bag = bag
         self.bagSize = bagSize
         self.consumables = consumables
         self.finishesSinceRare = finishesSinceRare
         self.levelRewardsPaid = levelRewardsPaid
+        self.look = look
+        self.cosmetics = cosmetics
     }
 
     private enum CodingKeys: String, CodingKey {
-        case slots, bag, bagSize, consumables, finishesSinceRare, levelRewardsPaid
+        case slots, bag, bagSize, consumables, finishesSinceRare, levelRewardsPaid, look, cosmetics
     }
 
     public init(from decoder: Decoder) throws {
@@ -196,6 +202,13 @@ public struct InventoryState: Codable, Hashable, Sendable {
         consumables = try c.decodeIfPresent([ConsumableStack].self, forKey: .consumables) ?? []
         finishesSinceRare = try c.decodeIfPresent(Int.self, forKey: .finishesSinceRare)
         levelRewardsPaid = try c.decodeIfPresent([LevelReward].self, forKey: .levelRewardsPaid)
+        look = (try? c.decodeIfPresent(Look.self, forKey: .look)) ?? nil
+        cosmetics = (try? c.decodeIfPresent([Cosmetic].self, forKey: .cosmetics)) ?? nil
+    }
+
+    /// The looks owned of one kind.
+    public func cosmetics(_ kind: CosmeticKind) -> [Cosmetic] {
+        (cosmetics ?? []).filter { $0.cosmeticKind == kind }
     }
 
     /// Twenty unequipped items: the next find is sold on the spot.
@@ -354,9 +367,14 @@ public struct StallOffer: Codable, Hashable, Identifiable, Sendable {
     public var text: String
     public var price: Int
     public var bought: Bool
+    /// 0.9.0, on the stall's look offer: INK, MARKER_FRAME or CREST_FRAME, and an ink's colour ("#7A8A5E").
+    public var cosmeticKind: String?
+    public var color: String?
 
     public init(id: String, kind: String, itemId: String? = nil, consumable: String? = nil, name: String, rarity: String? = nil,
-                icon: String? = nil, slot: String? = nil, text: String, price: Int, bought: Bool = false) {
+                icon: String? = nil, slot: String? = nil, text: String, price: Int, bought: Bool = false, cosmeticKind: String? = nil,
+                color: String? = nil) {
+        self.cosmeticKind = cosmeticKind
         self.id = id
         self.kind = kind
         self.itemId = itemId
@@ -368,9 +386,14 @@ public struct StallOffer: Codable, Hashable, Identifiable, Sendable {
         self.text = text
         self.price = price
         self.bought = bought
+        self.color = color
     }
 
     public var isGear: Bool { kind == "GEAR" }
+    /// The fifth offer (0.9.0): an ink, a marker frame or a crest frame.
+    public var isCosmetic: Bool { kind == "COSMETIC" || lookKind != nil }
+    /// Which kind of look it is, from `cosmeticKind` or the item id's prefix.
+    public var lookKind: CosmeticKind? { CosmeticKind.of(itemId: itemId, kind: cosmeticKind) }
 }
 
 /// `GET /inventory/stall`: four offers an ISO week, open from level 3.

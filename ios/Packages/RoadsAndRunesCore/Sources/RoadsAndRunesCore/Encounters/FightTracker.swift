@@ -46,9 +46,12 @@ public struct FightTracker: Sendable {
         /// Where `knownCells` was fetched for. Outside it the phone cannot tell new
         /// ground from old, so it counts none.
         public var readBounds: BoundingBox?
+        /// The creature the journey was planned for (Tiwaz's opening blow, 0.9.0).
+        public var quarryId: UUID?
 
         public init(constants: CombatConstants, sheet: CharacterSheet, activity: Activity, knownCells: Set<String>,
-                    groundResolution: Int, indexing: any CellIndexing, readBounds: BoundingBox? = nil) {
+                    groundResolution: Int, indexing: any CellIndexing, readBounds: BoundingBox? = nil, quarryId: UUID? = nil) {
+            self.quarryId = quarryId
             self.constants = constants
             self.sheet = sheet
             self.activity = activity
@@ -159,7 +162,7 @@ public struct FightTracker: Sendable {
         // The build against this one, as the server works it out (elders and bounties,
         // a long way; a legend's capstones); the Historian's old places are the server's alone.
         let (pct, against) = Self.against(entry.object, sheet: setup.sheet, cfg: cfg, madeGoodMeters: madeGood,
-                                          onFoot: setup.activity == .run || setup.activity == .walk)
+                                          onFoot: setup.activity == .run || setup.activity == .walk, quarry: id == setup.quarryId)
         var report = FightResolver.resolve(
             points, foe: entry.foe, activity: setup.activity.rawValue, pct: pct, cfg: against,
             newCellIndices: newCellIndices, runeHit: runeHits[id], wordIndices: wordIndices
@@ -181,13 +184,15 @@ public struct FightTracker: Sendable {
     /// The build and the constants against one thing (0.8.0): a legend is fought as
     /// an elder with the capstones on top (`legend_cfg`, `pct_against_legend`); an
     /// elder or a bounty takes Thurisaz's opening blow (`foe_cfg`).
+    /// Tiwaz (0.9.0) scales the opening blow on the quarry, the thing the journey was planned for.
     public static func against(_ object: WorldObject, sheet: CharacterSheet, cfg: CombatConstants, madeGoodMeters: Double,
-                               onFoot: Bool) -> (pct: [String: Double], cfg: CombatConstants) {
+                               onFoot: Bool, quarry: Bool = false) -> (pct: [String: Double], cfg: CombatConstants) {
         if object.isLegend {
-            return (sheet.pctAgainstLegend(madeGoodMeters: madeGoodMeters, onFoot: onFoot), sheet.legendConstants(cfg))
+            return (sheet.pctAgainstLegend(madeGoodMeters: madeGoodMeters, onFoot: onFoot), sheet.legendConstants(cfg, quarry: quarry))
         }
         let elder = object.tier >= 2 || object.isBounty
-        return (sheet.pct(againstElder: elder, madeGoodMeters: madeGoodMeters, onFoot: onFoot), sheet.foeConstants(cfg, elder: elder))
+        return (sheet.pct(againstElder: elder, madeGoodMeters: madeGoodMeters, onFoot: onFoot),
+                sheet.foeConstants(cfg, elder: elder, quarry: quarry))
     }
 
     /// Its own road form, cut with the last few kilometres of the track, as the

@@ -486,7 +486,7 @@ final class RideRecorder {
         }
         let setup = FightTracker.Setup(
             constants: constants, sheet: sheet, activity: activity, knownCells: known, groundResolution: resolution,
-            indexing: cellIndexing, readBounds: bounds
+            indexing: cellIndexing, readBounds: bounds, quarryId: quarryId
         )
         fightSetup = FightSetupState(setup)
         encounterTracker = EncounterTracker(objects: tracker.objects, activity: activity, fights: setup, sightMeters: sheet.sightMeters)
@@ -1046,7 +1046,8 @@ final class RideRecorder {
             remainingMeters: state == .active ? progress?.distanceRemaining : nil,
             courseDegrees: course.course,
             fight: encounterTracker?.watchFight(quarryId: quarryId, from: lastFix?.coordinate, icon: WatchArt.icon(for:)),
-            goneMarkIds: watchGoneMarkIds
+            goneMarkIds: watchGoneMarkIds,
+            districtName: watchDistrictName()
         )
         watch.send(update: update, force: force)
         // The lock screen, throttled by the controller; the last update (completed or cancelled) ends it.
@@ -1056,6 +1057,34 @@ final class RideRecorder {
     /// What has been opened, defeated or done on this ride, for the Watch map to take off.
     private var watchGoneMarkIds: [UUID]? {
         WatchWorldMarks.gone(claimed: encounterTracker?.claimedIDs ?? [], done: completedObjectiveIDs, objects: encounterTracker?.objects ?? [])
+    }
+
+    /// The rider's district with its title, for this journey only (Core `DistrictLookout`).
+    @ObservationIgnored private var districtLookout: (ride: UUID, lookout: DistrictLookout)?
+
+    /// The district the rider is in ("Rotherhithe, the Riverlands"), for the Watch
+    /// to name at a standstill (0.9.0): `GET /districts/here` at most once a minute
+    /// and once 300 m on, never holding up the ride (the last answer stands
+    /// meanwhile), and only while a Watch with the app is there to name it.
+    private func watchDistrictName() -> String? {
+        if districtLookout?.ride != clientRideId { districtLookout = (clientRideId, DistrictLookout()) }
+        guard isActive, let here = lastFix?.coordinate, watch.hasWatchApp,
+              districtLookout?.lookout.shouldAsk(from: here, at: Date()) == true else { return districtLookout?.lookout.name }
+        let ride = clientRideId
+        let api = self.api
+        Task { @MainActor [weak self] in
+            let answer: String?
+            do {
+                answer = try await api.districtHere(at: here)?.fullName
+            } catch {
+                guard let self, self.districtLookout?.ride == ride else { return }
+                self.districtLookout?.lookout.failed()
+                return
+            }
+            guard let self, self.districtLookout?.ride == ride else { return }
+            self.districtLookout?.lookout.answered(answer)
+        }
+        return districtLookout?.lookout.name
     }
 
     // MARK: - Persistence & recovery (spec §72)

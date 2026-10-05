@@ -49,6 +49,12 @@ struct QuestsView: View {
                         if let notice = model.weekNotice {
                             WeekNoticeCard(notice: notice)
                         }
+                        // The festival's arc (0.9.0), while its window is open.
+                        if let season = model.seasonArc {
+                            SeasonArcCard(arc: season) { questId in
+                                Task { await open(questId: questId) }
+                            }
+                        }
                         if let bounty = model.bounty {
                             BountyCard(
                                 bounty: bounty,

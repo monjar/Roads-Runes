@@ -28,6 +28,8 @@ struct NavigationScreen: View {
                 route: recorder.package?.route.path ?? [],
                 guide: guide,
                 markers: markers,
+                // The rider in the marker frame worn (0.9.0).
+                riderFrame: container.session.inventory?.look?.markerFrame,
                 followsUser: true,
                 navigationMode: true,
                 onMarkerTap: { marker in
