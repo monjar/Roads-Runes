@@ -92,6 +92,17 @@ with a mark for each thing (creatures defeated, chests, coins, XP, a level,
 up to six finds) and a Done button that returns to the idle screen. One that
 arrives more than an hour late is dropped.
 
+## Districts (0.9.0)
+
+The phone sends the district the rider is in (`districtName`, "Rotherhithe,
+the Riverlands" or "…, in the fog") with every update; it asks the server at
+most once a minute and only after 300 m, never holding up the ride. The Watch
+names a district once per journey, on the Navigation page's footer, and only
+at a standstill (five seconds under 0.7 m/s, timed on the Watch's clock; an
+unknown speed counts as moving); the line goes when the rider moves off, and
+never shows in Always-On. Journey's end adds "District complete!" (or "2
+districts complete!") with the names, and "Yours: Rotherhithe, Bermondsey".
+
 ## Legends (0.8.0)
 
 While a legend is the quarry or the nearest foe, the Quest page draws its mark

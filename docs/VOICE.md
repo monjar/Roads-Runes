@@ -76,6 +76,13 @@ alone and invent no new lore, cast lines or mysteries for it.
 | Seven tiles round a park to visit | a **lair** ("Visit 5 of its 7 tiles in 14 days") | dungeon |
 | A map with no marker, only a clue | **treasure map**, its **clue**, the **buried treasure** | riddle, fragment |
 | A lair's reward | a **great chest** | strongbox |
+| A named area from the map | **district**, with its **title** after a comma: "Rotherhithe, the Riverlands"; under 10% explored, "Rotherhithe, in the fog" | parish, region, territory |
+| How much of a district you've covered | **explored %**, counting only tiles with a road or path; until those are known, "12 tiles explored" | read, kept |
+| A district you keep visiting | **yours** ("Rotherhithe is yours. 5 coins a week while you keep visiting."); lapsed: "was yours" | kept ground, held, rent |
+| A district at 90% | **District complete!** | — |
+| Every journey on one map | the **Atlas**, its **calendar** and **your year** | — |
+| The four times of year | **Spring Festival**, **Midsummer**, **Harvest**, **Midwinter** | quarter days, Lady Day, Michaelmas |
+| Looks you can buy | route **ink**, marker **frames**, crest **frames** | skins, cosmetics |
 
 Keep as they are: XP, level, runes, **inscribe**, rank, bounty, quest, quest
 board, Codex, Journal, deeds, titles, the fog, lamp, gear, bag.

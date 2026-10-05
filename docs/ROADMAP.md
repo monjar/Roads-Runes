@@ -2,7 +2,7 @@
 
 ## Where it stands (2026-10-04)
 
-Built on the `feat/old-roads` branch, not merged to master. 0.7.0 went to TestFlight (internal) and its backend to Fly on 2026-10-04:
+Built on the `feat/old-roads` branch, not merged to master. 0.7.1 is on TestFlight (internal) and Fly; 0.7.2 to 0.9.0 were built on 2026-10-05 and are on the branch only:
 
 | Release | Built | Still yours |
 |---|---|---|
@@ -15,6 +15,7 @@ Built on the `feat/old-roads` branch, not merged to master. 0.7.0 went to TestFl
 | 0.7.2 What you carry | gear in five slots (15 items, Common/Rare/Legendary, migration 0011), drops with pity and a full bag sold on the spot, the lamp, map piece, rest token and sealed chest, the stall, selling, coin history, every level pays (past levels paid once), 12 more creatures with variants and grudges, the model-written entry behind `chronicle_llm`, the last world cached for offline starts; the Watch catches up (the game on its map, the fight in its health ring, Journey's end on the wrist, finds in the overlay) | protocol 6 (battery); the stall's prices against a real week's coins (`scripts/price_check.py`); the new creatures' pages in your own words |
 | 0.7.3 Between rides | the Live Activity and Dynamic Island, home and lock-screen widgets, Siri and Action Button quick starts (a loop, the bounty, a sealed quest), the sealed quest, pledges (flag `pledge`), letters to yourself (migration 0012), savings goals, the share card with the route's ends cut, the parchment map behind `parchment_map`; on the Watch, Next up on the idle screen with starts from the wrist, a complication, and Always-On keeping the map | a quick-started journey; protocol 5 from the Watch with the phone locked; the widgets and Live Activity seen on a device |
 | 0.8.0 The old ones ("legends" on screen) | five legends (the Fog Dragon, Water Wyrm, Hill King, Trail Wyrm, Rune Golem; migration 0013) with three phases, one broken a day, healing and sleeping when left alone, anchored only where the router reaches, one free move; the Hard Six runes holdable; lairs and their great chest; treasure maps with a clue and no marker; Act III (`LAIR_VISIT`, `WOUND_BOSS`); a capstone skill per class at class level 20; signature haptics at rest; on the Watch, the legend in three phase arcs, "Phase broken!" and the legend on its map | protocol 8 (somewhere new); Act III and the legends' pages in your own words; OSM tiles are read once more (`TILE_VERSION` v4, for hill heights) |
+| 0.9.0 The parish | districts from OpenStreetMap with a title ("Rotherhithe, the Riverlands"), an honest explored % over tiles with a road or path, "yours" and its weekly coins, District complete!, a district's page (migration 0014); the Atlas, its calendar and your year; the four festivals and their season arcs; Act IV (`DISTRICT_TILES`, `DISTRICT_LOOP`); route inks and frames at the stall; the Trade Six; place lines from Wikidata behind `place_lore`; on the Watch, a district named at a standstill and "yours" at Journey's end | protocol 7 (typed request); a district ridden on purpose to keep it; Act IV and the season arcs in your own words |
 
 Not built from 0.7.0's list: the World tab's ink fog is behind its flag and unseen on a device; the
 phone folds neither waking nor Wunjo's stops (the server does, and the reckoning says so).
