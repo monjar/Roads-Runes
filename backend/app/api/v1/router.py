@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app import __version__
 from app.auth.router import router as auth_router
+from app.between.router import letters_router, pledge_router
 from app.characters.router import router as character_router
 from app.core.deps import SettingsDep
 from app.discoveries.router import router as discoveries_router
@@ -41,6 +42,8 @@ async def config(settings: SettingsDep) -> dict:
         # The fight's constants (world_objects/fight.py), so the phone folds the
         # same fight as the server without a release to change a number.
         "combat": {k: v for k, v in load_world_config()["combat"].items() if not k.startswith("_")},
+        # How long a letter waits before a journey may find it again (0.7.3).
+        "letterMinAgeDays": settings.letter_min_age_days,
     }
 
 
@@ -63,5 +66,7 @@ for r in (
     world_objects_router,
     codex_router,
     runes_router,
+    pledge_router,
+    letters_router,
 ):
     api_router.include_router(r)

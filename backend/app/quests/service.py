@@ -80,6 +80,16 @@ def objective_out(o: QuestObjective) -> ObjectiveOut:
     )
 
 
+def quest_extra(q: QuestInstance) -> dict[str, Any]:
+    """A sealed quest's minutes and reveal point (kept in its narrative), and its goal
+    (kept on its objective): quests/sealed.py. Nothing for any other quest."""
+    sealed = (q.narrative or {}).get("sealed")
+    if not isinstance(sealed, dict):
+        return {}
+    goal = next(((o.extra or {}).get("goal") for o in q.objectives if (o.extra or {}).get("goal")), None)
+    return {"sealed": True, **sealed, **({"goal": goal} if goal else {})}
+
+
 def quest_out(q: QuestInstance) -> QuestOut:
     return QuestOut(
         id=q.id,
@@ -107,6 +117,7 @@ def quest_out(q: QuestInstance) -> QuestOut:
         startedAt=q.started_at,
         completedAt=q.completed_at,
         createdAt=q.created_at,
+        extra=quest_extra(q),
     )
 
 

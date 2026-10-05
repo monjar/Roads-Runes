@@ -452,6 +452,34 @@ post-processing re-validates.
 - `POST /quests/{id}/abandon` → `Quest`
 - `GET /quests/{id}/route?latitude&longitude` → `RouteOption`: the quest's route from where the player is (spec §20 "suggested route"). A quest starts where the player stands: the route runs from the given position through the objectives still to do and back, with the rider's default bike and profile, and is stored as the quest's `suggestedRouteId`. It is returned unchanged while the player stays within 150 m of where it starts; further than that it is drawn again from the new position, and the quest's `origin` and any `RETURN_TO_START` objective move with it. Without a position the stored route is returned as it is. A route that cannot be drawn is `502 ROUTE_GENERATION_FAILED`, never a quest with no route and no reason. `POST /routes/generate` with the `questId` (the planner's "Tweak the route") adds alternatives without replacing it.
 - The board (`GET /quests`) routes its `AVAILABLE` and `ACCEPTED` quests from the position it is given, and retires what cannot be done from there: a quest whose furthest target is beyond reach (18 km for a ride, scaled for feet, or 0.6 × the comfortable distance if that is more), and a quest whose chest or monster has gone. A quest about a world object expires when the object does.
+- `POST /quests/sealed` (0.7.3) `{"minutes": 20|40|90, "latitude", "longitude", "activity": "RIDE|RUN|WALK|null"}` → `Quest`, already `ACCEPTED`, with its route fixed (`suggestedRouteId`; `GET /quests/{id}/route` returns it). See **The sealed quest** below.
+
+### The sealed quest (0.7.3)
+
+Pick a time, the board picks the way, the goal opens halfway. The server picks somewhere about half the time away at the activity's usual pace (`core/activity.py`: ride 15, run 9.5, walk 4.8 km/h), as the crow flies over roads about 1.3 times longer: a hidden place or a creature when there is one in reach, a place already found when not, a tile on the map at the last (never a memorial, grave, place of worship or hospital). The route goes there and back, so the journey lasts about the minutes asked. One at a time: a new sealed quest retires one that is `AVAILABLE` or `ACCEPTED` (`EXPIRED`); one already `ACTIVE` is left alone. It expires a day after it is made.
+
+```json
+{
+  "id": "uuid", "questType": "SEALED", "templateId": "SEALED", "characterClass": "ANY", "activity": "RIDE",
+  "title": "Sealed quest (40 min)",
+  "description": "The board picked the way. Your goal opens halfway.",
+  "narrative": {"hook": "The board picked the way. Your goal opens halfway.", "completion": null, "source": "sealed",
+                "sealed": {"minutes": 40, "revealAtFraction": 0.5}},
+  "difficulty": "EASY", "baseXP": 150, "rewards": {"xp": 150, "ac": 20, "items": [], "titles": []},
+  "recommendedDistanceKm": 9.6, "estimatedDurationMinutes": 38,
+  "status": "ACCEPTED", "suggestedRouteId": "uuid",
+  "objectives": [{
+    "objectiveType": "VISIT_POI", "title": "Reach the goal",
+    "latitude": null, "longitude": null, "discoveryId": null, "radiusMeters": 90,
+    "extra": {"sealed": true, "hidden": true, "revealAtFraction": 0.5, "goal": Goal}
+  }],
+  "extra": {"sealed": true, "minutes": 40, "revealAtFraction": 0.5, "goal": Goal}
+}
+```
+
+`Goal` = `{"kind": "PLACE|CREATURE|TILE", "name": "Stave Hill", "title": "Ride to Stave Hill", "latitude", "longitude", "category": "VIEWPOINT|null", "discoveryId": "uuid|null", "objectId": "uuid|null", "icon": "troll|null"}` (`icon` is a creature's `GameIcon`). The objective is hidden the way a puzzle's is (no pin, no name on the objective until it is done), but the goal itself rides along in `extra.goal`, and the route (and `GET /routes/{id}/package`, whose `quest` is the same `Quest`) leads there: the hiding is the app's, until the route is `revealAtFraction` along it, and then only at a standstill and in Journey's end. A creature goal is reached (within 150 m), not fought for; a place goal is `VISIT_POI` (90 m), a tile `VISIT_LOCATION` (250 m). Paid like an `EASY` quest for 20 and 40 minutes and a `MODERATE` one for 90. `minutes` other than 20, 40 or 90 is 400 `VALIDATION_ERROR`; a route that cannot be drawn is 502 `ROUTE_GENERATION_FAILED` and makes no quest.
+
+`Quest.extra` (0.7.3) is `{}` for every other quest.
 
 `QuestCompletion`:
 
@@ -601,6 +629,58 @@ creature page gains `trophies` (`{"name": "a bridge nail", "count": 3}`).
 **The written entry** (flag `chronicle_llm`, off): after a ride is counted, a job may write
 `entryWritten` (`{"lines": [...], "by": "model"}`) on the ride and its journal entry. The composed
 `entry` stays; the app shows the written one when there is one.
+
+## Between rides (0.7.3)
+
+### The pledge (flag `pledge`)
+
+A promise to go out for one creature or quest on one day. Kept, Journey's end says "You said you would. You did."; missed, nothing is ever said or charged. Behind `pledge` (on where `ENVIRONMENT=development`, off elsewhere); 403 `FEATURE_DISABLED` when it is off.
+
+`Pledge`:
+
+```json
+{"day": "2026-10-06", "targetKind": "CREATURE|QUEST", "targetId": "uuid", "targetName": "Fen Troll",
+ "icon": "troll", "remindAt": "07:30", "status": "PLEDGED|KEPT"}
+```
+
+`day` is the phone's own date. `icon` is a `GameIcon` name: the creature's mark, or for a quest the mark of the creature it is about, else `scroll`. `remindAt` (`HH:MM`, 24-hour) is the phone's one local reminder; the server only keeps it. `targetName` is kept as it was when pledged.
+
+- `GET /pledge?today=2026-10-05` → `{"today": Pledge|null, "tomorrow": Pledge|null}`. `today` is the phone's date (the server's UTC date without it). Any earlier pledge still `PLEDGED` becomes `MISSED` here, quietly; a missed pledge is never returned.
+- `PUT /pledge` `{"day": "2026-10-06", "targetKind": "CREATURE", "targetId": "uuid", "remindAt": "07:30"}` → `Pledge`. One a day: a second for the same day replaces the first. The target must be the player's live creature (`SPAWNED`, not expired) or an open quest (`AVAILABLE`, `ACCEPTED`, `ACTIVE`): otherwise 404 "That creature or quest isn't on your map any more. Pick another.". A day that is not today or tomorrow anywhere on Earth (the server's UTC date, one day before to two after) is 400 `PLEDGE_DAY`; a malformed `remindAt` is 400 `VALIDATION_ERROR`.
+- `DELETE /pledge/{day}` → 204, pledged or not.
+
+A journey keeps the pledge for its day (`localDate` sent on `POST /rides`; without it, the UTC date of `startedAt` and a day either side) when it defeated the creature pledged or finished the quest pledged (on the ride, or by a chest opened by hand during it). A pledge already marked missed for that day is kept all the same. The ride summary then carries:
+
+```json
+"pledge": {"kept": true, "day": "2026-10-06", "targetKind": "CREATURE", "targetId": "uuid",
+           "targetName": "Fen Troll", "icon": "troll", "line": "You said you would. You did."}
+```
+
+Otherwise there is no `pledge` key. A failure here is a Journey's end without the line, never a lost journey.
+
+### Letters
+
+A line left at a place for yourself, never sent anywhere. The phone decides when one may be written (at a standstill, during a journey or not); the server takes it any time.
+
+`Letter`:
+
+```json
+{"id": "uuid", "text": "The bench by the river gets the sun at four.", "latitude": 51.49, "longitude": -0.04,
+ "placeName": "The Mayflower", "writtenAt": "...", "shownAt": null, "shownRideId": null}
+```
+
+- `POST /letters` `{"latitude", "longitude", "text"}` → 201 `Letter`. `text` is trimmed and must then be 1 to 140 characters: 400 `LETTER_EMPTY` ("Your letter is empty. Write a few words first.") or `LETTER_TOO_LONG` ("That letter is too long. Keep it to 140 characters."). `placeName` is the nearest named place within 80 m, if any.
+- `GET /letters` → `[Letter]`, newest first (a plain list).
+- `DELETE /letters/{id}` → 204; 404 when it is not there ("That letter is already gone. Refresh your letters.").
+
+A journey that passes within 60 m of a letter written at least `letterMinAgeDays` before it began (`GET /config`; 90 by default, `LETTER_MIN_AGE_DAYS`), and not shown before, shows it once: the letter gets `shownAt` and `shownRideId`, and the ride summary carries
+
+```json
+"letters": [{"id": "uuid", "text": "Remember the heron.", "writtenAt": "...", "placeName": "The Mayflower",
+             "latitude": 51.49, "longitude": -0.04, "line": "You wrote this here in October."}]
+```
+
+(`"in October 2025."` when it was written in another year; `[]` when none). A flagged journey finds letters too: they are not a reward.
 
 ## Routes
 
@@ -769,7 +849,7 @@ fight is judged against it (docs/COMBAT.md). `Character.sheet` carries the
 same shape, for an outing started offline. `quarryId` is the world object the
 outing was planned for.
 
-- `POST /rides` `{"clientRideId": "uuid", "startedAt": "...", "questId": null, "bikeId": null, "routeId": null, "quarryId": null, "title": null}` → `Ride`. Duplicate `clientRideId` returns the existing ride (idempotent). `title` (≤120 chars) names a custom adventure — a ride planned from a free-text request rather than a quest; quest rides are named by the quest.
+- `POST /rides` `{"clientRideId": "uuid", "startedAt": "...", "localDate": "2026-10-05", "questId": null, "bikeId": null, "routeId": null, "quarryId": null, "title": null}` → `Ride`. `localDate` (0.7.3, optional) is the day the journey began on the phone's calendar: the day whose pledge it keeps. Duplicate `clientRideId` returns the existing ride (idempotent). `title` (≤120 chars) names a custom adventure — a ride planned from a free-text request rather than a quest; quest rides are named by the quest.
 - `POST /rides/{id}/points` — batched during the ride when network allows (optional; the complete call may carry everything):
 
 ```json
@@ -844,6 +924,8 @@ What a ride pays:
 - `weekNotice` (0.6.2): the week's notice when this outing met it and paid it; null otherwise.
 - `codexFirsts` (0.6.2): `[{"speciesId", "name", "metAs"}]`, creatures seen off or loosened for
   the first time on this outing, for the reckoning's codex stamp.
+- `pledge` and `letters` (0.7.3): a pledge this journey kept (absent otherwise; a missed pledge is
+  never mentioned) and the letters it found again. See **Between rides**.
 
 - `GET /rides` paginated, newest first. `GET /rides/{id}`. `GET /rides/{id}/geometry` → `{"coordinates": [...], "encodedPolyline": "..."}`.
 - `PATCH /rides/{id}` `{"visibility": "FRIENDS", "title": "...", "notes": "..."}`
@@ -923,4 +1005,4 @@ Parties:
 ## Meta
 
 - `GET /health` → `{"status": "ok", "version": "..."}`
-- `GET /config` → `{"featureFlags": {...}, "h3Resolution": 9, "levels": {"max": 50, "maxClass": 50}, "environment": "development", "combat": {...}}`. `combat` (0.6.1) holds the fight's constants from `world_objects.json`; see `docs/COMBAT.md`. Flags added since 0.6.0: `codex` (on), `effort_combat` (off until ridden), `ink_fog` (0.7.0, off: the World tab's fog as one ink wash with a frontier chevron; the Journal's map card draws the wash regardless). An objective event may carry `note` (0.7.0): the note written for a `WRITE_NOTE` or an Ansuz `INSCRIBE_RUNE`, which the server judges by.
+- `GET /config` → `{"featureFlags": {...}, "h3Resolution": 9, "levels": {"max": 50, "maxClass": 50}, "environment": "development", "combat": {...}, "letterMinAgeDays": 90}`. 0.7.3 adds the flags `pledge` (on where `ENVIRONMENT=development`, off elsewhere) and `parchment_map` (off: the World tab's parchment map style), and `letterMinAgeDays`. `combat` (0.6.1) holds the fight's constants from `world_objects.json`; see `docs/COMBAT.md`. Flags added since 0.6.0: `codex` (on), `effort_combat` (off until ridden), `ink_fog` (0.7.0, off: the World tab's fog as one ink wash with a frontier chevron; the Journal's map card draws the wash regardless). An objective event may carry `note` (0.7.0): the note written for a `WRITE_NOTE` or an Ansuz `INSCRIBE_RUNE`, which the server judges by.

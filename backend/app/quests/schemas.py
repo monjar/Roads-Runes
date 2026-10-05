@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -63,6 +63,9 @@ class QuestOut(APIModel):
     startedAt: datetime | None
     completedAt: datetime | None
     createdAt: datetime
+    # What a kind of quest carries beyond the rest. A sealed quest (0.7.3):
+    # {"sealed": true, "minutes": 40, "revealAtFraction": 0.5, "goal": {...}}.
+    extra: dict[str, Any] = {}
 
 
 class StoryStepOut(APIModel):
@@ -119,6 +122,16 @@ class QuestGenerateRequest(APIModel):
     longitude: float = Field(ge=-180, le=180)
     count: int = Field(default=3, ge=1, le=6)
     request: str | None = Field(default=None, max_length=300)
+    # None: however this player usually moves (the rider profile).
+    activity: Activity | None = None
+
+
+class SealedQuestRequest(APIModel):
+    """A sealed quest (0.7.3): how long, from where, and how the player is going."""
+
+    minutes: Literal[20, 40, 90]
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
     # None: however this player usually moves (the rider profile).
     activity: Activity | None = None
 

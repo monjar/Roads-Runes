@@ -87,6 +87,7 @@ async def create_ride(db: AsyncSession, user: User, payload: RideCreate) -> Ride
         activity=normalise(payload.activity),
         title=(payload.title or "").strip() or None,
         started_at=payload.startedAt,
+        local_date=payload.localDate,
         quest_id=payload.questId,
         bike_id=payload.bikeId,
         route_id=payload.routeId,
@@ -232,6 +233,8 @@ async def summary(db: AsyncSession, user: User, ride: Ride) -> AdventureSummary 
         deeds=result.get("deeds"),
         itemsFound=result.get("itemsFound"),
         entryWritten=result.get("entryWritten"),
+        pledge=result.get("pledge"),
+        letters=result.get("letters"),
     )
 
 

@@ -301,7 +301,7 @@ async def reset_character(db: AsyncSession, user: User) -> None:
     """Starts the character over: the RPG side goes, the rides stay.
 
     Gone: the character and its abilities, every quest, the XP and coin ledgers,
-    the explored cells and the places found. Kept: rides and their journal
+    the explored cells and the places found, pledges and letters (0.7.3). Kept: rides and their journal
     entries (they happened), bikes, the riding profile, friends and connections.
     """
     character = await maybe_character(db, user.id)
@@ -311,9 +311,12 @@ async def reset_character(db: AsyncSession, user: User) -> None:
     await db.execute(delete(QuestProgressEvent).where(QuestProgressEvent.quest_id.in_(quest_ids)))
     await db.execute(delete(QuestObjective).where(QuestObjective.quest_id.in_(quest_ids)))
     await db.execute(delete(QuestInstance).where(QuestInstance.user_id == user.id))
+    from app.between.models import Letter, Pledge
     from app.inventory.models import CharacterDeed, InventoryItem, ItemEvent, Loadout, RuneCut, RuneHolding
 
     for model in (
+        Pledge,
+        Letter,
         CharacterTitle,
         RuneHolding,
         InventoryItem,

@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.between import letters, pledges
 from app.characters.models import Character
 from app.characters.sheet import CharacterSheet
 from app.chronicle.compose import Facts, compose
@@ -701,6 +702,42 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             }
             ride.processing_result = summary
             await db.flush()
+
+    # A pledge kept (0.7.3): the creature pledged for the day defeated, or the quest
+    # finished. A missed pledge is never mentioned. Each of these two runs in its own
+    # savepoint: a failure is a Journey's end without the line, never a lost journey.
+    if character is not None and not validation.suspicious:
+        kept: dict[str, Any] | None = None
+        try:
+            async with db.begin_nested():
+                kept = await pledges.keep(
+                    db,
+                    ride,
+                    defeated={o.id for o in claims.counted_of("MONSTER")},
+                    quest_completed=quest.id if quest_completed and quest is not None else None,
+                    ended=ended,
+                )
+        except Exception as exc:  # noqa: BLE001
+            log.error("pledge_failed", ride_id=str(ride.id), error=str(exc)[:200])
+            kept = None
+        if kept is not None:
+            summary = {**summary, "pledge": kept}
+            ride.processing_result = summary
+            await db.flush()
+
+    # Letters found again (0.7.3): written here a season or more ago, passed within
+    # 60 m, shown once. Not a reward, so a flagged journey finds them too.
+    letters_found: list[dict[str, Any]] | None = None
+    try:
+        async with db.begin_nested():
+            letters_found = await letters.found_on(db, settings, ride, points, ended)
+    except Exception as exc:  # noqa: BLE001
+        log.error("letters_failed", ride_id=str(ride.id), error=str(exc)[:200])
+        letters_found = None
+    if letters_found is not None:
+        summary = {**summary, "letters": letters_found}
+        ride.processing_result = summary
+        await db.flush()
     return summary
 
 

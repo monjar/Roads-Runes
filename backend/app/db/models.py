@@ -1,6 +1,7 @@
 """Import every model so `Base.metadata` is complete for Alembic and tests."""
 
 from app.auth.models import RefreshToken  # noqa: F401
+from app.between.models import Letter, Pledge  # noqa: F401
 from app.characters.models import (  # noqa: F401
     Bike,
     Character,

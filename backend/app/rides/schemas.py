@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import Field
@@ -33,6 +33,8 @@ class RideCreate(APIModel):
     quarryId: uuid.UUID | None = None
     # Custom adventures (no quest) name themselves; quest rides take the quest title.
     title: str | None = Field(default=None, max_length=120)
+    # The day it began on the phone's calendar (0.7.3): the day whose pledge it keeps.
+    localDate: date | None = None
 
 
 class RidePointsIn(APIModel):
@@ -159,6 +161,10 @@ class AdventureSummary(APIModel):
     # model-written entry when there is one.
     itemsFound: list[dict[str, Any]] | None = None
     entryWritten: dict[str, Any] | None = None
+    # 0.7.3: a pledge kept on this journey ({"kept": true, "targetName", "line", ...};
+    # absent otherwise: a missed pledge is never mentioned), and letters found again.
+    pledge: dict[str, Any] | None = None
+    letters: list[dict[str, Any]] | None = None
 
 
 class RideGeometry(APIModel):

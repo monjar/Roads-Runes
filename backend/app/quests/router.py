@@ -18,6 +18,7 @@ from app.quests.schemas import (
     QuestOut,
     QuestProgressRequest,
     QuestStartRequest,
+    SealedQuestRequest,
     StoryArcOut,
     WeekNoticeOut,
 )
@@ -78,6 +79,35 @@ async def generate(
         activity=payload.activity,
     )  # type: ignore[arg-type]
     return Page(items=[service.quest_out(q) for q in quests], nextCursor=None)
+
+
+@router.post("/sealed", response_model=QuestOut)
+async def sealed(
+    payload: SealedQuestRequest,
+    user: CurrentUser,
+    db: DBDep,
+    settings: SettingsDep,
+    llm: Annotated[object, Depends(get_llm)],
+    engine: Annotated[object, Depends(get_router_client)],
+) -> QuestOut:
+    """A sealed quest (0.7.3): the board picks somewhere about half the time away and
+    a way there and back; the goal stays hidden until `revealAtFraction` of the route."""
+    from app.quests import sealed as sealed_quests
+
+    character = await get_character(db, user)
+    quest = await sealed_quests.create(
+        db,
+        settings,
+        engine,  # type: ignore[arg-type]
+        llm,  # type: ignore[arg-type]
+        user,
+        character,
+        minutes=payload.minutes,
+        latitude=payload.latitude,
+        longitude=payload.longitude,
+        activity=payload.activity,
+    )
+    return service.quest_out(quest)
 
 
 @router.get("/story", response_model=list[StoryArcOut])
