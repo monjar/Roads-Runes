@@ -58,9 +58,18 @@ alone and invent no new lore, cast lines or mysteries for it.
 | The lure | **lamp**; the button is **Light a lamp** | leave a lamp out, lure |
 | A place on the map | **place**; one not found yet is a **hidden place** | discovery, a mystery, "?" |
 | Riding a rune's shape | **rune ride**; the button is **Ride its shape** | cut it |
+| What you wear | **gear**, in five **slots** (Bell, Lantern, Bag, Map case, Keepsake); one piece is an **item** | equipment, kit, loadout |
+| How rare an item is | **Common**, **Rare**, **Legendary** | Plain, Good, Storied |
+| What you carry and don't wear | your **bag** (gear and consumables) | inventory, stash |
+| The shop | **the stall** (opens at level 3) | market, store |
+| The wallet ledger | **coin history** | the book |
+| The map fragment | **map piece** | fragment |
+| Other consumables | **lamp**, **rest token**, **sealed chest** | — |
+| A creature with a twist | **Stubborn**, **Skittish** or **Mossy** before its name | variant, mutation |
+| One that got away twice and came back | a **grudge**: "Fen Troll the Grumpy" | nemesis, revenant |
 
 Keep as they are: XP, level, runes, **inscribe**, rank, bounty, quest, quest
-board, Codex, Journal, deeds, titles, the fog, lamp.
+board, Codex, Journal, deeds, titles, the fog, lamp, gear, bag.
 
 ## Checks
 
