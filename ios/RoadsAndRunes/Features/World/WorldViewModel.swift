@@ -47,6 +47,8 @@ final class WorldViewModel {
     private(set) var recentClaimDetail: String?
     /// The quest whose marker was tapped, to be opened where quests live.
     var openedQuestMarker: UUID?
+    /// The legend whose mark was tapped (0.8.0): its page opens.
+    var openedLegend: Legend?
     private var claimToast: Task<Void, Never>?
     /// What has already been pointed out for being within reach, so its card opens once.
     private var announced: Set<UUID> = []
@@ -127,7 +129,31 @@ final class WorldViewModel {
     /// Where rune rides were made: "Raido rune ride, by the pond".
     /// What to do next, for the card under the map (NextUp).
     var nextUp: NextUp {
-        NextUp.choose(character: container.session.character, objects: worldObjects, position: position, inReach: isWithinReach)
+        NextUp.choose(character: container.session.character, objects: worldObjects, position: position, legend: legend,
+                      inReach: isWithinReach)
+    }
+
+    // MARK: Legends and lairs (0.8.0)
+
+    /// The legend awake, from `/legends`.
+    var legend: Legend? { container.legends.awake }
+
+    /// The lairs on the map: a kind of their own, never among the things to pass or fight.
+    var lairs: [WorldObject] {
+        let known = Dictionary((placedObjects + (snapshot?.worldObjects ?? [])).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return known.values.filter { $0.isLair && $0.status == .spawned }.sorted { $0.id.uuidString < $1.id.uuidString }
+    }
+
+    /// Each lair's seven tiles, outlined, the visited ones filled.
+    var lairTiles: [LairTile] {
+        let resolution = container.session.config?.h3Resolution ?? ExplorationDefaults.h3Resolution
+        return lairs.flatMap { $0.lair?.tiles(indexing: container.cellIndexing, resolution: resolution) ?? [] }
+    }
+
+    /// The legend as somewhere to go: the planner plans to it, and the journey is for it.
+    static func place(for legend: Legend) -> Place {
+        Place(id: "legend-\(legend.id.uuidString)", name: legend.name, category: legend.anchorName, address: nil, mark: .of(legend),
+              coordinate: legend.coordinate, source: .quarry(legend.id))
     }
 
     /// A rune shape the player rode, said when its mark is tapped; it clears itself.
@@ -196,6 +222,14 @@ final class WorldViewModel {
                 title: object.shownName, inReach: isWithinReach(object), mark: .of(object)
             )
         }
+        // A lair's middle, and the legend awake, larger than anything else (0.8.0).
+        out += lairs.map { lair in
+            MapMarker(id: "object-\(lair.id.uuidString)", coordinate: lair.coordinate, kind: .lair, title: lair.shownName, mark: .lair)
+        }
+        if let legend {
+            out.append(MapMarker(id: "legend-\(legend.id.uuidString)", coordinate: legend.coordinate, kind: .legend, title: legend.name,
+                                 mark: .of(legend)))
+        }
         return out
     }
 
@@ -254,7 +288,7 @@ final class WorldViewModel {
             var detail = result.setCompleted.map { "\($0.name) complete · \(LoreCopy.earned($0.bonusAC))" } ?? result.object.setStanding?.line
             // What the chest held besides coins (0.7.2).
             if let found = result.itemFound { detail = [detail, Self.findLine(found)].compactMap { $0 }.joined(separator: " · ") }
-            show(claimed: result.object, quest: result.questCompleted?.title, detail: detail)
+            show(claimed: result.object, quest: result.questCompleted?.title, detail: detail, find: result.itemFound)
             // Opened mid-journey: the wrist shows the find in its overlay too.
             if container.rideRecorder.isActive, let found = result.itemFound {
                 container.watch.send(objectiveCompleted: .found(name: found.name, icon: found.icon, rarity: found.rarity,
@@ -326,11 +360,22 @@ final class WorldViewModel {
         placedObjects.append(object)
     }
 
-    private func show(claimed object: WorldObject, quest: String?, detail: String?) {
+    private func show(claimed object: WorldObject, quest: String?, detail: String?, find: ItemFound? = nil) {
         recentClaim = object
         recentQuestTitle = quest
         recentClaimDetail = detail
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        // Signature haptics at rest (0.8.0): a chest knocks and rattles; a Rare find shimmers after it.
+        if object.kind == .chest {
+            SignatureHapticsPlayer.shared.play(.chest)
+        } else {
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        }
+        if SignatureHaptic.forFind(rarity: find?.rarity) != nil {
+            Task {
+                try? await Task.sleep(for: .milliseconds(900))
+                SignatureHapticsPlayer.shared.play(find: find?.rarity)
+            }
+        }
         claimToast?.cancel()
         claimToast = Task { [weak self] in
             try? await Task.sleep(for: .seconds(6))
@@ -376,7 +421,7 @@ final class WorldViewModel {
 
     var worldObjects: [WorldObject] {
         let known = Dictionary((placedObjects + (snapshot?.worldObjects ?? [])).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        return known.values.filter { $0.status == .spawned }.sorted { $0.id.uuidString < $1.id.uuidString }
+        return known.values.filter { $0.status == .spawned && !$0.isLair }.sorted { $0.id.uuidString < $1.id.uuidString }
     }
 
     /// The "?" rings: off when the rider says so, and never more than the nearest
@@ -411,7 +456,10 @@ final class WorldViewModel {
     }
 
     func tapMarker(_ marker: MapMarker) {
-        if let object = worldObjects.first(where: { "object-\($0.id.uuidString)" == marker.id }) {
+        if let legend, marker.id == "legend-\(legend.id.uuidString)" {
+            selectedPlace = nil
+            openedLegend = legend
+        } else if let object = (worldObjects + lairs).first(where: { "object-\($0.id.uuidString)" == marker.id }) {
             selectedPlace = nil
             claimError = nil
             selectedObject = object

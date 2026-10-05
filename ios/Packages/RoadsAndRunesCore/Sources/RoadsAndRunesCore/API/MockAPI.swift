@@ -49,6 +49,9 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     var storedLetters: [Letter] = []
     /// When a letter is old enough to be found again (the server's `letterMinAgeDays`).
     public var letterMinAgeDays = 90
+    /// Legends, lairs and treasure (0.8.0): the legend awake and those defeated, and the open clues.
+    var storedLegends: LegendsState = SampleData.sampleLegends
+    var storedClues: [TreasureClue] = []
 
     public init(hasCharacter: Bool = true) {
         var user = SampleData.sampleUser
@@ -68,6 +71,16 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
         storedFriends = [SampleData.sampleFriend]
         storedParties = [SampleData.sampleParty.id: SampleData.sampleParty]
         exploredCells = SampleData.sampleWorld.cells
+        // A lair round a park (0.8.0), live for another nine days.
+        let lair = SampleData.sampleLair(endsAt: Date().addingTimeInterval(9 * 86_400))
+        storedObjects[lair.id] = lair
+    }
+
+    /// Sets the legends as a test wants them (nil awake: none).
+    public func setLegends(_ legends: LegendsState) {
+        lock.lock()
+        defer { lock.unlock() }
+        storedLegends = legends
     }
 
     /// Puts something in the world, or replaces what is there, for a test to ride past.

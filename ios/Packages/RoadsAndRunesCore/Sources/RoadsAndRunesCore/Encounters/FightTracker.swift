@@ -74,6 +74,8 @@ public struct FightTracker: Sendable {
     private var said: [UUID: Set<String>] = [:]
     public private(set) var reports: [UUID: FightResolver.Report] = [:]
     public private(set) var seenOff: Set<UUID> = []
+    /// Legends in a phase that any rune shape cut near it lands on (0.8.0, rune `ANY`).
+    private var anyRune: Set<UUID> = []
 
     public init(objects: [WorldObject], setup: Setup) {
         self.setup = setup
@@ -89,6 +91,7 @@ public struct FightTracker: Sendable {
                 roadForm: monster.roadForm
             )
             foes[object.id] = (object, foe)
+            if object.isLegend, monster.rune == LegendPhase.anyRune { anyRune.insert(object.id) }
         }
     }
 
@@ -152,17 +155,21 @@ public struct FightTracker: Sendable {
 
     private mutating func evaluate(_ id: UUID) -> [FightNews] {
         guard let entry = foes[id] else { return [] }
-        if runeHits[id] == nil, let hit = runeHit(for: entry.foe) { runeHits[id] = hit }
+        if runeHits[id] == nil, let hit = runeHit(for: entry.foe, anyShape: anyRune.contains(id)) { runeHits[id] = hit }
         // The build against this one, as the server works it out (elders and bounties,
-        // a long way); the Historian's old places are the server's alone.
-        let pct = setup.sheet.pct(
-            againstElder: entry.object.tier >= 2 || entry.object.isBounty, madeGoodMeters: madeGood,
-            onFoot: setup.activity == .run || setup.activity == .walk
-        )
-        let report = FightResolver.resolve(
-            points, foe: entry.foe, activity: setup.activity.rawValue, pct: pct, cfg: cfg,
+        // a long way; a legend's capstones); the Historian's old places are the server's alone.
+        let (pct, against) = Self.against(entry.object, sheet: setup.sheet, cfg: cfg, madeGoodMeters: madeGood,
+                                          onFoot: setup.activity == .run || setup.activity == .walk)
+        var report = FightResolver.resolve(
+            points, foe: entry.foe, activity: setup.activity.rawValue, pct: pct, cfg: against,
             newCellIndices: newCellIndices, runeHit: runeHits[id], wordIndices: wordIndices
         )
+        // One phase a day (0.8.0): a legend whose phase broke today waits for tomorrow with 1 left.
+        if report.seenOff, entry.object.monster?.phaseHeld == true {
+            report.outcome = "LOOSENED"
+            report.holdAfter = min(1, report.holdBefore)
+            report.finisher = nil
+        }
         reports[id] = report
         var news: [FightNews] = []
         if report.runeLanded, said[id, default: []].insert("RUNE").inserted { news.append(.landed(entry.object, kind: "RUNE")) }
@@ -171,10 +178,25 @@ public struct FightTracker: Sendable {
         return news
     }
 
+    /// The build and the constants against one thing (0.8.0): a legend is fought as
+    /// an elder with the capstones on top (`legend_cfg`, `pct_against_legend`); an
+    /// elder or a bounty takes Thurisaz's opening blow (`foe_cfg`).
+    public static func against(_ object: WorldObject, sheet: CharacterSheet, cfg: CombatConstants, madeGoodMeters: Double,
+                               onFoot: Bool) -> (pct: [String: Double], cfg: CombatConstants) {
+        if object.isLegend {
+            return (sheet.pctAgainstLegend(madeGoodMeters: madeGoodMeters, onFoot: onFoot), sheet.legendConstants(cfg))
+        }
+        let elder = object.tier >= 2 || object.isBounty
+        return (sheet.pct(againstElder: elder, madeGoodMeters: madeGoodMeters, onFoot: onFoot), sheet.foeConstants(cfg, elder: elder))
+    }
+
     /// Its own road form, cut with the last few kilometres of the track, as the
-    /// server looks for it with the same matcher.
-    private func runeHit(for foe: FightResolver.Foe) -> FightResolver.RuneHit? {
-        guard let form = foe.roadForm, let wanted = RuneShape(rawValue: form), points.count >= 4 else { return nil }
+    /// server looks for it with the same matcher. A legend's phase that takes any
+    /// rune (`ANY`) takes any shape, landing as a woken rune does (`rune_hit_for`).
+    private func runeHit(for foe: FightResolver.Foe, anyShape: Bool = false) -> FightResolver.RuneHit? {
+        guard points.count >= 4 else { return nil }
+        let wanted = foe.roadForm.flatMap(RuneShape.init(rawValue:))
+        guard anyShape || wanted != nil else { return nil }
         var arc = 0.0
         var from = points.count - 1
         while from > 0, arc <= Self.runeBufferMeters {
@@ -183,8 +205,9 @@ public struct FightTracker: Sendable {
         }
         let track = points[from...].map(\.coordinate)
         guard let match = RuneMatcher.match(track: track, centre: foe.coordinate, threshold: setup.sheet.runeThreshold,
-                                            searchRadius: setup.sheet.runeReachMeters),
-              match.shape == wanted else { return nil }
+                                            searchRadius: setup.sheet.runeReachMeters) else { return nil }
+        if anyShape { return FightResolver.RuneHit(shape: FightResolver.woken, index: from + match.end) }
+        guard let form = foe.roadForm, match.shape == wanted else { return nil }
         return FightResolver.RuneHit(shape: form, index: from + match.end)
     }
 }

@@ -61,6 +61,16 @@ public protocol RoadsAndRunesAPI: Sendable {
     /// What each of the fifty levels gives, and which are reached.
     func levelRewards() async throws -> [LevelStep]
 
+    // MARK: Legends, lairs and treasure (0.8.0)
+    /// The legend awake (if any), those defeated, and creatures to go before the next wakes.
+    func legends() async throws -> LegendsState
+    /// One legend with the journeys that hurt it.
+    func legend(id: UUID) async throws -> Legend
+    /// Its one free move: somewhere else it can be reached. 409 `ALREADY_MOVED` after.
+    func moveLegend(id: UUID) async throws -> Legend
+    /// The treasure maps' clues still open (one at a time).
+    func treasureClues() async throws -> [TreasureClue]
+
     // MARK: Between rides (0.7.3)
     /// Today's pledge and tomorrow's; `today` is the phone's own date, "YYYY-MM-DD".
     func pledges(today: String) async throws -> PledgeState

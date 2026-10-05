@@ -11,6 +11,8 @@ struct MapMarker: Identifiable, Hashable {
         case stop, stopActive
         /// The world's objects: a chest to pass, a piece to gather, a monster to beat, the day's bounty.
         case chest, collectable, monster, bounty
+        /// A legend (0.8.0), drawn larger than anything else, and a lair's middle.
+        case legend, lair
     }
 
     let id: String
@@ -73,6 +75,8 @@ struct MapLibreView: UIViewRepresentable {
     /// to where a route will go once it has been drawn.
     var guide: [Coordinate] = []
     var reach: MapReach?
+    /// A lair's seven tiles (0.8.0): outlined, the visited ones filled.
+    var lairTiles: [LairTile] = []
     var markers: [MapMarker] = []
     var emphasis: MapEmphasis = .none
     var followsUser = false
@@ -150,6 +154,7 @@ struct MapLibreView: UIViewRepresentable {
         private var lastRouteHash: Int?
         private var lastGuideHash: Int?
         private var lastReachHash: Int?
+        private var lastLairHash: Int?
         private var appliedFollowZoom = false
         private var appliedEmphasis: MapEmphasis?
 
@@ -166,6 +171,7 @@ struct MapLibreView: UIViewRepresentable {
             lastRouteHash = nil
             lastGuideHash = nil
             lastReachHash = nil
+            lastLairHash = nil
             appliedEmphasis = nil
             apply(to: mapView)
             reportVisibleRegion(mapView)
@@ -191,6 +197,7 @@ struct MapLibreView: UIViewRepresentable {
             applyRoute(style)
             applyGuide(style)
             applyReach(style)
+            applyLair(style)
             applyMarkers(mapView)
             applyCamera(mapView)
             applyFollowZoom(mapView)
@@ -470,6 +477,41 @@ struct MapLibreView: UIViewRepresentable {
             }
         }
 
+        /// A lair (0.8.0): its seven tiles outlined in sage, the visited ones washed in.
+        private func applyLair(_ style: MLNStyle) {
+            var hasher = Hasher()
+            hasher.combine(parent.lairTiles)
+            let hash = hasher.finalize()
+            guard hash != lastLairHash else { return }
+            lastLairHash = hash
+            let source = ensureSource(style, id: "rr-lair")
+            let tiles: [MLNPolygonFeature] = parent.lairTiles.compactMap { tile in
+                guard tile.outline.count >= 3 else { return nil }
+                var coords = tile.outline.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+                if let first = coords.first { coords.append(first) }
+                let feature = MLNPolygonFeature(coordinates: &coords, count: UInt(coords.count))
+                feature.attributes = ["visited": tile.visited ? 1 : 0]
+                return feature
+            }
+            source.shape = MLNShapeCollectionFeature(shapes: tiles)
+            if style.layer(withIdentifier: "rr-lair-fill") == nil {
+                let fill = MLNFillStyleLayer(identifier: "rr-lair-fill", source: source)
+                fill.fillColor = NSExpression(forConstantValue: UIColor(hex: 0x7A8A5E, alpha: 0.38))
+                fill.predicate = NSPredicate(format: "visited == 1")
+                let line = MLNLineStyleLayer(identifier: "rr-lair-line", source: source)
+                line.lineColor = NSExpression(forConstantValue: UIColor(hex: 0x56633F, alpha: 0.9))
+                line.lineWidth = NSExpression(forConstantValue: 2)
+                line.lineJoin = NSExpression(forConstantValue: "round")
+                if let firstLabel = style.layers.first(where: { $0 is MLNSymbolStyleLayer }) {
+                    style.insertLayer(fill, below: firstLabel)
+                    style.insertLayer(line, below: firstLabel)
+                } else {
+                    style.addLayer(fill)
+                    style.addLayer(line)
+                }
+            }
+        }
+
         /// Two alternatives often have the same number of points, and comparing counts
         /// left the previous route drawn under the one the rider had just picked.
         private func routeHash() -> Int {
@@ -614,7 +656,9 @@ final class MarkerAnnotationView: MLNAnnotationView {
 
     private static func size(_ kind: MapMarker.Kind) -> CGFloat {
         switch kind {
+        case .legend: return 50
         case .monster, .bounty, .chest, .questActive, .stopActive, .place: return 38
+        case .lair: return 34
         case .collectable, .quest, .objective, .objectiveDone, .stop: return 32
         case .discovery, .result: return 28
         case .poi: return 24
@@ -626,6 +670,8 @@ final class MarkerAnnotationView: MLNAnnotationView {
         switch kind {
         case .monster: return .creature(Sigil(nil))
         case .bounty: return .creature(Sigil(nil), bounty: true)
+        case .legend: return .legend(icon: nil)
+        case .lair: return .lair
         case .chest: return .chest(tier: 1)
         case .collectable: return .token(.runeStone)
         case .quest, .questActive: return .quest

@@ -130,6 +130,8 @@ extension MockAPI {
                 _ = self.takeConsumable(id)
                 return ConsumableUseResult(revealedTiles: 7, placeName: place.name, latitude: place.latitude, longitude: place.longitude,
                                            inventory: self.storedInventory)
+            case ConsumableId.treasureMap:
+                return try self.useTreasureMap(request)
             case ConsumableId.sealedChestCommon, ConsumableId.sealedChestRare:
                 if self.isRecording { throw self.conflict(APIErrorCode.openLater, "Open it when your journey is over.") }
                 _ = self.takeConsumable(id)

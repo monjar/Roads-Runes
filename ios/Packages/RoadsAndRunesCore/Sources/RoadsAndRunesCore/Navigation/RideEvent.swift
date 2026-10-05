@@ -11,6 +11,8 @@ public enum RideEvent: Hashable, Sendable {
     /// Something has come into sight.
     case sighted(name: String, kind: WorldObjectKind, meters: Double, method: KillMethodKind?)
     case claimed(name: String, kind: WorldObjectKind, coins: Int, set: SetStanding?)
+    /// A legend's phase broken (0.8.0): the journey's one, as far as the phone can tell.
+    case phaseBroken(name: String)
     /// A creature met and left behind: it escaped.
     case lost(name: String)
     /// Effort is damage (0.6.1): it has noticed you, and what it is weak to.
@@ -59,6 +61,7 @@ extension RideEvent {
             case .chest: return .chest
             default: return .piece
             }
+        case .phaseBroken: return .win
         case .lost, .loosened: return .lost
         case .engaged: return .engaged
         case .landed: return .landed
@@ -102,6 +105,8 @@ extension RideEvent {
                 if let set { return "\(name). \(set.line)." }
                 return "\(name). \(coins) coins."
             }
+        case .phaseBroken:
+            return LegendCopy.phaseBroken
         case .lost(let name):
             return "\(name) escaped."
         case .engaged(let name, let wants):
@@ -163,6 +168,8 @@ extension RideEvent {
             return "Top of the hill"
         case .lost(let name):
             return "\(name) escaped"
+        case .phaseBroken(let name):
+            return "\(LegendCopy.phaseBroken) \(name)"
         default:
             return nil
         }
@@ -172,7 +179,7 @@ extension RideEvent {
     /// milestone can wait for either.
     public var priority: Int {
         switch self {
-        case .claimed, .objectiveCompleted: return 5
+        case .claimed, .objectiveCompleted, .phaseBroken: return 5
         case .sighted, .lost: return 4
         // A fight never outranks being off the route.
         case .engaged, .landed, .loosened: return 3
@@ -192,7 +199,7 @@ extension RideEvent {
         case .engaged: return 12
         case .milestone(let which, _): return which == .arrived ? 60 : 30
         case .briefing: return 45
-        case .claimed, .objectiveCompleted: return 60
+        case .claimed, .objectiveCompleted, .phaseBroken: return 60
         case .newGround: return 5
         }
     }

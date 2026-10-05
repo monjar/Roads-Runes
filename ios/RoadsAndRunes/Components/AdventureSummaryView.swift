@@ -37,7 +37,7 @@ struct AdventureSummaryView: View {
 
     /// The order things arrive in.
     private enum Stage: Int, Comparable {
-        case trace, fight, xp, lines, coins, levels, world, codex, runes, items, quest, entry, rest
+        case trace, fight, legend, xp, lines, coins, levels, world, lair, treasure, codex, runes, items, quest, entry, rest
 
         static func < (lhs: Stage, rhs: Stage) -> Bool { lhs.rawValue < rhs.rawValue }
     }
@@ -78,6 +78,9 @@ struct AdventureSummaryView: View {
                             SheetHandle().frame(maxWidth: .infinity)
                             header
                             if stage >= .fight, !fights.isEmpty { fightSection.id(Stage.fight) }
+                            // The legend (0.8.0): damage, the phase bar, "Phase broken!", what it paid.
+                            if stage >= .legend, let legend = summary.legend { LegendOutcomeSection(outcome: legend).id(Stage.legend) }
+                            if stage >= .legend, let woke = summary.legendWoke { LegendWokeLine(woke: woke) }
                             if stage >= .xp, animated, let character { levelBar(character) }
                             if stage >= .lines, !xpLines.isEmpty { breakdown(xpLines.map { (RewardCopy.xp(source: $0.source, className: className), "+\($0.xp)") }).id(Stage.lines) }
                             if stage >= .coins, coins > 0 { coinSection.id(Stage.coins) }
@@ -85,6 +88,9 @@ struct AdventureSummaryView: View {
                             if stage >= .world { worldSection.id(Stage.world) }
                             // A pledge kept (0.7.3): said once, with the thing's mark. A missed one is never mentioned.
                             if stage >= .world, let kept = summary.pledge, kept.kept { PledgeKeptLine(kept: kept) }
+                            // A lair's tiles, or its great chest; buried treasure found (0.8.0).
+                            if stage >= .lair, let lair = summary.lair { LairOutcomeSection(outcome: lair).id(Stage.lair) }
+                            if stage >= .treasure, !summary.treasures.isEmpty { TreasureFoundSection(finds: summary.treasures).id(Stage.treasure) }
                             if stage >= .codex, !firsts.isEmpty { codexSection.id(Stage.codex) }
                             if stage >= .runes, !runeLines.isEmpty { runesSection.id(Stage.runes) }
                             if stage >= .items, !finds.isEmpty { itemsSection.id(Stage.items) }
@@ -161,6 +167,19 @@ struct AdventureSummaryView: View {
             }
             try? await Task.sleep(for: .milliseconds(900))
         }
+        if summary.legend != nil || summary.legendWoke != nil {
+            await arrive(at: .legend, after: 0.3)
+        }
+        if let legend = summary.legend {
+            // A swell for a phase broken, a swell and three knocks for a legend defeated (0.8.0).
+            if let haptic = SignatureHaptic.forLegend(legend) {
+                SignatureHapticsPlayer.shared.play(haptic)
+                try? await Task.sleep(for: .milliseconds(1600))
+            } else {
+                UIImpactFeedbackGenerator(style: .rigid).impactOccurred(intensity: 0.8)
+                try? await Task.sleep(for: .milliseconds(700))
+            }
+        }
         await arrive(at: .xp, after: 0.1) {
             withAnimation(.easeOut(duration: 1.1)) {
                 shownXP = Double(summary.xpAwarded)
@@ -188,6 +207,17 @@ struct AdventureSummaryView: View {
             try? await Task.sleep(for: .milliseconds(700))
         }
         if hasWorld { await arrive(at: .world, after: 0.5) }
+        if let lair = summary.lair {
+            await arrive(at: .lair, after: 0.5)
+            // The great chest opens: two knocks and a rattle.
+            if lair.done { SignatureHapticsPlayer.shared.play(.chest) } else { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
+            try? await Task.sleep(for: .milliseconds(lair.done ? 900 : 300))
+        }
+        if !summary.treasures.isEmpty {
+            await arrive(at: .treasure, after: 0.5)
+            SignatureHapticsPlayer.shared.play(.chest)
+            try? await Task.sleep(for: .milliseconds(900))
+        }
         if !firsts.isEmpty {
             await arrive(at: .codex, after: 0.5)
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -198,7 +228,12 @@ struct AdventureSummaryView: View {
         }
         if !finds.isEmpty {
             await arrive(at: .items, after: 0.5)
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            // A Rare or Legendary find shimmers (0.8.0); anything else is a plain success.
+            if let rare = finds.first(where: { SignatureHaptic.forFind(rarity: $0.rarity) != nil }) {
+                SignatureHapticsPlayer.shared.play(find: rare.rarity)
+            } else {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            }
         }
         if hasQuest { await arrive(at: .quest, after: 0.6) }
         if summary.entryToRead?.isEmpty == false { await arrive(at: .entry, after: 0.5) }
@@ -396,8 +431,10 @@ struct AdventureSummaryView: View {
             out.append((.rune(rune), "\(rune.capitalized) woke: one rank stronger for this journey."))
         }
         for found in summary.runesFound ?? [] {
+            // A Hard rune (0.8.0) comes from a legend defeated or a lair's great chest.
+            let hard = HardRunes.ids.contains(found.rune.lowercased()) ? " One of the Hard Six." : ""
             out.append((.rune(found.rune), found.new
-                ? "New rune: \(found.rune.capitalized)!"
+                ? "New rune: \(found.rune.capitalized)!\(hard)"
                 : "\(found.rune.capitalized) rune stone: \(found.shards) toward its next rank."))
         }
         for reached in summary.deeds?.reached ?? [] {

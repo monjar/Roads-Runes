@@ -50,7 +50,8 @@ final class ContactSheetTests: XCTestCase {
     static let items = ["tin-bell", "drovers-bell", "unrung-bell", "candle-stub", "bullseye-lantern", "wreckers-light",
                         "saddle-roll", "tinkers-satchel", "poachers-pocket", "folded-map", "pedlars-roadbook",
                         "cartographers-atlas", "hagstone", "rowan-twig", "runesmiths-nail"]
-    static let consumables = ["LAMP", "MAP_FRAGMENT", "REST_TOKEN", "SEALED_CHEST_COMMON", "SEALED_CHEST_RARE"]
+    static let consumables = ["LAMP", "MAP_FRAGMENT", "REST_TOKEN", "SEALED_CHEST_COMMON", "SEALED_CHEST_RARE", "TREASURE_MAP"]
+    static let legends = ["fog-dragon", "water-wyrm", "hill-king", "trail-wyrm", "rune-golem"]
     static let slots = ["BELL", "LANTERN", "BAG", "MAP_CASE", "KEEPSAKE"]
 
     func testEveryPathParsesAndStaysOnItsGrid() throws {
@@ -112,6 +113,19 @@ final class ContactSheetTests: XCTestCase {
         XCTAssertNil(Spot.forRarity("COMMON"))
     }
 
+    /// The five legends (0.8.0) each have a face of their own, none a creature's.
+    func testEveryLegendHasItsOwnIcon() {
+        let faces = Self.legends.map(GameIcon.forLegend)
+        XCTAssertEqual(Set(faces).count, 5, "two legends share a face")
+        XCTAssertFalse(faces.contains(.dragonHead))
+        let creatures = Set(Self.sigils.map { GameIcon.forSpecies($0.0) })
+        XCTAssertTrue(creatures.isDisjoint(with: faces), "a legend wears a creature's face")
+        XCTAssertEqual(Mark.legend(icon: "hillKing"), .token(.hillKing, ring: .gold))
+        XCTAssertEqual(Mark.legend(icon: "notYetDrawn", speciesId: "trail-wyrm"), .token(.trailWyrm, ring: .gold))
+        XCTAssertEqual(GameIcon.forConsumable("TREASURE_MAP"), .treasureMap)
+        XCTAssertNotEqual(GameIcon.greatChest, .chest)
+    }
+
     func testEveryIconParsesAndStaysOnItsGrid() throws {
         for icon in GameIcon.allCases {
             let path = try InkPath(icon.path)
@@ -140,8 +154,10 @@ final class ContactSheetTests: XCTestCase {
         let gear = Self.items.enumerated().map { Mark.item(GameIcon.forItem($0.element), rarity: rarities[$0.offset % 3]) }
             + Self.consumables.map { Mark.item(GameIcon.forConsumable($0), rarity: $0.hasSuffix("RARE") ? "RARE" : nil) }
             + Self.slots.map { Mark.icon(GameIcon.forSlot($0)) }
+        // 0.8.0: the five legends, a lair, a great chest, a treasure map's clue.
+        let legends = Self.legends.map { Mark.legend(icon: nil, speciesId: $0) } + [Mark.lair, .greatChest, .treasureMap]
         for (name, marks) in [("runes", runes), ("crests", crests), ("creatures", creatures), ("elders", elders), ("things", things),
-                               ("places", places), ("icons", icons), ("gear", gear)] {
+                               ("places", places), ("icons", icons), ("gear", gear), ("legends", legends)] {
             for (paletteName, palette) in [("phone", InkPalette.phone), ("watch", InkPalette.watch)] {
                 let url = Self.outputDirectory.appendingPathComponent("\(name)-\(paletteName).png")
                 try Self.sheet(marks, palette: palette, to: url)

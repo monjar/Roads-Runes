@@ -37,6 +37,8 @@ struct WorldView: View {
             container.location.requestWhenInUse()
             // Today's pledge, for its row under Next up (0.7.3).
             await container.pledges.refresh()
+            // The legend awake (0.8.0), for its mark and Next up.
+            await container.legends.refresh()
         }
         // The map in the hand needs to know thirty metres from fifty; put away, it
         // goes back to the coarse fix that costs nothing. Neither touches a ride's GPS.
@@ -69,7 +71,10 @@ struct WorldView: View {
             onOpenQuests(quest)
         }
         .onChange(of: container.sync.latestSummary) { _, summary in
-            if let summary { Task { await container.pledges.journeyEnded(summary) } }
+            if let summary {
+                Task { await container.pledges.journeyEnded(summary) }
+                Task { await container.legends.journeyEnded(summary) }
+            }
             guard summary == nil, let model, let center = model.center else { return }
             Task { await model.load(around: center, force: true) }
         }
@@ -85,6 +90,7 @@ struct WorldView: View {
                 cells: model.cells,
                 inkWash: model.inkWash,
                 reach: model.reach,
+                lairTiles: model.lairTiles,
                 markers: model.markers + model.cutMarkers,
                 emphasis: styleKey.emphasis,
                 onRegionChanged: { center, _ in Task { await model.load(around: center) } },
@@ -221,6 +227,10 @@ struct WorldView: View {
             )
         }
         .sheet(item: $directionsTo) { place in RoutePlannerView(quest: nil, destination: place) }
+        // A legend's page (0.8.0), from its mark on the map.
+        .sheet(item: Binding(get: { model.openedLegend }, set: { model.openedLegend = $0 })) { legend in
+            LegendPage(legendId: legend.id)
+        }
         .sheet(isPresented: $showingLegend) { MapLegend() }
         .sheet(isPresented: $planningFreeRide) { RoutePlannerView(quest: nil) }
     }
@@ -232,13 +242,25 @@ struct WorldView: View {
         case .inReach(let object): withAnimation(.snappy) { model.open(object) }
         case .skillPoints: onOpenCharacter()
         case .creature(let object, _), .treasure(let object, _): directionsTo = WorldViewModel.place(for: object)
+        case .legend(let legend, _): directionsTo = WorldViewModel.place(for: legend)
         case .quests: onOpenQuests(nil)
         }
     }
 
     @ViewBuilder
     private func bottomCard(_ model: WorldViewModel) -> some View {
-        if let object = model.selectedObject {
+        if let lair = model.selectedObject, lair.isLair {
+            // A lair (0.8.0): its tiles to visit, by when, and its great chest.
+            LairCard(
+                lair: lair,
+                distanceMeters: model.position.map { GeoMath.distance($0, lair.coordinate) },
+                units: model.units,
+                onPlan: { directionsTo = WorldViewModel.place(for: lair) },
+                onClose: { withAnimation(.snappy) { model.closeObject() } }
+            )
+            .padding(.horizontal, 12)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        } else if let object = model.selectedObject {
             EncounterCard(
                 object: object,
                 distanceMeters: model.position.map { GeoMath.distance($0, object.coordinate) },

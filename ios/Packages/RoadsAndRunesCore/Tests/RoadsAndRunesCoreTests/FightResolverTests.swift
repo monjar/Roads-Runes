@@ -10,9 +10,22 @@ final class FightResolverTests: XCTestCase {
                 var latitude: Double
                 var longitude: Double
                 var hold: Double
+                /// What is left before the outing, when less than `hold` (0.8.0).
+                var holdBefore: Double?
                 var wants: [String]
                 var minds: [String]
                 var roadForm: String?
+            }
+
+            /// A legend's phase (0.8.0): the foe is this phase.
+            struct LegendCase: Decodable {
+                var speciesId: String
+                var phase: Int
+                var weakTo: [String]
+                var resists: [String]
+                var rune: String?
+                var healthMax: Int
+                var healthLeft: Int
             }
 
             struct Expect: Decodable {
@@ -34,6 +47,11 @@ final class FightResolverTests: XCTestCase {
             var rules: [String: Double]?
             /// Health before the outing, when it was already weakened; `hold` otherwise.
             var holdBefore: Double?
+            /// 0.8.0: an elder, a bounty or a legend (Thurisaz); a legend's phase and the capstones against it.
+            var elder: Bool?
+            var legend: LegendCase?
+            var vsLegendsPct: [String: Double]?
+            var legendWordRadiusMeters: Double?
             var expect: Expect
         }
 
@@ -56,10 +74,37 @@ final class FightResolverTests: XCTestCase {
                     ok: row[3].boolValue ?? true, roadCell: row[4].stringValue ?? ""
                 )
             }
-            let foe = FightResolver.Foe(latitude: c.foe.latitude, longitude: c.foe.longitude, holdMax: c.foe.hold,
-                                        holdBefore: c.holdBefore ?? c.foe.hold, wants: c.foe.wants, minds: c.foe.minds, roadForm: c.foe.roadForm)
+            var foe = FightResolver.Foe(latitude: c.foe.latitude, longitude: c.foe.longitude, holdMax: c.foe.hold,
+                                        holdBefore: c.foe.holdBefore ?? c.holdBefore ?? c.foe.hold, wants: c.foe.wants, minds: c.foe.minds,
+                                        roadForm: c.foe.roadForm)
+            // The build as the phone's sheet folds it: the rules, then against this one (0.8.0).
+            var sheet = CharacterSheet(damagePct: c.pct)
+            sheet.rules = c.rules
+            sheet.vsLegendsPct = c.vsLegendsPct
+            sheet.legendWordRadiusMeters = c.legendWordRadiusMeters
+            let cfg = sheet.fightConstants(fixture.combat)
+            var pct = c.pct
+            var against = sheet.foeConstants(cfg, elder: c.elder ?? false)
+            if let spec = c.legend {
+                // The legend's phase as the ride fights it (`Legend.foe`), and the build against a legend.
+                let phase = LegendPhase(n: spec.phase, weakTo: spec.weakTo, resists: spec.resists, healthMax: spec.healthMax,
+                                        healthLeft: spec.healthLeft, rune: spec.rune, roadForm: c.foe.roadForm)
+                let legend = Legend(id: UUID(), speciesId: spec.speciesId, name: c.name, latitude: c.foe.latitude, longitude: c.foe.longitude,
+                                    phase: spec.phase, phases: [phase])
+                let object = try XCTUnwrap(legend.foe, c.name)
+                let monster = try XCTUnwrap(object.monster, c.name)
+                foe = FightResolver.Foe(latitude: object.latitude, longitude: object.longitude, holdMax: Double(monster.holdMax ?? 0),
+                                        holdBefore: Double(monster.holdLeft ?? 0), wants: monster.wants ?? [], minds: monster.minds ?? [],
+                                        roadForm: monster.roadForm)
+                XCTAssertEqual(foe.wants, c.foe.wants, c.name)
+                XCTAssertEqual(foe.minds, c.foe.minds, c.name)
+                XCTAssertEqual(foe.holdMax, c.foe.hold, c.name)
+                XCTAssertEqual(foe.holdBefore, c.foe.holdBefore ?? c.foe.hold, c.name)
+                (pct, against) = FightTracker.against(object, sheet: sheet, cfg: cfg, madeGoodMeters: 0,
+                                                      onFoot: ["RUN", "WALK"].contains(c.activity.uppercased()))
+            }
             let hit = c.runeHit.map { FightResolver.RuneHit(shape: $0[0].stringValue ?? "", index: $0[1].intValue ?? 0) }
-            let report = FightResolver.resolve(points, foe: foe, activity: c.activity, pct: c.pct, cfg: fixture.combat.with(rules: c.rules),
+            let report = FightResolver.resolve(points, foe: foe, activity: c.activity, pct: pct, cfg: against,
                                                newCellIndices: c.newCellIndices, runeHit: hit, wordIndices: c.wordIndices)
             XCTAssertEqual(report.outcome, c.expect.outcome, c.name)
             XCTAssertEqual(report.holdAfter, c.expect.holdAfter, accuracy: 1, c.name)

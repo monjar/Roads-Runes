@@ -7,6 +7,9 @@ import SwiftUI
 /// cards, the codex and the reckoning cannot disagree about what a thing looks like.
 extension Mark {
     static func of(_ object: WorldObject) -> Mark {
+        // A legend as a journey fights it, and a lair (0.8.0), before the kinds.
+        if object.isLegend { return .legend(icon: object.monster?.sigil?.icon, speciesId: object.monster?.speciesId) }
+        if object.isLair { return .lair }
         switch object.kind {
         case .monster:
             return .creature(Sigil(object.monster?.sigil), tier: object.tier, bounty: object.isBounty)
@@ -82,6 +85,12 @@ extension Mark {
         }
         return .token(GameIcon.named(reward.icon, or: fallback))
     }
+}
+
+/// A legend's face (0.8.0): its drawing on a gold-ringed token.
+extension Mark {
+    static func of(_ legend: Legend) -> Mark { .legend(icon: legend.icon, speciesId: legend.speciesId) }
+    static func of(_ legend: LegendSummary) -> Mark { .legend(icon: legend.icon, speciesId: legend.speciesId) }
 }
 
 extension InkPalette {

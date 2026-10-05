@@ -6,22 +6,35 @@ import RoadsAndRunesCore
 /// here, the same way its own map draws them (`Mark.of`).
 enum WatchArt {
     static func icon(for object: WorldObject) -> String? {
-        switch object.kind {
-        case .monster:
+        // A legend (0.8.0) by the mark the server names for it ("fogDragon"), else
+        // its species'; a lair, whose kind this build reads as UNKNOWN, by its own.
+        if object.isLegend {
+            if let icon = object.monster?.sigil?.icon, !icon.isEmpty { return icon }
+            return GameIcon.forLegend(object.monster?.speciesId ?? "").rawValue
+        }
+        if object.isLair { return Self.lair }
+        // By the wire word, so a kind Core learns later needs no case here to build.
+        switch object.kind.rawValue {
+        case WorldObjectKind.monster.rawValue:
             // The species first: it names every creature the art knows; a face
             // the server describes covers one it does not.
             if let species = object.monster?.speciesId, GameIcon.forSpecies(species) != .dragonHead {
                 return GameIcon.forSpecies(species).rawValue
             }
             return GameIcon.forSigil(Sigil(object.monster?.sigil)).rawValue
-        case .chest:
+        case WorldObjectKind.chest.rawValue:
             return GameIcon.chest.rawValue
-        case .collectable:
+        case WorldObjectKind.collectable.rawValue:
             return object.setId == "COINS" ? GameIcon.coins.rawValue : GameIcon.runeStone.rawValue
-        case .unknown:
+        case WatchWorldMark.lair:
+            return Self.lair
+        default:
             return nil
         }
     }
+
+    /// A lair's mark (0.8.0).
+    static let lair = GameIcon.lair.rawValue
 
     /// What the claim overlay shows: the creature defeated or the piece picked up,
     /// and a chest standing open.

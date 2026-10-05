@@ -42,11 +42,18 @@ public enum ConsumableId {
     public static let restToken = "REST_TOKEN"
     public static let sealedChestCommon = "SEALED_CHEST_COMMON"
     public static let sealedChestRare = "SEALED_CHEST_RARE"
-    public static let all = [lamp, mapPiece, restToken, sealedChestCommon, sealedChestRare]
+    /// 0.8.0: used where you stand, it buries a treasure and gives its clue.
+    public static let treasureMap = "TREASURE_MAP"
+    public static let all = [lamp, mapPiece, restToken, sealedChestCommon, sealedChestRare, treasureMap]
 
     /// The ones used from the bag by hand; a lamp is lit at a place, a rest token uses itself.
     public static func usableFromTheBag(_ id: String) -> Bool {
-        id == mapPiece || id == sealedChestCommon || id == sealedChestRare
+        id == mapPiece || id == sealedChestCommon || id == sealedChestRare || id == treasureMap
+    }
+
+    /// Used where the player stands, so they need a location first.
+    public static func needsLocation(_ id: String) -> Bool {
+        id == mapPiece || id == treasureMap
     }
 }
 
@@ -260,9 +267,15 @@ public struct ConsumableUseResult: Codable, Hashable, Sendable {
     public var itemFound: ItemFound?
     public var item: GearItem?
     public var inventory: InventoryState?
+    /// A treasure map (0.8.0): the clue to where it buried the treasure. Never a place.
+    public var clue: String?
+    public var treasureId: UUID?
 
     public init(revealedTiles: Int? = nil, placeName: String? = nil, latitude: Double? = nil, longitude: Double? = nil,
-                itemFound: ItemFound? = nil, item: GearItem? = nil, inventory: InventoryState? = nil) {
+                itemFound: ItemFound? = nil, item: GearItem? = nil, inventory: InventoryState? = nil, clue: String? = nil,
+                treasureId: UUID? = nil) {
+        self.clue = clue
+        self.treasureId = treasureId
         self.revealedTiles = revealedTiles
         self.placeName = placeName
         self.latitude = latitude
@@ -273,12 +286,14 @@ public struct ConsumableUseResult: Codable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case revealedTiles, placeName, latitude, longitude, itemFound, item, inventory
+        case revealedTiles, placeName, latitude, longitude, itemFound, item, inventory, clue, treasureId
     }
 
     /// The inventory may come under `inventory` or be the whole answer.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        clue = try c.decodeIfPresent(String.self, forKey: .clue)
+        treasureId = try? c.decodeIfPresent(UUID.self, forKey: .treasureId)
         revealedTiles = try c.decodeIfPresent(Int.self, forKey: .revealedTiles)
         placeName = try c.decodeIfPresent(String.self, forKey: .placeName)
         latitude = try c.decodeIfPresent(Double.self, forKey: .latitude)
@@ -291,6 +306,12 @@ public struct ConsumableUseResult: Codable, Hashable, Sendable {
     public var coordinate: Coordinate? {
         guard let latitude, let longitude else { return nil }
         return Coordinate(latitude: latitude, longitude: longitude)
+    }
+
+    /// The treasure map's clue as an open clue, for the Quests tab.
+    public var treasureClue: TreasureClue? {
+        guard let clue, !clue.isEmpty else { return nil }
+        return TreasureClue(treasureId: treasureId, clue: clue)
     }
 }
 

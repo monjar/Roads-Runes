@@ -25,6 +25,10 @@ public struct CharacterSheet: Codable, Hashable, Sendable {
     /// 0.7.2 (sheet version 4): the gear worn, item id by slot, and how much better finds are.
     public var gear: [String: String]? = nil
     public var lootFindPct: Double? = nil
+    /// 0.8.0 (sheet version 5): the capstone skills, against legends only — a
+    /// percentage by kind ({"GROUND": 0.25}) and how far a note reaches a legend.
+    public var vsLegendsPct: [String: Double]?
+    public var legendWordRadiusMeters: Double?
 
     /// The combat constants with what the inscribed runes and the gear change that
     /// the phone can follow: the opening blow (Raido, the Drover's Bell), how far the
@@ -44,6 +48,32 @@ public struct CharacterSheet: Codable, Hashable, Sendable {
         case let (nil, b?): return b
         default: return nil
         }
+    }
+
+    /// The constants against one thing, after `fightConstants` (`CharacterSheet.foe_cfg`):
+    /// Thurisaz makes the opening blow on an elder, a bounty or a legend that many
+    /// times stronger (the fraction is scaled; its cap is not).
+    public func foeConstants(_ cfg: CombatConstants, elder: Bool) -> CombatConstants {
+        guard elder, let scale = rules?["ELDER_CARRIED_SCALE"], scale > 0 else { return cfg }
+        var out = cfg
+        out.carriedFraction = cfg.carriedFraction * scale
+        return out
+    }
+
+    /// The constants against a legend (`CharacterSheet.legend_cfg`): an elder's, and
+    /// a note reaching as far as the Loremaster's.
+    public func legendConstants(_ cfg: CombatConstants) -> CombatConstants {
+        var out = foeConstants(cfg, elder: true)
+        if let reach = legendWordRadiusMeters, reach != 0 { out.wordRadiusMeters = max(out.wordRadiusMeters, reach) }
+        return out
+    }
+
+    /// The build against a legend (`CharacterSheet.pct_against_legend`): as against
+    /// an elder, plus the capstone skills' percentages, kind by kind.
+    public func pctAgainstLegend(madeGoodMeters: Double, onFoot: Bool) -> [String: Double] {
+        var pct = pct(againstElder: true, madeGoodMeters: madeGoodMeters, onFoot: onFoot)
+        for (kind, extra) in vsLegendsPct ?? [:] { pct[kind, default: 0] += extra }
+        return pct
     }
 
     /// The build against one thing on this outing, as the server works it out
@@ -104,6 +134,9 @@ public struct CombatConstants: Codable, Hashable, Sendable {
     public var finishUnder: Double = 0
     /// Not on the wire: what one new tile counts for as exploring (`GROUND_CELL_SCALE`).
     public var groundCellScale: Double = 1
+    /// Not on the wire (0.8.0, Uruz `CLIMB_SHARED_M`): climbing within this many
+    /// metres of a thing counts in full against it, before contact too; 0 = off.
+    public var climbSharedMeters: Double = 0
 
     public init() {}
 
@@ -116,6 +149,9 @@ public struct CombatConstants: Codable, Hashable, Sendable {
         if let reach = rules["WORD_RADIUS_M"] { out.wordRadiusMeters = max(wordRadiusMeters, reach) }
         if let under = rules["FINISH_UNDER"], under > 0 { out.finishUnder = max(finishUnder, under) }
         if let scale = rules["GROUND_CELL_SCALE"], scale > 0 { out.groundCellScale = groundCellScale * scale }
+        // The Hard Six (0.8.0): Nauthiz widens what counts as met, Uruz shares climbing.
+        if let engage = rules["ENGAGE_M"], engage != 0 { out.engageMeters = max(engageMeters, engage) }
+        if let shared = rules["CLIMB_SHARED_M"], shared != 0 { out.climbSharedMeters = shared }
         return out
     }
 

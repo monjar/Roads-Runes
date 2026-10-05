@@ -117,6 +117,12 @@ public enum Endpoints {
     public static func buyOffer(id: String) -> Endpoint { Endpoint(method: .post, path: "/inventory/stall/\(id)/buy") }
     public static func levelRewards() -> Endpoint { Endpoint(method: .get, path: "/inventory/levels") }
 
+    // MARK: Legends, lairs and treasure (0.8.0)
+    public static func legends() -> Endpoint { Endpoint(method: .get, path: "/legends") }
+    public static func legend(id: UUID) -> Endpoint { Endpoint(method: .get, path: "/legends/\(id.uuidString)") }
+    public static func moveLegend(id: UUID) -> Endpoint { Endpoint(method: .post, path: "/legends/\(id.uuidString)/move", timeout: 60) }
+    public static func treasureClues() -> Endpoint { Endpoint(method: .get, path: "/inventory/treasure") }
+
     // MARK: Between rides (0.7.3)
     /// `today` is the phone's own date ("2026-10-05"): the server's day is UTC's.
     public static func pledges(today: String) -> Endpoint { Endpoint(method: .get, path: "/pledge", query: [QueryItem("today", today)]) }

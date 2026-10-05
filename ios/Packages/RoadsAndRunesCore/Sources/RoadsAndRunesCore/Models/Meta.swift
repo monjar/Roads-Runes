@@ -63,6 +63,9 @@ public enum APIErrorCode {
     public static let stallClosed = "STALL_CLOSED"
     public static let alreadyBought = "ALREADY_BOUGHT"
     public static let insufficientCoins = "INSUFFICIENT_AC"
+    /// 0.8.0: a legend's one free move is used; a second treasure map while one is open.
+    public static let alreadyMoved = "ALREADY_MOVED"
+    public static let oneAtATime = "ONE_AT_A_TIME"
 }
 
 public struct StravaStatus: Codable, Hashable, Sendable {

@@ -63,14 +63,23 @@ public struct MonsterInfo: Codable, Hashable, Sendable {
     public var variant: CreatureVariant? = nil
     public var grudge: CreatureGrudge? = nil
     public var displayName: String? = nil
+    /// 0.8.0: set on a legend fought on a journey (`Legend.foe`), never by the
+    /// server: the phase it is in (1–3) and how many it has. A creature has neither.
+    public var phase: Int?
+    public var phases: Int?
+    /// A phase broke today, so this one cannot until tomorrow: it holds at 1 (one a day).
+    public var phaseHeld: Bool?
 
     public init(hp: Int, flavour: String? = nil, killMethods: [KillMethod] = [], speciesId: String? = nil, sigil: CreatureSigil? = nil,
                 holdMax: Int? = nil, holdLeft: Int? = nil, wants: [String]? = nil, minds: [String]? = nil,
                 rune: String? = nil, roadForm: String? = nil, unpassedDays: Int? = nil,
-                variant: CreatureVariant? = nil, grudge: CreatureGrudge? = nil, displayName: String? = nil) {
+                variant: CreatureVariant? = nil, grudge: CreatureGrudge? = nil, displayName: String? = nil,
+                phase: Int? = nil, phases: Int? = nil) {
         self.variant = variant
         self.grudge = grudge
         self.displayName = displayName
+        self.phase = phase
+        self.phases = phases
         self.hp = hp
         self.flavour = flavour
         self.killMethods = killMethods
@@ -115,6 +124,10 @@ public struct WorldObject: Codable, Hashable, Identifiable, Sendable {
     public var pieceOwned: Bool?
     /// The name to show, where the server sends one (0.7.2).
     public var displayName: String? = nil
+    /// A lair (0.8.0, kind `LAIR` on the wire): its seven tiles and how many are
+    /// visited. The kind reads as `.unknown` on this build, so nothing that does
+    /// not know lairs draws or fights one; `isLair` is how to tell.
+    public var lair: LairInfo?
 
     public init(id: UUID, kind: WorldObjectKind, status: WorldObjectStatus = .spawned, tier: Int = 1, latitude: Double, longitude: Double, name: String, anchorName: String? = nil, bounty: Bool? = nil, rewardAC: Int, expiresAt: Date, claimedAt: Date? = nil, monster: MonsterInfo? = nil, setId: String? = nil, piece: String? = nil, claimRadiusMeters: Double? = nil, setName: String? = nil, setSize: Int? = nil, setOwned: Int? = nil) {
         self.setName = setName
@@ -140,6 +153,10 @@ public struct WorldObject: Codable, Hashable, Identifiable, Sendable {
 
     public var coordinate: Coordinate { Coordinate(latitude: latitude, longitude: longitude) }
     public var isBounty: Bool { bounty ?? false }
+    /// A legend as a journey fights it (`Legend.foe`, 0.8.0): its id is the legend's.
+    public var isLegend: Bool { monster?.phases != nil }
+    /// A lair (0.8.0).
+    public var isLair: Bool { lair != nil }
 
     /// "Stubborn Fen Troll": the server's display name, or the variant before the plain name.
     public var shownName: String {

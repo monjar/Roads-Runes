@@ -12,6 +12,8 @@ enum NextUp: Equatable {
     case inReach(WorldObject)
     /// Skill points waiting and a skill that can be learned.
     case skillPoints(Int)
+    /// The legend awake (0.8.0), when it is in reach: it outranks a creature.
+    case legend(Legend, meters: Double)
     /// The nearest creature worth riding to.
     case creature(WorldObject, meters: Double)
     /// The nearest chest worth riding to.
@@ -21,11 +23,14 @@ enum NextUp: Equatable {
 
     /// How far a creature or a chest may be and still be "next".
     static let nearMeters: Double = 3000
+    /// How far a legend may be and still be in reach: it lives 2–8 km from where you start.
+    static let legendReachMeters: Double = 8000
 
     static func choose(
         character: Character?,
         objects: [WorldObject],
         position: Coordinate?,
+        legend: Legend? = nil,
         inReach: (WorldObject) -> Bool
     ) -> NextUp {
         if let character, character.overallXP == 0 { return .firstRide }
@@ -41,9 +46,13 @@ enum NextUp: Equatable {
             .map { (object: $0, meters: GeoMath.distance(position, $0.coordinate)) }
             .filter { $0.meters <= nearMeters }
             .sorted { $0.meters < $1.meters }
-        // The bounty first, then the nearest creature, then the nearest chest.
+        // The bounty first, then the legend in reach, then the nearest creature, then the nearest chest.
         if let bounty = near.first(where: { $0.object.isBounty }) {
             return .creature(bounty.object, meters: bounty.meters)
+        }
+        if let legend, legend.isAwake {
+            let meters = GeoMath.distance(position, legend.coordinate)
+            if meters <= legendReachMeters { return .legend(legend, meters: meters) }
         }
         if let creature = near.first(where: { $0.object.kind == .monster }) {
             return .creature(creature.object, meters: creature.meters)
@@ -110,6 +119,7 @@ struct NextUpCard: View {
         switch next {
         case .firstRide: return .rider(activity.rawValue)
         case .inReach(let object), .creature(let object, _), .treasure(let object, _): return .of(object)
+        case .legend(let legend, _): return .of(legend)
         case .skillPoints: return .token(.star, ring: .gold)
         case .quests: return .quest
         }
@@ -122,6 +132,8 @@ struct NextUpCard: View {
         case .skillPoints(let count): return count == 1 ? "A skill point to spend" : "\(count) skill points to spend"
         case .creature(let object, let meters), .treasure(let object, let meters):
             return "\(object.name) · \(formatter.distance(meters: meters))"
+        case .legend(let legend, let meters):
+            return "\(legend.name) · \(formatter.distance(meters: meters))"
         case .quests: return "Find a quest"
         }
     }
@@ -136,6 +148,9 @@ struct NextUpCard: View {
             let at = object.anchorName.map { "At \($0). " } ?? ""
             return object.isBounty ? "\(at)Today's bounty: worth double." : "\(at)Ride near it to defeat it."
         case .treasure(let object, _): return "Open it for \(LoreCopy.purse(object.rewardAC))."
+        case .legend(let legend, _):
+            let weak = legend.currentPhase.map { " \(LoreCopy.weakTo($0.weakTo))." } ?? ""
+            return "A legend · \(legend.phaseLine).\(weak)"
         case .quests: return "The board has quests near you."
         }
     }
@@ -145,7 +160,7 @@ struct NextUpCard: View {
         case .firstRide: return "Plan"
         case .inReach(let object): return object.kind == .chest ? "Open" : "Pick up"
         case .skillPoints: return "Learn"
-        case .creature, .treasure: return "Go"
+        case .creature, .treasure, .legend: return "Go"
         case .quests: return "Quests"
         }
     }

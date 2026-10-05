@@ -50,6 +50,43 @@ final class NextUpTests: XCTestCase {
         XCTAssertEqual(nearest.id, creature.id)
     }
 
+    /// A legend in reach (0.8.0) outranks a creature, and a creature nearer than it;
+    /// the bounty still comes first, and a legend out of reach or asleep is passed over.
+    func testALegendInReachOutranksACreature() {
+        let creature = object(.monster, metersNorth: 300)
+        var legend = SampleData.sampleLegend
+        let far = GeoMath.destination(from: here, bearingDegrees: 90, distanceMeters: 2500)
+        legend.latitude = far.latitude
+        legend.longitude = far.longitude
+        let next = NextUp.choose(character: character(), objects: [creature], position: here, legend: legend) { _ in false }
+        guard case .legend(let picked, let meters) = next else { return XCTFail("\(next)") }
+        XCTAssertEqual(picked.id, legend.id)
+        XCTAssertEqual(meters, 2500, accuracy: 5)
+
+        let bounty = object(.monster, metersNorth: 900, bounty: true)
+        guard case .creature(let first, _) = NextUp.choose(character: character(), objects: [creature, bounty], position: here, legend: legend,
+                                                           inReach: { _ in false }) else { return XCTFail("the bounty") }
+        XCTAssertEqual(first.id, bounty.id)
+
+        let away = GeoMath.destination(from: here, bearingDegrees: 90, distanceMeters: NextUp.legendReachMeters + 1000)
+        legend.latitude = away.latitude
+        legend.longitude = away.longitude
+        guard case .creature(let instead, _) = NextUp.choose(character: character(), objects: [creature], position: here, legend: legend,
+                                                             inReach: { _ in false }) else { return XCTFail("out of reach") }
+        XCTAssertEqual(instead.id, creature.id)
+
+        legend.latitude = far.latitude
+        legend.longitude = far.longitude
+        legend.status = LegendStatus.dormant
+        guard case .creature = NextUp.choose(character: character(), objects: [creature], position: here, legend: legend,
+                                             inReach: { _ in false }) else { return XCTFail("asleep") }
+        // With nothing else near, the legend in reach is next.
+        legend.status = LegendStatus.awake
+        guard case .legend = NextUp.choose(character: character(), objects: [], position: here, legend: legend, inReach: { _ in false }) else {
+            return XCTFail("alone")
+        }
+    }
+
     func testNothingNearSendsThePlayerToTheBoard() {
         let far = object(.monster, metersNorth: NextUp.nearMeters + 500)
         XCTAssertEqual(NextUp.choose(character: character(), objects: [far], position: here) { _ in false }, .quests)

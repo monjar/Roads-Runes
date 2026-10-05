@@ -10,14 +10,8 @@ struct ObjectiveCompleteOverlay: View {
     let token: Int
     let dismiss: () -> Void
 
-    /// The phone sends GONE for a creature (a wire word older Watches know); it reads DEFEATED.
-    private var label: String {
-        switch event.outcome {
-        case "GONE": return "DEFEATED"
-        case .some(let outcome): return outcome
-        case .none: return "DONE"
-        }
-    }
+    /// DEFEATED for the phone's GONE, PHASE BROKEN! for a legend's phase (`WristMarks.heading`).
+    private var label: String { WristMarks.heading(event) }
 
     var body: some View {
         VStack(spacing: 6) {
@@ -25,7 +19,7 @@ struct ObjectiveCompleteOverlay: View {
             // opened, a find; an item found ringed by its rarity.
             MarkView(WristMarks.claim(event), palette: .watch)
                 .frame(width: 56, height: 56)
-            // DEFEATED, OPENED, FOUND or DONE; an older phone sends none.
+            // DEFEATED, OPENED, FOUND, DONE or PHASE BROKEN!; an older phone sends none.
             Text(label)
                 .font(.system(size: 11, weight: .bold))
                 .tracking(1.2)
@@ -65,7 +59,8 @@ struct ObjectiveCompleteOverlay: View {
         .background(WatchTheme.sage)
         .ignoresSafeArea()
         .task(id: token) {
-            TurnHaptics.tap(.success)
+            // One tap, from the game's set: a phase broken included.
+            TurnHaptics.tap(event.tap)
             try? await Task.sleep(for: .seconds(4))
             dismiss()
         }

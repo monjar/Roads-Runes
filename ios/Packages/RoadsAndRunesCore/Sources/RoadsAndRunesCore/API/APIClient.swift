@@ -285,6 +285,16 @@ public actor APIClient: RoadsAndRunesAPI {
     public func buyOffer(id: String) async throws -> InventoryState { try await request(Endpoints.buyOffer(id: id)) }
     public func levelRewards() async throws -> [LevelStep] { try await request(Endpoints.levelRewards()) }
 
+    // MARK: Legends, lairs and treasure (0.8.0)
+
+    public func legends() async throws -> LegendsState { try await request(Endpoints.legends()) }
+    public func legend(id: UUID) async throws -> Legend { try await request(Endpoints.legend(id: id)) }
+    public func moveLegend(id: UUID) async throws -> Legend { try await request(Endpoints.moveLegend(id: id)) }
+    public func treasureClues() async throws -> [TreasureClue] {
+        let open: TreasureClues = try await request(Endpoints.treasureClues())
+        return open.clues
+    }
+
     // MARK: Between rides (0.7.3)
 
     public func pledges(today: String) async throws -> PledgeState { try await request(Endpoints.pledges(today: today)) }

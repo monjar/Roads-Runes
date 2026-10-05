@@ -95,6 +95,19 @@ public extension Mark {
     static func item(_ icon: GameIcon, rarity: String?) -> Mark {
         .token(icon, ring: Spot.forRarity(rarity))
     }
+
+    /// A legend (0.8.0): its own drawing on a token with a gold ring, by the icon
+    /// the server names or else by its species.
+    static func legend(icon: String?, speciesId: String? = nil) -> Mark {
+        .token(GameIcon.named(icon, or: GameIcon.forLegend(speciesId ?? "")), ring: .gold)
+    }
+
+    /// A lair (0.8.0): the cave on a sage token.
+    static let lair = Mark.token(.lair, ring: .sage)
+    /// A lair's reward (0.8.0).
+    static let greatChest = Mark.token(.greatChest, ring: .gold)
+    /// A treasure map's clue (0.8.0): never a place on the map, only this.
+    static let treasureMap = Mark.token(.treasureMap, ring: .terracotta)
 }
 
 public extension Spot {
@@ -199,7 +212,21 @@ public extension GameIcon {
         case "MAP_FRAGMENT": return .treasureMap
         case "REST_TOKEN": return .restToken
         case "SEALED_CHEST_COMMON", "SEALED_CHEST_RARE", "SEALED_CHEST": return .chest
+        case "TREASURE_MAP": return .treasureMap
         default: return .sparkles
+        }
+    }
+
+    /// A legend by its species id (`legends.json`, 0.8.0); the server names the
+    /// icon as well, and that wins where it is known.
+    static func forLegend(_ id: String) -> GameIcon {
+        switch id {
+        case "fog-dragon": return .fogDragon
+        case "water-wyrm": return .waterWyrm
+        case "hill-king": return .hillKing
+        case "trail-wyrm": return .trailWyrm
+        case "rune-golem": return .runeGolem
+        default: return .dragonHead
         }
     }
 

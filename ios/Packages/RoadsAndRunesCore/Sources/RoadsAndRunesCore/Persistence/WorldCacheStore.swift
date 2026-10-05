@@ -69,6 +69,8 @@ public struct CachedWorld: Codable, Hashable, Sendable {
     public var cellsBounds: BoundingBox?
     public var combat: CombatConstants?
     public var sheet: CharacterSheet?
+    /// The legend awake when the world was last loaded (0.8.0), for a journey with no signal.
+    public var legend: Legend?
 
     public init(savedAt: Date = Date(), center: Coordinate? = nil, radiusMeters: Double? = nil, objects: [WorldObject] = [],
                 exploredCells: [String]? = nil, h3Resolution: Int? = nil, cellsBounds: BoundingBox? = nil,

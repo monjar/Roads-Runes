@@ -40,13 +40,14 @@ public extension SampleData {
                         source: source)
     }
 
-    /// The five consumables: name, icon, what it does.
+    /// The consumables: name, icon, what it does (a treasure map from 0.8.0).
     static let consumableCatalog: [(id: String, name: String, icon: String, text: String)] = [
         ("LAMP", "Lamp", "lantern", "Light it at a place on the map and a creature comes. Used before coins."),
         ("MAP_FRAGMENT", "Map piece", "treasureMap", "Reveals the tiles round the nearest hidden place within 5 km."),
         ("REST_TOKEN", "Rest token", "restToken", "Keeps your streak going over one missed day. Used by itself."),
         ("SEALED_CHEST_COMMON", "Sealed chest", "chest", "Holds a Common item. Open it when your journey is over."),
         ("SEALED_CHEST_RARE", "Sealed chest (Rare)", "chest", "Holds a Rare item. Open it when your journey is over."),
+        ("TREASURE_MAP", "Treasure map", "treasureMap", "Buries a treasure near where you use it and gives you a clue to find it."),
     ]
 
     static func consumables(_ counts: [String: Int]) -> [ConsumableStack] {
@@ -75,7 +76,7 @@ public extension SampleData {
             gearItem("folded-map", id: foldedMapId, source: "QUEST"),
         ],
         bagSize: InventoryState.defaultBagSize,
-        consumables: consumables(["LAMP": 2, "MAP_FRAGMENT": 1, "REST_TOKEN": 1, "SEALED_CHEST_COMMON": 1]),
+        consumables: consumables(["LAMP": 2, "MAP_FRAGMENT": 1, "REST_TOKEN": 1, "SEALED_CHEST_COMMON": 1, "TREASURE_MAP": 1]),
         finishesSinceRare: 2
     )
 
@@ -97,7 +98,7 @@ public extension SampleData {
             rewards.append(LevelReward(kind: "TITLE", text: "Title: \(title)", icon: "laurels"))
         }
         if rewards.isEmpty {
-            let turn = ConsumableId.all.filter { $0 != ConsumableId.sealedChestRare }
+            let turn = ConsumableId.all.filter { $0 != ConsumableId.sealedChestRare && $0 != ConsumableId.treasureMap }
             let pick = turn[(level - 2) % turn.count]
             let entry = consumableCatalog.first { $0.id == pick }
             let count = pick == ConsumableId.lamp ? 2 : 1

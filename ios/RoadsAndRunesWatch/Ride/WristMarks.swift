@@ -24,15 +24,25 @@ enum WristMarks {
             return .token(icon(mark.icon, otherwise: .runeStone))
         case WatchWorldMark.objective:
             return .objective
+        case WatchWorldMark.legend:
+            // A legend is always gold, quarry or not: there is only ever one.
+            return .token(legendIcon(mark.icon, species: mark.speciesId), ring: .gold)
+        case WatchWorldMark.lair:
+            // Its seven tiles are too small for the wrist: the middle stands for them.
+            return .token(icon(mark.icon, otherwise: .lair), ring: .sage)
         default:
             return .token(icon(mark.icon, otherwise: .mystery))
         }
     }
 
-    /// How big a thing is drawn on the map: what the journey is for stands out.
+    /// How big a thing is drawn on the map: a legend largest, then what the journey is for.
     static func size(_ mark: WatchWorldMark) -> Double {
+        if mark.isLegend { return 30 }
         if mark.isQuarry { return 24 }
-        return mark.kind == WatchWorldMark.objective ? 20 : 16
+        switch mark.kind {
+        case WatchWorldMark.objective, WatchWorldMark.lair: return 20
+        default: return 16
+        }
     }
 
     /// A stop as its place mark; nil from an older phone, which sends no kind.
@@ -41,9 +51,16 @@ enum WristMarks {
         return .token(GameIcon.forPlace(category), ring: stop.requested ? .terracotta : nil)
     }
 
-    /// The creature being fought, ringed in terracotta when it is the quarry.
+    /// The creature being fought, ringed in terracotta when it is the quarry. A
+    /// legend's phases ring it already, so its mark goes bare.
     static func fight(_ fight: WatchFight) -> Mark {
-        .token(icon(fight.icon, species: fight.speciesId, otherwise: .dragonHead), ring: fight.quarry ? .terracotta : nil)
+        if fight.isLegend { return .token(legendIcon(fight.icon, species: fight.speciesId)) }
+        return .token(icon(fight.icon, species: fight.speciesId, otherwise: .dragonHead), ring: fight.quarry ? .terracotta : nil)
+    }
+
+    /// A legend's own drawing: the one the phone names, else its species'.
+    static func legendIcon(_ name: String?, species: String?) -> GameIcon {
+        icon(name, otherwise: GameIcon.forLegend(species ?? ""))
     }
 
     /// The overlay's mark: what the phone named (the creature defeated, the item
@@ -54,14 +71,43 @@ enum WristMarks {
         case "GONE": fallback = .sword
         case "OPENED": fallback = .openChest
         case "FOUND": fallback = .runeStone
+        case WatchObjectiveCompleted.Outcome.phase:
+            // Phase broken: the legend's own mark, in its gold ring.
+            return .token(icon(event.icon, otherwise: .dragonHead), ring: .gold)
         default: fallback = .flag
         }
         return .token(icon(event.icon, otherwise: fallback), ring: ring(rarity: event.rarity))
     }
 
+    /// The overlay's heading. The phone sends GONE for a creature (a wire word older
+    /// Watches know); it reads DEFEATED. A legend's phase reads as VOICE has it.
+    static func heading(_ event: WatchObjectiveCompleted) -> String {
+        switch event.outcome {
+        case "GONE": return "DEFEATED"
+        case WatchObjectiveCompleted.Outcome.phase: return "PHASE BROKEN!"
+        case .some(let outcome): return outcome
+        case .none: return "DONE"
+        }
+    }
+
     /// A line of Journey's end: an item, a rune stone or a place.
     static func find(_ find: WatchFind) -> Mark {
         .token(icon(find.icon, otherwise: .sparkles), ring: ring(rarity: find.rarity))
+    }
+
+    /// Journey's end's legend line: its mark in gold.
+    static func legendLine(_ line: WatchEndLine) -> Mark {
+        .token(icon(line.icon, otherwise: .dragonHead), ring: .gold)
+    }
+
+    /// The lair's line: its great chest once claimed, else the lair's own mark.
+    static func lairLine(_ line: WatchEndLine) -> Mark {
+        .token(icon(line.icon, otherwise: .lair), ring: line.icon == GameIcon.greatChest.rawValue ? .gold : .sage)
+    }
+
+    /// Buried treasure dug up.
+    static func treasureLine(_ line: WatchEndLine) -> Mark {
+        .token(icon(line.icon, otherwise: .treasureMap), ring: .gold)
     }
 
     static func ring(rarity: String?) -> Spot? {

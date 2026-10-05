@@ -99,5 +99,13 @@
   "hagstone": "delapouite/stone-wheel",
   "rowanTwig": "lorc/elderberry",
   "runesmithsNail": "lorc/nails",
-  "restToken": "delapouite/night-sleep"
+  "restToken": "delapouite/night-sleep",
+
+  "fogDragon": "lorc/dragon-spiral",
+  "waterWyrm": "lorc/sea-dragon",
+  "hillKing": "cathelineau/old-king",
+  "trailWyrm": "delapouite/sand-snake",
+  "runeGolem": "delapouite/golem-head",
+  "greatChest": "delapouite/chest",
+  "lair": "delapouite/mountain-cave"
 }

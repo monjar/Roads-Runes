@@ -109,6 +109,10 @@ struct RunesScreen: View {
                     if !rune.held, rune.six == "GROUND" {
                         Text("Found only near \(Self.ground(of: rune.id)).").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
                     }
+                    // The Hard Six (0.8.0): a legend leaves each, and a lair's great chest holds Ingwaz.
+                    if !rune.held, let how = HardRunes.howToFind(rune.id) {
+                        Text(how).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                    }
                     if rune.held, let next = rune.nextRank {
                         Text("\(rune.shards) / \(next.shards) rune stones to rank \(LoreCopy.roman(rune.rank + 1)) · \(LoreCopy.purse(next.coins))")
                             .font(Theme.Typography.caption.monospacedDigit()).foregroundStyle(Theme.Colors.muted)

@@ -345,4 +345,100 @@ final class RideStoreTests: XCTestCase {
         XCTAssertNil(store.quarry)
         XCTAssertEqual(faces, 4)
     }
+
+    // MARK: Legends (0.8.0)
+
+    private let dragon = UUID(uuidString: "8A1F0B2C-0000-4000-8000-0000000000D1")!
+    private let lair = UUID(uuidString: "8A1F0B2C-0000-4000-8000-0000000000A2")!
+
+    private var legendMarks: [WatchWorldMark] {
+        [
+            WatchWorldMark(id: dragon, kind: WatchWorldMark.legend, name: "The Fog Dragon", latitude: 51.49, longitude: -0.03,
+                           icon: "fogDragon", speciesId: "fog-dragon", quarry: true),
+            WatchWorldMark(id: lair, kind: WatchWorldMark.lair, name: "Southwark Park", latitude: 51.495, longitude: -0.05, icon: "lair"),
+        ] + marks.dropFirst()
+    }
+
+    private func legendFight(phase: Int = 2, tenths: Int = 6, defeated: Bool = false, quarry: Bool = true) -> WatchFight {
+        WatchFight(speciesId: "fog-dragon", name: "The Fog Dragon", icon: "fogDragon", tenthsLeft: tenths, quarry: quarry,
+                   defeated: defeated, phase: phase, phases: 3)
+    }
+
+    func testTheLegendIsOnTheMapLargerAndGoldAndTheLairAsItsMiddle() throws {
+        let store = RideStore()
+        store.apply(summary: try WatchMessages.routeSummary(from: WatchMessages.routeSummary(summary(marks: legendMarks))))
+        XCTAssertEqual(store.worldMarks.map(\.kind), [WatchWorldMark.legend, WatchWorldMark.lair, WatchWorldMark.chest, WatchWorldMark.objective])
+        let legend = store.worldMarks[0]
+        XCTAssertGreaterThan(WristMarks.size(legend), WristMarks.size(marks[0]), "larger than a creature quarry")
+        XCTAssertEqual(WristMarks.mark(legend), .token(.fogDragon, ring: .gold))
+        // Its species stands in for a mark this Watch has not got.
+        var unknown = legend
+        unknown.icon = "frostDragonOfTheFuture"
+        XCTAssertEqual(WristMarks.mark(unknown), .token(.fogDragon, ring: .gold))
+        // The lair's tiles are too small for the wrist: one mark at its middle.
+        XCTAssertEqual(WristMarks.mark(store.worldMarks[1]), .token(.lair, ring: .sage))
+        XCTAssertEqual(WristMarks.size(store.worldMarks[1]), 20)
+        // The complication shows the legend while it is the quarry.
+        XCTAssertEqual(store.quarry, WatchQuarry(name: "The Fog Dragon", icon: "fogDragon", speciesId: "fog-dragon", legend: true))
+        // A phase broken is not gone: the phone sends its id only once it is defeated.
+        store.apply(update: gone([dragon]))
+        XCTAssertNil(store.quarry)
+        XCTAssertFalse(store.worldMarks.contains { $0.isLegend })
+    }
+
+    func testALegendsFightIsDrawnInItsThreePhases() throws {
+        let store = RideStore()
+        store.apply(update: try WatchMessages.navigationUpdate(from: WatchMessages.navigationUpdate(gone(nil, fight: legendFight()))))
+        let fight = try XCTUnwrap(store.fight)
+        XCTAssertTrue(fight.isLegend)
+        XCTAssertEqual(PhaseRing.arcs(for: fight), [.broken, .current(tenths: 6), .whole], "broken filled, this one in tenths, the next whole")
+        XCTAssertEqual(PhaseRing.arcs(for: legendFight(phase: 1, tenths: 10)), [.current(tenths: 10), .whole, .whole])
+        XCTAssertEqual(PhaseRing.arcs(for: legendFight(phase: 3, tenths: 1)), [.broken, .broken, .current(tenths: 1)])
+        XCTAssertEqual(PhaseRing.arcs(for: legendFight(phase: 3, tenths: 0, defeated: true)), [.broken, .broken, .broken])
+        XCTAssertEqual(PhaseRing.label(for: fight), "The Fog Dragon, phase 2 of 3, health 6 of 10")
+        // Its phases ring it, so its mark goes bare: no quarry ring inside the arcs.
+        XCTAssertEqual(WristMarks.fight(fight), .token(.fogDragon))
+        // A creature's fight is as it was.
+        let troll = WatchFight(speciesId: "fen-troll", name: "Fen Troll", icon: "troll", tenthsLeft: 4, quarry: true, defeated: false)
+        XCTAssertFalse(troll.isLegend)
+        XCTAssertEqual(WristMarks.fight(troll), .token(.troll, ring: .terracotta))
+    }
+
+    func testAPhaseBrokenIsOneFightTapAndTheOverlayWithItsMark() throws {
+        let store = RideStore()
+        let broken = WatchObjectiveCompleted.phaseBroken(name: "The Fog Dragon", icon: "fogDragon", broken: 1, of: 3)
+        store.apply(objective: try WatchMessages.objectiveCompleted(from: WatchMessages.objectiveCompleted(broken)))
+        let event = try XCTUnwrap(store.pendingObjective)
+        XCTAssertEqual(store.objectiveToken, 1, "one overlay")
+        XCTAssertEqual(event.outcome, "PHASE")
+        XCTAssertEqual(WristMarks.heading(event), "PHASE BROKEN!")
+        XCTAssertEqual(WristMarks.claim(event), .token(.fogDragon, ring: .gold))
+        XCTAssertEqual(event.detail, "2 phases left")
+        XCTAssertEqual(event.tap, .success)
+        XCTAssertTrue(WristTap.fight.contains(event.tap))
+        XCTAssertFalse(WristTap.turns.contains(event.tap), "never mistaken for a turn")
+        // The headings the older outcomes always had.
+        XCTAssertEqual(WristMarks.heading(WatchObjectiveCompleted(title: "Fen Troll", outcome: "GONE")), "DEFEATED")
+        XCTAssertEqual(WristMarks.heading(WatchObjectiveCompleted(title: "Old chest", outcome: "OPENED")), "OPENED")
+        XCTAssertEqual(WristMarks.heading(WatchObjectiveCompleted(title: "Reach Old Station")), "DONE")
+    }
+
+    func testJourneysEndListsTheLegendTheLairAndTreasure() {
+        var full = end(endedAt: nil)
+        full.legend = WatchEndLine(text: "Phase broken! The Fog Dragon is down to its last phase.", icon: "fogDragon")
+        full.lair = WatchEndLine.lair(name: "Southwark Park", visited: 5, need: 5, done: true)
+        full.treasureFound = WatchEndLine.treasure(coins: 120)
+        let lines = JourneyEndCard.lines(for: full)
+        XCTAssertEqual(lines.map(\.text), [
+            "Level up!", "Phase broken! The Fog Dragon is down to its last phase.", "2 creatures defeated", "1 chest opened",
+            "Great chest opened", "+120 coins", "+340 XP", "Buried treasure found", "Tin Bell",
+        ])
+        XCTAssertEqual(lines[1].mark, .token(.fogDragon, ring: .gold))
+        XCTAssertEqual(lines[4].mark, .token(.greatChest, ring: .gold))
+        XCTAssertEqual(lines[4].detail, "Southwark Park")
+        XCTAssertEqual(lines[7].detail, "+120 coins")
+        let visiting = WatchJourneyEnd(lair: WatchEndLine.lair(name: "Southwark Park", visited: 3, need: 5, done: false))
+        XCTAssertEqual(JourneyEndCard.lines(for: visiting).map(\.text), ["Lair: 3 of 5 tiles"])
+        XCTAssertEqual(JourneyEndCard.lines(for: visiting).first?.mark, .token(.lair, ring: .sage))
+    }
 }

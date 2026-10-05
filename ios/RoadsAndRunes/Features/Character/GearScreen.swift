@@ -14,6 +14,8 @@ final class GearModel {
     private(set) var notice: String?
     /// The server has no bag (one from before 0.7.2).
     private(set) var missing = false
+    /// A treasure map's clue, just given (0.8.0): shown in a sheet, then kept on the Quests tab.
+    var openedClue: TreasureClue?
     private(set) var loaded = false
     private let container: AppContainer
     private var noticeTask: Task<Void, Never>?
@@ -58,10 +60,11 @@ final class GearModel {
         }
     }
 
-    /// A map piece or a sealed chest. A map piece looks round where the player is.
+    /// A map piece, a sealed chest or a treasure map. A map piece looks round where
+    /// the player is; a treasure map buries its treasure near there.
     func use(_ stack: ConsumableStack) async {
         let here = container.location.lastFix?.coordinate
-        if stack.id == ConsumableId.mapPiece, here == nil {
+        if ConsumableId.needsLocation(stack.id), here == nil {
             error = "Can't find your location yet. Try again in a moment."
             return
         }
@@ -72,6 +75,19 @@ final class GearModel {
             if let after = result.inventory { container.session.take(inventory: after) } else { await container.session.refreshInventory() }
             show(Self.line(for: result, used: stack))
             error = nil
+            // Signature haptics at rest (0.8.0): a sealed chest knocks and rattles, a Rare find shimmers.
+            if stack.id == ConsumableId.sealedChestCommon || stack.id == ConsumableId.sealedChestRare {
+                SignatureHapticsPlayer.shared.play(.chest)
+                if SignatureHaptic.forFind(rarity: result.itemFound?.rarity) != nil {
+                    try? await Task.sleep(for: .milliseconds(900))
+                    SignatureHapticsPlayer.shared.play(find: result.itemFound?.rarity)
+                }
+            }
+            // A treasure map's clue: read now, kept on the Quests tab. Never a place on the map.
+            if let clue = result.treasureClue {
+                container.legends.opened(clue)
+                openedClue = clue
+            }
             if result.itemFound?.soldOnTheSpot == true { await container.session.refreshCharacter() }
         } catch {
             self.error = error.localizedDescription
@@ -86,6 +102,9 @@ final class GearModel {
                 return "The sealed chest held \(found.name)\(rarity). Your bag was full, so it was sold: \(LoreCopy.earned(found.soldFor ?? 0))."
             }
             return "The sealed chest held \(found.name)\(rarity). It's in your bag."
+        }
+        if result.treasureClue != nil {
+            return "Treasure map used. Follow its clue to the buried treasure."
         }
         if let tiles = result.revealedTiles {
             let place = result.placeName.map { " round \($0)" } ?? ""
@@ -145,6 +164,9 @@ struct GearScreen: View {
         }
         .sheet(item: $selected) { item in
             if let model { ItemDetailSheet(itemId: item.id, model: model) }
+        }
+        .sheet(item: Binding(get: { model?.openedClue }, set: { model?.openedClue = $0 })) { clue in
+            TreasureClueSheet(clue: clue)
         }
     }
 
@@ -222,7 +244,7 @@ struct GearScreen: View {
     @ViewBuilder
     private func consumables(_ inventory: InventoryState, model: GearModel) -> some View {
         if !inventory.consumables.isEmpty {
-            Eyebrow(text: "Lamps, map pieces and more", color: Theme.Colors.terracottaDeep).padding(.top, 4)
+            Eyebrow(text: "Lamps, maps and more", color: Theme.Colors.terracottaDeep).padding(.top, 4)
             VStack(spacing: 8) {
                 ForEach(inventory.consumables) { stack in
                     ConsumableRow(stack: stack, busy: model.busy == stack.id) { Task { await model.use(stack) } }
@@ -359,6 +381,7 @@ struct ConsumableRow: View {
     static func verb(_ stack: ConsumableStack) -> String {
         switch stack.id {
         case ConsumableId.mapPiece: return "Use map piece"
+        case ConsumableId.treasureMap: return TreasureCopy.useButton
         case ConsumableId.sealedChestCommon, ConsumableId.sealedChestRare: return "Open sealed chest"
         default: return "Use \(stack.name.lowercased())"
         }

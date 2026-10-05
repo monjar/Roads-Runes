@@ -25,9 +25,10 @@ struct JourneyEndCard: View {
                         MarkView(line.mark, palette: .watch)
                             .frame(width: 26, height: 26)
                         VStack(alignment: .leading, spacing: 0) {
+                            // A legend's line is a sentence or two; there is time to read it.
                             Text(line.text)
                                 .font(.system(size: 15, weight: .semibold))
-                                .lineLimit(2)
+                                .lineLimit(4)
                                 .minimumScaleFactor(0.8)
                             if let detail = line.detail {
                                 Text(detail)
@@ -67,12 +68,16 @@ struct JourneyEndCard: View {
     /// At most this many finds are listed; the rest are on the phone.
     static let findsShown = 6
 
-    /// The level first, then what was taken from the world, the purse and XP,
-    /// then what was found. Nothing to say still says where it went.
+    /// The level first, then the legend, then what was taken from the world and
+    /// the lair, the purse and XP, then what was found, buried treasure first.
+    /// Nothing to say still says where it went.
     static func lines(for end: WatchJourneyEnd) -> [Line] {
         var lines: [(Mark, String, String?)] = []
         if let level = end.levelReached {
             lines.append((.icon(.levelUp, spot: .gold), "Level up!", "Level \(level)"))
+        }
+        if let legend = end.legend {
+            lines.append((WristMarks.legendLine(legend), legend.text, legend.detail))
         }
         if end.creaturesDefeated > 0 {
             lines.append((.token(.sword), "\(end.creaturesDefeated) \(end.creaturesDefeated == 1 ? "creature" : "creatures") defeated", nil))
@@ -80,11 +85,17 @@ struct JourneyEndCard: View {
         if end.chestsOpened > 0 {
             lines.append((.chest(tier: 1), "\(end.chestsOpened) \(end.chestsOpened == 1 ? "chest" : "chests") opened", nil))
         }
+        if let lair = end.lair {
+            lines.append((WristMarks.lairLine(lair), lair.text, lair.detail))
+        }
         if end.coins > 0 {
             lines.append((.coin, LoreCopy.earned(end.coins), nil))
         }
         if end.xp > 0 {
             lines.append((.icon(.star, spot: .gold), "+\(end.xp.formatted()) XP", nil))
+        }
+        if let treasure = end.treasureFound {
+            lines.append((WristMarks.treasureLine(treasure), treasure.text, treasure.detail))
         }
         for find in end.finds.prefix(findsShown) {
             lines.append((WristMarks.find(find), find.name, WristMarks.rarityWord(find.rarity)))

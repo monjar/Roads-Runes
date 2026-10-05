@@ -303,6 +303,11 @@ struct NavigationScreen: View {
                 kind: WorldViewModel.markerKind(for: object), title: object.name, mark: .of(object)
             ))
         }
+        // The legend (0.8.0), as large as on the World map, until its phase breaks.
+        if let legend = recorder.legendOnMap {
+            out.append(MapMarker(id: "legend-\(legend.id.uuidString)", coordinate: legend.coordinate, kind: .legend, title: legend.name,
+                                 mark: .of(legend)))
+        }
         // The cafés, pubs and landmarks on the route, as what they are rather than as
         // anonymous dots, and tappable for their name and detour.
         for poi in recorder.package?.pois.prefix(12) ?? [] {
@@ -486,9 +491,13 @@ struct ClaimToast: View {
     var body: some View {
         HStack(spacing: 10) {
             EncounterGlyph(object: object, size: 30)
-            Text("\(verb): \(object.name)").font(Theme.Typography.text(15, .bold)).foregroundStyle(Theme.Colors.ink).lineLimit(1)
+            Text(object.isLegend ? "\(LegendCopy.phaseBroken) \(object.name)" : "\(verb): \(object.name)")
+                .font(Theme.Typography.text(15, .bold)).foregroundStyle(Theme.Colors.ink).lineLimit(1)
             Spacer(minLength: 6)
-            Text(LoreCopy.earned(object.rewardAC)).font(Theme.Typography.text(15, .bold).monospacedDigit()).foregroundStyle(Theme.Colors.terracottaDeep)
+            if !object.isLegend {
+                Text(LoreCopy.earned(object.rewardAC)).font(Theme.Typography.text(15, .bold).monospacedDigit())
+                    .foregroundStyle(Theme.Colors.terracottaDeep)
+            }
         }
         .padding(.vertical, 9)
         .padding(.horizontal, 14)

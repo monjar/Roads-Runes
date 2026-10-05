@@ -148,6 +148,8 @@ public enum FightResolver {
         var lastBand: Int?
         // Each new tile counts for `groundCellScale` (the Cartographer's Atlas, 0.7.2), before contact and after.
         let tile = cfg.groundCellScale > 0 ? cfg.groundCellScale : 1
+        // Uruz (0.8.0): height climbed this near it counts in full, before contact too.
+        let climbShared = cfg.climbSharedMeters
         for (i, p) in points.enumerated() {
             if newCells.contains(i) {
                 if i < contact { before["GROUND", default: 0] += tile } else if inside[i] { blows.append(Blow(kind: "GROUND", index: i, units: tile)) }
@@ -183,7 +185,12 @@ public enum FightResolver {
                 if let last = lastBand, band > last {
                     for b in (last + 1) ... band where !climbedBands.contains(b) {
                         climbedBands.insert(b)
-                        if i < contact { before["CLIMB", default: 0] += cfg.climbBandMeters } else if inside[i] {
+                        let shared = climbShared > 0 && distances[i] <= climbShared
+                        if i < contact, shared {
+                            blows.append(Blow(kind: "CLIMB", index: contact, units: cfg.climbBandMeters))
+                        } else if i < contact {
+                            before["CLIMB", default: 0] += cfg.climbBandMeters
+                        } else if inside[i] || shared {
                             blows.append(Blow(kind: "CLIMB", index: i, units: cfg.climbBandMeters))
                         }
                     }

@@ -55,6 +55,9 @@ final class RideRecorder {
     private(set) var notice: String?
     /// The chests, pieces and monsters still to be had, for the ride map.
     private(set) var objectsOnMap: [WorldObject] = []
+    /// The legend as this journey fights it (0.8.0, `Legend.foe`): drawn on the ride
+    /// map apart from the world's things; nil once its phase is broken.
+    private(set) var legendOnMap: WorldObject?
     /// What has happened on this ride, in order: what the chimes and the voice were given.
     private(set) var eventLog: [RideEvent] = []
     private(set) var localCellStates: [String: CellState] = [:]
@@ -258,6 +261,7 @@ final class RideRecorder {
             rideId: rideId, clientRideId: endedClientId, title: quest?.title ?? title ?? LoreCopy.free(activity), endedAt: endedAt,
             distanceMeters: stats.distanceMeters, elapsedSeconds: stats.elapsedSeconds, newTerritoryMeters: newTerritoryMeters,
             claimed: eventLog.compactMap { event in
+                if case .phaseBroken(let name) = event { return "\(LegendCopy.phaseBroken) \(name)" }
                 guard case .claimed(let name, let kind, _, _) = event else { return nil }
                 return "\(kind == .monster ? "Defeated" : (kind == .chest ? "Opened" : "Found")): \(name)"
             },
@@ -305,6 +309,7 @@ final class RideRecorder {
         audio.stop()
         notice = nil
         objectsOnMap = []
+        legendOnMap = nil
         milestones = nil
         unfoundPlaces = []
         offRouteSince = nil
@@ -418,9 +423,22 @@ final class RideRecorder {
             objects = cached?.objects(near: coordinate, radiusMeters: Self.encounterRadiusMeters) ?? []
             if cached != nil { AppLog.navigation.info("encounters_from_cache \(objects.count, privacy: .public)") }
         }
+        // A lair is visited tile by tile and counted by the server (0.8.0): nothing to pass or fight here.
+        let world = objects.filter { !$0.isLair }
+        // The legend awake (0.8.0) is fought as its current phase, beside the world's things.
+        let legend = await awakeLegend(cached: cached)?.foe
         // A bell worn (`SIGHT_M`) or Kenaz inscribed sights things further out.
-        encounterTracker = EncounterTracker(objects: objects, activity: activity, sightMeters: sheet?.sightMeters)
-        objectsOnMap = objects.filter { $0.status == .spawned }
+        encounterTracker = EncounterTracker(objects: world + [legend].compactMap { $0 }, activity: activity, sightMeters: sheet?.sightMeters)
+        objectsOnMap = world.filter { $0.status == .spawned }
+        legendOnMap = legend
+    }
+
+    /// The legend awake now, from `/legends`, or with no signal the one the last
+    /// world loaded had; nil on a server from before 0.8.0.
+    private func awakeLegend(cached: CachedWorld?) async -> Legend? {
+        guard let fresh = try? await api.legends() else { return cached?.legend }
+        try? worldCache.update { world in world.legend = fresh.awake }
+        return fresh.awake
     }
 
     /// Effort is damage: the phone follows a fight only when it has all it needs to
@@ -614,7 +632,8 @@ final class RideRecorder {
             try? await Task.sleep(for: .seconds(6))
             if self?.recentClaim?.id == object.id { self?.recentClaim = nil }
         }
-        if var tracker = objectiveTracker, let quest {
+        // A legend's phase broken (0.8.0) is no creature defeated: no quest step counts it here.
+        if var tracker = objectiveTracker, let quest, !object.isLegend {
             for objective in quest.objectives where !completedObjectiveIDs.contains(objective.id) {
                 let pointsAtIt = objective.extra?["objectId"]?.stringValue == object.id.uuidString
                 let kindMatches = objective.extra?["kind"]?.stringValue == object.kind.rawValue
@@ -634,6 +653,7 @@ final class RideRecorder {
         // Wire words, which older Watches know: the Watch shows GONE as DEFEATED.
         let outcome = object.kind == .monster ? "GONE" : (object.kind == .chest ? "OPENED" : "FOUND")
         objectsOnMap.removeAll { $0.id == object.id }
+        if object.isLegend { legendOnMap = nil }
         // A second piece of a set found on the same ride counts on from the first, and
         // a second of the very same piece counts for nothing.
         var standing = object.setStanding
@@ -641,9 +661,14 @@ final class RideRecorder {
             if object.pieceOwned != true { piecesTaken[setId, default: []].insert(piece) }
             standing = SetStanding(name: before.name, owned: min(before.of, before.owned + (piecesTaken[setId]?.count ?? 0)), of: before.of)
         }
-        emit(.claimed(name: Self.shortName(object), kind: object.kind, coins: object.rewardAC, set: standing), at: lastFix?.timestamp ?? Date())
-        watch.send(objectiveCompleted: WatchObjectiveCompleted(title: object.name, coins: object.rewardAC, detail: standing?.line, outcome: outcome,
-                                                               icon: WatchArt.claimIcon(for: object)))
+        let said: RideEvent = object.isLegend
+            ? .phaseBroken(name: object.name)
+            : .claimed(name: Self.shortName(object), kind: object.kind, coins: object.rewardAC, set: standing)
+        emit(said, at: lastFix?.timestamp ?? Date())
+        // A legend seen off has broken a phase (0.8.0): "Phase broken!" on the wrist, one tap.
+        watch.send(objectiveCompleted: WatchObjectiveCompleted.phaseBroken(object, icon: WatchArt.icon(for: object))
+            ?? WatchObjectiveCompleted(title: object.name, coins: object.rewardAC, detail: standing?.line, outcome: outcome,
+                                       icon: WatchArt.claimIcon(for: object)))
         analytics.track(.worldObjectClaimed, properties: ["kind": object.kind.rawValue, "name": object.name])
     }
 
@@ -967,8 +992,10 @@ final class RideRecorder {
         }
         // The game near the route, and each objective still to do where it is.
         let pending = (quest?.sortedObjectives ?? []).filter { !completedObjectiveIDs.contains($0.id) && $0.status != .completed }
+        // The legend (0.8.0) is on the map as the journey fights it, beside the world's objects.
+        let legends = encounterTracker?.objects.filter(\.isLegend) ?? []
         let worldMarks = WatchWorldMarks.select(
-            objects: objectsOnMap, route: package.route.path, start: lastFix?.coordinate ?? package.route.path.first,
+            objects: objectsOnMap + legends, route: package.route.path, start: lastFix?.coordinate ?? package.route.path.first,
             objectives: pending, quarryId: quarryId, icon: WatchArt.icon(for:)
         )
         watch.send(
@@ -1028,8 +1055,7 @@ final class RideRecorder {
 
     /// What has been opened, defeated or done on this ride, for the Watch map to take off.
     private var watchGoneMarkIds: [UUID]? {
-        let gone = (encounterTracker?.claimedIDs ?? []).union(completedObjectiveIDs)
-        return gone.isEmpty ? nil : gone.sorted { $0.uuidString < $1.uuidString }
+        WatchWorldMarks.gone(claimed: encounterTracker?.claimedIDs ?? [], done: completedObjectiveIDs, objects: encounterTracker?.objects ?? [])
     }
 
     // MARK: - Persistence & recovery (spec §72)
@@ -1128,7 +1154,8 @@ final class RideRecorder {
         encounterTracker = tracker
         fightSetup = game.fights
         quarryId = game.quarryId
-        objectsOnMap = tracker.objects.filter { !tracker.claimedIDs.contains($0.id) }
+        objectsOnMap = tracker.objects.filter { !tracker.claimedIDs.contains($0.id) && !$0.isLegend }
+        legendOnMap = tracker.objects.first { $0.isLegend && !tracker.claimedIDs.contains($0.id) }
     }
 
     func discardRecovered() {

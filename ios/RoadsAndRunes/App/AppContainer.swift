@@ -26,6 +26,8 @@ final class AppContainer {
     let nudges: NudgeScheduler
     /// Today's and tomorrow's pledge (0.7.3).
     let pledges: PledgeStore
+    /// The legend awake and the treasure maps' clues (0.8.0).
+    let legends: LegendStore
 
     /// Pending Strava OAuth code delivered through the URL scheme.
     var pendingStravaCode: String?
@@ -85,6 +87,10 @@ final class AppContainer {
         let nudges = NudgeScheduler(active: !inMemory && !uiTesting && !Self.isPreview)
         self.nudges = nudges
         self.pledges = PledgeStore(api: resolvedAPI, session: session, nudges: nudges)
+        self.legends = LegendStore(api: resolvedAPI, worldCache: worldCache)
+        // Signature haptics (0.8.0) at rest only, and never from tests or previews.
+        SignatureHapticsPlayer.shared.isRiding = { [weak recorder] in recorder?.isActive ?? false }
+        SignatureHapticsPlayer.shared.enabled = !inMemory && !uiTesting && !Self.isPreview
         watch.onCommand = { [weak recorder] command in
             Task { @MainActor in
                 guard let recorder else { return }

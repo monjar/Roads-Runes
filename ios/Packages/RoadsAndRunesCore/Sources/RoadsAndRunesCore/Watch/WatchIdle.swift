@@ -215,16 +215,21 @@ public struct WatchQuarry: Codable, Hashable, Sendable {
     public var name: String
     public var icon: String?
     public var speciesId: String?
+    /// A legend (0.8.0), which the face rings in gold. Nil for a creature.
+    public var legend: Bool?
 
-    public init(name: String, icon: String? = nil, speciesId: String? = nil) {
+    public init(name: String, icon: String? = nil, speciesId: String? = nil, legend: Bool? = nil) {
         self.name = name
         self.icon = icon
         self.speciesId = speciesId
+        self.legend = legend
     }
 
     public init(mark: WatchWorldMark) {
-        self.init(name: mark.name, icon: mark.icon, speciesId: mark.speciesId)
+        self.init(name: mark.name, icon: mark.icon, speciesId: mark.speciesId, legend: mark.isLegend ? true : nil)
     }
+
+    public var isLegend: Bool { legend ?? false }
 }
 
 /// Where the Watch keeps Next up and the quarry for its complication: the app
@@ -285,27 +290,37 @@ public struct WatchComplication: Hashable, Sendable {
     public enum Mark: Hashable, Sendable {
         case quarry(name: String, icon: String?, speciesId: String?)
         case bounty(name: String, icon: String?, speciesId: String?)
+        /// A legend the journey was planned for (0.8.0): the quarry, ringed in gold.
+        case legend(name: String, icon: String?, speciesId: String?)
 
         public var name: String {
             switch self {
-            case let .quarry(name, _, _), let .bounty(name, _, _): return name
+            case let .quarry(name, _, _), let .bounty(name, _, _), let .legend(name, _, _): return name
             }
         }
 
         public var icon: String? {
             switch self {
-            case let .quarry(_, icon, _), let .bounty(_, icon, _): return icon
+            case let .quarry(_, icon, _), let .bounty(_, icon, _), let .legend(_, icon, _): return icon
             }
         }
 
         public var speciesId: String? {
             switch self {
-            case let .quarry(_, _, species), let .bounty(_, _, species): return species
+            case let .quarry(_, _, species), let .bounty(_, _, species), let .legend(_, _, species): return species
             }
         }
 
+        /// What the journey under way is for: a creature or a legend.
         public var isQuarry: Bool {
-            if case .quarry = self { return true }
+            switch self {
+            case .quarry, .legend: return true
+            case .bounty: return false
+            }
+        }
+
+        public var isLegend: Bool {
+            if case .legend = self { return true }
             return false
         }
     }
@@ -330,6 +345,7 @@ public struct WatchComplication: Hashable, Sendable {
     public init(idle: WatchIdleInfo?, quarry: WatchQuarry?, at date: Date = Date(), calendar: Calendar = .current) {
         let bounty = idle?.liveBounty(at: date)
         let mark: Mark? = {
+            if let quarry, quarry.isLegend { return .legend(name: quarry.name, icon: quarry.icon, speciesId: quarry.speciesId) }
             if let quarry { return .quarry(name: quarry.name, icon: quarry.icon, speciesId: quarry.speciesId) }
             if let bounty { return .bounty(name: bounty.name, icon: bounty.icon, speciesId: bounty.speciesId) }
             return nil

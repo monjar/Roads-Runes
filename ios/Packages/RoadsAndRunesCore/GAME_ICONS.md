@@ -97,3 +97,10 @@ The game's pictures are icons from [game-icons.net](https://game-icons.net), use
 | `rowanTwig` | [elderberry](https://game-icons.net/1x1/lorc/elderberry.html) | Lorc | CC BY 3.0 |
 | `runesmithsNail` | [nails](https://game-icons.net/1x1/lorc/nails.html) | Lorc | CC BY 3.0 |
 | `restToken` | [night-sleep](https://game-icons.net/1x1/delapouite/night-sleep.html) | Delapouite | CC BY 3.0 |
+| `fogDragon` | [dragon-spiral](https://game-icons.net/1x1/lorc/dragon-spiral.html) | Lorc | CC BY 3.0 |
+| `waterWyrm` | [sea-dragon](https://game-icons.net/1x1/lorc/sea-dragon.html) | Lorc | CC BY 3.0 |
+| `hillKing` | [old-king](https://game-icons.net/1x1/cathelineau/old-king.html) | Cathelineau | CC BY 3.0 |
+| `trailWyrm` | [sand-snake](https://game-icons.net/1x1/delapouite/sand-snake.html) | Delapouite | CC BY 3.0 |
+| `runeGolem` | [golem-head](https://game-icons.net/1x1/delapouite/golem-head.html) | Delapouite | CC BY 3.0 |
+| `greatChest` | [chest](https://game-icons.net/1x1/delapouite/chest.html) | Delapouite | CC BY 3.0 |
+| `lair` | [mountain-cave](https://game-icons.net/1x1/delapouite/mountain-cave.html) | Delapouite | CC BY 3.0 |

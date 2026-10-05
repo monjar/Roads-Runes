@@ -4,7 +4,7 @@ import SwiftUI
 import WidgetKit
 
 /// The Watch complication (0.7.3): the quarry's mark while a journey is under
-/// way, else today's bounty's, else the streak. It reads only what the Watch app
+/// way (a legend's in gold, 0.8.0), else today's bounty's, else the streak. It reads only what the Watch app
 /// keeps in the app group (`WatchIdleStore`) and never asks the network or the phone.
 @main
 struct RoadsAndRunesWatchWidgets: WidgetBundle {
@@ -164,7 +164,8 @@ struct ComplicationMark: View {
 
     var body: some View {
         if renderingMode == .fullColor {
-            MarkView(.token(icon, ring: mark.isQuarry ? .terracotta : .gold), palette: .watch)
+            // The quarry in terracotta; the bounty, and a legend (0.8.0), in gold.
+            MarkView(.token(icon, ring: mark.isQuarry && !mark.isLegend ? .terracotta : .gold), palette: .watch)
         } else {
             IconShape(icon)
                 .widgetAccentable()

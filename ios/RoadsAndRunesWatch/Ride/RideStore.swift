@@ -44,7 +44,8 @@ final class RideStore {
     private(set) var goneMarkIds: Set<UUID> = []
 
     /// The fight for the Quest page: the quarry, else the nearest creature being
-    /// fought. None from an older phone, or when nothing is being fought.
+    /// fought; a legend's in its phases (0.8.0). None from an older phone, or when
+    /// nothing is being fought.
     var fight: WatchFight? { update?.fight }
 
     /// Journey's end, from the phone once the server has counted it; shown on the
@@ -104,10 +105,10 @@ final class RideStore {
     /// Next up, or the quarry of the journey under way.
     @ObservationIgnored var onFaceChanged: (() -> Void)?
 
-    /// The creature the journey under way was planned for, while it stands.
+    /// The creature (or, from 0.8.0, the legend) the journey under way was planned for, while it stands.
     var quarry: WatchQuarry? {
         guard hasRoute else { return nil }
-        return worldMarks.first { $0.isQuarry && $0.kind == WatchWorldMark.monster }.map(WatchQuarry.init(mark:))
+        return worldMarks.first { $0.isQuarry && ($0.kind == WatchWorldMark.monster || $0.isLegend) }.map(WatchQuarry.init(mark:))
     }
 
     var isPlanning: Bool {

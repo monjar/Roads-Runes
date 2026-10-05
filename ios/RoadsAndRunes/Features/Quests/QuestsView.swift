@@ -44,6 +44,8 @@ struct QuestsView: View {
                             QuickStartCoordinator.shared.handle(.sealed(minutes: minutes), autoStart: false)
                         }
                         .disabled(container.rideRecorder.isActive)
+                        // A treasure map's clue (0.8.0): kept here, never a marker on the map.
+                        ForEach(container.legends.clues) { clue in TreasureClueCard(clue: clue) }
                         if let notice = model.weekNotice {
                             WeekNoticeCard(notice: notice)
                         }
@@ -104,7 +106,10 @@ struct QuestsView: View {
                     selectedQuest = quest
                 })
             }
-            .refreshable { await model?.load() }
+            .refreshable {
+                await model?.load()
+                await container.legends.refreshClues()
+            }
             .sheet(item: $plannerQuest) { quest in RoutePlannerView(quest: quest) }
             .sheet(isPresented: $planningCustom) { RoutePlannerView(quest: nil) }
             .sheet(item: $bountyDestination) { place in RoutePlannerView(quest: nil, destination: place) }
@@ -115,6 +120,9 @@ struct QuestsView: View {
             .onChange(of: container.rideRecorder.isActive) { _, active in
                 if !active { Task { await model?.load() } }
             }
+            .onChange(of: container.sync.latestSummary) { _, summary in
+                if summary != nil { Task { await container.legends.refreshClues() } }
+            }
             .onChange(of: openQuest.wrappedValue, initial: true) { _, id in
                 guard let id else { return }
                 Task { await open(questId: id) }
@@ -124,6 +132,7 @@ struct QuestsView: View {
             if model == nil { model = QuestsViewModel(container: container) }
             await model?.load()
         }
+        .task { await container.legends.refreshClues() }
     }
 
     /// The quest a World marker pointed at, once the board has it.

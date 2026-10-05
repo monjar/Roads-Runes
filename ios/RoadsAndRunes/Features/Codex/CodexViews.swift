@@ -6,6 +6,7 @@ import SwiftUI
 /// the people who write the board, and the places found. It lives in
 /// the Journal; the character sheet opens the same pages.
 struct CodexBrowser<Places: View>: View {
+    @Environment(AppContainer.self) private var container
     let codex: Codex?
     /// Fights by effort are on: a creature's page says what it is weak to.
     let showWants: Bool
@@ -14,7 +15,8 @@ struct CodexBrowser<Places: View>: View {
     @State private var showingPrologue = false
 
     private static var chapters: [(id: String, title: String)] {
-        [("WORLD", "The world"), ("CREATURES", "Creatures"), ("RUNES", "Runes"), ("PEOPLE", "People"), ("PLACES", "Places")]
+        [("WORLD", "The world"), ("CREATURES", "Creatures"), ("LEGENDS", "Legends"), ("RUNES", "Runes"), ("PEOPLE", "People"),
+         ("PLACES", "Places")]
     }
 
     var body: some View {
@@ -29,6 +31,8 @@ struct CodexBrowser<Places: View>: View {
             }
             if chapter == "PLACES" {
                 places()
+            } else if chapter == "LEGENDS" {
+                legends()
             } else if let codex {
                 switch chapter {
                 case "CREATURES": creatures(codex)
@@ -74,6 +78,42 @@ struct CodexBrowser<Places: View>: View {
                 .buttonStyle(.pressable)
                 .accessibilityIdentifier("codex.creature")
             }
+        }
+    }
+
+    // MARK: Legends (0.8.0)
+
+    /// The legend awake and those defeated, each with its page. The server keeps them, not the codex.
+    @ViewBuilder
+    private func legends() -> some View {
+        let store = container.legends
+        let met = store.state?.met ?? []
+        Text("Defeated \(store.defeated.count) · met \(met.count)")
+            .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+            .accessibilityIdentifier("codex.legends.count")
+            .task { if store.state == nil { await store.refresh() } }
+        if met.isEmpty {
+            EmptyState(icon: .fogDragon, title: "No legends met yet",
+                       message: store.state?.creaturesUntilNext.map(LegendCopy.untilNext) ?? "Defeat creatures and a legend will wake.")
+        }
+        ForEach(met) { legend in
+            NavigationLink { LegendCodexPage(legend: legend) } label: {
+                HStack(spacing: 12) {
+                    MarkView(.of(legend)).frame(width: 52, height: 52)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(legend.name).font(Theme.Typography.text(16, .semibold)).foregroundStyle(Theme.Colors.ink)
+                        Text(legend.status == LegendStatus.defeated ? "Defeated" : (legend.status == LegendStatus.dormant ? "Asleep" : "Awake now"))
+                            .font(Theme.Typography.caption).foregroundStyle(legend.status == LegendStatus.defeated ? Theme.Colors.sageDeep : Theme.Colors.terracottaDeep)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .bold)).foregroundStyle(Theme.Colors.muted)
+                }
+                .padding(.vertical, 10)
+                .padding(.horizontal, 14)
+                .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("codex.legend")
         }
     }
 
@@ -180,6 +220,13 @@ struct RuneTile: View {
         VStack(spacing: 6) {
             MarkView(.rune(rune.id)).frame(width: 60, height: 60).opacity(rune.state == .held ? 1 : 0.35)
             Text(rune.name).font(Theme.Typography.captionStrong).foregroundStyle(rune.state == .held ? Theme.Colors.ink : Theme.Colors.muted)
+            if rune.state != .held, let legend = HardRunes.leftBy[rune.id] {
+                // A Hard rune is findable now: who leaves it (0.8.0).
+                Text("from \(legend.name)").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.mutedLight)
+                    .lineLimit(2).multilineTextAlignment(.center)
+            } else if rune.state != .held, rune.id == "ingwaz" {
+                Text("from a lair").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.mutedLight)
+            }
             if rune.found > 1 {
                 Text("found \(rune.found)").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.sageDeep)
             }
@@ -293,6 +340,11 @@ struct RunePage: View {
                 }
                 Text(rune.state == .held ? (rune.found > 1 ? "Found \(rune.found) times." : "Found once.") : six.how)
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                // The Hard Six can be found now (0.8.0): which legend leaves each, and the lair's chest.
+                if rune.state != .held, let how = HardRunes.howToFind(rune.id) {
+                    Text(how).font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.ink)
+                        .accessibilityIdentifier("codex.rune.howToFind")
+                }
             }
             .padding(22)
         }

@@ -264,6 +264,16 @@ public struct AdventureSummary: Codable, Hashable, Sendable {
     /// written here a season or more ago, found again.
     public var pledge: PledgeKept? = nil
     public var letters: [FoundLetter]? = nil
+    /// 0.8.0: what the journey did to the legend, the lair's tiles, and buried
+    /// treasure it passed and opened.
+    public var legend: LegendOutcome?
+    public var lair: LairOutcome?
+    public var treasureFound: TreasureFinds?
+    /// A legend that woke at the end of this journey: "A legend has woken: the Fog Dragon".
+    public var legendWoke: LegendWoke?
+
+    /// Buried treasure opened on this journey, however the server sent it.
+    public var treasures: [TreasureFound] { treasureFound?.finds ?? [] }
 
     /// The entry to read: the model's lines when there are some, else the composed one.
     public var entryToRead: String? {
