@@ -57,8 +57,10 @@ minutes) and see what the ride looks like afterwards.
 
 ### 5. The Watch on its own
 **Question:** does the Watch do its job without looking at the phone?
-Start the ride on the phone (the Watch cannot start one yet; 0.7.2 adds a start
-command), then put the phone in a pocket and ride with the Watch. Check: distance and time keep pace
+Lock the phone and put it in a pocket first, then start from the Watch's Next up
+screen (0.7.3: "Quick loop", a quest, or the bounty) and ride with the Watch. Note
+whether the phone planned and started while locked, and how long "Planning…" took;
+if it couldn't, start on the phone and carry on. Check: distance and time keep pace
 with the phone; the turn haptic arrives before the turn, not at it; the
 objective haptic fires; Always-On shows the stat you want at a glance;
 heart rate is present in the summary; ending from the Watch ends the ride. Note every wrist tap that was not a

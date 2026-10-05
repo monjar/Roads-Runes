@@ -67,6 +67,11 @@ alone and invent no new lore, cast lines or mysteries for it.
 | Other consumables | **lamp**, **rest token**, **sealed chest** | — |
 | A creature with a twist | **Stubborn**, **Skittish** or **Mossy** before its name | variant, mutation |
 | One that got away twice and came back | a **grudge**: "Fen Troll the Grumpy" | nemesis, revenant |
+| A quest whose goal you learn on the way | **sealed quest** ("The board picked the way. Your goal opens halfway.") | fate's errand, mystery quest |
+| A promise to go out for something | **pledge**; the button is **Pledge it**; kept: "You said you would. You did." | vow, oath |
+| A note to your future self at a place | **letter**; the button is **Leave a letter** | message, cairn |
+| A real reward set against coins | **savings goal** | treasury |
+| The picture of a journey to send someone | **share card** | — |
 
 Keep as they are: XP, level, runes, **inscribe**, rank, bounty, quest, quest
 board, Codex, Journal, deeds, titles, the fog, lamp, gear, bag.

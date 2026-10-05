@@ -30,7 +30,18 @@ iPhone RideRecorder ──WCSession.sendMessage / updateApplicationContext──
        – JourneyEnd (new kind): after the phone gets the processed summary,
          creatures defeated, chests opened, coins, XP, a level reached and the
          finds (items, rune stones, new places); queued if the Watch is away
-Watch ──► iPhone: pause / resume / end commands, heart-rate samples
+   • 0.7.3: Next up rides in the application context under its own `idleInfo`
+       key beside the ride's last message (one context replaces the whole
+       dictionary): the streak, the bounty (mark, how far, when it leaves), up
+       to three quests the rider has taken, the activity and today's pledge.
+       Sent when the World map loads its objects (quests fetched at most every
+       5 minutes, and only to a paired Watch with the app)
+Watch ──► iPhone: pause / resume / end commands, heart-rate samples, and
+       (0.7.3) StartRequest {kind: LOOP|BOUNTY|QUEST|SEALED, minutes, questId,
+       activity, id, requestedAt}: sent only while the phone is reachable; the
+       phone ignores one older than 120 s, plans it through the
+       QuickStartCoordinator and starts without a tap. A failure comes back as
+       StartResult; success is the route summary arriving
 ```
 
 Every tap the Watch gives is named in Core (`WristTap`). Turns own `click`,
@@ -81,10 +92,32 @@ with a mark for each thing (creatures defeated, chests, coins, XP, a level,
 up to six finds) and a Done button that returns to the idle screen. One that
 arrives more than an hour late is dropped.
 
+## Before a journey (0.7.3)
+
+The idle screen is **Next up**: the streak, the bounty's mark and how far,
+and buttons to go — "Ride to bounty" (Run/Walk for the rider's activity), up
+to three "Start quest", and "Quick loop" for 20 or 40 minutes. Each sends a
+start request; the Watch shows "Planning…" (75 s at most), then the ride, or
+"Couldn't plan. Try on your iPhone." with a Done button. With no phone in
+reach it says "Open the app on your iPhone to start." Without Next up (an
+older phone) it shows 0.7.2's "Start on your iPhone" face.
+
+**Complication** (`RoadsAndRunesWatchWidgets`, a watchOS widget extension
+embedded in the Watch app): circular shows the quarry's or the bounty's mark,
+else the streak; corner the streak; inline and rectangular the bounty and how
+far. The Watch app writes Next up into the app group and reloads the
+timelines when it changes.
+
+Field protocol 5 (start from the Watch with the phone in a pocket) is
+possible as written from 0.7.3; whether the phone plans and starts while
+locked depends on location permission and is the thing to test.
+
 ## Always-On
 
-`isLuminanceReduced` switches to simplified layouts: no map, larger next-turn
-text, no animations, stats refresh every 5 s. The next turn must remain
+`isLuminanceReduced` switches to simplified layouts: larger next-turn text,
+no animations, stats refresh every 5 s. Since 0.7.3 the map page stays,
+dimmed and muted, with the route, the rider's dot and a next-turn badge (no
+creatures, chests or stops), following the rider at most every 15 s. The next turn must remain
 readable in Always-On.
 
 ## Battery
@@ -96,6 +129,7 @@ more on Watch turn cues and fewer phone screen wakes.
 ## Field tests
 
 Required before beta: phone locked in pocket, Watch disconnect/reconnect,
-tunnel, long ride > 3 h, rain glove use of pause/end. A ride is started on the
-phone; the Watch follows it (it has no GPS of its own and cannot start one
-yet). See protocol 5 in `docs/FIELD_TESTS.md`.
+tunnel, long ride > 3 h, rain glove use of pause/end. A ride can be started
+on the phone or, since 0.7.3, from the Watch's Next up (the phone plans and
+records it; the Watch has no GPS of its own). See protocol 5 in
+`docs/FIELD_TESTS.md`.
