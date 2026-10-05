@@ -6,6 +6,7 @@ import uuid
 from typing import Any
 
 from app.core.config import get_settings
+from app.core.feature_flags import is_enabled
 from app.core.logging import EVENT_RIDE_UPLOAD_FAILED, EVENT_STRAVA_UPLOAD_FAILED, get_logger
 from app.db.session import get_session_factory
 
@@ -49,6 +50,38 @@ async def process_ride_job(payload: dict[str, Any]) -> None:
                 }
                 await db.commit()
             raise
+    # The model-written entry, now the summary is committed: Journey's end never
+    # waits for it, and a failure there is a ride with only its composed entry.
+    if is_enabled(settings, "chronicle_llm"):
+        try:
+            await enqueue("write_entry", {"rideId": payload["rideId"]})
+        except Exception as exc:  # noqa: BLE001
+            log.error("write_entry_enqueue_failed", ride_id=payload.get("rideId"), error=str(exc)[:200])
+
+
+async def enqueue(name: str, payload: dict[str, Any]) -> None:
+    """A job from inside a job. With Redis it is queued for a worker; inline (tests,
+    development) it runs now, in its own session, after the one before has committed."""
+    settings = get_settings()
+    if settings.job_queue == "redis" or settings.environment in ("staging", "production"):
+        import redis.asyncio as redis
+
+        from app.jobs.queue import RedisJobQueue
+
+        await RedisJobQueue(redis.from_url(settings.redis_url)).enqueue(name, payload)
+        return
+    await HANDLERS[name](payload)
+
+
+async def write_entry_job(payload: dict[str, Any]) -> None:
+    """The model-written journal entry for a processed ride (flag chronicle_llm)."""
+    from app.chronicle.written import write_entry
+    from app.core.llm import build_llm
+
+    settings = get_settings()
+    async with get_session_factory()() as db:
+        await write_entry(db, settings, build_llm(settings), uuid.UUID(payload["rideId"]))
+        await db.commit()
 
 
 async def strava_upload_job(payload: dict[str, Any]) -> None:
@@ -82,6 +115,7 @@ async def notification_job(payload: dict[str, Any]) -> None:
 
 HANDLERS = {
     "process_ride": process_ride_job,
+    "write_entry": write_entry_job,
     "strava_upload": strava_upload_job,
     "notification": notification_job,
 }

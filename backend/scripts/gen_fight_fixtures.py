@@ -1,18 +1,26 @@
 """Outings and the fights the server makes of them, for both ports of fight.py.
 
-    .venv/bin/python scripts/gen_fight_fixtures.py
+    .venv/bin/python scripts/gen_fight_fixtures.py [--no-ios]
 
-Writes tests/fixtures/fight_tracks.json and a copy into the iOS Core test
-resources, so the phone's FightResolver is held to the server's verdicts (within
-one point of hold). tests/test_fight.py checks the file is current.
+Writes tests/fixtures/fight_tracks.json and (unless --no-ios) a copy into the iOS
+Core test resources, so the phone's FightResolver is held to the server's
+verdicts (within one point of hold). tests/test_fight.py checks the file is
+current.
+
+A case may carry `rules` (0.7.2), the sheet's rules for that fight
+({"FINISH_UNDER": 0.1}, {"GROUND_CELL_SCALE": 1.25}); the fight is folded over
+the combat constants as `CharacterSheet.fight_cfg` changes them, the same way
+the phone's sheet does. A case without `rules` uses the constants as they are.
 """
 
 from __future__ import annotations
 
 import json
 import math
+import sys
 from pathlib import Path
 
+from app.characters.sheet import CharacterSheet
 from app.core.geo import destination_point
 from app.exploration.cells import cell_for
 from app.world_objects import fight
@@ -110,6 +118,28 @@ def cases():
     ]
 
 
+def gear_cases():
+    """0.7.2: the two numbers gear changes in the fold, with the rules that change them."""
+    west = destination_point(HOME[0], HOME[1], 270, 950)
+    south = destination_point(HOME[0], HOME[1], 180, 500)
+    straight = line(west, 90, 1900, 10)
+    climb = line(south, 0, 900, 10, climb=60)
+    laps = loop(HOME, 120, 9, laps=3)
+    bell = {"FINISH_UNDER": 0.1}
+    atlas = {"GROUND_CELL_SCALE": 1.25}
+    rune = ("LOOP", len(laps) - 1)
+    return [
+        ("the bell finishes what the rune left", laps, ("ROAD", "RUNE"), ("WORD",), "LOOP", 220, "RIDE", {}, [],
+         rune, [], bell),
+        ("the bell leaves a healthy one standing", climb, ("CLIMB", "RUNE"), ("WORD",), "TRIANGLE", 220, "RIDE",
+         {"CLIMB": 0.3}, [], None, [], bell),
+        ("new ground counts more with the atlas", straight, ("GROUND", "WORD"), ("CLIMB",), None, 400, "WALK", {},
+         new_cells(straight), None, [], atlas),
+        ("the atlas and the bell together", straight, ("GROUND", "WORD"), ("CLIMB",), None, 330, "WALK", {},
+         new_cells(straight), None, [], {**bell, **atlas}),
+    ]  # fmt: skip
+
+
 def main() -> None:
     cfg = load_config()["combat"]
     out = {
@@ -117,7 +147,11 @@ def main() -> None:
         "combat": {k: v for k, v in cfg.items() if not k.startswith("_")},
         "cases": [],
     }
-    for name, pts, wants, minds, form, hold, activity, pct, cells, rune, words in cases():
+    for name, pts, wants, minds, form, hold, activity, pct, cells, rune, words, *more in [
+        *cases(),
+        *gear_cases(),
+    ]:
+        rules = more[0] if more else {}
         foe = fight.Foe(HOME[0], HOME[1], hold, hold, wants, minds, form)
         hit = fight.RuneHit(*rune) if rune else None
         report = fight.resolve(
@@ -125,7 +159,7 @@ def main() -> None:
             foe,
             activity=activity,
             damage_pct=pct,
-            cfg=cfg,
+            cfg=CharacterSheet(rules=rules).fight_cfg(cfg),
             new_cell_indices=cells,
             rune_hit=hit,
             word_indices=words,
@@ -156,6 +190,7 @@ def main() -> None:
                 "newCellIndices": cells,
                 "runeHit": list(rune) if rune else None,
                 "wordIndices": words,
+                **({"rules": rules} if rules else {}),
                 "expect": {
                     "outcome": report.outcome,
                     "holdAfter": report.hold_after,
@@ -166,6 +201,9 @@ def main() -> None:
         )
     text = json.dumps(out, indent=1) + "\n"
     OUT.write_text(text)
+    if "--no-ios" in sys.argv:
+        print(f"{len(out['cases'])} cases → {OUT}")
+        return
     IOS.write_text(text)
     print(f"{len(out['cases'])} cases → {OUT} and {IOS}")
 

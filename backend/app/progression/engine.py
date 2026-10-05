@@ -122,6 +122,8 @@ class RideRewardInput:
     wrote_note: bool = False
     # Days since the outing before this one; None for a first outing.
     days_away: int | None = None
+    # Optional objectives' XP × this (the Pedlar's Road-book, OPTIONAL_XP_SCALE), 0.7.2.
+    optional_xp_scale: float = 1.0
 
 
 CLAIM_SOURCES = {"CHEST": "CHEST_OPENED", "COLLECTABLE": "COLLECTABLE_FOUND", "MONSTER": "MONSTER_BEATEN"}
@@ -173,9 +175,11 @@ def compute_ride_xp(inp: RideRewardInput) -> list[XPLine]:
         if inp.is_story_quest:
             lines.append(XPLine("STORY_QUEST_COMPLETED", rules["storyQuestBonus"]))
 
-    objective_xp = (
-        inp.objectives_completed_required * rules["objectiveCompleted"]
-        + inp.objectives_completed_optional * rules["objectiveCompletedOptional"]
+    objective_xp = int(
+        round(
+            inp.objectives_completed_required * rules["objectiveCompleted"]
+            + inp.objectives_completed_optional * rules["objectiveCompletedOptional"] * inp.optional_xp_scale
+        )
     )
     if objective_xp:
         lines.append(

@@ -4,8 +4,7 @@ import uuid
 
 from fastapi import APIRouter, Query
 
-from app.characters.service import get_character, get_rider_profile
-from app.characters.sheet import build_sheet
+from app.characters.service import get_character, get_rider_profile, maybe_character
 from app.core.deps import CurrentUser, DBDep, SettingsDep
 from app.core.errors import NotFound
 from app.core.schemas import APIModel
@@ -55,10 +54,13 @@ class LampCheckOut(APIModel):
     """Whether a lamp would bring something here, asked before any coins are spent."""
 
     ok: bool
+    # Coins it costs: 0 when a lamp from the bag would be used (0.7.2).
     cost: int
     placeName: str | None = None
     code: str | None = None
     message: str | None = None
+    # Lamps in the bag (0.7.2); one is used before coins.
+    lampsInBag: int = 0
 
 
 @router.get("/lure", response_model=LampCheckOut)
@@ -70,12 +72,15 @@ async def lure_check(
     longitude: float = Query(ge=-180, le=180),
 ) -> LampCheckOut:
     spot = await service.lamp_spot(db, settings, user.id, latitude, longitude)
+    lamps = (await inventory.consumable_counts(db, await maybe_character(db, user.id))).get("LAMP", 0)
+    ok = spot.place is not None
     return LampCheckOut(
-        ok=spot.place is not None,
-        cost=int(load_ac_rules()["lure"]["costAC"]),
+        ok=ok,
+        cost=0 if lamps else int(load_ac_rules()["lure"]["costAC"]),
         placeName=spot.place.name if spot.place is not None else None,
         code=spot.code,
-        message=spot.message,
+        message=spot.message if not ok else ("Uses a lamp from your bag." if lamps else None),
+        lampsInBag=lamps,
     )
 
 
@@ -116,6 +121,7 @@ async def claim(
     """Open a chest or pick up a piece from beside it. 409 when it is out of reach
     (OBJECT_OUT_OF_RANGE), gone (OBJECT_GONE) or a monster (OBJECT_NOT_CLAIMABLE)."""
     character = await get_character(db, user)
+    sheet = await inventory.sheet_for(db, character)
     obj, awarded, set_done = await service.claim_by_tap(
         db,
         user.id,
@@ -123,7 +129,7 @@ async def claim(
         payload.latitude,
         payload.longitude,
         payload.horizontalAccuracyMeters,
-        coin_pct=build_sheet(character).coin_pct,
+        coin_pct=sheet.coin_pct,
     )
     # Worth doing for its own sake too: the same XP a ride past it would have given,
     # within what a day may earn (a ride has its own cap; taps had none).
@@ -136,6 +142,8 @@ async def claim(
     rune_id = inventory.rune_of_piece(obj.payload) if obj.kind == "COLLECTABLE" else None
     if rune_id:
         await inventory.add_stone(db, character, rune_id, key=f"stone:{obj.id}")
+    # A chest opened by hand may hold an item (0.7.2), as one passed on a ride does.
+    found = await inventory.drop_for(db, character, obj, sheet=sheet)
     finished = await quests.on_object_claimed(db, settings, user, obj)
     return ClaimResultOut(
         object=service.to_out(obj, await service.pieces_owned(db, user.id)),
@@ -145,4 +153,5 @@ async def claim(
         xpAwarded=reward.xp_awarded,
         levelUps=reward.level_ups,
         setCompleted=set_done,
+        itemFound=found,
     )

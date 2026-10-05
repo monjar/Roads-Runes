@@ -44,6 +44,9 @@ class NullLLM:
     async def extract(self, system: str, user: str, schema: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
+    async def write(self, system: str, user: str, *, max_tokens: int = 200, timeout: float = 8.0) -> str | None:
+        return None
+
 
 class AnthropicLLM:
     """Claude Messages API via the official SDK (imported lazily so the
@@ -123,6 +126,28 @@ class AnthropicLLM:
                 return None
             return _first_object(text, model=self._model)
         return None
+
+    async def write(self, system: str, user: str, *, max_tokens: int = 200, timeout: float = 8.0) -> str | None:
+        """A few sentences of plain text, short and quick: the model-written journal
+        entry (0.7.2). One try, no retries, `timeout` seconds; None on any failure,
+        and the composed entry stands."""
+        try:
+            response = await (
+                self._get_client()
+                .with_options(timeout=timeout, max_retries=0)
+                .messages.create(
+                    model=self._model,
+                    max_tokens=max_tokens,
+                    system=system,
+                    messages=[{"role": "user", "content": user}],
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - a journal line must never fail a job
+            log.warning("llm_write_failed", model=self._model, error=str(exc)[:200])
+            return None
+        if getattr(response, "stop_reason", None) in ("refusal", "max_tokens"):
+            return None
+        return "".join(block.text for block in response.content if getattr(block, "type", "") == "text").strip()
 
     async def complete_json(self, system: str, user: str, schema_hint: str) -> dict[str, Any] | None:
         described = system + "\n\nRespond with a single JSON object only. Schema: " + schema_hint

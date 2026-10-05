@@ -161,3 +161,5 @@ class QuestCompletion(APIModel):
     abilitiesUnlocked: list[dict[str, Any]]
     titlesUnlocked: list[str]
     storyProgress: dict[str, Any] | None = None
+    # The quest's item reward, given (ItemFoundOut), 0.7.2.
+    itemsFound: list[dict[str, Any]] = []

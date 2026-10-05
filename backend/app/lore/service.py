@@ -27,6 +27,7 @@ from app.lore.schemas import (
     RuneOut,
     SigilOut,
     SixOut,
+    TrophiesOut,
 )
 from app.world_objects.models import WorldObject
 
@@ -139,6 +140,7 @@ async def codex(db: AsyncSession, settings: Settings, user_id: uuid.UUID) -> Cod
                 seenOffCount=t.seen_off if t else 0,
                 firstSeenAt=t.first_seen if t else None,
                 lastSeenOffAt=t.last_seen_off if t else None,
+                trophies=TrophiesOut(name=s["leaves"], count=t.seen_off) if t and t.seen_off else None,
             )
         )
     found = await runes_found(db, user_id)

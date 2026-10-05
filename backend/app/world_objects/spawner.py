@@ -16,6 +16,8 @@ from typing import Any
 from app.core.activity import ACTIVITIES, normalise
 from app.core.geo import haversine_m
 from app.lore.catalog import flavour_at_tier, name_at_tier, runes_by_id
+from app.world_objects.variants import kinds as variant_kinds
+from app.world_objects.variants import pick_variant
 
 MINUTE = 60
 # A place not passed in this many days is somewhere things settle.
@@ -46,6 +48,8 @@ class SpawnPlan:
     reward_ac: int
     payload: dict[str, Any] = field(default_factory=dict)
     bounty: bool = False
+    # How long it stays, when not the usual (a Skittish creature leaves after a day).
+    life_days: float | None = None
 
 
 def tile_of(lat: float, lon: float) -> str:
@@ -147,6 +151,7 @@ def plan_spawns(
     bounty: bool = False,
     centre: tuple[float, float] | None = None,
     runes: dict[str, Any] | None = None,
+    variants: bool = True,
 ) -> list[SpawnPlan]:
     """One new object of `kind` per index, each at a real place nobody is using yet.
 
@@ -208,6 +213,17 @@ def plan_spawns(
             }
             if anchor.unpassed_days is not None:
                 payload["unpassedDays"] = anchor.unpassed_days
+            # A variant (0.7.2): never a bounty or a story's elder.
+            variant = pick_variant(object_seed, tier) if variants and not bounty else None
+            if variant is not None:
+                spec = variant_kinds()[variant]
+                payload["variant"] = variant
+                payload["hp"] = payload["holdMax"] = int(round(hold * float(spec.get("healthScale", 1.0))))
+                reward = int(round(reward * float(spec.get("coinScale", 1.0))))
+                plans.append(
+                    SpawnPlan(kind, object_seed, tier, anchor, reward, payload, bounty, life_days=spec.get("lifeDays"))
+                )
+                continue
         elif kind == "CHEST":
             reward = int(ac_rules["chest"][str(tier)])
             payload = {"name": ("Old", "Iron", "Gilded")[tier - 1] + " chest", "anchorName": anchor.name}

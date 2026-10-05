@@ -23,6 +23,11 @@ TRANSACTION_KINDS = (
     "LURE",
     "WEEK_NOTICE",
     "RUNE_RANK",
+    # 0.7.2: a stall purchase, an item sold (by hand, or on the spot into a full
+    # bag), and a level's coins (unused: levels pay in consumables).
+    "STALL",
+    "ITEM_SOLD",
+    "LEVEL_REWARD",
     "ADJUSTMENT",
 )
 
@@ -68,8 +73,10 @@ def compute_ride_ac(
     lines: list[ACLine] = []
     km = max(0.0, distance_meters) / 1000
     per_km = rules["perKm"].get(activity, rules["perKm"]["RIDE"])
-    if int(km * per_km) > 0:
-        lines.append(ACLine("RIDE_DISTANCE", int(km * per_km), {"km": round(km, 1), "perKm": per_km}))
+    # The Saddle Roll pays more for distance (COIN_PCT.RIDE_DISTANCE).
+    distance_ac = int(km * per_km * (1 + float((coin_pct or {}).get("RIDE_DISTANCE", 0.0))))
+    if distance_ac > 0:
+        lines.append(ACLine("RIDE_DISTANCE", distance_ac, {"km": round(km, 1), "perKm": per_km}))
     if new_cells > 0 and rules["newCell"] > 0:
         lines.append(ACLine("NEW_CELLS", new_cells * int(rules["newCell"]), {"cells": new_cells}))
     if quest_completed:

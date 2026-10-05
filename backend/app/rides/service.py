@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.characters.service import maybe_character
-from app.characters.sheet import CharacterSheet, build_sheet
+from app.characters.sheet import CharacterSheet
 from app.core.activity import normalise
 from app.core.errors import NotFound, RideInvalidState
 from app.core.pagination import decode_cursor, encode_cursor
@@ -56,6 +56,7 @@ def ride_out(ride: Ride) -> RideOut:
         stravaError=ride.strava_error,
         loadout=ride.loadout_snapshot,
         quarryId=ride.quarry_id,
+        entryWritten=(ride.processing_result or {}).get("entryWritten"),
     )
 
 
@@ -67,11 +68,11 @@ async def get_ride(db: AsyncSession, user: User, ride_id: uuid.UUID) -> Ride:
 
 
 async def _sheet_now(db: AsyncSession, user_id: uuid.UUID) -> CharacterSheet:
-    """The character as it is now, inscribed runes and all, for freezing onto a ride."""
-    from app.inventory.service import inscribed
+    """The character as it is now, inscribed runes and worn gear and all, for
+    freezing onto a ride."""
+    from app.inventory.service import sheet_for
 
-    character = await maybe_character(db, user_id)
-    return build_sheet(character, await inscribed(db, character))
+    return await sheet_for(db, await maybe_character(db, user_id))
 
 
 async def create_ride(db: AsyncSession, user: User, payload: RideCreate) -> Ride:
@@ -227,6 +228,10 @@ async def summary(db: AsyncSession, user: User, ride: Ride) -> AdventureSummary 
         entry=result.get("entry"),
         weekNotice=result.get("weekNotice"),
         codexFirsts=result.get("codexFirsts") or [],
+        runesFound=result.get("runesFound"),
+        deeds=result.get("deeds"),
+        itemsFound=result.get("itemsFound"),
+        entryWritten=result.get("entryWritten"),
     )
 
 

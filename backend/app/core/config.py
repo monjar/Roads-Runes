@@ -27,6 +27,7 @@ ALL_FEATURE_FLAGS: tuple[str, ...] = (
     "nl_route_requests",
     "codex",
     "effort_combat",
+    "chronicle_llm",
 )
 
 DEFAULT_FLAGS: dict[str, bool] = {
@@ -47,6 +48,9 @@ DEFAULT_FLAGS: dict[str, bool] = {
     # The fog as one ink wash on the World tab, with a frontier chevron (0.7.0). The
     # Journal's map card draws it whatever this says.
     "ink_fog": False,
+    # The journal entry written by a model after the summary is committed (0.7.2,
+    # app/chronicle/written.py). The composed entry stays either way.
+    "chronicle_llm": False,
 }
 
 

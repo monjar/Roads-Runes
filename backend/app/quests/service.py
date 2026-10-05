@@ -236,7 +236,16 @@ async def build_context(
 
 
 def _persist(user: User, generated: GeneratedQuest, now: datetime) -> QuestInstance:
+    from app.inventory.service import quest_reward_items
+
+    # The id is made here, not at the flush, so the item a hard quest offers can be
+    # seeded by it (0.7.2): the same quest always offers the same thing.
+    quest_id = uuid.uuid4()
+    rewards = dict(generated.rewards or {})
+    if not rewards.get("items"):
+        rewards["items"] = quest_reward_items(quest_id, generated.difficulty)
     quest = QuestInstance(
+        id=quest_id,
         user_id=user.id,
         template_id=generated.template_id,
         quest_type=generated.quest_type,
@@ -253,7 +262,7 @@ def _persist(user: User, generated: GeneratedQuest, now: datetime) -> QuestInsta
         expires_at=now + timedelta(days=QUEST_TTL_DAYS),
         latitude=generated.latitude,
         longitude=generated.longitude,
-        rewards=generated.rewards,
+        rewards=rewards,
         generation_seed=generated.seed,
     )
     for o in generated.objectives:
@@ -519,6 +528,10 @@ async def ensure_available(
     await retire_unreachable(db, user, latitude, longitude)
     await retire_orphaned(db, user)
     await retire_retired_templates(db, user)
+    # A Folded Map worn offers one more (BOARD_EXTRA), 0.7.2.
+    from app.inventory.service import sheet_for
+
+    minimum += int((await sheet_for(db, character)).rules.get("BOARD_EXTRA", 0))
     available = await list_quests(db, user, "AVAILABLE", latitude, longitude, 20)
     if len(available) < minimum:
         await generate_quests(

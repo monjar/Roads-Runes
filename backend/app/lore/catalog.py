@@ -166,6 +166,8 @@ def species() -> list[dict[str, Any]]:
         assert sigil["body"] in SIGIL_BODIES, f"{sid}: unknown sigil body"
         assert sigil["feature"] in SIGIL_FEATURES, f"{sid}: unknown sigil feature"
         assert sigil["mark"] in SIGIL_MARKS, f"{sid}: unknown sigil mark"
+        # The app's drawn mark (GameIcon), 0.7.2.
+        assert str(sigil.get("icon") or "").strip(), f"{sid}: needs a sigil icon"
         for field in ("flavour", "hint", "leaves", "page"):
             assert str(s.get(field) or "").strip(), f"{sid}: needs a {field}"
     return all_species

@@ -71,7 +71,14 @@ async def test_days_in_a_row_pay_and_reset(explorer_client):
     # one whose last day is older than yesterday is over, whatever the row says.
     day1 = datetime.now(UTC).replace(hour=9, minute=0, second=0, microsecond=0) - timedelta(days=1)
     summary = await _ride_on(c, day1)
-    assert summary["streak"] == {"days": 1, "longest": 1, "extended": True, "milestone": None, "bonusAC": 5}
+    assert summary["streak"] == {
+        "days": 1,
+        "longest": 1,
+        "extended": True,
+        "milestone": None,
+        "bonusAC": 5,
+        "restTokenUsed": False,
+    }
     assert any(line["kind"] == "STREAK" and line["ac"] == 5 for line in summary["acBreakdown"])
     # The same day again adds nothing; the next day adds a day.
     assert (await _ride_on(c, day1 + timedelta(hours=3)))["streak"]["extended"] is False

@@ -57,7 +57,7 @@ async def test_the_codex_knows_what_was_met_before_species_had_names(explorer_cl
     assert codex["counts"] == {
         "creaturesSeenOff": 1,
         "creaturesSeen": 2,
-        "creaturesTotal": 12,
+        "creaturesTotal": 24,
         "runesHeld": 1,
         "runesTotal": 24,
     }

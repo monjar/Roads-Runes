@@ -8,7 +8,7 @@ from app.lore import catalog
 
 def test_the_catalogue_loads_and_checks_itself():
     assert len(catalog.runes()) == 24
-    assert len(catalog.species()) == 12
+    assert len(catalog.species()) == 24
     assert len(catalog.cast()) == 5
     assert catalog.codex_book()["entries"]
 

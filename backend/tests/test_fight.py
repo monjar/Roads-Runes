@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 
+from app.characters.sheet import CharacterSheet
 from app.core.geo import destination_point, haversine_m
 from app.exploration.cells import cell_for
 from app.world_objects import fight
@@ -208,9 +209,15 @@ def test_the_shared_fixtures_are_current():
             f["latitude"], f["longitude"], f["hold"], f["hold"], tuple(f["wants"]), tuple(f["minds"]), f["roadForm"]
         )
         hit = RuneHit(*case["runeHit"]) if case["runeHit"] else None
+        # 0.7.2: a case may carry the sheet's rules (the Unrung Bell, the Atlas).
+        cfg = CharacterSheet(rules=case.get("rules") or {}).fight_cfg(CFG)
         report = fight.resolve(
-            pts, foe, activity=case["activity"], damage_pct=case["pct"], cfg=CFG,
+            pts, foe, activity=case["activity"], damage_pct=case["pct"], cfg=cfg,
             new_cell_indices=case["newCellIndices"], rune_hit=hit, word_indices=case["wordIndices"],
         )  # fmt: skip
         assert report.outcome == case["expect"]["outcome"], case["name"]
         assert abs(report.hold_after - case["expect"]["holdAfter"]) < 0.01, case["name"]
+        assert report.finisher == case["expect"]["finisher"], case["name"]
+        for kind, amount in case["expect"]["damage"].items():
+            assert abs(report.damage.get(kind, 0.0) - amount) < 0.01, (case["name"], kind)
+    assert {"FINISH_UNDER", "GROUND_CELL_SCALE"} <= {r for c in stored["cases"] for r in c.get("rules", {})}

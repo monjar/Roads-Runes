@@ -28,6 +28,15 @@ class SigilOut(APIModel):
     body: str
     feature: str
     mark: str
+    # The app's drawn mark for it (a GameIcon name), 0.7.2.
+    icon: str | None = None
+
+
+class TrophiesOut(APIModel):
+    """What it leaves behind, and how many of this kind the player has defeated."""
+
+    name: str
+    count: int = 0
 
 
 class CreatureOut(APIModel):
@@ -53,6 +62,8 @@ class CreatureOut(APIModel):
     seenOffCount: int = 0
     firstSeenAt: datetime | None = None
     lastSeenOffAt: datetime | None = None
+    # 0.7.2: "Left behind: a green scale ×3". Nothing is stored; it is the count defeated.
+    trophies: TrophiesOut | None = None
 
 
 class RuneOut(APIModel):

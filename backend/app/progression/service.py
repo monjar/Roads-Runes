@@ -1,5 +1,7 @@
 """Reward service: the only code path that changes XP, levels, ability points
-and titles. Everything is recorded as XPEvent / RewardEvent rows."""
+and titles. Everything is recorded as XPEvent / RewardEvent rows. A level
+reached is paid here too (0.7.2, progression/levels.py), through
+inventory.service.pay_level, once per level."""
 
 from __future__ import annotations
 
@@ -13,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.characters import catalog
 from app.characters.models import Character
 from app.core.security import utcnow
+from app.progression import levels
 from app.progression import titles as title_catalogue
 from app.progression.engine import XPLine, apply_xp, load_xp_rules
 from app.progression.models import CharacterTitle, RewardEvent, XPEvent
@@ -158,7 +161,9 @@ async def grant(
         if name:
             titles.append(name)
 
-    level_ups = [{"kind": lu.kind, "from": lu.from_level, "to": lu.to_level} for lu in result.level_ups]
+    level_ups: list[dict[str, Any]] = [
+        {"kind": lu.kind, "from": lu.from_level, "to": lu.to_level} for lu in result.level_ups
+    ]
     for lu in level_ups:
         db.add(
             RewardEvent(
@@ -166,9 +171,20 @@ async def grant(
                 character_id=character.id,
                 reward_type="LEVEL_UP",
                 ride_id=ride_id,
-                payload=lu,
+                payload=dict(lu),
             )
         )
+    # Every level pays (0.7.2): what each level reached gives, given once.
+    from app.inventory import service as inventory
+
+    for lu in level_ups:
+        if lu["kind"] != "OVERALL":
+            continue
+        rewards: list[dict[str, Any]] = []
+        for n in range(int(lu["from"]) + 1, int(lu["to"]) + 1):
+            await inventory.pay_level(db, character, n)
+            rewards.extend({**r, "level": n} for r in levels.rewards_for_level(n))
+        lu["rewards"] = rewards
     # Abilities newly *available* at the new class level (unlocking spends a point, done by the user).
     newly_available = [
         {k: v for k, v in a.items() if k != "effects"}

@@ -35,7 +35,7 @@ from app.inventory import catalog as runes_catalog
 from app.inventory import service as inventory
 from app.lore import catalog as lore
 from app.rides.validation import CleanPoint
-from app.world_objects import claims, fight
+from app.world_objects import claims, fight, variants
 from app.world_objects.models import WorldObject
 from app.world_objects.schemas import KillMethodOut, MonsterOut, WorldObjectOut
 from app.world_objects.spawner import Anchor, SpawnPlan, day_seed, plan_spawns, tile_of
@@ -184,6 +184,9 @@ def to_out(obj: WorldObject, owned: dict[str, set[str]] | None = None) -> WorldO
             killMethods=[KillMethodOut(**m) for m in payload.get("killMethods", [])],
             speciesId=species_id,
             sigil=dict(species["sigil"]) if species else None,
+            variant=variants.variant_out(payload.get("variant")),
+            displayName=variants.display_name(payload),
+            grudge=variants.grudge_out(payload),
         )
         if is_enabled(get_settings(), "effort_combat"):
             # A phone from before effort is damage can never call a win: it is given
@@ -218,6 +221,7 @@ def to_out(obj: WorldObject, owned: dict[str, set[str]] | None = None) -> WorldO
         setOwned=in_set.get("setOwned"),
         pieceOwned=in_set.get("pieceOwned"),
         claimRadiusMeters=load_config()["claimRadiusMeters"].get(obj.kind),
+        displayName=variants.display_name(payload) or None,
     )
 
 
@@ -242,6 +246,85 @@ async def expire_stale(db: AsyncSession, user_id: uuid.UUID) -> None:
             row.expires_at = now + timedelta(days=1)
         else:
             row.status = "EXPIRED"
+            if row.kind == "MONSTER":
+                await _maybe_grudge(db, row, now)
+
+
+def _left_weakened(obj: WorldObject) -> bool:
+    """It got away with health taken off it and some left (effort_combat's wounds)."""
+    if not wounds_of(obj):
+        return False
+    foe = foe_of(obj)
+    return 0 < foe.hold_before < foe.hold_max
+
+
+async def _maybe_grudge(db: AsyncSession, row: WorldObject, now: datetime) -> WorldObject | None:
+    """A creature that leaves weakened, where an earlier one of its kind also left
+    weakened, comes back once to the same place with a grudge: "Fen Troll the
+    Grumpy", tougher and richer, and sure to leave an item (inventory/loot.py)."""
+    payload = row.payload or {}
+    if payload.get("grudge") or row.anchor_discovery_id is None or not _left_weakened(row):
+        return None
+    species_id = lore.species_of(payload)
+    if species_id is None:
+        return None
+    seed = variants.grudge_seed(str(row.anchor_discovery_id), species_id)
+    if await db.scalar(select(WorldObject.id).where(WorldObject.user_id == row.user_id, WorldObject.seed == seed)):
+        return None
+    earlier = (
+        await db.execute(
+            select(WorldObject).where(
+                WorldObject.user_id == row.user_id,
+                WorldObject.kind == "MONSTER",
+                WorldObject.status == "EXPIRED",
+                WorldObject.anchor_discovery_id == row.anchor_discovery_id,
+                WorldObject.id != row.id,
+            )
+        )
+    ).scalars()
+    if not any(
+        lore.species_of(o.payload) == species_id and not (o.payload or {}).get("grudge") and _left_weakened(o)
+        for o in earlier
+    ):
+        return None
+    rules = variants.book()["grudges"]
+    epithet = variants.epithet(seed)
+    base = float(combat_config()["holdByTier"].get(str(row.tier), row.tier * 100))
+    hold = int(round(base * float(rules["healthScale"])))
+    grudge = WorldObject(
+        user_id=row.user_id,
+        kind="MONSTER",
+        status="SPAWNED",
+        tier=row.tier,
+        anchor_discovery_id=row.anchor_discovery_id,
+        latitude=row.latitude,
+        longitude=row.longitude,
+        h3_index=row.h3_index,
+        seed=seed,
+        bounty=False,
+        reward_ac=int(round(int(load_ac_rules()["monster"][str(row.tier)]) * float(rules["coinScale"]))),
+        payload={
+            "name": f"{payload.get('name')} the {epithet}",
+            "flavour": payload.get("flavour"),
+            "speciesId": species_id,
+            "anchorName": payload.get("anchorName"),
+            "hp": hold,
+            "holdMax": hold,
+            "species": payload.get("species") or {},
+            "killMethods": payload.get("killMethods") or [],
+            "grudge": {"epithet": epithet, "returnedFrom": str(row.id)},
+        },
+        spawned_at=now,
+        expires_at=now + timedelta(days=float(rules["lifeDays"])),
+    )
+    try:
+        async with db.begin_nested():
+            db.add(grudge)
+            await db.flush()
+    except IntegrityError:
+        return None
+    log.info("world_object_grudge", user=str(row.user_id), species=species_id, epithet=epithet)
+    return grudge
 
 
 async def _held_by_story(db: AsyncSession, user_id: uuid.UUID) -> set[str]:
@@ -323,7 +406,8 @@ async def _persist(
             reward_ac=plan.reward_ac,
             payload=plan.payload,
             spawned_at=now,
-            expires_at=expires_at or (now + timedelta(days=expiry_days)),
+            expires_at=expires_at
+            or (now + timedelta(days=plan.life_days if plan.life_days is not None else expiry_days)),
         )
         try:
             async with db.begin_nested():
@@ -575,14 +659,20 @@ async def lure(
     """A lamp left out: one creature comes to the place the player picked.
 
     It goes to the nearest named place within reach of that spot (a park, a pub,
-    a landmark), quota aside. The coins are taken after it has come, in the same
-    transaction, so a refusal or a failure costs nothing.
+    a landmark), quota aside. A lamp from the bag is used before coins (0.7.2).
+    The lamp or the coins are taken after it has come, in the same transaction, so
+    a refusal or a failure costs nothing.
     """
+    from app.characters.service import maybe_character
+
     spot = await lamp_spot(db, settings, user_id, latitude, longitude)
     if spot.place is None:
         raise Conflict(spot.message or "", code=spot.code or "NOTHING_TO_LURE")
     cost = int(load_ac_rules()["lure"]["costAC"])
-    await economy.can_pay(db, user_id, cost)
+    character = await maybe_character(db, user_id)
+    from_bag = (await inventory.consumable_counts(db, character)).get("LAMP", 0) > 0
+    if not from_bag:
+        await economy.can_pay(db, user_id, cost)
     cfg = load_config()
     place = spot.place
     anchor = Anchor(
@@ -614,8 +704,15 @@ async def lure(
     )
     came = await _persist(db, user_id, plans, utcnow(), float(cfg["expiryDays"]), settings.h3_resolution)
     if not came:
-        raise Conflict("The lamp went out and no creature came. Your coins were not taken.", code="LAMP_WENT_OUT")
-    await economy.debit(db, user_id, cost, "LURE", payload={"latitude": latitude, "longitude": longitude})
+        raise Conflict(
+            "The lamp went out and no creature came. "
+            + ("Your lamp is still in your bag." if from_bag else "Your coins were not taken."),
+            code="LAMP_WENT_OUT",
+        )
+    if from_bag and character is not None:
+        await inventory.take_consumable(db, character, "LAMP", why=f"lure:{came[0].id}")
+    else:
+        await economy.debit(db, user_id, cost, "LURE", payload={"latitude": latitude, "longitude": longitude})
     return came
 
 
@@ -774,6 +871,7 @@ async def place_elder(
         character_class=character_class,
         activity=normalise(activity),
         centre=None,
+        variants=False,
     )
     for plan in plans:
         plan.payload["storyStep"] = step_slug
@@ -966,10 +1064,15 @@ async def claim_from_ride(
     coords = [(p.latitude, p.longitude) for p in points]
     activity = normalise(ride.activity)
     held = await pieces_owned(db, ride.user_id)
+    # The Wrecker's Light: a chest opens when the journey passes within its reach.
+    chest_reach = float((getattr(sheet, "rules", None) or {}).get("CHEST_REACH_M", 0.0))
     for obj in live:
         distance = claims.min_distance_to_path_m(obj.latitude, obj.longitude, coords)
         if obj.kind in ("CHEST", "COLLECTABLE"):
-            if distance <= float(cfg["claimRadiusMeters"][obj.kind]) * 1.25:
+            passed_within = float(cfg["claimRadiusMeters"][obj.kind]) * 1.25
+            if obj.kind == "CHEST":
+                passed_within = max(passed_within, chest_reach)
+            if distance <= passed_within:
                 _claim(obj, ride, ended, {"method": "PASS", "distanceMeters": round(distance, 1)})
                 outcome.claimed.append(obj)
             continue

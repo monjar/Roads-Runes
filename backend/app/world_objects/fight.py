@@ -26,6 +26,14 @@ A thing goes when it gets what it wants. Effort it does not want (the road,
 new ground, height, the opening blow) can loosen it down to its last point of
 hold, but only a kind it wants, or a deliberate act (a rune, the word), sees
 it off. Passing by never finishes anything by chance.
+
+Gear (0.7.2) changes two numbers, read from `cfg` (CharacterSheet.fight_cfg):
+
+* `groundCellScale`: each new cell is that many GROUND units instead of one
+  (the Cartographer's Atlas).
+* `finishUnder`: after the fold, a thing met and left with 0 < hold ≤ that share
+  of its hold is defeated (the Unrung Bell). What was left is added to the last
+  blow that landed, whose kind is the finisher (none, if nothing landed).
 """
 
 from __future__ import annotations
@@ -198,6 +206,7 @@ def resolve(
     blows: list[Blow] = []
     before = {"ROAD": 0.0, "GROUND": 0.0, "CLIMB": 0.0}
     new_cells = set(new_cell_indices)
+    cell_units = float(cfg.get("groundCellScale", 1.0))
 
     # One pass for the road and the climb: anchors for the road, bands for height.
     anchor: FightPoint | None = None
@@ -212,9 +221,9 @@ def resolve(
     for i, p in enumerate(points):
         if i in new_cells:
             if i < contact:
-                before["GROUND"] += 1
+                before["GROUND"] += cell_units
             elif inside[i]:
-                blows.append(Blow("GROUND", i, 1.0))
+                blows.append(Blow("GROUND", i, cell_units))
         if not p.ok:
             anchor = None
             continue
@@ -298,6 +307,16 @@ def resolve(
         if hold <= 0:
             report.finisher = blow.kind
             break
+
+    # The Unrung Bell: a thing left with less than a tenth of its hold is defeated.
+    finish_under = float(cfg.get("finishUnder", 0.0))
+    if 0 < hold <= finish_under * foe.hold_max:
+        if report.blows:
+            last = report.blows[-1]
+            last.amount += hold
+            report.damage[last.kind] = report.damage.get(last.kind, 0.0) + hold
+            report.finisher = last.kind
+        hold = 0.0
 
     if hold <= 0:
         report.outcome = "SEEN_OFF"

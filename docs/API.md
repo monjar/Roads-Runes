@@ -544,6 +544,64 @@ Cartographer, Arcane Sight and Second Chance work from 0.7.0: a ring of ground r
 new cells (`discovered_via: CARTOGRAPHER`), rune stones likelier, and one missed optional
 objective of a finished quest counting (`extra.forgiven`).
 
+## Gear, the bag and the stall (0.7.2)
+
+Gear is worn in five slots that open with level: Bell (1), Lantern (3), Bag (5), Map case
+(13) and Keepsake (21). Fifteen items (`backend/app/inventory/config/gear.json`), Common,
+Rare or Legendary; each changes a rule, never a damage percentage, and joins the runes'
+rules on the sheet (`Character.sheet.rules`, `gear`, `lootFindPct`; sheet version 4). A
+Legendary item comes to a player once, ever. Every change goes through
+`inventory/service.py` and its idempotent ledger.
+
+- `GET /inventory` → `Inventory`:
+  ```json
+  {"slots": [{"slot": "BELL", "name": "Bell", "opensAtLevel": 1, "open": true, "item": GearItem|null}],
+   "bag": [GearItem], "bagSize": 20,
+   "consumables": [{"id": "LAMP|MAP_FRAGMENT|REST_TOKEN|SEALED_CHEST_COMMON|SEALED_CHEST_RARE",
+                    "name": "Lamp", "icon": "lantern", "text": "...", "count": 2}],
+   "finishesSinceRare": 3, "levelRewardsPaid": [LevelReward]}
+  ```
+  `GearItem` = `{"id", "itemId": "tin-bell", "name": "Tin Bell", "slot", "rarity": "COMMON|RARE|LEGENDARY",
+  "icon": "tinBell", "text": "Creatures show up from 500 m away.", "sellPrice", "equipped", "acquiredAt",
+  "source": "MONSTER|BOUNTY|CHEST|QUEST|STALL|SEALED_CHEST"}`. The first call after 0.7.2 pays every level
+  already reached, once, and lists it in `levelRewardsPaid`.
+- `PUT /inventory/gear` `{"slot": "BELL", "itemId": uuid|null}` → `Inventory` (409 `WRONG_SLOT`,
+  `SLOT_LOCKED`, `LOADOUT_LOCKED` during a recording ride)
+- `POST /inventory/items/{id}/sell` → `Inventory` with `soldFor` and `walletBalance` (409 `TAKE_OFF_FIRST`)
+- `POST /inventory/consumables/{id}/use` `{"latitude", "longitude"}` → `{"consumable", "revealedTiles",
+  "placeName", "latitude", "longitude", "itemFound": ItemFound|null, "inventory": Inventory}`. A map piece
+  reveals tiles round the nearest hidden place within 5 km (409 `NO_HIDDEN_PLACE`); a sealed chest gives an
+  item of its rarity (409 `OPEN_LATER` during a journey). None held: 409 `NONE_LEFT`. Lamps are used by
+  `POST /world/objects/lure` before coins, and rest tokens by the streak, on their own.
+- `GET /inventory/stall` → `{"open", "opensAtLevel": 3, "week": "2026-W41", "resetsAt",
+  "offers": [{"id": "w41-0", "kind": "GEAR|CONSUMABLE", "itemId", "consumable", "name", "rarity", "icon",
+  "slot", "text", "price", "bought"}]}`: four offers a week, the same all week.
+- `POST /inventory/stall/{offerId}/buy` → `Inventory` (409 `STALL_CLOSED`, `ALREADY_BOUGHT`,
+  `INSUFFICIENT_AC`)
+- `GET /inventory/levels` → `[{"level": 3, "reached": true, "rewards": [{"kind":
+  "SLOT|RUNE_SLOT|STALL|TITLE|CONSUMABLE", "text": "Lantern slot opens", "icon", "consumable", "count",
+  "slot", "level"}]}]` for levels 1 to 50: every level gives something.
+
+New coin kinds in `GET /wallet/transactions`: `STALL`, `ITEM_SOLD`.
+
+**What a journey found.** A ride summary (and `POST /world/objects/{id}/claim`, as `itemFound`) gains
+`itemsFound`: `[{"kind": "GEAR|CONSUMABLE", "inventoryItemId", "itemId", "consumable", "name", "icon",
+"rarity", "slot", "source": "MONSTER|CHEST|QUEST|BOUNTY", "fromName": "Fen Troll", "soldOnTheSpot": false,
+"soldFor": null}]`. A drop into a full bag (20) is sold on the spot. `streak.restTokenUsed` says a rest
+token kept the streak over a missed day; `levelUps[].rewards` lists what each new level gave. Hard quests
+carry a Rare item in `rewards.items` (`{"itemId", "name", "rarity", "icon", "slot"}`), epic ones sometimes a
+Legendary.
+
+**Creatures.** Twenty-four species; every `monster.sigil` carries an `icon` (a `GameIcon` name).
+`monster.variant` = `{"id": "STUBBORN|SKITTISH|MOSSY", "name": "Stubborn", "text"}` and `displayName`
+("Stubborn Fen Troll"). A creature that gets away weakened twice from the same place comes back once as a
+grudge: `monster.grudge` = `{"epithet": "Grumpy", "line"}`, named "Fen Troll the Grumpy". The Codex
+creature page gains `trophies` (`{"name": "a bridge nail", "count": 3}`).
+
+**The written entry** (flag `chronicle_llm`, off): after a ride is counted, a job may write
+`entryWritten` (`{"lines": [...], "by": "model"}`) on the ride and its journal entry. The composed
+`entry` stays; the app shows the written one when there is one.
+
 ## Routes
 
 ### `POST /routes/rune` (0.7.0)

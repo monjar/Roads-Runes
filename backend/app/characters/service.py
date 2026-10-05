@@ -121,12 +121,12 @@ def class_change_offer(character: Character) -> tuple[int, datetime | None]:
 
 
 async def character_out(db: AsyncSession, character: Character) -> CharacterOut:
-    from app.inventory.service import inscribed
+    from app.inventory.service import sheet_for
 
     streak = await get_streak(db, character.user_id)
     return to_character_out(
         character,
-        sheet=build_sheet(character, await inscribed(db, character)).to_dict(),
+        sheet=(await sheet_for(db, character)).to_dict(),
         active_coins=await economy.balance(db, character.user_id),
         streak_days=_live_streak_days(streak),
         longest_streak_days=streak.longest_days if streak else 0,
@@ -311,11 +311,12 @@ async def reset_character(db: AsyncSession, user: User) -> None:
     await db.execute(delete(QuestProgressEvent).where(QuestProgressEvent.quest_id.in_(quest_ids)))
     await db.execute(delete(QuestObjective).where(QuestObjective.quest_id.in_(quest_ids)))
     await db.execute(delete(QuestInstance).where(QuestInstance.user_id == user.id))
-    from app.inventory.models import CharacterDeed, ItemEvent, Loadout, RuneCut, RuneHolding
+    from app.inventory.models import CharacterDeed, InventoryItem, ItemEvent, Loadout, RuneCut, RuneHolding
 
     for model in (
         CharacterTitle,
         RuneHolding,
+        InventoryItem,
         Loadout,
         RuneCut,
         ItemEvent,

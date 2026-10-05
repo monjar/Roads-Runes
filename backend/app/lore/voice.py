@@ -98,6 +98,7 @@ LABELS: dict[str, set[str]] = {
     "characters/config/abilities.json": {"name", "description"},
     "progression/config/titles.json": {"name", "how"},
     "inventory/config/runes.json": {"text"},
+    "inventory/config/gear.json": {"name", "text"},
 }
 
 

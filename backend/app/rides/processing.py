@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.characters.models import Character
-from app.characters.sheet import CharacterSheet, build_sheet
+from app.characters.sheet import CharacterSheet
 from app.chronicle.compose import Facts, compose
 from app.core.activity import normalise
 from app.core.config import Settings
@@ -272,6 +272,7 @@ async def _reward_for_ride(
         far_new_cells=far_new_cells,
         wrote_note=wrote_note,
         days_away=days_away,
+        optional_xp_scale=float(sheet.rules.get("OPTIONAL_XP_SCALE", 1.0)) if sheet else 1.0,
     )
     lines = compute_ride_xp(inp)
     outcome = await grant(db, character, lines, ride_id=ride.id, quest_id=quest.id if quest else None)
@@ -388,9 +389,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
     if ride.loadout_snapshot:
         sheet = CharacterSheet.from_dict(ride.loadout_snapshot)
     else:
-        from app.inventory.service import inscribed
-
-        sheet = build_sheet(character, await inscribed(db, character))
+        sheet = await inventory.sheet_for(db, character)
 
     # What the player had met before this outing, for the codex stamp after it.
     met_before = {
@@ -435,8 +434,18 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
                 if found:
                     runes_found.append(found)
 
-    # Ground read without being passed: a ring round each new cell (Cartographer),
-    # and round each place found (Kenaz, inscribed).
+    # What creatures defeated and chests opened left behind (0.7.2): seeded by the
+    # thing, once per thing, and outside the coin and XP caps. A drop into a full
+    # bag is sold on the spot.
+    items_found: list[dict[str, Any]] = []
+    if character is not None:
+        for obj in claims.claimed:
+            found = await inventory.drop_for(db, character, obj, sheet=sheet, ride_id=ride.id)
+            if found:
+                items_found.append(found)
+
+    # Ground read without being passed: a ring round each new cell (Cartographer,
+    # and a Candle Stub worn), and round each place found (Kenaz, inscribed).
     if character is not None and not validation.suspicious:
         try:
             await _reveal_rings(db, settings, character, sheet, exploration, discoveries)
@@ -496,6 +505,8 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
                 quest.completed_at = ended
                 quest.ride_id = ride.id
                 quest_completed = True
+                if character is not None:
+                    items_found += await inventory.grant_quest_items(db, character, quest, ride_id=ride.id)
         elif quest is not None and quest.status != "ACTIVE":
             quest = None
 
@@ -576,6 +587,13 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             # Paid by settle_arc, outside the per-ride cap; shown with the rest.
             coins["acAwarded"] += arc_coins
             coins["acBreakdown"].append({"kind": "STORY_ARC", "ac": arc_coins, "detail": {"arc": arc["arcTitle"]}})
+        for found in items_found:
+            if found.get("soldOnTheSpot") and found.get("soldFor"):
+                # Paid by inventory.add_gear, outside the per-ride cap; shown with the rest.
+                coins["acAwarded"] += int(found["soldFor"])
+                coins["acBreakdown"].append(
+                    {"kind": "ITEM_SOLD", "ac": int(found["soldFor"]), "detail": {"name": found["name"]}}
+                )
 
     if quest_completed and quest is not None:
         await publish(
@@ -611,6 +629,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         "quarryId": str(ride.quarry_id) if ride.quarry_id else None,
         "codexFirsts": first_meetings(claims, met_before),
         "runesFound": runes_found,
+        "itemsFound": items_found,
         "streak": streak.to_dict(),
         "newCells": len(exploration.new_cells),
         "upgradedCells": len(exploration.upgraded_cells),
@@ -700,6 +719,7 @@ async def _reveal_rings(
     from app.exploration.service import reveal
 
     rings = int(abilities.effect_total(ability_map(character), "FOG_REVEAL_RADIUS_CELLS"))
+    rings += int(sheet.rules.get("NEW_TILE_RINGS", 0))
     if rings and exploration.new_cells:
         around = {n for cell in exploration.new_cells for n in h3.grid_disk(cell, rings)} - set(exploration.new_cells)
         await reveal(db, character.user_id, sorted(around), settings.h3_resolution, via="CARTOGRAPHER")
@@ -891,7 +911,8 @@ async def complete_quest_with_ride(
     )
     arc = await story.settle_arc(db, user, character, quest, ride_id=ride.id)
     reward, _ = merge_arc(reward, arc)
-    return {**completion_payload(quest, reward), "storyProgress": arc}
+    items = await inventory.grant_quest_items(db, character, quest, ride_id=ride.id) if character else []
+    return {**completion_payload(quest, reward), "storyProgress": arc, "itemsFound": items}
 
 
 async def complete_quest_without_ride(
@@ -918,7 +939,8 @@ async def complete_quest_without_ride(
     reward = (await grant(db, character, lines, quest_id=quest.id)).to_dict() if character else {}
     arc = await story.settle_arc(db, user, character, quest)
     reward, _ = merge_arc(reward, arc)
-    return {**completion_payload(quest, reward), "storyProgress": arc}
+    items = await inventory.grant_quest_items(db, character, quest) if character else []
+    return {**completion_payload(quest, reward), "storyProgress": arc, "itemsFound": items}
 
 
 def quest_snapshot(quest: QuestInstance | None) -> dict[str, Any] | None:

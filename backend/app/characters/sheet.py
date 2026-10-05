@@ -7,9 +7,10 @@ old client, an offline start) uses `neutral()`, which deals exactly what an
 untrained character would.
 
 0.6.1 carried the trade's base only; 0.6.2 adds the current trade's knacks
-(characters/config/abilities.json). Runes and gear fill the same fields later
-without changing their shape. Every field added since version 1 is optional on
-the phone.
+(characters/config/abilities.json); 0.7.0 the inscribed runes' rules; 0.7.2
+(version 4) the gear worn in open slots, whose rules merge with the runes' into
+the one `rules` dict (inventory/gear.py merge_rules), and better finds. Every
+field added since version 1 is optional on the phone.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from typing import Any
 
 from app.characters.models import Character
 
-SHEET_VERSION = 3
+SHEET_VERSION = 4
 KINDS = ("ROAD", "GROUND", "CLIMB", "RUNE", "WORD")
 
 # Today's class eases, as effort: a Warrior climbs and keeps going, an Explorer
@@ -57,6 +58,11 @@ class CharacterSheet:
     # 0.7.0: the runes inscribed, by rank, and the rules they make (inventory/catalog.py).
     inscribed: dict[str, int] = field(default_factory=dict)
     rules: dict[str, float] = field(default_factory=dict)
+    # 0.7.2: the gear worn in open slots, by slot ({"BELL": "tin-bell"}), and better
+    # finds (Poacher's Pocket): a drop's chance × (1 + p), and p×100 points moved
+    # from Common to Rare.
+    gear: dict[str, str] = field(default_factory=dict)
+    loot_find_pct: float = 0.0
 
     @classmethod
     def neutral(cls) -> CharacterSheet:
@@ -80,6 +86,8 @@ class CharacterSheet:
             "wordOldPlacesPct": out["word_old_places_pct"],
             "inscribed": out["inscribed"],
             "rules": out["rules"],
+            "gear": out["gear"],
+            "lootFindPct": out["loot_find_pct"],
         }
 
     @classmethod
@@ -102,28 +110,40 @@ class CharacterSheet:
             word_old_places_pct=float(data.get("wordOldPlacesPct", 0.0)),
             inscribed={k: int(v) for k, v in (data.get("inscribed") or {}).items()},
             rules={k: float(v) for k, v in (data.get("rules") or {}).items()},
+            gear={str(k): str(v) for k, v in (data.get("gear") or {}).items()},
+            loot_find_pct=float(data.get("lootFindPct", 0.0)),
         )
 
     def woken(self, rune_id: str) -> CharacterSheet:
-        """The sheet with one inscribed rune a rank deeper, for the outing that woke it."""
+        """The sheet with one inscribed rune a rank deeper, for the outing that woke it
+        (two ranks with the Runesmith's Nail). The gear's rules stay as they were."""
         from dataclasses import replace
 
         from app.inventory import catalog as runes
+        from app.inventory import gear
 
         if rune_id not in self.inscribed:
             return self
-        deeper = {**self.inscribed, rune_id: self.inscribed[rune_id] + 1}
-        rules = runes.rules_for(deeper)
+        extra = int(self.rules.get("WOKEN_EXTRA", 0))
+        deeper = {**self.inscribed, rune_id: self.inscribed[rune_id] + 1 + extra}
+        worn, _ = gear.split_coins(gear.rules_for(self.gear.values()))
+        rules = gear.merge_rules(runes.rules_for(deeper), worn)
         reach = max(self.rune_reach_m, rules.get("RUNE_REACH_M", 0.0))
         return replace(self, inscribed=deeper, rules=rules, rune_reach_m=reach)
 
     def fight_cfg(self, cfg: dict[str, Any], *, first_outings_today: int = 1) -> dict[str, Any]:
-        """The combat constants with what the inscribed runes change: the opening
-        blow (Raido), how far the word reaches (Ansuz), and "does not mind" on the
-        first outings of the day (Dagaz)."""
+        """The combat constants with what the inscribed runes and the gear change:
+        the opening blow (Raido, the Drover's Bell), how far the word reaches
+        (Ansuz), "does not mind" on the first outings of the day (Dagaz), a creature
+        left under a tenth defeated (the Unrung Bell) and what a new tile counts
+        for (the Cartographer's Atlas)."""
         out = dict(cfg)
         if self.rules.get("CARRIED_SCALE"):
             out["carriedFraction"] = float(cfg["carriedFraction"]) * self.rules["CARRIED_SCALE"]
+        if self.rules.get("FINISH_UNDER"):
+            out["finishUnder"] = float(self.rules["FINISH_UNDER"])
+        if self.rules.get("GROUND_CELL_SCALE"):
+            out["groundCellScale"] = float(self.rules["GROUND_CELL_SCALE"])
         if self.rules.get("WORD_RADIUS_M"):
             out["wordRadiusMeters"] = max(float(cfg["wordRadiusMeters"]), self.rules["WORD_RADIUS_M"])
         if self.rules.get("MINDS_NEUTRAL_FIRST") and first_outings_today <= self.rules["MINDS_NEUTRAL_FIRST"]:
@@ -145,13 +165,17 @@ class CharacterSheet:
         return pct
 
 
-def build_sheet(character: Character | None, inscribed: dict[str, int] | None = None) -> CharacterSheet:
-    """The sheet from the character's trade, knacks and inscribed runes (`inscribed`,
-    from inventory.service.inscribed, by rank)."""
+def build_sheet(
+    character: Character | None, inscribed: dict[str, int] | None = None, gear: dict[str, str] | None = None
+) -> CharacterSheet:
+    """The sheet from the character's trade, knacks, inscribed runes (`inscribed`,
+    from inventory.service.inscribed, by rank) and worn gear (`gear`, slot to item
+    id, from inventory.service.worn; only open slots count)."""
     if character is None:
         return CharacterSheet.neutral()
     from app.characters import catalog
     from app.inventory import catalog as runes
+    from app.inventory import gear as gear_book
 
     trade = character.character_class
     # The current trade's knacks only; another trade's stay learned and wait.
@@ -167,20 +191,29 @@ def build_sheet(character: Character | None, inscribed: dict[str, int] | None = 
         "DISCOVERY_WITH_NOTE": catalog.effect_total(knacks, "XP_BONUS_DISCOVERY_WITH_NOTE"),
     }
     inscribed = dict(inscribed or {})
-    rules = runes.rules_for(inscribed)
+    worn = gear_book.worn(gear, character.overall_level)
+    gear_rules, gear_coins = gear_book.split_coins(gear_book.rules_for(worn.values()))
+    rules = gear_book.merge_rules(runes.rules_for(inscribed), gear_rules)
+    coin_pct = catalog.effects_by_kind(knacks, "COIN_PCT")
+    for kind, pct in gear_coins.items():
+        coin_pct[kind] = round(coin_pct.get(kind, 0.0) + pct, 4)
     reach = DEFAULT_RUNE_REACH_M + catalog.effect_total(knacks, "RUNE_REACH_M")
+    threshold = RUNE_THRESHOLD.get(trade, DEFAULT_RUNE_THRESHOLD)
     return CharacterSheet(
         version=SHEET_VERSION,
         character_class=trade,
         overall_level=character.overall_level,
         class_level=character.class_level,
         damage_pct=damage,
-        rune_threshold=RUNE_THRESHOLD.get(trade, DEFAULT_RUNE_THRESHOLD),
-        # Sowilo sets how far a cut reaches; the knacks' reach is the floor.
+        # The Hagstone matches as kindly as a Wizard's hand; never less kindly.
+        rune_threshold=max(threshold, rules.get("RUNE_THRESHOLD", 0.0)),
+        # Sowilo and the Rowan Twig set how far a cut reaches; the knacks' reach is the floor.
         rune_reach_m=max(reach, rules.get("RUNE_REACH_M", 0.0)),
         inscribed=inscribed,
         rules=rules,
-        coin_pct=catalog.effects_by_kind(knacks, "COIN_PCT"),
+        gear=worn,
+        loot_find_pct=float(rules.get("LOOT_FIND", 0.0)),
+        coin_pct=coin_pct,
         xp_pct={k: round(v, 4) for k, v in xp.items() if v},
         vs_elders_pct=catalog.effect_total(knacks, "VS_ELDERS_PCT"),
         late_road_pct=catalog.effect_total(knacks, "LATE_ROAD_PCT"),

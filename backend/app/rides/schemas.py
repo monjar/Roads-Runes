@@ -115,6 +115,9 @@ class RideOut(APIModel):
     # the fight over it. Absent for rides from before 0.6.1.
     loadout: dict[str, Any] | None = None
     quarryId: uuid.UUID | None = None
+    # 0.7.2: the entry written by the model, when there is one: {"lines": [...],
+    # "by": "model"}. The composed `entry` stays on the summary either way.
+    entryWritten: dict[str, Any] | None = None
 
 
 class RideCompleteOut(APIModel):
@@ -148,6 +151,14 @@ class AdventureSummary(APIModel):
     entry: str | None = None
     weekNotice: dict[str, Any] | None = None
     codexFirsts: list[dict[str, Any]] = []
+    # 0.7.0: rune stones picked up, and what the outing did for the deeds (in the
+    # processing result since 0.7.0; on the summary since 0.7.2).
+    runesFound: list[dict[str, Any]] | None = None
+    deeds: dict[str, Any] | None = None
+    # 0.7.2: what creatures, chests and the quest left (ItemFoundOut), and the
+    # model-written entry when there is one.
+    itemsFound: list[dict[str, Any]] | None = None
+    entryWritten: dict[str, Any] | None = None
 
 
 class RideGeometry(APIModel):

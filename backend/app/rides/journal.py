@@ -31,6 +31,8 @@ class AdventureEntry(APIModel):
     photos: list[str] = []
     # The entry the outing left (0.6.2): a few written lines, composed from its facts.
     entry: str | None = None
+    # 0.7.2: the model-written entry, when there is one ({"lines": [...], "by": "model"}).
+    entryWritten: dict[str, Any] | None = None
 
 
 async def entry(db: AsyncSession, ride: Ride) -> AdventureEntry:
@@ -46,6 +48,7 @@ async def entry(db: AsyncSession, ride: Ride) -> AdventureEntry:
         levelUps=result.get("levelUps", []),
         notes=ride.notes,
         entry=result.get("entry"),
+        entryWritten=result.get("entryWritten"),
     )
 
 

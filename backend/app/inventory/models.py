@@ -27,8 +27,8 @@ class RuneHolding(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class Loadout(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """What the character carries into an outing: the runes inscribed now (0.7.0),
-    gear later (0.7.1)."""
+    """What the character carries into an outing: the runes inscribed (0.7.0), the
+    gear worn and the consumables in the bag (0.7.2)."""
 
     __tablename__ = "loadouts"
 
@@ -39,6 +39,12 @@ class Loadout(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     inscriptions: Mapped[list[Any]] = mapped_column(JSONType, default=list, nullable=False)
     # Stones of runes already held, in a row: after enough, the next is one not held.
     repeats: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # 0.7.2: what is worn, by slot ({"BELL": "<inventory item uuid>"}), and the
+    # consumables held, by id ({"LAMP": 2}).
+    gear: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict, nullable=False)
+    consumables: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict, nullable=False)
+    # Creatures defeated and chests opened since the last Rare-or-better item: the pity count.
+    finishes_since_rare: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
 class RuneCut(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -90,3 +96,24 @@ class CharacterDeed(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     value: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     tier: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     ride_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("rides.id", ondelete="SET NULL"), nullable=True)
+
+
+class InventoryItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A piece of gear the character has had (0.7.2): worn, in the bag, or sold.
+    Never deleted, so "one of each Legendary, ever" can be read from it. Written
+    only by inventory/service.py; `source_key` is the ledger key it came by."""
+
+    __tablename__ = "inventory_items"
+    __table_args__ = (UniqueConstraint("user_id", "source_key"),)
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    character_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), index=True)
+    item_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    rarity: Mapped[str] = mapped_column(String(12), nullable=False)
+    # MONSTER, BOUNTY, CHEST, QUEST, STALL, SEALED_CHEST.
+    source: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    ride_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("rides.id", ondelete="SET NULL"), nullable=True)
+    acquired_at: Mapped[datetime] = mapped_column(TZDateTime, nullable=False)
+    sold_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
+    sold_for: Mapped[int | None] = mapped_column(Integer, nullable=True)

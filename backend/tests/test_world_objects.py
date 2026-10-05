@@ -263,7 +263,14 @@ async def test_a_lamp_works_on_a_full_day_and_says_why_when_it_will_not(explorer
 
     at = {"latitude": other["latitude"], "longitude": other["longitude"]}
     check = (await c.get("/world/objects/lure", params=at)).json()
-    assert check == {"ok": True, "cost": 50, "placeName": other["anchorName"], "code": None, "message": None}
+    assert check == {
+        "ok": True,
+        "cost": 50,
+        "placeName": other["anchorName"],
+        "code": None,
+        "message": None,
+        "lampsInBag": 0,
+    }
     r = await c.post("/world/objects/lure", json=at)
     assert r.status_code == 200, r.text
     came = r.json()
