@@ -28,8 +28,9 @@ def book() -> dict[str, Any]:
         rules.add(rune["rule"])
         if rune["six"] == "GROUND":
             assert rune.get("ground"), f"{rune['id']} is a Ground rune with no ground"
-        # The Hard Six are taken, never picked up: no ground, and no stone on the map.
-        assert rune["six"] != "HARD" or not rune.get("ground"), f"{rune['id']} is a Hard rune with ground"
+        # The Hard Six are taken, never picked up: no ground, and no stone on the map;
+        # the Trade Six are given (0.9.0), never picked up either.
+        assert rune["six"] not in ("HARD", "TRADE") or not rune.get("ground"), f"{rune['id']} is given, with ground"
         assert rune["six"] == known[rune["id"]]["six"], f"{rune['id']} is in another six in the lore"
     return data
 
@@ -64,7 +65,7 @@ def rule_text(rune_id: str, rank: int) -> str:
     # {first} reads "first" for one and "first 3" for more, so rank I is not "the first 1".
     first = "first" if n == 1 else f"first {n}"
     return by_id()[rune_id]["text"].format(
-        v=f"{v:g}", km=f"{km:g}", n=n, s="" if n == 1 else "s", min=f"{v / 60:g}", first=first
+        v=f"{v:g}", km=f"{km:g}", n=n, s="" if n == 1 else "s", min=f"{v / 60:g}", first=first, pct=f"{v * 100:g}"
     )
 
 
@@ -102,6 +103,10 @@ def ground_runes_at(category: str | None, tags: dict[str, Any] | None) -> list[s
 
 def hard_six() -> list[str]:
     return [r["id"] for r in book()["runes"] if r["six"] == "HARD"]
+
+
+def trade_six() -> list[str]:
+    return [r["id"] for r in book()["runes"] if r["six"] == "TRADE"]
 
 
 def road_six() -> list[str]:

@@ -64,5 +64,19 @@ def legend_title(legend_id: str) -> dict[str, Any] | None:
     return next((t for t in catalogue() if t["source"] == "LEGEND" and t.get("legend") == legend_id), None)
 
 
+DISTRICT_PREFIX = "warden:"
+
+
+def district_title(region_id: Any, district: str) -> dict[str, Any]:
+    """A district complete's title (0.9.0): "Warden of Rotherhithe", one per district."""
+    spec = json.loads(CONFIG.read_text())["district"]
+    return {
+        "slug": f"{DISTRICT_PREFIX}{region_id}",
+        "name": spec["name"].format(district=district),
+        "source": "DISTRICT",
+        "how": spec["how"].format(district=district),
+    }
+
+
 def arc_title(arc_slug: str) -> dict[str, Any] | None:
     return next((t for t in catalogue() if t["source"] == "ARC" and t.get("arc") == arc_slug), None)

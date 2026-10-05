@@ -173,6 +173,12 @@ class AdventureSummary(APIModel):
     lair: dict[str, Any] | None = None
     treasureFound: dict[str, Any] | None = None
     legendWoke: dict[str, Any] | None = None
+    # 0.9.0: every district the journey was in ({"id", "name", "title", "displayName",
+    # "percent", "exploredTiles", "newTiles", "becameYours", "completed"}), and the
+    # week's pay for the districts that are yours ({"coins", "districts", "doubled"};
+    # absent unless this journey was paid).
+    districts: list[dict[str, Any]] = []
+    districtPay: dict[str, Any] | None = None
 
 
 class RideGeometry(APIModel):

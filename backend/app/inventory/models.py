@@ -45,6 +45,9 @@ class Loadout(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     consumables: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict, nullable=False)
     # Creatures defeated and chests opened since the last Rare-or-better item: the pity count.
     finishes_since_rare: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # 0.9.0: the look worn ({"ink": "ink:sage", "markerFrame": "marker:rope", "crestFrame":
+    # "crest:legs-2"}); a missing key is the default (inventory/cosmetics.py).
+    look: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
 
 
 class RuneCut(UUIDPrimaryKeyMixin, TimestampMixin, Base):

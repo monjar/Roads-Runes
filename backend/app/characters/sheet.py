@@ -165,19 +165,24 @@ class CharacterSheet:
             out["climbSharedMeters"] = float(self.rules["CLIMB_SHARED_M"])
         return out
 
-    def foe_cfg(self, cfg: dict[str, Any], *, elder: bool) -> dict[str, Any]:
+    def foe_cfg(self, cfg: dict[str, Any], *, elder: bool, quarry: bool = False) -> dict[str, Any]:
         """The constants against one thing, after `fight_cfg`: Thurisaz makes the
-        opening blow on an elder, a bounty or a legend that many times stronger
-        (the fraction is scaled; the cap on it is not)."""
+        opening blow on an elder, a bounty or a legend that many times stronger, and
+        Tiwaz (0.9.0) the opening blow on the journey's quarry, the creature it was
+        planned for (each scales the fraction; the cap on it stays)."""
+        out = cfg
         scale = float(self.rules.get("ELDER_CARRIED_SCALE", 0.0))
-        if not elder or scale <= 0:
-            return cfg
-        return {**cfg, "carriedFraction": float(cfg.get("carriedFraction", 0.0)) * scale}
+        if elder and scale > 0:
+            out = {**out, "carriedFraction": float(out.get("carriedFraction", 0.0)) * scale}
+        scale = float(self.rules.get("QUARRY_CARRIED_SCALE", 0.0))
+        if quarry and scale > 0:
+            out = {**out, "carriedFraction": float(out.get("carriedFraction", 0.0)) * scale}
+        return out
 
-    def legend_cfg(self, cfg: dict[str, Any]) -> dict[str, Any]:
+    def legend_cfg(self, cfg: dict[str, Any], *, quarry: bool = False) -> dict[str, Any]:
         """The constants against a legend, after `fight_cfg`: an elder's, and a note
         reaching as far as the Loremaster's."""
-        out = self.foe_cfg(cfg, elder=True)
+        out = self.foe_cfg(cfg, elder=True, quarry=quarry)
         if self.legend_word_radius_m:
             out = {**out, "wordRadiusMeters": max(float(out["wordRadiusMeters"]), self.legend_word_radius_m)}
         return out
@@ -237,6 +242,9 @@ def build_sheet(
     coin_pct = catalog.effects_by_kind(knacks, "COIN_PCT")
     for kind, pct in gear_coins.items():
         coin_pct[kind] = round(coin_pct.get(kind, 0.0) + pct, 4)
+    # Gebo (0.9.0): chests give v× coins, on top of what the knacks and gear add.
+    if rules.get("CHEST_COINS_SCALE"):
+        coin_pct["CHEST"] = round((1 + coin_pct.get("CHEST", 0.0)) * float(rules["CHEST_COINS_SCALE"]) - 1, 4)
     reach = DEFAULT_RUNE_REACH_M + catalog.effect_total(knacks, "RUNE_REACH_M")
     threshold = RUNE_THRESHOLD.get(trade, DEFAULT_RUNE_THRESHOLD)
     return CharacterSheet(

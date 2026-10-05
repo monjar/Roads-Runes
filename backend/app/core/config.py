@@ -31,6 +31,7 @@ ALL_FEATURE_FLAGS: tuple[str, ...] = (
     "chronicle_llm",
     "pledge",
     "parchment_map",
+    "place_lore",
 )
 
 DEFAULT_FLAGS: dict[str, bool] = {
@@ -59,6 +60,9 @@ DEFAULT_FLAGS: dict[str, bool] = {
     "pledge": False,
     # The World tab's map as a bundled parchment style (0.7.3). Other tabs keep theirs.
     "parchment_map": False,
+    # Place lore from Wikidata (0.9.0, discoveries/place_lore.py): a checked one-line
+    # description kept on a place at tile import. Off until it has been read over.
+    "place_lore": False,
 }
 
 # Flags on wherever ENVIRONMENT is development (the local stack and the Fly backend)

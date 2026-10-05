@@ -8,6 +8,7 @@ from app.between.router import letters_router, pledge_router
 from app.characters.router import router as character_router
 from app.core.deps import SettingsDep
 from app.discoveries.router import router as discoveries_router
+from app.districts.router import router as districts_router
 from app.economy.router import router as wallet_router
 from app.exploration.router import router as world_router
 from app.integrations.router import router as integrations_router
@@ -70,5 +71,6 @@ for r in (
     pledge_router,
     letters_router,
     legends_router,
+    districts_router,
 ):
     api_router.include_router(r)

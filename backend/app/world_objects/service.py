@@ -1161,6 +1161,7 @@ async def _fight_by_effort(
     ride_id = str(getattr(ride, "id", ""))
     ride_uuid = getattr(ride, "id", None)
     user_id = getattr(ride, "user_id", None)
+    quarry_id = getattr(ride, "quarry_id", None)
     day = ended.date().isoformat()
     activity = normalise(getattr(ride, "activity", "RIDE"))
     made_good = _made_good_m(points)
@@ -1223,7 +1224,8 @@ async def _fight_by_effort(
                 foe,
                 activity=activity,
                 damage_pct=pct,
-                cfg=sheet.foe_cfg(cfg, elder=elder),
+                # Tiwaz (0.9.0): the creature this journey was planned for.
+                cfg=sheet.foe_cfg(cfg, elder=elder, quarry=quarry_id is not None and obj.id == quarry_id),
                 new_cell_indices=new_cell_indices,
                 rune_hit=hit,
                 word_indices=words,

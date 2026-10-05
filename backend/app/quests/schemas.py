@@ -97,6 +97,11 @@ class StoryArcOut(APIModel):
     after: str | None = None
     giver: str | None = None
     reward: dict[str, Any] | None = None
+    # A festival's arc (0.9.0, track SEASON): SPRING, MIDSUMMER, HARVEST or MIDWINTER,
+    # and its window. Shown only while the festival is on.
+    season: str | None = None
+    startsAt: datetime | None = None
+    endsAt: datetime | None = None
 
 
 class WeekNoticeOut(APIModel):

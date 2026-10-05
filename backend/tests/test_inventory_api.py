@@ -143,10 +143,11 @@ async def test_selling_pays_coins_and_never_what_is_worn(explorer_client):
     assert [t["kind"] for t in history[:2]] == ["ITEM_SOLD", "ITEM_SOLD"]
 
 
-async def test_the_stall_opens_at_level_3_with_four_offers_a_week(explorer_client):
+async def test_the_stall_opens_at_level_3_with_five_offers_a_week(explorer_client):
     c = explorer_client
     closed = (await c.get("/inventory/stall")).json()
-    assert closed["open"] is False and closed["opensAtLevel"] == 3 and len(closed["offers"]) == 4
+    # Four, and from 0.9.0 a fifth: a look (tests/test_looks_and_trade_six.py).
+    assert closed["open"] is False and closed["opensAtLevel"] == 3 and len(closed["offers"]) == 5
     offer = closed["offers"][0]["id"]
     r = await c.post(f"/inventory/stall/{offer}/buy")
     assert r.status_code == 409 and r.json()["error"]["code"] == "STALL_CLOSED"
@@ -156,7 +157,7 @@ async def test_the_stall_opens_at_level_3_with_four_offers_a_week(explorer_clien
     assert stall == {**stall, "open": True, "week": service.iso_week(datetime.now(UTC))}
     assert stall["offers"] == (await c.get("/inventory/stall")).json()["offers"], "computed on read, the same all week"
     kinds = [o["kind"] for o in stall["offers"]]
-    assert kinds == ["GEAR", "GEAR", "CONSUMABLE", "CONSUMABLE"]
+    assert kinds == ["GEAR", "GEAR", "CONSUMABLE", "CONSUMABLE", "COSMETIC"]
     assert all(o["rarity"] in ("COMMON", "RARE") for o in stall["offers"] if o["kind"] == "GEAR")
     gear_offer = stall["offers"][0]
     r = await c.post(f"/inventory/stall/{gear_offer['id']}/buy")

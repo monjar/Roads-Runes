@@ -37,6 +37,10 @@ OBJECTIVE_TYPES = (
     # 0.8.0: a lair's great chest opened, and so much damage to the legend on one journey.
     "LAIR_VISIT",
     "WOUND_BOSS",
+    # 0.9.0: new tiles in a district (home, any, or one never been to, to a %), and a
+    # loop round a district's edge.
+    "DISTRICT_TILES",
+    "DISTRICT_LOOP",
 )
 
 DIFFICULTIES = ("EASY", "MODERATE", "HARD", "EPIC")

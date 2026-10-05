@@ -203,6 +203,25 @@ async def title_list(db: AsyncSession, character: Character) -> list[TitleOut]:
         )
         for t in title_catalogue.catalogue()
     ]
+    # A district's title (0.9.0, "Warden of Rotherhithe") is listed once it is earned.
+    from app.progression.service import title_entry
+
+    for slug, row in earned.items():
+        if not slug.startswith(title_catalogue.DISTRICT_PREFIX):
+            continue
+        entry = await title_entry(db, slug)
+        if entry is not None:
+            out.append(
+                TitleOut(
+                    slug=slug,
+                    name=entry["name"],
+                    source=entry["source"],
+                    how=entry["how"],
+                    earned=True,
+                    earnedAt=row.earned_at,
+                    worn=entry["name"] == character.title,
+                )
+            )
     return sorted(out, key=lambda t: (not t.earned, t.earnedAt or utcnow()))
 
 
@@ -302,7 +321,8 @@ async def reset_character(db: AsyncSession, user: User) -> None:
 
     Gone: the character and its abilities, every quest, the XP and coin ledgers,
     the explored cells and the places found, pledges and letters (0.7.3), legends (0.8.0; lairs
-    and buried treasure go with the world objects). Kept: rides and their journal
+    and buried treasure go with the world objects), districts explored (0.9.0; the
+    districts themselves are the map's, and stay). Kept: rides and their journal
     entries (they happened), bikes, the riding profile, friends and connections.
     """
     character = await maybe_character(db, user.id)
@@ -313,10 +333,12 @@ async def reset_character(db: AsyncSession, user: User) -> None:
     await db.execute(delete(QuestObjective).where(QuestObjective.quest_id.in_(quest_ids)))
     await db.execute(delete(QuestInstance).where(QuestInstance.user_id == user.id))
     from app.between.models import Letter, Pledge
+    from app.districts.models import UserRegion
     from app.inventory.models import CharacterDeed, InventoryItem, ItemEvent, Loadout, RuneCut, RuneHolding
     from app.legends.models import OldOne
 
     for model in (
+        UserRegion,
         OldOne,
         Pledge,
         Letter,

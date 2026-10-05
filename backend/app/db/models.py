@@ -10,6 +10,7 @@ from app.characters.models import (  # noqa: F401
 )
 from app.db.base import Base
 from app.discoveries.models import Discovery, PoiImportArea, UserDiscovery  # noqa: F401
+from app.districts.models import Region, UserRegion  # noqa: F401
 from app.economy.models import UserStreak, Wallet, WalletTransaction  # noqa: F401
 from app.exploration.models import UserExplorationCell  # noqa: F401
 from app.integrations.models import StravaConnection  # noqa: F401

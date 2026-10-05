@@ -88,6 +88,9 @@ class GenerationContext:
     world_objects: list[WorldObjectCandidate] = field(default_factory=list)
     # The legend awake (0.8.0), kind LEGEND, for a step that asks for damage to it.
     legend: WorldObjectCandidate | None = None
+    # The district with the most of the player's tiles (0.9.0), for Act IV's Home
+    # Ground: {"id", "name", "latitude", "longitude"}.
+    home_district: dict[str, Any] | None = None
 
 
 @dataclass
@@ -418,6 +421,19 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
         variables["legendDamage"] = int(rules["legendDamage"])
         farthest_m = max(farthest_m, haversine_m(ctx.latitude, ctx.longitude, legend.latitude, legend.longitude))
 
+    # A district step (0.9.0): "home" needs a district the player has been in.
+    home = ctx.home_district if rules.get("district") == "home" else None
+    if rules.get("district") == "home":
+        if home is None:
+            return None
+        variables["districtName"] = home["name"]
+    if "districtTiles" in rules:
+        variables["districtTiles"] = int(rules["districtTiles"])
+    if "districtPercent" in rules:
+        variables["districtPercent"] = int(rules["districtPercent"])
+    if "walkKm" in rules:
+        variables["walkKm"] = rules["walkKm"]
+
     explored_region_cells: list[str] = []
     order = 0
     for spec in template["objectives"]:
@@ -463,7 +479,23 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
             obj.target_meters = variables.get("distanceKm", 15) * 1000 * fraction
             obj.extra = {"fraction": fraction}
         elif otype == "COMPLETE_DISTANCE":
-            obj.target_meters = variables.get("distanceKm", 15) * 1000
+            obj.target_meters = float(variables.get("walkKm") or variables.get("distanceKm", 15)) * 1000
+            if spec.get("activity"):
+                # Only this kind of journey counts (a walk, for Going Quiet).
+                obj.extra = {"activity": str(spec["activity"])}
+        elif otype == "DISTRICT_TILES":
+            mode = str(rules.get("district") or "any")
+            obj.extra = {"district": mode}
+            if mode == "new":
+                obj.target_value = float(rules.get("districtPercent", 25))
+            else:
+                obj.target_count = int(rules.get("districtTiles", 10))
+            if home is not None:
+                obj.latitude, obj.longitude = float(home["latitude"]), float(home["longitude"])
+                obj.extra = {**obj.extra, "districtId": str(home["id"]), "districtName": home["name"]}
+        elif otype == "DISTRICT_LOOP":
+            obj.target_value = round(float(rules.get("edgeShare", 0.6)) * 100)
+            obj.extra = {"edgeShare": float(rules.get("edgeShare", 0.6))}
         elif otype == "REACH_ELEVATION":
             obj.target_elevation_meters = float(
                 variables.get("elevationMeters") or max(150, ctx.comfortable_elevation_gain * 0.6)

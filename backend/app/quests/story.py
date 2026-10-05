@@ -52,9 +52,10 @@ LOCKED = "LOCKED"
 # its template (`waitingReason`).
 WAITING = "WAITING"
 
-# MAIN is the campaign, one chapter after another; SIDE is the trades' own arcs.
+# MAIN is the campaign, one chapter after another; SIDE is the classes' own arcs;
+# SEASON (0.9.0) the festivals' arcs, each offered only in its festival's 14 days.
 # One live step per track.
-TRACKS = ("MAIN", "SIDE")
+TRACKS = ("MAIN", "SIDE", "SEASON")
 DEFAULT_WAITING = "Waiting for a good spot near you."
 
 
@@ -82,6 +83,9 @@ def load_arcs() -> list[dict[str, Any]]:
         assert arc["quests"], f"{arc['slug']} has no steps"
         arc.setdefault("track", "SIDE" if character_class else "MAIN")
         assert arc["track"] in TRACKS, f"{arc['slug']} is on no track"
+        from app.quests.seasons import SEASONS
+
+        assert (arc["track"] == "SEASON") == (arc.get("season") in SEASONS), f"{arc['slug']} needs a season, or none"
         assert arc.get("act") is None or arc["act"] in acts, f"{arc['slug']} is in an act nobody wrote"
         assert arc.get("giver") is None or arc["giver"] in cast_by_id(), f"{arc['slug']} is posted by a stranger"
         if arc.get("after"):
@@ -123,6 +127,62 @@ def authored_arc(slug: str) -> dict[str, Any]:
 
 def authored_step(slug: str) -> dict[str, Any]:
     return next((q for a in load_arcs() for q in a["quests"] if q["slug"] == slug), {})
+
+
+def season_of(slug: str) -> str | None:
+    """The festival a SEASON arc belongs to, or None for any other arc."""
+    return authored_arc(slug).get("season")
+
+
+async def south_for(db: AsyncSession, user_id: uuid.UUID) -> bool:
+    """The festivals flip south of the equator: where the player usually starts."""
+    from app.inventory.deeds import usual_start
+    from app.quests.seasons import is_south
+
+    start = await usual_start(db, user_id)
+    return is_south(start[0] if start else None)
+
+
+def window_of(season: str, when: datetime, south: bool) -> Any:
+    """The festival window of this season that `when` falls in, or None."""
+    from app.quests.seasons import festivals_near
+
+    day = when.date()
+    return next((f for f in festivals_near(day, south=south) if f.season == season and f.open_on(day)), None)
+
+
+def _scope_seasons(
+    arcs: list[StoryArc], by_step: dict[uuid.UUID, QuestInstance], festival: Any
+) -> dict[uuid.UUID, QuestInstance]:
+    """A SEASON arc's steps count only the quests made in the festival window open
+    now: last year's are not this year's, and a closed festival has none."""
+    out = dict(by_step)
+    for arc in arcs:
+        season = season_of(arc.slug)
+        if season is None:
+            continue
+        for step in arc.quests:
+            quest = out.get(step.id)
+            if quest is None:
+                continue
+            if (
+                festival is None
+                or festival.season != season
+                or not (festival.starts_at <= quest.created_at < festival.ends_at)
+            ):
+                out.pop(step.id)
+    return out
+
+
+async def _festival_now(db: AsyncSession, user: User, now: datetime | None = None) -> Any:
+    from app.core.security import utcnow
+    from app.quests.seasons import current_festival
+
+    today = (now or utcnow()).date()
+    # Most of the year no festival is on in either hemisphere: no need to ask where they start.
+    if current_festival(today) is None and current_festival(today, south=True) is None:
+        return None
+    return current_festival(today, south=await south_for(db, user.id))
 
 
 _synced = False
@@ -241,9 +301,11 @@ def _order(arcs: list[StoryArc]) -> list[StoryArc]:
 async def progress(db: AsyncSession, user: User, character: Character) -> list[dict[str, Any]]:
     """Every arc and where the rider stands in it, for the Story tab: the
     campaign's chapters in order, then the trades' arcs."""
-    by_step = await _quests_by_step(db, user)
     arcs = _order(await _arcs(db))
-    finished = _finished_arcs(arcs, by_step)
+    raw = await _quests_by_step(db, user)
+    finished = _finished_arcs(arcs, raw)
+    festival = await _festival_now(db, user)
+    by_step = _scope_seasons(arcs, raw, festival)
     done = {
         step.slug
         for arc in arcs
@@ -254,6 +316,10 @@ async def progress(db: AsyncSession, user: User, character: Character) -> list[d
     out = []
     for arc in arcs:
         meta = authored_arc(arc.slug)
+        season = meta.get("season")
+        # A festival's arc is shown while its festival is on, and not otherwise.
+        if season is not None and (festival is None or festival.season != season):
+            continue
         steps = []
         for step in arc.quests:
             quest = by_step.get(step.id)
@@ -288,6 +354,9 @@ async def progress(db: AsyncSession, user: User, character: Character) -> list[d
                 "after": meta.get("after"),
                 "giver": meta.get("giver"),
                 "reward": dict(meta.get("reward") or {}) or None,
+                "season": season,
+                "startsAt": festival.starts_at if season is not None else None,
+                "endsAt": festival.ends_at if season is not None else None,
             }
         )
     return out
@@ -304,8 +373,10 @@ async def due(db: AsyncSession, user: User, character: Character, track: str | N
     takes the first that can actually be built, and the waiting one comes back the
     day the rider is somewhere it works.
     """
-    by_step = await _quests_by_step(db, user)
     arcs = _order(await _arcs(db))
+    raw = await _quests_by_step(db, user)
+    festival = await _festival_now(db, user)
+    by_step = _scope_seasons(arcs, raw, festival)
     arc_track = {arc.id: authored_arc(arc.slug).get("track", "MAIN") for arc in arcs}
     step_arc = {step.id: arc.id for arc in arcs for step in arc.quests}
     live_tracks = {
@@ -317,11 +388,14 @@ async def due(db: AsyncSession, user: User, character: Character, track: str | N
         return []
     if track is not None and track in live_tracks:
         return []
-    finished = _finished_arcs(arcs, by_step)
+    finished = _finished_arcs(arcs, raw)
     done = {step.slug for arc in arcs for step in arc.quests if (q := by_step.get(step.id)) and q.status == COMPLETED}
     candidates: list[StoryQuest] = []
     for arc in arcs:
         if track is not None and arc_track[arc.id] != track:
+            continue
+        season = season_of(arc.slug)
+        if season is not None and (festival is None or festival.season != season):
             continue
         if not _unlocked(arc, character, finished):
             continue
@@ -357,6 +431,11 @@ async def standing(db: AsyncSession, user: User, quest: QuestInstance) -> dict[s
     if step is None or arc is None:
         return None
     by_step = await _quests_by_step(db, user)
+    season = season_of(arc.slug)
+    festival = window_of(season, quest.created_at, await south_for(db, user.id)) if season is not None else None
+    if season is not None:
+        # A festival's arc counts this year's steps only: those of this quest's window.
+        by_step = _scope_seasons([arc], by_step, festival)
     done = {s.id for s in arc.quests if (q := by_step.get(s.id)) is not None and q.status == COMPLETED}
     done.add(step.id)
     completed = len(done) == len(arc.quests)
@@ -364,6 +443,8 @@ async def standing(db: AsyncSession, user: User, quest: QuestInstance) -> dict[s
     return {
         "arcSlug": arc.slug,
         "arcTitle": arc.title,
+        # A festival's arc is paid once a year: keyed by its festival's day.
+        **({"window": festival.day.isoformat()} if festival is not None else {}),
         "stepTitle": step.title,
         "stepsDone": len(done),
         "stepsTotal": len(arc.quests),
@@ -409,7 +490,10 @@ async def settle_arc(
             )
         )
     ).scalars()
-    if any((r.payload or {}).get("arc") == arc["arcSlug"] for r in settled):
+    window = arc.get("window")
+    if any(
+        (r.payload or {}).get("arc") == arc["arcSlug"] and (r.payload or {}).get("window") == window for r in settled
+    ):
         return {**arc, "reward": None}
     reward = arc_reward(arc["arcSlug"])
     db.add(
@@ -418,7 +502,7 @@ async def settle_arc(
             character_id=character.id,
             reward_type="ARC_SETTLED",
             ride_id=ride_id,
-            payload={"arc": arc["arcSlug"], **reward},
+            payload={"arc": arc["arcSlug"], **reward, **({"window": window} if window else {})},
         )
     )
     if reward.get("ac"):
@@ -436,7 +520,8 @@ async def settle_arc(
     if reward.get("rune"):
         from app.inventory.service import give_rune
 
-        await give_rune(db, character, str(reward["rune"]), key=f"arc:{arc['arcSlug']}", ride_id=ride_id)
+        key = f"arc:{arc['arcSlug']}" + (f":{window}" if window else "")
+        await give_rune(db, character, str(reward["rune"]), key=key, ride_id=ride_id)
     await db.flush()
     return {
         **arc,
@@ -488,6 +573,10 @@ async def note_flags(db: AsyncSession, character: Character, quest: QuestInstanc
         if flag not in flags:
             character.story_flags = [*flags, flag]
             await db.flush()
+
+
+def _arc_slug_of(step: StoryQuest) -> str:
+    return next((a["slug"] for a in load_arcs() if any(q["slug"] == step.slug for q in a["quests"])), "")
 
 
 def _wording(step_slug: str, character: Character) -> str | None:
@@ -549,6 +638,9 @@ async def offer(
             log.warning("story_template_missing", step=candidate.slug, template=candidate.template_id)
             continue
         step_ctx = ctx
+        if season_of(_arc_slug_of(candidate)) is not None:
+            # A festival's steps are seeded by the year: next year's are somewhere else.
+            step_ctx = replace(ctx, seed=f"{ctx.seed or ''}|{season_of(_arc_slug_of(candidate))}|{now.year}")
         elder_spec = (template.get("objectiveRules") or {}).get("elder")
         if elder_spec:
             # The finale's old one, placed for this step and no other.
@@ -619,6 +711,11 @@ async def offer(
     quest = _persist(user, generated, now)
     quest.story_quest_id = step.id
     quest.expires_at = None
+    season = season_of(_arc_slug_of(step))
+    if season is not None:
+        # A festival's step goes when its festival does.
+        festival = window_of(season, now, await south_for(db, user.id))
+        quest.expires_at = festival.ends_at if festival is not None else now
     db.add(quest)
     await db.flush()
     await db.refresh(quest)

@@ -217,6 +217,9 @@ def test_the_shared_fixtures_are_current():
         pct = dict(case["pct"])
         if case.get("elder") and rules.get("ELDER_CARRIED_SCALE"):
             cfg = {**cfg, "carriedFraction": cfg["carriedFraction"] * rules["ELDER_CARRIED_SCALE"]}
+        # 0.9.0: Tiwaz against the creature the journey was planned for.
+        if case.get("quarry") and rules.get("QUARRY_CARRIED_SCALE"):
+            cfg = {**cfg, "carriedFraction": cfg["carriedFraction"] * rules["QUARRY_CARRIED_SCALE"]}
         if case.get("legend"):
             assert case["elder"] is True
             radius = case.get("legendWordRadiusMeters", 0)

@@ -65,6 +65,35 @@ class LevelOut(APIModel):
     rewards: list[LevelRewardOut]
 
 
+class LookOut(APIModel):
+    """The look worn (0.9.0): a look id of each kind ("ink:sage", "marker:rope",
+    "crest:legs-2"); the defaults are ink:terracotta, marker:plain and crest:plain."""
+
+    ink: str
+    markerFrame: str
+    crestFrame: str
+
+
+class LookIn(APIModel):
+    """Looks to wear; a field left out stays as it is, null goes back to the default."""
+
+    ink: str | None = None
+    markerFrame: str | None = None
+    crestFrame: str | None = None
+
+
+class CosmeticOut(APIModel):
+    itemId: str
+    # INK, MARKER_FRAME or CREST_FRAME.
+    kind: str
+    name: str
+    # An ink's colour on the maps ("#7A8A5E").
+    color: str | None = None
+    text: str | None = None
+    # DEFAULT (everyone has it), STALL (bought) or DEED (a deed tier reached).
+    source: str
+
+
 class InventoryOut(APIModel):
     slots: list[SlotOut]
     bag: list[GearItemOut]
@@ -77,10 +106,13 @@ class InventoryOut(APIModel):
     # After a sale: what it paid, and the purse after it.
     soldFor: int | None = None
     walletBalance: int | None = None
+    # 0.9.0: the look worn, and every look owned.
+    look: LookOut | None = None
+    cosmetics: list[CosmeticOut] = []
 
 
 class ItemFoundOut(APIModel):
-    # GEAR or CONSUMABLE.
+    # GEAR or CONSUMABLE; COSMETIC (0.9.0) for a look bought at the stall.
     kind: str
     inventoryItemId: uuid.UUID | None = None
     itemId: str | None = None
@@ -140,7 +172,8 @@ class TreasureClueOut(APIModel):
 
 class StallOfferOut(APIModel):
     id: str
-    # GEAR or CONSUMABLE.
+    # GEAR or CONSUMABLE; COSMETIC (0.9.0) for the fifth offer, a look (`itemId` is
+    # its id, "ink:sage", and `cosmeticKind` INK, MARKER_FRAME or CREST_FRAME).
     kind: str
     itemId: str | None = None
     consumable: str | None = None
@@ -151,6 +184,9 @@ class StallOfferOut(APIModel):
     text: str
     price: int
     bought: bool = False
+    cosmeticKind: str | None = None
+    # An ink's colour.
+    color: str | None = None
 
 
 class StallOut(APIModel):

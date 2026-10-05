@@ -26,6 +26,8 @@ from app.core.logging import EVENT_EXPLORATION_VALIDATION_FAILED, get_logger
 from app.core.security import utcnow
 from app.discoveries.models import Discovery
 from app.discoveries.service import discoveries_along, mark_found
+from app.districts import geo as district_geo
+from app.districts import service as districts
 from app.economy import service as economy
 from app.economy.rules import ACLine, compute_ride_ac
 from app.economy.streaks import StreakOutcome, streak_lines, update_streak
@@ -93,10 +95,14 @@ def evaluate_objectives(
     claims: ClaimOutcome | None = None,
     legend: dict[str, Any] | None = None,
     lair: dict[str, Any] | None = None,
+    activity: str = "RIDE",
+    districts_done: dict[str, Any] | None = None,
+    loop: dict[str, Any] | None = None,
 ) -> list[QuestObjective]:
     """Server-authoritative objective evaluation against the GPS trace. `legend` and
     `lair` are what this journey did to the legend and a lair (0.8.0), as the
-    summary has them."""
+    summary has them. `districts_done` is what it did to districts and `loop` how
+    much of each district's edge it touched and whether it came back round (0.9.0)."""
     completed: list[QuestObjective] = []
     coords = [(p.latitude, p.longitude) for p in points]
     start = coords[0] if coords else None
@@ -135,8 +141,11 @@ def evaluate_objectives(
             o.progress_current = min(o.progress_target, new_roads_m)
             done = new_roads_m >= (o.target_meters or 0)
         elif t == "COMPLETE_DISTANCE":
-            o.progress_current = min(o.progress_target, distance_m)
-            done = distance_m >= (o.target_meters or 0)
+            # A step may ask for a walk (Going Quiet, 0.9.0): a ride does not count.
+            wanted = (o.extra or {}).get("activity")
+            if not wanted or normalise(activity) == wanted:
+                o.progress_current = min(o.progress_target, distance_m)
+                done = distance_m >= (o.target_meters or 0)
         elif t in ("REACH_ELEVATION", "COMPLETE_CLIMB"):
             o.progress_current = min(o.progress_target, elevation_gain_m)
             done = elevation_gain_m >= (o.target_elevation_meters or 0)
@@ -232,6 +241,14 @@ def evaluate_objectives(
             visited = int((lair or {}).get("visited") or 0)
             o.progress_current = float(min(o.progress_target, visited))
             done = bool(lair and lair.get("done"))
+        elif t == "DISTRICT_TILES":
+            done = _district_tiles(o, quest, districts_done)
+        elif t == "DISTRICT_LOOP":
+            # A loop round a district's edge: back where it began, touching enough of the edge.
+            shares = [float(d.get("share") or 0) for d in ((loop or {}).get("shares") or {}).values()]
+            best = max(shares, default=0.0)
+            o.progress_current = max(float(o.progress_current or 0), min(o.progress_target, round(best * 100, 1)))
+            done = bool((loop or {}).get("closed")) and best * 100 >= float(o.progress_target or 60)
         elif t == "WOUND_BOSS":
             # So much damage to the legend on this one journey.
             damage = float((legend or {}).get("damage") or 0)
@@ -251,6 +268,33 @@ def evaluate_objectives(
     return completed
 
 
+def _district_tiles(o: QuestObjective, quest: QuestInstance, districts_done: dict[str, Any] | None) -> bool:
+    """DISTRICT_TILES (0.9.0): new tiles in the home district (its id is on the
+    objective) or in any district, added up over the quest's journeys; or, for
+    "new", a district first passed since the quest was taken, explored to a %."""
+    extra = o.extra or {}
+    entries = list((districts_done or {}).get("districts") or [])
+    mode = str(extra.get("district") or "any")
+    if mode == "new":
+        since = quest.accepted_at or quest.created_at
+        best = max(
+            (
+                float(d.get("percent") or 0)
+                for d in entries
+                if d.get("_firstPassedAt") is not None and (since is None or d["_firstPassedAt"] >= since)
+            ),
+            default=0.0,
+        )
+        o.progress_current = max(float(o.progress_current or 0), min(o.progress_target, best))
+        return best >= float(o.progress_target or 25)
+    if mode == "home":
+        gained = sum(int(d.get("newTiles") or 0) for d in entries if d.get("id") == extra.get("districtId"))
+    else:
+        gained = sum(int(d.get("newTiles") or 0) for d in entries)
+    o.progress_current = min(o.progress_target, float(o.progress_current or 0) + gained)
+    return o.progress_current >= o.progress_target
+
+
 async def _reward_for_ride(
     db: AsyncSession,
     character: Character,
@@ -265,6 +309,7 @@ async def _reward_for_ride(
     far_new_cells: int = 0,
     wrote_note: bool = False,
     days_away: int | None = None,
+    regions_completed: int = 0,
 ) -> dict[str, Any]:
     inp = RideRewardInput(
         character_class=character.character_class,
@@ -290,6 +335,8 @@ async def _reward_for_ride(
         wrote_note=wrote_note,
         days_away=days_away,
         optional_xp_scale=float(sheet.rules.get("OPTIONAL_XP_SCALE", 1.0)) if sheet else 1.0,
+        foot_xp_scale=float(sheet.rules.get("FOOT_XP_SCALE", 1.0)) if sheet else 1.0,
+        regions_completed=regions_completed,
     )
     lines = compute_ride_xp(inp)
     outcome = await grant(db, character, lines, ride_id=ride.id, quest_id=quest.id if quest else None)
@@ -485,6 +532,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
     legend: dict[str, Any] | None = None
     lair: dict[str, Any] | None = None
     treasure_found: dict[str, Any] | None = None
+    district_run: dict[str, Any] | None = None
     if character is not None and points and not validation.suspicious:
         legend = await _guarded(
             db,
@@ -516,6 +564,24 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             ride,
             treasure.open_on_ride(db, character, ride, [(p.latitude, p.longitude) for p in points], ended),
         )
+        # Districts (0.9.0): every one the journey's tiles were in, brought up to date. A
+        # completion pays its purse and title here, and its XP with the journey's.
+        district_run = await _guarded(
+            db,
+            character,
+            "districts_failed",
+            ride,
+            districts.progress_on_ride(
+                db,
+                character,
+                ride,
+                cells=entered,
+                new_cells=set(exploration.new_cells),
+                resolution=settings.h3_resolution,
+                ended=ended,
+                rules=dict(sheet.rules),
+            ),
+        )
 
     quest: QuestInstance | None = None
     quest_completed = False
@@ -528,6 +594,8 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             and quest.status == "ACTIVE"
             and not validation.suspicious
         ):
+            loop = await _loop_for(db, settings, quest, points, set(traversal.cells) if traversal is not None else set(),
+                                   ride.distance_meters)  # fmt: skip
             objectives_completed = evaluate_objectives(
                 quest,
                 points,
@@ -541,6 +609,9 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
                 claims=claims,
                 legend=legend,
                 lair=lair,
+                activity=ride.activity,
+                districts_done=district_run,
+                loop=loop,
             )
             for o in objectives_completed:
                 # A rune cut for a quest is a cut like any other: on the map, in the Hand.
@@ -600,9 +671,14 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             far_new_cells=_far_cells(points, exploration.new_cells),
             wrote_note=_wrote_note(ride),
             days_away=await _days_away(db, ride),
+            regions_completed=len((district_run or {}).get("completed") or []),
         )
     # What a legend's phase paid (0.8.0): its XP, levels and title join the journey's.
     reward = merge_paid_xp(reward, legend)
+    # A district complete's title (0.9.0), given by districts.progress_on_ride.
+    for name in (district_run or {}).get("titles") or []:
+        if name not in reward.get("titlesUnlocked", []):
+            reward = {**reward, "titlesUnlocked": [*reward.get("titlesUnlocked", []), name]}
 
     # Where this leaves them in the arc, if the quest was a step of one: the last
     # step is the arc's ending, with a title, a purse and XP of its own, paid once.
@@ -623,6 +699,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
     # gate as XP, so a suspicious ride earns neither.
     coins: dict[str, Any] = {"acAwarded": 0, "acBreakdown": [], "walletBalance": None}
     streak = StreakOutcome(0, 0, extended=False)
+    district_pay: dict[str, Any] | None = None
     if character is not None and not validation.suspicious:
         # Days in a row: the outing counts once a day, if it went anywhere.
         streak = await update_streak(db, ride.user_id, ended.date(), ride.distance_meters)
@@ -667,6 +744,36 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             if paid and int(paid.get("coins") or 0) > 0:
                 coins["acAwarded"] += int(paid["coins"])
                 coins["acBreakdown"].append({"kind": kind, "ac": int(paid["coins"]), "detail": {"name": name}})
+        # A district complete (0.9.0): its purse, paid by districts.progress_on_ride.
+        for name in (district_run or {}).get("completed") or []:
+            coins["acAwarded"] += districts.COMPLETE_COINS
+            coins["acBreakdown"].append({"kind": "DISTRICT", "ac": districts.COMPLETE_COINS, "detail": {"name": name}})
+        # The week's pay for the districts that are yours (0.9.0), on the week's first
+        # journey that has one; outside the cap, in its own savepoint.
+        district_pay = await _guarded(
+            db,
+            character,
+            "district_pay_failed",
+            ride,
+            districts.pay_week(
+                db,
+                character,
+                ride,
+                day=ride.local_date or (ride.started_at or ended).date(),
+                ended=ended,
+                rules=dict(sheet.rules),
+                south=await _south(db, ride, points),
+            ),
+        )
+        if district_pay:
+            coins["acAwarded"] += int(district_pay["coins"])
+            coins["acBreakdown"].append(
+                {
+                    "kind": "DISTRICT_PAY",
+                    "ac": int(district_pay["coins"]),
+                    "detail": {"districts": district_pay["districts"]},
+                }
+            )
         for found in [*items_found, *paid_items(legend, lair, treasure_found)]:
             if found.get("soldOnTheSpot") and found.get("soldFor"):
                 # Paid by inventory.add_gear, outside the per-ride cap; shown with the rest.
@@ -735,6 +842,21 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         **({"legend": legend} if legend else {}),
         **({"lair": lair} if lair else {}),
         **({"treasureFound": treasure_found} if treasure_found else {}),
+        # 0.9.0: every district the journey was in, and the week's pay when it was paid.
+        "districts": [
+            {k: v for k, v in d.items() if not k.startswith("_")} for d in (district_run or {}).get("districts") or []
+        ],
+        **(
+            {
+                "districtPay": {
+                    "coins": district_pay["coins"],
+                    "districts": district_pay["districts"],
+                    "doubled": district_pay["doubled"],
+                }
+            }
+            if district_pay
+            else {}
+        ),
     }
     # The entry: a few written lines about the outing. A failure here is a ride
     # without an entry, never a lost ride.
@@ -844,6 +966,38 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         near = (points[0].latitude, points[0].longitude) if points else None
         await _guarded(db, character, "lair_offer_failed", ride, lairs.ensure_offered(db, settings, character, near))
     return summary
+
+
+async def _loop_for(
+    db: AsyncSession,
+    settings: Settings,
+    quest: QuestInstance,
+    points: list[CleanPoint],
+    cells: set[str],
+    distance_m: float,
+) -> dict[str, Any] | None:
+    """For a quest that asks for a loop round a district's edge (0.9.0): whether the
+    journey came back round, and how much of each district's edge it touched."""
+    if not any(o.objective_type == "DISTRICT_LOOP" and o.status != "COMPLETED" for o in quest.objectives):
+        return None
+    try:
+        shares = await districts.edge_shares(db, cells, settings.h3_resolution)
+    except Exception as exc:  # noqa: BLE001 - a loop not counted, never a lost journey
+        log.error("district_loop_failed", quest_id=str(quest.id), error=str(exc)[:200])
+        return None
+    coords = [(p.latitude, p.longitude) for p in points]
+    return {"closed": district_geo.is_closed_loop(coords, distance_m), "shares": shares}
+
+
+async def _south(db: AsyncSession, ride: Ride, points: list[CleanPoint]) -> bool:
+    """South of the equator, where the player usually starts (or this journey did)."""
+    from app.inventory.deeds import usual_start
+    from app.quests.seasons import is_south
+
+    start = await usual_start(db, ride.user_id)
+    if start is None and points:
+        start = (points[0].latitude, points[0].longitude)
+    return is_south(start[0] if start else None)
 
 
 async def _guarded(db: AsyncSession, character: Character, event: str, ride: Ride, work: Any) -> Any:

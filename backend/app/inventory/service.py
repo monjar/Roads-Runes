@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.characters.models import Character
 from app.core.errors import Conflict, NotFound
 from app.core.security import utcnow
-from app.inventory import catalog, gear, loot
+from app.inventory import catalog, cosmetics, gear, loot
 from app.inventory.models import InventoryItem, ItemEvent, Loadout, RuneCut, RuneHolding
 from app.lore import catalog as lore
 
@@ -272,11 +272,18 @@ async def spawn_hint(db: AsyncSession, user_id: uuid.UUID) -> dict[str, Any]:
 # --- gear and consumables (0.7.2) -------------------------------------------------
 
 
+def _gear_only() -> Any:
+    """Gear rows, not looks (0.9.0: looks are inventory_items with prefixed ids)."""
+    from sqlalchemy import and_
+
+    return and_(*(InventoryItem.item_id.not_like(f"{prefix}%") for prefix in cosmetics.PREFIXES))
+
+
 async def owned_items(db: AsyncSession, character: Character) -> list[InventoryItem]:
     """Gear held now (worn or in the bag), newest first."""
     rows = await db.execute(
         select(InventoryItem)
-        .where(InventoryItem.character_id == character.id, InventoryItem.sold_at.is_(None))
+        .where(InventoryItem.character_id == character.id, InventoryItem.sold_at.is_(None), _gear_only())
         .order_by(InventoryItem.acquired_at.desc(), InventoryItem.id)
     )
     return list(rows.scalars())
@@ -681,7 +688,12 @@ async def catch_up_levels(db: AsyncSession, character: Character) -> list[dict[s
 
 async def _own_item(db: AsyncSession, character: Character, inventory_item_id: uuid.UUID) -> InventoryItem:
     item = await db.get(InventoryItem, inventory_item_id)
-    if item is None or item.character_id != character.id or item.sold_at is not None:
+    if (
+        item is None
+        or item.character_id != character.id
+        or item.sold_at is not None
+        or cosmetics.is_cosmetic(item.item_id)
+    ):
         raise NotFound("We couldn't find that item in your bag. It may have been sold.", code="NO_SUCH_ITEM")
     return item
 
@@ -852,6 +864,18 @@ async def _use_map_piece(
     }
 
 
+def sealed_rarity(key: str, rarity: str, upgrade: float) -> str:
+    """A sealed chest's rarity: one better with Perthro's chance (0.9.0), seeded by
+    the ledger key so the same chest always holds the same thing."""
+    import random
+
+    if upgrade <= 0 or rarity not in gear.RARITIES[:-1]:
+        return rarity
+    if random.Random(f"perthro:{key}").random() < upgrade:
+        return gear.RARITIES[gear.RARITIES.index(rarity) + 1]
+    return rarity
+
+
 async def _open_sealed(db: AsyncSession, character: Character, cid: str) -> dict[str, Any]:
     """A sealed chest opened: one item of its rarity, seeded by the ledger key."""
     if await _recording(db, character.user_id):
@@ -860,7 +884,10 @@ async def _open_sealed(db: AsyncSession, character: Character, cid: str) -> dict
         raise Conflict("Your bag is full. Sell something first, then open it.", code="BAG_FULL")
     opened = await _keys_like(db, character.user_id, f"open:{cid}:")
     key = f"open:{cid}:{len(opened)}"
-    item_id = loot.sealed_item(key, gear.SEALED[cid], await legendaries_had(db, character.user_id))
+    rarity = sealed_rarity(
+        key, gear.SEALED[cid], float((await sheet_for(db, character)).rules.get("SEALED_UPGRADE", 0.0))
+    )
+    item_id = loot.sealed_item(key, rarity, await legendaries_had(db, character.user_id))
     await take_consumable(db, character, cid, why=key)
     item = await add_gear(db, character, item_id, source="SEALED_CHEST", key=key)
     found = item_found(source="CHEST", item=item, from_name=gear.consumables_by_id()[cid]["name"])
@@ -903,6 +930,20 @@ async def stall(db: AsyncSession, character: Character, now: datetime | None = N
             entry = gear.consumables_by_id()[offer["consumable"]]
             shown = {"name": entry["name"], "icon": entry["icon"], "text": entry["text"]}
         offers.append({**offer, **shown, "bought": f"stall:{week}:{offer['id']}" in bought})
+    # The fifth offer (0.9.0): one look not owned.
+    look = await _look_offer(db, character, week)
+    if look is not None:
+        entry = cosmetics.by_id()[look["itemId"]]
+        offers.append(
+            {
+                **look,
+                "name": entry["name"],
+                "icon": "paintbrush" if look["cosmeticKind"] == "INK" else "circle.dashed",
+                "text": entry["text"],
+                "color": entry.get("color"),
+                "bought": f"stall:{week}:{look['id']}" in bought,
+            }
+        )
     return {
         "open": character.overall_level >= stall_opens_at(),
         "opensAtLevel": stall_opens_at(),
@@ -920,7 +961,11 @@ async def buy(db: AsyncSession, character: Character, offer_id: str, now: dateti
     if character.overall_level < stall_opens_at():
         raise Conflict(f"The stall opens at level {stall_opens_at()}.", code="STALL_CLOSED")
     week = iso_week(now)
-    offer = next((o for o in loot.stall_offers(str(character.user_id), week) if o["id"] == offer_id), None)
+    offers = list(loot.stall_offers(str(character.user_id), week))
+    look = await _look_offer(db, character, week)
+    if look is not None:
+        offers.append(look)
+    offer = next((o for o in offers if o["id"] == offer_id), None)
     if offer is None:
         raise NotFound("That isn't at the stall this week. Look at what's there now.", code="NO_SUCH_OFFER")
     key = f"stall:{week}:{offer_id}"
@@ -941,7 +986,9 @@ async def buy(db: AsyncSession, character: Character, offer_id: str, now: dateti
             "consumable": offer.get("consumable"),
         },
     )
-    if offer["kind"] == "GEAR":
+    if offer["kind"] == "COSMETIC":
+        found = await add_cosmetic(db, character, str(offer["itemId"]), key=key)
+    elif offer["kind"] == "GEAR":
         item = await add_gear(db, character, offer["itemId"], source="STALL", key=key)
         found = item_found(source="STALL", item=item)
     else:
@@ -950,3 +997,116 @@ async def buy(db: AsyncSession, character: Character, offer_id: str, now: dateti
     db.add(ItemEvent(user_id=character.user_id, kind="STALL", key=key, payload={"price": offer["price"], **found}))
     await db.flush()
     return found
+
+
+# --- looks (0.9.0) ------------------------------------------------------------------
+
+
+async def add_cosmetic(db: AsyncSession, character: Character, item_id: str, *, key: str) -> dict[str, Any]:
+    """A look into the wardrobe: an inventory_items row with its prefixed id. It never
+    takes a place in the bag. Returns an ItemFoundOut."""
+    entry = cosmetics.by_id()[item_id]
+    db.add(
+        InventoryItem(
+            user_id=character.user_id,
+            character_id=character.id,
+            item_id=item_id,
+            rarity="COSMETIC",
+            source="STALL",
+            source_key=key,
+            acquired_at=utcnow(),
+        )
+    )
+    await db.flush()
+    return {
+        "kind": "COSMETIC",
+        "inventoryItemId": None,
+        "itemId": item_id,
+        "consumable": None,
+        "name": entry["name"],
+        "icon": "paintbrush" if entry["kind"] == "INK" else "circle.dashed",
+        "rarity": None,
+        "slot": None,
+        "source": "STALL",
+        "fromName": None,
+        "soldOnTheSpot": False,
+        "soldFor": None,
+    }
+
+
+async def owned_cosmetics(db: AsyncSession, character: Character) -> dict[str, str]:
+    """Every look the character has, by id, with where it came from: DEFAULT (the free
+    ones), STALL (bought) or DEED (a crest frame for a deed tier reached)."""
+    from app.inventory.models import CharacterDeed
+
+    out = dict.fromkeys(cosmetics.free(), "DEFAULT")
+    rows = await db.execute(
+        select(InventoryItem.item_id).where(InventoryItem.character_id == character.id, InventoryItem.sold_at.is_(None))
+    )
+    for item_id in rows.scalars():
+        if cosmetics.is_cosmetic(item_id) and cosmetics.entry(item_id):
+            out.setdefault(item_id, "STALL")
+    deeds_reached = await db.execute(select(CharacterDeed).where(CharacterDeed.character_id == character.id))
+    for deed in deeds_reached.scalars():
+        for tier in range(1, int(deed.tier or 0) + 1):
+            frame = cosmetics.deed_frame_id(deed.deed_id, tier)
+            if cosmetics.entry(frame):
+                out.setdefault(frame, "DEED")
+    return out
+
+
+async def look_of(db: AsyncSession, character: Character) -> dict[str, str]:
+    """The look worn: what was chosen, or the default for anything not chosen (or no
+    longer had)."""
+    row = await db.scalar(select(Loadout).where(Loadout.character_id == character.id))
+    chosen = dict((row.look if row else None) or {})
+    owned = await owned_cosmetics(db, character)
+    out = cosmetics.defaults()
+    for field in out:
+        if chosen.get(field) in owned:
+            out[field] = str(chosen[field])
+    return out
+
+
+async def set_look(db: AsyncSession, character: Character, changes: dict[str, str | None]) -> dict[str, str]:
+    """Wears looks: each field given is a look owned of that kind, or null for the
+    default. Free, any time."""
+    owned = await owned_cosmetics(db, character)
+    row = await loadout(db, character)
+    look = dict(row.look or {})
+    for field, item_id in changes.items():
+        if field not in cosmetics.defaults():
+            continue
+        if item_id is None:
+            look.pop(field, None)
+            continue
+        kind = cosmetics.kind_of(item_id)
+        if kind is None or cosmetics.LOOK_FIELDS.get(kind) != field:
+            raise Conflict("That look goes somewhere else. Pick one of the right kind.", code="WRONG_LOOK")
+        if item_id not in owned:
+            raise Conflict("You don't have that look yet. Look for it at the stall.", code="LOOK_NOT_OWNED")
+        look[field] = item_id
+    # Reassigned, not edited in place: the JSON column does not see edits.
+    row.look = look
+    db.add(
+        ItemEvent(
+            user_id=character.user_id,
+            kind="LOOK",
+            key=f"look:{utcnow().isoformat()}",
+            payload={"look": look},
+        )
+    )
+    await db.flush()
+    return await look_of(db, character)
+
+
+async def _look_offer(db: AsyncSession, character: Character, week: str) -> dict[str, Any] | None:
+    """The stall's fifth offer this week, the same all week even once it is bought."""
+    owned = set(await owned_cosmetics(db, character))
+    short = week.split("-W")[-1]
+    bought = await db.scalar(
+        select(ItemEvent).where(ItemEvent.user_id == character.user_id, ItemEvent.key == f"stall:{week}:w{short}-4")
+    )
+    if bought is not None and (bought.payload or {}).get("itemId"):
+        owned.discard(str(bought.payload["itemId"]))
+    return cosmetics.stall_offer(str(character.user_id), week, owned)

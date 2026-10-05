@@ -34,6 +34,10 @@ TRANSACTION_KINDS = (
     "LEGEND",
     "LAIR",
     "TREASURE",
+    # 0.9.0: a district complete (its purse, once) and the week's pay for the
+    # districts that are yours; both outside the per-journey cap.
+    "DISTRICT",
+    "DISTRICT_PAY",
 )
 
 

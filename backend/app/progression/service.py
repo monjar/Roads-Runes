@@ -69,12 +69,31 @@ async def earned_titles(db: AsyncSession, character: Character) -> list[Characte
     )
 
 
+async def title_entry(db: AsyncSession, slug: str) -> dict[str, Any] | None:
+    """A title by slug: from the catalogue, or a district's (0.9.0, "warden:<id>")."""
+    if slug.startswith(title_catalogue.DISTRICT_PREFIX):
+        from app.districts.models import Region
+
+        try:
+            region = await db.get(Region, uuid.UUID(slug.removeprefix(title_catalogue.DISTRICT_PREFIX)))
+        except ValueError:
+            return None
+        return title_catalogue.district_title(region.id, region.name) if region is not None else None
+    return title_catalogue.by_slug().get(slug)
+
+
 async def award_title(
-    db: AsyncSession, character: Character, slug: str, *, ride_id: uuid.UUID | None = None
+    db: AsyncSession,
+    character: Character,
+    slug: str,
+    *,
+    ride_id: uuid.UUID | None = None,
+    entry: dict[str, Any] | None = None,
 ) -> str | None:
     """The only way a title is earned. Once per title; worn at once unless the
-    player has chosen what they wear. Returns its name when it is new."""
-    entry = title_catalogue.by_slug().get(slug)
+    player has chosen what they wear. Returns its name when it is new. `entry` is a
+    title not in the catalogue (a district's, 0.9.0)."""
+    entry = entry or title_catalogue.by_slug().get(slug)
     if entry is None:
         raise KeyError(f"no such title: {slug}")
     have = await db.scalar(
@@ -104,14 +123,19 @@ async def wear_title(db: AsyncSession, character: Character, slug: str | None) -
     if slug is None:
         character.title_pinned = False
         newest = max(earned, key=lambda t: t.earned_at, default=None)
-        entry = title_catalogue.by_slug().get(newest.slug) if newest else None
+        entry = await title_entry(db, newest.slug) if newest else None
         character.title = entry["name"] if entry else character.title
     else:
         if slug not in {t.slug for t in earned}:
             from app.core.errors import Conflict
 
             raise Conflict("You haven't earned that title yet. Pick one you have.", code="TITLE_NOT_EARNED")
-        character.title = title_catalogue.by_slug()[slug]["name"]
+        entry = await title_entry(db, slug)
+        if entry is None:
+            from app.core.errors import NotFound
+
+            raise NotFound("We couldn't find that title. Pick one from your list.", code="NO_SUCH_TITLE")
+        character.title = entry["name"]
         character.title_pinned = True
     await db.flush()
 

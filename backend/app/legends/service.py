@@ -438,7 +438,8 @@ async def fold_ride(
         # A rune woken on this outing counts a rank deeper here too, as in the creatures' fold.
         sheet, woken, _ = await world_objects.woken_on(db, ride, sheet, points, coords, ended, record=False)
     first_today = await world_objects._outings_today_before(db, ride) + 1
-    cfg = sheet.legend_cfg(sheet.fight_cfg(base, first_outings_today=first_today))
+    quarry = getattr(ride, "quarry_id", None) is not None and getattr(ride, "quarry_id", None) == row.id
+    cfg = sheet.legend_cfg(sheet.fight_cfg(base, first_outings_today=first_today), quarry=quarry)
     cfg = {**cfg, "groundMeters": float(catalog.book()["groundMeters"])}
     spec = catalog.phase_spec(row.species_id, int(row.phase))
     day = ended.date()

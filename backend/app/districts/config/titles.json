@@ -1,0 +1,27 @@
+{
+  "_comment": "A district's title, after a comma: \"Rotherhithe, the Riverlands\" (docs/ROADMAP.md 0.9.0, Appendix J, re-voiced by the 0.9.0 contract). Worked out from the district's places (districts/titles.py): the first rule that applies wins. `share` is a share of the district's places, `count` a number of them, `top` a group that is the most common kind of place, `under` fewer places than that. Under `fogUnderPercent` explored the player sees `fog` instead.",
+  "fogUnderPercent": 10,
+  "fog": "in the fog",
+  "rules": [
+    {"group": "water", "share": 0.30, "title": "the Riverlands"},
+    {"group": "heights", "count": 2, "title": "the Highlands"},
+    {"group": "historical", "share": 0.25, "title": "the Old Stones"},
+    {"group": "nature", "share": 0.40, "title": "the Greenwood"},
+    {"group": "pubs", "top": true, "title": "the Tavern Quarter"},
+    {"group": "food", "top": true, "title": "the Market Quarter"},
+    {"group": "trails", "share": 0.20, "title": "the Back Lanes"},
+    {"group": "cultural", "share": 0.15, "title": "the Museum Quarter"},
+    {"group": "places", "under": 5, "title": "the Quiet End"}
+  ],
+  "groups": {
+    "_comment": "Which places count in which group: by category, or by a tag (\"*\" is any value). Historical places that the game must leave alone (discoveries/sensitivity.py) are not counted as historical.",
+    "water": {"categories": [], "tags": {"natural": ["water", "beach", "spring", "wetland", "bay"], "water": ["*"], "waterway": ["*"], "leisure": ["marina"]}},
+    "heights": {"categories": ["VIEWPOINT"], "tags": {"natural": ["peak"]}},
+    "historical": {"categories": ["HISTORICAL"], "tags": {}},
+    "nature": {"categories": ["NATURE"], "tags": {}},
+    "pubs": {"categories": ["PUB"], "tags": {}},
+    "food": {"categories": ["CAFE", "FOOD"], "tags": {}},
+    "trails": {"categories": ["TRAIL"], "tags": {}},
+    "cultural": {"categories": ["CULTURAL"], "tags": {}}
+  }
+}

@@ -1,5 +1,5 @@
 {
-  "_comment": "The campaign (docs/ROADMAP.md, Appendix E). An arc is a chapter; `act` groups chapters; `track` MAIN is the campaign and SIDE the trades' own arcs, one live step per track. `after` names the chapter that must be finished first. `giver` is the cast member who posts it (lore/config/cast.json). Every line is activity-neutral: an outing, never a ride.",
+  "_comment": "The campaign (docs/ROADMAP.md, Appendix E). An arc is a chapter; `act` groups chapters; `track` MAIN is the campaign, SIDE the classes' own arcs and SEASON (0.9.0) the festivals' arcs, one live step per track. A SEASON arc names its `season` (SPRING, MIDSUMMER, HARVEST, MIDWINTER) and is offered only in that festival's 14 days (quests/seasons.py); a missed one comes back next year, and each year's is its own. `reward.rune` gives a rune at the end of a chapter (the Trade Six at the ends of Act III's and Act IV's chapters and the festivals'). `after` names the chapter that must be finished first. `giver` is the cast member who posts it (lore/config/cast.json). Every line is activity-neutral: an outing, never a ride.",
   "acts": [
     {
       "id": 1,
@@ -15,6 +15,11 @@
       "id": 3,
       "title": "What Holds the Ground",
       "description": "Legends have woken round here: big creatures that settle in and stay. Ada Pym has a few jobs to help you get the better of them."
+    },
+    {
+      "id": 4,
+      "title": "The Parish",
+      "description": "The places round where you live have names: districts. Ada Pym wants you to get to know yours, and then the one next door."
     }
   ],
   "arcs": [
@@ -544,7 +549,8 @@
         }
       ],
       "reward": {
-        "ac": 100
+        "ac": 100,
+        "rune": "mannaz"
       }
     },
     {
@@ -568,7 +574,8 @@
         }
       ],
       "reward": {
-        "ac": 150
+        "ac": 150,
+        "rune": "gebo"
       }
     },
     {
@@ -592,7 +599,8 @@
         }
       ],
       "reward": {
-        "ac": 200
+        "ac": 200,
+        "rune": "tiwaz"
       }
     },
     {
@@ -617,7 +625,253 @@
       ],
       "reward": {
         "ac": 300,
-        "title": "Holds the Ground"
+        "title": "Holds the Ground",
+        "rune": "perthro"
+      }
+    },
+    {
+      "slug": "home-ground",
+      "title": "Home Ground",
+      "act": 4,
+      "chapter": 1,
+      "track": "MAIN",
+      "after": "double-pay",
+      "giver": "ada-pym",
+      "description": "Every place has a name on the map. Start with the district you know best and fill in the bits you've missed.",
+      "characterClass": null,
+      "minLevel": 1,
+      "quests": [
+        {
+          "slug": "home-ground-new-tiles",
+          "title": "Home Ground",
+          "description": "{districtName} is where you go most. Explore {districtTiles} tiles of it you've never been on.",
+          "completion": "{districtName} knows you a little better now!",
+          "templateId": "ANY_HOME_GROUND"
+        }
+      ],
+      "reward": {
+        "ac": 150,
+        "rune": "fehu"
+      }
+    },
+    {
+      "slug": "beating-the-bounds",
+      "title": "Beating the Bounds",
+      "act": 4,
+      "chapter": 2,
+      "track": "MAIN",
+      "after": "home-ground",
+      "giver": "ada-pym",
+      "description": "An old custom: go all the way round the edge of a place, so everyone knows where it starts and stops.",
+      "characterClass": null,
+      "minLevel": 1,
+      "quests": [
+        {
+          "slug": "beating-the-bounds-loop",
+          "title": "Beating the Bounds",
+          "description": "Pick a district and go round its edge in one loop, ending where you began.",
+          "completion": "All the way round! Now you know where it starts and stops.",
+          "templateId": "ANY_BEATING_THE_BOUNDS"
+        }
+      ],
+      "reward": {
+        "ac": 200,
+        "rune": "othala"
+      }
+    },
+    {
+      "slug": "the-next-district",
+      "title": "The Next District",
+      "act": 4,
+      "chapter": 3,
+      "track": "MAIN",
+      "after": "beating-the-bounds",
+      "giver": "ada-pym",
+      "description": "Next door there is a district you have never been to. Go and see what it's like.",
+      "characterClass": null,
+      "minLevel": 1,
+      "quests": [
+        {
+          "slug": "the-next-district-explore",
+          "title": "The Next District",
+          "description": "Find a district you've never been to and explore {districtPercent}% of it.",
+          "completion": "A whole new district on your map!",
+          "templateId": "ANY_NEXT_DISTRICT"
+        }
+      ],
+      "reward": {
+        "ac": 250,
+        "rune": "gebo"
+      }
+    },
+    {
+      "slug": "going-quiet",
+      "title": "Going Quiet",
+      "act": 4,
+      "chapter": 4,
+      "track": "MAIN",
+      "after": "the-next-district",
+      "giver": "ada-pym",
+      "description": "After all that, a rest. Take it easy and go for a walk.",
+      "characterClass": null,
+      "minLevel": 1,
+      "quests": [
+        {
+          "slug": "going-quiet-walk",
+          "title": "Going Quiet",
+          "description": "A rest day. Walk {walkKm} km, nice and slow, and look around.",
+          "completion": "A good, slow walk. Rest days count too!",
+          "templateId": "ANY_GOING_QUIET"
+        }
+      ],
+      "reward": {
+        "ac": 300,
+        "rune": "mannaz",
+        "title": "Knows Every Lane"
+      }
+    },
+    {
+      "slug": "spring-festival",
+      "title": "Spring Festival",
+      "track": "SEASON",
+      "season": "SPRING",
+      "description": "Spring is here and everything is coming up green. Three things to do while the festival lasts.",
+      "characterClass": null,
+      "minLevel": 1,
+      "quests": [
+        {
+          "slug": "spring-festival-green",
+          "title": "First Green",
+          "description": "Go and find the first green of the year at {poiName}.",
+          "completion": "Spring has properly started!",
+          "templateId": "ANY_GREEN_HOUR"
+        },
+        {
+          "slug": "spring-festival-chest",
+          "title": "A Spring Clean",
+          "description": "Somebody left a {objectName} at {objectPlace}. Open it before the festival ends.",
+          "completion": "Opened, and a nice find for spring!",
+          "templateId": "ANY_UNLOCK_CHEST"
+        },
+        {
+          "slug": "spring-festival-creature",
+          "title": "Woken Up",
+          "description": "A {objectName} has woken up at {objectPlace} with the spring. Go and defeat it.",
+          "completion": "Defeated! A good end to the Spring Festival.",
+          "templateId": "ANY_SLAY_NEARBY"
+        }
+      ],
+      "reward": {
+        "ac": 150,
+        "rune": "perthro"
+      }
+    },
+    {
+      "slug": "midsummer",
+      "title": "Midsummer",
+      "track": "SEASON",
+      "season": "MIDSUMMER",
+      "description": "The longest days of the year. Plenty of light for three jobs.",
+      "characterClass": null,
+      "minLevel": 1,
+      "quests": [
+        {
+          "slug": "midsummer-green",
+          "title": "A Long Evening",
+          "description": "Spend a long light evening at {poiName}.",
+          "completion": "A proper midsummer evening!",
+          "templateId": "ANY_GREEN_HOUR"
+        },
+        {
+          "slug": "midsummer-chest",
+          "title": "Midsummer Chest",
+          "description": "There's a {objectName} at {objectPlace}. Open it while the days are long.",
+          "completion": "Opened, with sun to spare!",
+          "templateId": "ANY_UNLOCK_CHEST"
+        },
+        {
+          "slug": "midsummer-creature",
+          "title": "The Midsummer Creature",
+          "description": "A {objectName} is enjoying the sun at {objectPlace}. Go and defeat it.",
+          "completion": "Defeated! Midsummer well spent.",
+          "templateId": "ANY_SLAY_NEARBY"
+        }
+      ],
+      "reward": {
+        "ac": 150,
+        "rune": "tiwaz"
+      }
+    },
+    {
+      "slug": "harvest",
+      "title": "Harvest",
+      "track": "SEASON",
+      "season": "HARVEST",
+      "description": "Harvest time: the fields are full and so is the map. Three things to gather in.",
+      "characterClass": null,
+      "minLevel": 1,
+      "quests": [
+        {
+          "slug": "harvest-green",
+          "title": "Out in the Fields",
+          "description": "Head out to {poiName} while the harvest is in.",
+          "completion": "A fine harvest day!",
+          "templateId": "ANY_GREEN_HOUR"
+        },
+        {
+          "slug": "harvest-chest",
+          "title": "Harvest Chest",
+          "description": "A {objectName} at {objectPlace} is ready to be opened.",
+          "completion": "Gathered in!",
+          "templateId": "ANY_UNLOCK_CHEST"
+        },
+        {
+          "slug": "harvest-creature",
+          "title": "Pest Control",
+          "description": "A {objectName} has been at the harvest near {objectPlace}. Go and defeat it.",
+          "completion": "Defeated! The harvest is safe.",
+          "templateId": "ANY_SLAY_NEARBY"
+        }
+      ],
+      "reward": {
+        "ac": 150,
+        "rune": "gebo"
+      }
+    },
+    {
+      "slug": "midwinter",
+      "title": "Midwinter",
+      "track": "SEASON",
+      "season": "MIDWINTER",
+      "description": "The shortest days and the cosiest evenings. Three small jobs before the year turns.",
+      "characterClass": null,
+      "minLevel": 1,
+      "quests": [
+        {
+          "slug": "midwinter-green",
+          "title": "A Winter Walk",
+          "description": "Wrap up warm and get out to {poiName}.",
+          "completion": "Cold cheeks, good day!",
+          "templateId": "ANY_GREEN_HOUR"
+        },
+        {
+          "slug": "midwinter-chest",
+          "title": "A Midwinter Gift",
+          "description": "There's a {objectName} at {objectPlace}. Open it, it's that time of year.",
+          "completion": "Opened! A gift from the map.",
+          "templateId": "ANY_UNLOCK_CHEST"
+        },
+        {
+          "slug": "midwinter-creature",
+          "title": "The Midwinter Creature",
+          "description": "A {objectName} has come in from the cold at {objectPlace}. Go and defeat it.",
+          "completion": "Defeated! A happy Midwinter.",
+          "templateId": "ANY_SLAY_NEARBY"
+        }
+      ],
+      "reward": {
+        "ac": 150,
+        "rune": "othala"
       }
     }
   ]

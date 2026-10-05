@@ -842,6 +842,150 @@ journey that paid. Their coins are in `acBreakdown` (`LEGEND`, `LAIR`, `TREASURE
 in `xpBreakdown`, its title in `titlesUnlocked`, and a Hard rune given in `runesFound`. `ItemFound.source`
 may also be `LEGEND`, `LAIR` or `TREASURE`.
 
+## The parish (0.9.0)
+
+### Districts
+
+A **district** is a named OpenStreetMap place node (`place=suburb|neighbourhood|quarter|village|town|hamlet`),
+kept in `regions` (never a Discovery, never a hidden place). The tile import fetches them as a fifth set; a
+tile imported before 0.9.0 fetches only its place nodes, once (tracked on `poi_import_areas` key
+`regions:v1:<row>:<col>`; `TILE_VERSION` is unchanged). A tile belongs to the nearest district node within
+4 km (worked out on the fly, never stored).
+
+**Explored %** counts only a district's tiles with a road or path: `way[highway]` minus motorway, trunk,
+their links and `access=private`, fetched once per district (job `districts_fetch_ways`, after the first
+journey into it; retried an hour after a failure). Until then `percent` is null and the app shows
+`exploredTiles` ("12 tiles explored"). Every tile the player has counts as explored (passed, or shown by
+a skill or a map piece), as on the map.
+
+A district's **title** comes from its places (`backend/app/districts/config/titles.json`, first rule
+that applies): water ≥ 30% "the Riverlands"; ≥ 2 viewpoints or peaks "the Highlands"; historical (not
+sensitive) ≥ 25% "the Old Stones"; nature ≥ 40% "the Greenwood"; pubs the top kind "the Tavern Quarter";
+cafés and food the top kind "the Market Quarter"; trails ≥ 20% "the Back Lanes"; cultural ≥ 15% "the
+Museum Quarter"; fewer than 5 places "the Quiet End"; otherwise none. Under 10% explored (or before the
+%) `title` is null and `displayName` is "Rotherhithe, in the fog".
+
+**Yours**: 50% or more and passed through in the last 30 days (Othala: 45–90); worked out on read, never
+taken away. **Complete** at 90%, once: `REGION_COMPLETED` XP (500, in the journey's XP), 200 coins
+(`DISTRICT`, outside the cap) and the title "Warden of Rotherhithe" (slug `warden:<district id>`,
+`source: DISTRICT`, listed in `GET /character/titles` once earned).
+
+**Weekly pay**: on the first journey of an ISO week on which a district is yours, 5 coins for each one
+that is (Fehu adds 1–4 each), at most 10, doubled from the day before a festival to the day after
+(`DISTRICT_PAY`, outside the cap; once a week, key `district-pay:{week}`).
+
+`DistrictOut`:
+
+```json
+{"id": "uuid", "name": "Rotherhithe", "kind": "suburb", "title": "the Riverlands",
+ "displayName": "Rotherhithe, the Riverlands", "percent": 47.5, "exploredTiles": 60, "wayTiles": 120,
+ "yours": false, "wasYours": false, "completed": false, "weeklyCoins": 5,
+ "latitude": 51.4995, "longitude": -0.0525, "firstPassed": "...", "lastPassed": "..."}
+```
+
+- `GET /districts` → `[DistrictOut]`, every district passed through, last passed first.
+- `GET /districts/here?lat&lon` → `DistrictOut` for the district at a point (passed or not; zeros if
+  never), or `null` where there is none known.
+- `GET /districts/{id}` → `DistrictOut` + `"ledger": {"placesFound", "creaturesDefeated" (legends
+  included), "runesCut", "questsDone" (where their objectives were, or where the quest was set),
+  "firstPassed", "lastPassed"}`, counted within the district's tiles. 404 when there is no such district.
+
+On the ride summary:
+
+```json
+"districts": [{"id": "uuid", "name": "Rotherhithe", "title": "the Riverlands",
+               "displayName": "Rotherhithe, the Riverlands", "percent": 52.0, "exploredTiles": 64,
+               "newTiles": 4, "becameYours": true, "completed": false}],
+"districtPay": {"coins": 10, "districts": ["Rotherhithe", "Bermondsey"], "doubled": false}
+```
+
+`districts` is always there (empty when the journey was in none known); most new tiles first.
+`districtPay` only on the journey that was paid. Their coins are in `acBreakdown` (`DISTRICT` with
+`detail.name`, `DISTRICT_PAY` with `detail.districts`), a completion's XP in `xpBreakdown`
+(`REGION_COMPLETED`) and its title in `titlesUnlocked`.
+
+### The Atlas
+
+- `GET /journal/atlas?year=2026` (default this year) →
+
+```json
+{"traces": [{"rideId": "uuid", "activity": "RIDE", "date": "2026-10-05", "polyline": "encoded, ≤ 200 points"}],
+ "days": [{"date": "2026-10-05", "journeys": 2, "distanceMeters": 23100.0}],
+ "year": {"year": 2026, "journeys": 140, "distanceMeters": 2100000.0, "newTiles": 3200, "creaturesDefeated": 61,
+          "legendsDefeated": 2, "runesCut": 14, "districtsYours": 3, "deedsReached": ["Well Travelled"],
+          "firsts": [{"kind": "FIRST_CREATURE", "date": "2026-03-02", "text": "First creature defeated: Fen Troll."}]}}
+```
+
+Journeys counted (processed or flagged) that began in that year (UTC). `traces` are the newest 1,000
+in date order. `firsts` kinds: `FIRST_CREATURE`, `FIRST_LEGEND`, `FIRST_RUNE` (each the first ever,
+listed when it fell in that year), `LONGEST_JOURNEY`, `HIGHEST_POINT` (that year's), and
+`FIRST_DISTRICT_COMPLETE`. `districtsYours`: districts that became yours that year. `deedsReached`:
+deed titles reached that year.
+
+### Seasons
+
+Four festivals, worked out from the date: Spring Festival (25 March), Midsummer (24 June), Harvest
+(29 September), Midwinter (25 December). South of the equator (where the player usually starts)
+Spring Festival and Harvest swap dates, and so do Midsummer and Midwinter. Each opens a **SEASON**
+arc of three steps (a green place, a chest, a creature) for 14 days from its day; a missed one comes
+back next year, and each year's is new (seeded by year; paid once per festival). `GET /quests/story`
+lists a SEASON arc only while its festival is on, with `"track": "SEASON"`, `"season":
+"SPRING|MIDSUMMER|HARVEST|MIDWINTER"`, `"startsAt"` and `"endsAt"`; its step quests expire at
+`endsAt`. One live step per track, as MAIN and SIDE.
+
+### Act IV, "The Parish"
+
+After Act III: Home Ground (`DISTRICT_TILES`, `extra: {"district": "home", "districtId",
+"districtName"}`: 10 new tiles in the district with most of your tiles, added up over the quest's
+journeys; waits for a first district), Beating the Bounds (`DISTRICT_LOOP`: a journey ending within
+500 m of its start whose tiles touch 60% of a district's edge tiles, an edge tile counting when the
+journey passed it or a tile beside it; `progressTarget` 60, progress the best % of an edge touched),
+The Next District (`DISTRICT_TILES`, `extra.district: "new"`: 25% of a district first passed since the
+quest was taken; `progressTarget` 25), Going Quiet (`COMPLETE_DISTANCE` with `extra.activity: "WALK"`:
+a walk of 2 km; a ride or run does not count).
+
+### Looks
+
+Route **ink** (Terracotta, the default, as the route line has always been; Ink, also free; and Sage,
+Gold, Wizard Blue, Scribe Plum to buy), marker **frames** (Plain, Rope,
+Laurel, Runic) and crest **frames** (Plain, Oak Leaves, Silver, Starry, and one for each deed tier
+reached, `crest:<deed>-<tier>`, named for its deed title). `backend/app/inventory/config/cosmetics.json`.
+Kept as `inventory_items` with ids `ink:…`, `marker:…`, `crest:…` (never in the bag).
+
+- `GET /inventory` gains `"look": {"ink": "ink:terracotta", "markerFrame": "marker:plain", "crestFrame":
+  "crest:plain"}` and `"cosmetics": [{"itemId": "ink:sage", "kind": "INK|MARKER_FRAME|CREST_FRAME",
+  "name": "Sage", "color": "#7A8A5E", "text": "...", "source": "DEFAULT|STALL|DEED"}]` (every look owned).
+- `PUT /inventory/look` `{"ink"?, "markerFrame"?, "crestFrame"?}` → `Inventory`. A field left out stays;
+  null goes back to the default. 409 `LOOK_NOT_OWNED`, `WRONG_LOOK`.
+- The stall's offers gain a fifth: `{"id": "w41-4", "kind": "COSMETIC", "itemId": "ink:sage",
+  "cosmeticKind": "INK", "name": "Sage", "icon": "paintbrush", "color": "#7A8A5E", "text": "...",
+  "price": 200, "bought": false}` (a look not owned, 200–400 coins; none once all are owned). Buying it
+  returns `Inventory`; its `ItemFound` (in the purchase ledger) has `kind: "COSMETIC"`.
+
+### The Trade Six
+
+| rune | rule | I / II / III / woken | where it acts |
+|---|---|---|---|
+| fehu | `DISTRICT_PAY_EXTRA` | 1 / 2 / 3 / 4 | each district that is yours pays v more coins a week (`weeklyCoins`) |
+| gebo | `CHEST_COINS_SCALE` | 1.1 / 1.2 / 1.3 / 1.4 | chests' coins × v (on a journey and by hand; folded into the sheet's `coinPct.CHEST`) |
+| mannaz | `FOOT_XP_SCALE` | 1.1 / 1.15 / 1.2 / 1.25 | on a run or walk, `NEW_ROAD_EXPLORED`, `LONG_DISTANCE_ADVENTURE` and `KNOWN_GROUND` XP × v |
+| tiwaz | `QUARRY_CARRIED_SCALE` | 1.25 / 1.5 / 1.75 / 2 | the fold: against the ride's `quarryId` (a creature, or the legend), `carriedFraction` × v after `CARRIED_SCALE` and `ELDER_CARRIED_SCALE`; `carriedCap` unchanged |
+| perthro | `SEALED_UPGRADE` | 0.1 / 0.15 / 0.2 / 0.25 | a sealed chest opened is one rarity better with chance v (seeded by its ledger key) |
+| othala | `DISTRICT_KEEP_DAYS` | 45 / 60 / 75 / 90 | a district stays yours v days after the last visit |
+
+Given, never found: Act III's chapters (Habits mannaz, The Lair gebo, The One That Stayed tiwaz,
+Double Pay perthro), Act IV's (Home Ground fehu, Beating the Bounds othala, The Next District gebo,
+Going Quiet mannaz) and the festivals' (Spring Festival perthro, Midsummer tiwaz, Harvest gebo,
+Midwinter othala); a rune already held is a stone towards its next rank. The shared fight fixture
+(`tests/fixtures/fight_tracks.json`) carries `quarry: true|false` on Tiwaz's cases.
+
+### Place lore (flag `place_lore`, off)
+
+At tile import, never per journey: places with a `wikidata` tag get Wikidata's English description
+(one batched `wbgetentities` request, at most 50 a tile, 5 s), kept in the place's `tags.lore` only if
+it is at most 120 characters, has no number, no capitalised word that is not in the place's own name
+or tags, and nothing sensitive. The app shows it as "From Wikidata: …".
+
 ## Routes
 
 ### `POST /routes/rune` (0.7.0)
@@ -1123,6 +1267,7 @@ What a ride pays:
 
 - `GET /journal/adventures` → paginated `AdventureEntry` (`{ride, quest, xpAwarded, discoveries, newTerritoryMeters, photos, notes, entry}`); `entry` (0.6.2) is the outing's written lines, null before 0.6.2
 - `GET /journal/stats` → same shape as `/world/exploration/stats` plus secondary speed stats.
+- `GET /journal/atlas?year` (0.9.0) → every trace, the calendar and the year; see [The parish](#the-parish-090).
 
 ---
 
@@ -1166,4 +1311,4 @@ Parties:
 ## Meta
 
 - `GET /health` → `{"status": "ok", "version": "..."}`
-- `GET /config` → `{"featureFlags": {...}, "h3Resolution": 9, "levels": {"max": 50, "maxClass": 50}, "environment": "development", "combat": {...}, "letterMinAgeDays": 90}`. 0.7.3 adds the flags `pledge` (on where `ENVIRONMENT=development`, off elsewhere) and `parchment_map` (off: the World tab's parchment map style), and `letterMinAgeDays`. `combat` (0.6.1) holds the fight's constants from `world_objects.json`; see `docs/COMBAT.md`. Flags added since 0.6.0: `codex` (on), `effort_combat` (off until ridden), `ink_fog` (0.7.0, off: the World tab's fog as one ink wash with a frontier chevron; the Journal's map card draws the wash regardless). An objective event may carry `note` (0.7.0): the note written for a `WRITE_NOTE` or an Ansuz `INSCRIBE_RUNE`, which the server judges by.
+- `GET /config` → `{"featureFlags": {...}, "h3Resolution": 9, "levels": {"max": 50, "maxClass": 50}, "environment": "development", "combat": {...}, "letterMinAgeDays": 90}`. 0.7.3 adds the flags `pledge` (on where `ENVIRONMENT=development`, off elsewhere) and `parchment_map` (off: the World tab's parchment map style), and `letterMinAgeDays`. `combat` (0.6.1) holds the fight's constants from `world_objects.json`; see `docs/COMBAT.md`. Flags added since 0.6.0: `codex` (on), `effort_combat` (off until ridden), `ink_fog` (0.7.0, off: the World tab's fog as one ink wash with a frontier chevron; the Journal's map card draws the wash regardless). 0.9.0 adds `place_lore` (off: Wikidata's line on a place). An objective event may carry `note` (0.7.0): the note written for a `WRITE_NOTE` or an Ansuz `INSCRIBE_RUNE`, which the server judges by.

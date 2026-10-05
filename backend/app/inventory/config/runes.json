@@ -1,5 +1,5 @@
 {
-  "_comment": "Runes as the build (docs/ROADMAP.md, 0.7.0 and Appendix H). A rune is held from its first stone; two more stones and some coins raise it a rank, I to III. Only inscribed runes act, each changing one rule; a rank widens the rule's number and never adds a damage percentage. `values` are by rank (I, II, III); a woken rune counts one rank higher for that outing, so a fourth value is its rank III woken. The Ground Six are only found on their own kind of ground (`ground`). The Hard Six (0.8.0) are never found as stones: a legend leaves one when it is defeated, and a lair's great chest gives Ingwaz. Ids are lore/config/runes.json's.",
+  "_comment": "Runes as the build (docs/ROADMAP.md, 0.7.0 and Appendix H). A rune is held from its first stone; two more stones and some coins raise it a rank, I to III. Only inscribed runes act, each changing one rule; a rank widens the rule's number and never adds a damage percentage. `values` are by rank (I, II, III); a woken rune counts one rank higher for that outing, so a fourth value is its rank III woken. The Ground Six are only found on their own kind of ground (`ground`). The Hard Six (0.8.0) are never found as stones: a legend leaves one when it is defeated, and a lair's great chest gives Ingwaz. The Trade Six (0.9.0) are never found as stones either: they are given at the ends of Act III's and Act IV's chapters and by the festivals' arcs (`reward.rune` in quests/config/story_arcs.json). Ids are lore/config/runes.json's.",
   "slotsAtLevel": [
     1,
     10,
@@ -247,6 +247,78 @@
         }
       },
       "text": "A bounty you weaken keeps its double coins and stays {n} day{s} longer."
+    },
+    {
+      "id": "fehu",
+      "six": "TRADE",
+      "rule": "DISTRICT_PAY_EXTRA",
+      "values": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "text": "Each district that's yours pays {n} more coin{s} a week."
+    },
+    {
+      "id": "gebo",
+      "six": "TRADE",
+      "rule": "CHEST_COINS_SCALE",
+      "values": [
+        1.1,
+        1.2,
+        1.3,
+        1.4
+      ],
+      "text": "Chests give {v}× coins."
+    },
+    {
+      "id": "mannaz",
+      "six": "TRADE",
+      "rule": "FOOT_XP_SCALE",
+      "values": [
+        1.1,
+        1.15,
+        1.2,
+        1.25
+      ],
+      "text": "Runs and walks give {v}× XP for distance."
+    },
+    {
+      "id": "tiwaz",
+      "six": "TRADE",
+      "rule": "QUARRY_CARRIED_SCALE",
+      "values": [
+        1.25,
+        1.5,
+        1.75,
+        2.0
+      ],
+      "text": "Against the creature you planned the journey for, your opening blow is {v}× stronger."
+    },
+    {
+      "id": "perthro",
+      "six": "TRADE",
+      "rule": "SEALED_UPGRADE",
+      "values": [
+        0.1,
+        0.15,
+        0.2,
+        0.25
+      ],
+      "text": "A sealed chest has a {pct}% chance to hold one rarity better."
+    },
+    {
+      "id": "othala",
+      "six": "TRADE",
+      "rule": "DISTRICT_KEEP_DAYS",
+      "values": [
+        45,
+        60,
+        75,
+        90
+      ],
+      "text": "A district stays yours for {n} days after your last visit (usually 30)."
     },
     {
       "id": "uruz",

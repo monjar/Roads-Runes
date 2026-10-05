@@ -2197,6 +2197,75 @@
       ],
       "completion": "Bounty defeated, and paid twice over!",
       "waitingReason": "Waiting for today's bounty. Open the map to find it."
+    },
+    {
+      "id": "ANY_HOME_GROUND",
+      "characterClass": "ANY",
+      "questType": "DISTRICT_TILES",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": ["RIDE", "RUN", "WALK"],
+      "objectiveRules": {"district": "home", "districtTiles": 10},
+      "objectives": [
+        {"type": "DISTRICT_TILES", "title": "Explore {districtTiles} new tiles in {districtName}", "required": true}
+      ],
+      "narrative": [
+        {"title": "Home Ground", "description": "{districtName} is where you ride the most. Explore {districtTiles} tiles of it you've never been on."}
+      ],
+      "completion": "{districtName} knows you a little better now!",
+      "waitingReason": "Waiting for your first district. Go on a journey to find one."
+    },
+    {
+      "id": "ANY_BEATING_THE_BOUNDS",
+      "characterClass": "ANY",
+      "questType": "DISTRICT_LOOP",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": ["RIDE", "RUN", "WALK"],
+      "objectiveRules": {"edgeShare": 0.6},
+      "objectives": [
+        {"type": "DISTRICT_LOOP", "title": "Go round the edge of a district and back to where you started", "required": true}
+      ],
+      "narrative": [
+        {"title": "Beating the Bounds", "description": "Pick a district and go all the way round its edge in one loop, ending where you began."}
+      ],
+      "completion": "All the way round! Now you know where it starts and stops."
+    },
+    {
+      "id": "ANY_NEXT_DISTRICT",
+      "characterClass": "ANY",
+      "questType": "DISTRICT_TILES",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": ["RIDE", "RUN", "WALK"],
+      "objectiveRules": {"district": "new", "districtPercent": 25},
+      "objectives": [
+        {"type": "DISTRICT_TILES", "title": "Explore {districtPercent}% of a district you've never been to", "required": true}
+      ],
+      "narrative": [
+        {"title": "The Next District", "description": "Somewhere next door is a district you've never been to. Go and explore {districtPercent}% of it."}
+      ],
+      "completion": "A whole new district on your map!"
+    },
+    {
+      "id": "ANY_GOING_QUIET",
+      "characterClass": "ANY",
+      "questType": "COMPLETE_DISTANCE",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": ["RIDE", "RUN", "WALK"],
+      "objectiveRules": {"walkKm": 2},
+      "objectives": [
+        {"type": "COMPLETE_DISTANCE", "title": "Walk {walkKm} km", "required": true, "activity": "WALK"}
+      ],
+      "narrative": [
+        {"title": "Going Quiet", "description": "A rest day. Walk {walkKm} km, nice and slow, and look around."}
+      ],
+      "completion": "A good, slow walk. Rest days count too."
     }
   ]
 }

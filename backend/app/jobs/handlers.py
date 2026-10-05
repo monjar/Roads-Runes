@@ -57,6 +57,35 @@ async def process_ride_job(payload: dict[str, Any]) -> None:
             await enqueue("write_entry", {"rideId": payload["rideId"]})
         except Exception as exc:  # noqa: BLE001
             log.error("write_entry_enqueue_failed", ride_id=payload.get("rideId"), error=str(exc)[:200])
+    # The districts the journey entered (0.9.0): their roads, fetched once each for
+    # the honest %. Overpass is the importer's, so it is off where the import is.
+    if settings.poi_import_enabled:
+        try:
+            await _fetch_district_ways(payload["rideId"])
+        except Exception as exc:  # noqa: BLE001
+            log.error("district_ways_enqueue_failed", ride_id=payload.get("rideId"), error=str(exc)[:200])
+
+
+async def _fetch_district_ways(ride_id: str) -> None:
+    from app.districts.ways import due_for
+    from app.rides.models import Ride
+
+    async with get_session_factory()() as db:
+        ride = await db.get(Ride, uuid.UUID(ride_id))
+        entered = [str(d.get("id")) for d in ((ride.processing_result or {}).get("districts") or [])] if ride else []
+        due = await due_for(db, entered)
+    for region_id in due:
+        await enqueue("districts_fetch_ways", {"regionId": region_id})
+
+
+async def districts_fetch_ways_job(payload: dict[str, Any]) -> None:
+    """A district's roads, once (0.9.0, districts/ways.py)."""
+    from app.districts.ways import fetch_ways
+
+    settings = get_settings()
+    async with get_session_factory()() as db:
+        await fetch_ways(db, settings, uuid.UUID(payload["regionId"]))
+        await db.commit()
 
 
 async def enqueue(name: str, payload: dict[str, Any]) -> None:
@@ -118,4 +147,5 @@ HANDLERS = {
     "write_entry": write_entry_job,
     "strava_upload": strava_upload_job,
     "notification": notification_job,
+    "districts_fetch_ways": districts_fetch_ways_job,
 }

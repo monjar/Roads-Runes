@@ -124,9 +124,13 @@ class RideRewardInput:
     days_away: int | None = None
     # Optional objectives' XP × this (the Pedlar's Road-book, OPTIONAL_XP_SCALE), 0.7.2.
     optional_xp_scale: float = 1.0
+    # XP for distance × this on a run or a walk (Mannaz, FOOT_XP_SCALE), 0.9.0.
+    foot_xp_scale: float = 1.0
 
 
 CLAIM_SOURCES = {"CHEST": "CHEST_OPENED", "COLLECTABLE": "COLLECTABLE_FOUND", "MONSTER": "MONSTER_BEATEN"}
+# The lines that pay for distance: new roads, the long way, and ground already ridden.
+DISTANCE_SOURCES = ("NEW_ROAD_EXPLORED", "LONG_DISTANCE_ADVENTURE", "KNOWN_GROUND")
 
 
 def claim_xp(kind: str, tier: int, bounty: bool = False) -> int:
@@ -249,6 +253,13 @@ def compute_ride_xp(inp: RideRewardInput) -> list[XPLine]:
         xp = min(int(kg["maxXp"]), int(round(scaled_km * kg["perKm"])))
         if xp:
             lines.append(XPLine("KNOWN_GROUND", xp, {"km": round(known_km, 1)}))
+
+    # Mannaz (0.9.0): runs and walks give more XP for distance.
+    if inp.foot_xp_scale != 1.0 and normalise(inp.activity) in ("RUN", "WALK"):
+        for line in lines:
+            if line.source in DISTANCE_SOURCES:
+                line.xp = int(round(line.xp * inp.foot_xp_scale))
+                line.detail = {**line.detail, "footScale": inp.foot_xp_scale}
 
     if inp.friends_completed_with and inp.quest_completed:
         lines.append(XPLine("SOCIAL_QUEST_COMPLETED", inp.friends_completed_with * rules["socialBonusPerFriend"]))

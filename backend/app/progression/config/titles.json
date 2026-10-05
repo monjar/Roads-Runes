@@ -51,8 +51,11 @@
     {"slug": "legend-water-wyrm", "name": "Bane of the Water Wyrm", "source": "LEGEND", "legend": "water-wyrm", "how": "Defeat the Water Wyrm."},
     {"slug": "legend-hill-king", "name": "Bane of the Hill King", "source": "LEGEND", "legend": "hill-king", "how": "Defeat the Hill King."},
     {"slug": "legend-trail-wyrm", "name": "Bane of the Trail Wyrm", "source": "LEGEND", "legend": "trail-wyrm", "how": "Defeat the Trail Wyrm."},
-    {"slug": "legend-rune-golem", "name": "Bane of the Rune Golem", "source": "LEGEND", "legend": "rune-golem", "how": "Defeat the Rune Golem."}
+    {"slug": "legend-rune-golem", "name": "Bane of the Rune Golem", "source": "LEGEND", "legend": "rune-golem", "how": "Defeat the Rune Golem."},
+    {"slug": "arc-going-quiet", "name": "Knows Every Lane", "source": "ARC", "arc": "going-quiet", "how": "Finish Going Quiet."}
   ],
+  "_district": "A district complete (0.9.0) gives its own title, one per district: the name is the district's, so it is not in the list above. Its slug is warden:<district id>.",
+  "district": {"name": "Warden of {district}", "how": "Explore 90% of {district}."},
   "renamed": {
     "Novice": "Passer-by",
     "Wanderer": "Familiar Face",

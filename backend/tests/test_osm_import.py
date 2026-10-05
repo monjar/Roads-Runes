@@ -113,7 +113,9 @@ async def test_an_area_is_imported_once(engine, settings, monkeypatch):
         "Promenade Plantée",
         "Véloroute de la Seine",
     }
-    assert len(areas) == 9
+    # Each tile's places, and its districts on their own key (0.9.0).
+    assert len(areas) == 18
+    assert sum(1 for a in areas if a.key.startswith(osm_import.REGIONS_VERSION)) == 9
     assert {a.status for a in areas} == {"OK"}
 
     await osm_import.ensure_pois(settings, 48.8566, 2.3522, fetch=fetch)

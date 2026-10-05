@@ -209,6 +209,10 @@ async def build_context(
     from app.legends.models import AWAKE, OldOne
 
     awake = await db.scalar(select(OldOne).where(OldOne.character_id == character.id, OldOne.status == AWAKE))
+    # The player's home district (0.9.0), for Act IV.
+    from app.districts.service import most_visited
+
+    home = await most_visited(db, user.id)
     completed = [
         r
         for (r,) in (
@@ -260,6 +264,11 @@ async def build_context(
                 str(awake.id), "LEGEND", awake.name, awake.anchor_name, awake.latitude, awake.longitude, None
             )
             if awake is not None
+            else None
+        ),
+        home_district=(
+            {"id": str(home.id), "name": home.name, "latitude": home.latitude, "longitude": home.longitude}
+            if home is not None
             else None
         ),
     )

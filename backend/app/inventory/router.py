@@ -14,14 +14,17 @@ from app.characters.service import get_character
 from app.core.deps import CurrentUser, DBDep, SettingsDep
 from app.core.schemas import APIModel
 from app.economy import service as economy
-from app.inventory import catalog, deeds, gear, service
+from app.inventory import catalog, cosmetics, deeds, gear, service
 from app.inventory.schemas import (
     ConsumableOut,
     ConsumableUseOut,
+    CosmeticOut,
     GearItemOut,
     InventoryOut,
     LevelOut,
     LevelRewardOut,
+    LookIn,
+    LookOut,
     SlotOut,
     StallOfferOut,
     StallOut,
@@ -197,6 +200,19 @@ async def inventory_out(
     ]
     counts = await service.consumable_counts(db, character)
     row = await service.loadout(db, character)
+    owned = await service.owned_cosmetics(db, character)
+    looks = [
+        CosmeticOut(
+            itemId=item_id,
+            kind=entry["kind"],
+            name=entry["name"],
+            color=entry.get("color"),
+            text=entry.get("text"),
+            source=source,
+        )
+        for item_id, source in owned.items()
+        if (entry := cosmetics.entry(item_id)) is not None
+    ]
     return InventoryOut(
         slots=slots,
         bag=bag,
@@ -209,6 +225,8 @@ async def inventory_out(
         levelRewardsPaid=[LevelRewardOut(**r) for r in paid or []],
         soldFor=sold_for,
         walletBalance=await economy.balance(db, character.user_id) if sold_for is not None else None,
+        look=LookOut(**await service.look_of(db, character)),
+        cosmetics=looks,
     )
 
 
@@ -227,6 +245,16 @@ async def wear(payload: WearIn, user: CurrentUser, db: DBDep) -> InventoryOut:
     409 WRONG_SLOT, SLOT_LOCKED, LOADOUT_LOCKED (during a journey), BAG_FULL."""
     character = await get_character(db, user)
     await service.wear(db, character, payload.slot, payload.itemId)
+    return await inventory_out(db, character)
+
+
+@router.put("/inventory/look", response_model=InventoryOut, tags=["inventory"])
+async def look(payload: LookIn, user: CurrentUser, db: DBDep) -> InventoryOut:
+    """Wears looks (0.9.0): route ink, marker frame, crest frame. A field left out
+    stays as it is; null goes back to the default. Free, any time. 409 LOOK_NOT_OWNED,
+    WRONG_LOOK."""
+    character = await get_character(db, user)
+    await service.set_look(db, character, payload.model_dump(exclude_unset=True))
     return await inventory_out(db, character)
 
 
@@ -270,7 +298,8 @@ async def treasure(user: CurrentUser, db: DBDep) -> list[TreasureClueOut]:
 
 @router.get("/inventory/stall", response_model=StallOut, tags=["inventory"])
 async def stall(user: CurrentUser, db: DBDep) -> StallOut:
-    """This week's four offers (computed on read, new each Monday) and which are bought."""
+    """This week's offers (computed on read, new each Monday) and which are bought: two
+    gear, two consumables and (0.9.0) one look."""
     found = await service.stall(db, await get_character(db, user))
     return StallOut(**{**found, "offers": [StallOfferOut(**o) for o in found["offers"]]})
 

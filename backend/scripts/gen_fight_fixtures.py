@@ -22,6 +22,10 @@ is written into the file as `_rules`):
   contact counts even when the fix is outside its ground.
 * `rules.ELDER_CARRIED_SCALE` (Thurisaz), with `elder: true` (an elder, a bounty
   or a legend): carriedFraction × v, after CARRIED_SCALE; carriedCap unchanged.
+* `rules.QUARRY_CARRIED_SCALE` (Tiwaz, 0.9.0), with `quarry: true` (the creature
+  the journey was planned for, the ride's quarryId): carriedFraction × v, after
+  CARRIED_SCALE and ELDER_CARRIED_SCALE (the scales multiply); carriedCap unchanged.
+  `quarry` false or absent: no change.
 * A legend case (`legend` set; `elder` is true too): the foe is the current
   phase (hold = phase health, holdBefore = what is left of it, wants = weakTo,
   minds = resists, roadForm = the phase's own rune's shape or null);
@@ -56,6 +60,8 @@ RULES_0_8 = [
     "even outside the foe's ground.",
     "ELDER_CARRIED_SCALE: when `elder` is true (an elder, a bounty or a legend), carriedFraction x v "
     "after CARRIED_SCALE; carriedCap unchanged.",
+    "QUARRY_CARRIED_SCALE (0.9.0): when `quarry` is true (the creature the journey was planned for), "
+    "carriedFraction x v after CARRIED_SCALE and ELDER_CARRIED_SCALE (they multiply); carriedCap unchanged.",
     "legend: the foe is the current phase: hold = phase health (foe.hold), holdBefore = what is left "
     "(foe.holdBefore, default hold), wants = weakTo, minds = resists, roadForm = the phase rune's shape. "
     "elder is true; wordRadiusMeters = max(wordRadiusMeters, legendWordRadiusMeters); damage pct = pct + "
@@ -193,6 +199,21 @@ def hard_six_cases():
     ]  # fmt: skip
 
 
+def trade_cases():
+    """0.9.0: Tiwaz in the fold, on the quarry and not, and with Thurisaz on an elder quarry."""
+    climb = line(destination_point(HOME[0], HOME[1], 180, 500), 0, 900, 10, climb=60)
+    tiwaz = {"QUARRY_CARRIED_SCALE": 2.0}
+    both = {"QUARRY_CARRIED_SCALE": 1.5, "ELDER_CARRIED_SCALE": 1.5}
+    return [
+        ("Tiwaz does nothing against another creature", climb, ("CLIMB", "RUNE"), ("WORD",), "TRIANGLE", 400, "RIDE",
+         {}, [], None, [], tiwaz, {"quarry": False}),
+        ("Tiwaz doubles the opening blow on the quarry", climb, ("CLIMB", "RUNE"), ("WORD",), "TRIANGLE", 400,
+         "RIDE", {}, [], None, [], tiwaz, {"quarry": True}),
+        ("Tiwaz and Thurisaz together on an elder quarry", climb, ("CLIMB", "RUNE"), ("WORD",), "TRIANGLE", 400,
+         "RIDE", {}, [], None, [], both, {"quarry": True, "elder": True}),
+    ]  # fmt: skip
+
+
 def legend_cases():
     """0.8.0: a legend's phase is a foe like any other, with the capstones' percentages."""
     west = destination_point(HOME[0], HOME[1], 270, 950)
@@ -238,6 +259,7 @@ def main() -> None:
         *cases(),
         *gear_cases(),
         *hard_six_cases(),
+        *trade_cases(),
         *legends,
     ]:
         rules = more[0] if more else {}
@@ -267,7 +289,7 @@ def main() -> None:
             extra["elder"] = True
         else:
             foe = fight.Foe(HOME[0], HOME[1], hold, hold, wants, minds, form)
-            case_cfg = sheet.foe_cfg(case_cfg, elder=bool(extra.get("elder")))
+            case_cfg = sheet.foe_cfg(case_cfg, elder=bool(extra.get("elder")), quarry=bool(extra.get("quarry")))
         hit = fight.RuneHit(*rune) if rune else None
         report = fight.resolve(
             pts,
@@ -308,6 +330,7 @@ def main() -> None:
                 "wordIndices": words,
                 **({"rules": rules} if rules else {}),
                 **({"elder": bool(extra["elder"])} if "elder" in extra else {}),
+                **({"quarry": bool(extra["quarry"])} if "quarry" in extra else {}),
                 **({"legend": legend} if legend else {}),
                 **({"vsLegendsPct": extra["vsLegendsPct"]} if extra.get("vsLegendsPct") else {}),
                 **(
