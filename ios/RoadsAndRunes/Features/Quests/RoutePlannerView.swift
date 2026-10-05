@@ -457,7 +457,8 @@ struct RoutePlannerView: View {
                     }
                     if let selected = model.selected {
                         RouteDetailPanel(
-                            route: selected,
+                            // A sealed quest's stops could name its goal (0.7.3): left off.
+                            route: SealedQuest.isSealed(model.quest) ? QuickStartSheet.withoutStops(selected) : selected,
                             units: model.units,
                             camera: model.preview,
                             focused: model.focusedStop,

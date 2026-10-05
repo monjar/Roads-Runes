@@ -31,6 +31,7 @@ struct AdventureSummaryView: View {
     @State private var traceShown = 1.0
     @State private var camera: MapCamera?
     @State private var reveal: Task<Void, Never>?
+    @State private var sharing = false
 
     private enum StravaLineState { case idle, sending, sent, failed(String) }
 
@@ -82,11 +83,16 @@ struct AdventureSummaryView: View {
                             if stage >= .coins, coins > 0 { coinSection.id(Stage.coins) }
                             if stage >= .levels { levelCards.id(Stage.levels) }
                             if stage >= .world { worldSection.id(Stage.world) }
+                            // A pledge kept (0.7.3): said once, with the thing's mark. A missed one is never mentioned.
+                            if stage >= .world, let kept = summary.pledge, kept.kept { PledgeKeptLine(kept: kept) }
                             if stage >= .codex, !firsts.isEmpty { codexSection.id(Stage.codex) }
                             if stage >= .runes, !runeLines.isEmpty { runesSection.id(Stage.runes) }
                             if stage >= .items, !finds.isEmpty { itemsSection.id(Stage.items) }
                             if stage >= .quest { questSection.id(Stage.quest) }
+                            if stage >= .quest, let goal = sealedGoal { sealedSection(goal) }
                             if stage >= .entry, let entry = summary.entryToRead, !entry.isEmpty { entrySection(entry).id(Stage.entry) }
+                            // Letters written here a season or more ago, found again (0.7.3).
+                            if stage >= .entry, let letters = summary.letters, !letters.isEmpty { FoundLettersSection(letters: letters) }
                             if stage >= .rest { restSection.id(Stage.rest) }
                         }
                         .padding(.horizontal, 22)
@@ -556,6 +562,25 @@ struct AdventureSummaryView: View {
 
     private var hasQuest: Bool { summary.questCompletion != nil && summary.quest != nil }
 
+    /// A sealed quest's goal, named at last (0.7.3).
+    private var sealedGoal: SealedQuest.Goal? {
+        (summary.questCompletion?.quest ?? summary.quest).flatMap { SealedQuest.goal(of: $0) }
+    }
+
+    private func sealedSection(_ goal: SealedQuest.Goal) -> some View {
+        HStack(spacing: 10) {
+            MarkView(.icon(GameIcon.named(goal.icon, or: .scroll), spot: .terracotta)).frame(width: 24, height: 24)
+            VStack(alignment: .leading, spacing: 1) {
+                Eyebrow(text: "The sealed goal", color: Theme.Colors.terracottaDeep)
+                Text(goal.title).font(Theme.Typography.text(15, .semibold)).foregroundStyle(Theme.Colors.ink)
+            }
+            Spacer(minLength: 0)
+        }
+        .transition(.opacity)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("summary.sealedGoal")
+    }
+
     /// The quest's last word, and where it leaves the story.
     @ViewBuilder
     private var questSection: some View {
@@ -599,6 +624,13 @@ struct AdventureSummaryView: View {
                 Label("Saved to Health", systemImage: "heart.fill").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.sageDeep)
             }
             stravaLine
+            // The picture of this journey to send someone (0.7.3).
+            Button { sharing = true } label: {
+                Label("Share card", systemImage: "square.and.arrow.up")
+            }
+            .buttonStyle(.surfacePill)
+            .accessibilityIdentifier("summary.share")
+            .sheet(isPresented: $sharing) { ShareCardSheet(summary: summary) }
             if let nudge = comeBackLine {
                 Label(nudge, systemImage: "flame.fill")
                     .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.terracottaDeep)

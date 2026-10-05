@@ -364,6 +364,11 @@ final class WorldViewModel {
                 if let combat { world.combat = combat }
                 if let sheet { world.sheet = sheet }
             }
+            // Next up on the Watch (0.7.3).
+            let known = worldObjects
+            Task { await container.publishWatchIdle(objects: known, around: here) }
+            // The bounty and how far, for the widgets (0.7.3).
+            WidgetSnapshotWriter.shared.worldLoaded()
         } else {
             objectsLoadedAt = nil
         }

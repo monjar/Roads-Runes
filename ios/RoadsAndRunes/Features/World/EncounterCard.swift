@@ -103,6 +103,10 @@ struct EncounterCard: View {
                 .buttonStyle(.primary)
                 .accessibilityIdentifier("encounter.plan")
             }
+            // A promise to go out for it (0.7.3), mornings for today and evenings for tomorrow.
+            if object.kind == .monster {
+                PledgeButton(kind: .creature, targetId: object.id, targetName: object.name, mark: .of(object))
+            }
         }
         .padding(18)
         .background(Theme.Colors.cream, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))

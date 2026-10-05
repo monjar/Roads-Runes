@@ -74,6 +74,8 @@
 	<string>Motion data improves distance accuracy when GPS is weak.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Attach photos to discoveries and adventures.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIAppFonts</key>
 	<array>
 		<string>Caprasimo-Regular.ttf</string>

@@ -39,6 +39,11 @@ struct QuestsView: View {
                             .buttonStyle(.pressable)
                             .accessibilityIdentifier("customAdventure")
                             .disabled(container.rideRecorder.isActive)
+                        // Pick a time, the board picks the way (0.7.3): planned by the quick start.
+                        SealedQuestCard { minutes in
+                            QuickStartCoordinator.shared.handle(.sealed(minutes: minutes), autoStart: false)
+                        }
+                        .disabled(container.rideRecorder.isActive)
                         if let notice = model.weekNotice {
                             WeekNoticeCard(notice: notice)
                         }
@@ -266,7 +271,7 @@ struct QuestDetailView: View {
                             let objectives = quest.sortedObjectives
                             ForEach(Array(objectives.enumerated()), id: \.element.id) { offset, objective in
                                 ObjectiveRow(
-                                    objective: objective,
+                                    objective: SealedQuestCopy.shown(objective, in: quest),
                                     distanceMeters: model.distance(to: objective),
                                     units: model.units,
                                     index: objective.required ? requiredIndex(objectives, offset) : nil,
@@ -288,6 +293,10 @@ struct QuestDetailView: View {
                         }
                         if let completion = quest.narrative.completion, quest.status == .completed {
                             Text(completion).font(Theme.Typography.text(14)).foregroundStyle(Theme.Colors.inkSoft).italic()
+                        }
+                        // A promise to go out for it (0.7.3), while it is on the board.
+                        if quest.status == .available || quest.status == .accepted {
+                            PledgeButton(kind: .quest, targetId: quest.id, targetName: quest.title, mark: .quest)
                         }
                     }
                     .padding(.horizontal, 22)
@@ -362,7 +371,9 @@ struct QuestDetailView: View {
             return MapMarker(id: objective.id.uuidString, coordinate: coordinate, kind: objective.status == .completed ? .objectiveDone : .objective, title: objective.title)
         }
         // What the route passes on the way, so the rider can see where the coffee is.
-        for poi in route?.pois.prefix(10) ?? [] {
+        // Not for a sealed quest: a stop on its way could name the goal (0.7.3).
+        let stops: [RoutePOI] = SealedQuest.isSealed(quest) ? [] : Array(route?.pois.prefix(10) ?? [])
+        for poi in stops {
             out.append(MapMarker(
                 id: "stop-\(poi.id.uuidString)",
                 coordinate: poi.coordinate,

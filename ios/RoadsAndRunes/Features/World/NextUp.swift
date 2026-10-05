@@ -61,11 +61,29 @@ struct NextUpCard: View {
     let next: NextUp
     let units: Units
     let activity: Activity
+    /// Today's pledge, as a row under the card's line (0.7.3).
+    var pledge: Pledge? = nil
     let onAction: () -> Void
 
     private var formatter: UnitFormatter { UnitFormatter(units: units) }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            main
+            if let pledge {
+                Divider().overlay(Theme.Colors.line)
+                PledgeRow(pledge: pledge)
+            }
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .background(Theme.Colors.cream, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .shadow(color: Theme.Colors.ink.opacity(0.16), radius: 6, y: 3)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("nextUp")
+    }
+
+    private var main: some View {
         HStack(spacing: 12) {
             MarkView(mark).frame(width: 40, height: 40)
             VStack(alignment: .leading, spacing: 2) {
@@ -86,12 +104,6 @@ struct NextUpCard: View {
             .buttonStyle(.pressable)
             .accessibilityIdentifier("nextUp.action")
         }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 12)
-        .background(Theme.Colors.cream, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .shadow(color: Theme.Colors.ink.opacity(0.16), radius: 6, y: 3)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("nextUp")
     }
 
     private var mark: Mark {

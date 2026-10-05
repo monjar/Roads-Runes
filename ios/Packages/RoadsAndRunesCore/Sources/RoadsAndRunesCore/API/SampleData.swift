@@ -479,7 +479,8 @@ public enum SampleData {
 
     public static let sampleConfig = AppConfig(
         featureFlags: ["fog_of_war": false, "story_quests": false, "party_quests": false, "strava": false,
-                       "wizard_class": true, "warrior_class": true, "scribe_class": true, "codex": true],
+                       "wizard_class": true, "warrior_class": true, "scribe_class": true, "codex": true,
+                       "pledge": true, "parchment_map": false],
         h3Resolution: 9, levels: LevelLimits(max: 50, maxClass: 30), environment: "preview"
     )
 }

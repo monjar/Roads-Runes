@@ -115,9 +115,14 @@ public struct RideCreate: Codable, Hashable, Sendable {
     public var activity: Activity?
     /// The world object this outing was planned for ("Plan a route here"), if any.
     public var quarryId: UUID?
+    /// The day it began on the phone's own calendar, "YYYY-MM-DD" (0.7.3): the day
+    /// whose pledge it keeps. nil leaves the server to use the start's UTC date.
+    public var localDate: String?
 
-    public init(clientRideId: UUID, startedAt: Date, questId: UUID? = nil, bikeId: UUID? = nil, routeId: UUID? = nil, title: String? = nil, activity: Activity? = nil, quarryId: UUID? = nil) {
+    public init(clientRideId: UUID, startedAt: Date, questId: UUID? = nil, bikeId: UUID? = nil, routeId: UUID? = nil, title: String? = nil, activity: Activity? = nil, quarryId: UUID? = nil,
+                localDate: String? = nil) {
         self.quarryId = quarryId
+        self.localDate = localDate
         self.clientRideId = clientRideId
         self.startedAt = startedAt
         self.questId = questId
@@ -255,6 +260,10 @@ public struct AdventureSummary: Codable, Hashable, Sendable {
     /// and the model-written entry when one was written.
     public var itemsFound: [ItemFound]? = nil
     public var entryWritten: EntryWritten? = nil
+    /// 0.7.3: a pledge this journey kept (a missed one is never sent), and letters
+    /// written here a season or more ago, found again.
+    public var pledge: PledgeKept? = nil
+    public var letters: [FoundLetter]? = nil
 
     /// The entry to read: the model's lines when there are some, else the composed one.
     public var entryToRead: String? {

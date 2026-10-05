@@ -152,6 +152,8 @@ struct CoinHistoryScreen: View {
                     FactTile(value: (wallet?.lifetimeEarned ?? 0).formatted(), label: "Earned in all")
                 }
                 .accessibilityIdentifier("coins.purse")
+                // Real rewards set against the purse (0.7.3), kept on this phone.
+                SavingsGoalsSection(purse: wallet?.balance ?? container.session.character?.activeCoins ?? 0)
                 if let error { ErrorLine(text: error) }
                 if loaded, lines.isEmpty, error == nil {
                     EmptyState(icon: .purse, title: "No coins yet", message: "Open chests and defeat creatures to fill your purse.")

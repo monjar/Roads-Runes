@@ -232,6 +232,20 @@ struct JournalView: View {
             }
             .card()
         }
+        // Letters to your future self (0.7.3): where, when, and whether one came back.
+        NavigationLink { LettersView() } label: {
+            HStack(spacing: 10) {
+                IconShape(.quillInk).foregroundStyle(Theme.Colors.terracottaDeep).frame(width: 20, height: 20)
+                Text("Your letters").font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.terracottaDeep)
+                Spacer()
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.Colors.muted)
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 14)
+            .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
+        }
+        .buttonStyle(.pressable)
+        .accessibilityIdentifier("journal.letters")
         if model.adventures.isEmpty {
             EmptyState(icon: .openBook, title: LoreCopy.emptyJournalTitle, message: LoreCopy.emptyJournalMessage)
         }
@@ -461,6 +475,10 @@ struct AdventureDetailView: View {
     @State private var refreshed: Ride?
     @State private var reckoning: AdventureSummary?
     @State private var loadingReckoning = false
+    /// The share card (0.7.3) is made from the journey's summary, fetched when asked for.
+    @State private var sharing: AdventureSummary?
+    @State private var loadingShare = false
+    @State private var shareError: String?
 
     var body: some View {
         let f = UnitFormatter(units: container.session.units)
@@ -527,6 +545,24 @@ struct AdventureDetailView: View {
                 .buttonStyle(.surfacePill)
                 .disabled(loadingReckoning)
                 .accessibilityIdentifier("journal.reckoning")
+                Button {
+                    loadingShare = true
+                    Task {
+                        do {
+                            sharing = try await container.api.rideSummary(id: entry.ride.id)
+                            shareError = sharing == nil ? "This journey is still being counted. Try again in a moment." : nil
+                        } catch {
+                            shareError = error.localizedDescription
+                        }
+                        loadingShare = false
+                    }
+                } label: {
+                    Label(loadingShare ? "Loading…" : "Share card", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.surfacePill)
+                .disabled(loadingShare)
+                .accessibilityIdentifier("journal.share")
+                if let shareError { ErrorLine(text: shareError) }
                 HStack(spacing: 8) {
                     Button("Save notes") { Task { _ = try? await container.api.updateRide(id: entry.ride.id, RidePatch(notes: notes)) } }.buttonStyle(.inkPill)
                     ShareLink(item: container.api.rideExportURL(id: entry.ride.id, format: .gpx)) { Label("Export GPX", systemImage: "square.and.arrow.up") }.buttonStyle(.surfacePill)
@@ -552,6 +588,7 @@ struct AdventureDetailView: View {
         .fullScreenCover(item: $reckoning) { summary in
             AdventureSummaryView(summary: summary, units: container.session.units, animated: false) { reckoning = nil }
         }
+        .sheet(item: $sharing) { summary in ShareCardSheet(summary: summary) }
         .task {
             notes = entry.notes ?? ""
             geometry = try? await container.api.rideGeometry(id: entry.ride.id)

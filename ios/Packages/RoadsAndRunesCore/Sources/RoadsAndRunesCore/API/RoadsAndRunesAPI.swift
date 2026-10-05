@@ -61,6 +61,19 @@ public protocol RoadsAndRunesAPI: Sendable {
     /// What each of the fifty levels gives, and which are reached.
     func levelRewards() async throws -> [LevelStep]
 
+    // MARK: Between rides (0.7.3)
+    /// Today's pledge and tomorrow's; `today` is the phone's own date, "YYYY-MM-DD".
+    func pledges(today: String) async throws -> PledgeState
+    /// Pledge a live creature or a quest on the board for a day; one a day, a second replaces it.
+    func pledge(_ request: PledgeRequest) async throws -> Pledge
+    func cancelPledge(day: String) async throws
+    /// Your letters, newest first.
+    func letters() async throws -> [Letter]
+    func writeLetter(_ request: LetterCreate) async throws -> Letter
+    func deleteLetter(id: UUID) async throws
+    /// A sealed quest of 20, 40 or 90 minutes from here, accepted, with its route.
+    func sealedQuest(_ request: SealedQuestRequest) async throws -> Quest
+
     // MARK: World
     func world(center: Coordinate, radiusMeters: Double) async throws -> WorldSnapshot
     func exploration(in box: BoundingBox) async throws -> ExplorationResponse

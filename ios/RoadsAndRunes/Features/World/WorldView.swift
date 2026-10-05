@@ -35,6 +35,8 @@ struct WorldView: View {
         .task {
             if model == nil { model = WorldViewModel(container: container) }
             container.location.requestWhenInUse()
+            // Today's pledge, for its row under Next up (0.7.3).
+            await container.pledges.refresh()
         }
         // The map in the hand needs to know thirty metres from fifty; put away, it
         // goes back to the coarse fix that costs nothing. Neither touches a ride's GPS.
@@ -67,6 +69,7 @@ struct WorldView: View {
             onOpenQuests(quest)
         }
         .onChange(of: container.sync.latestSummary) { _, summary in
+            if let summary { Task { await container.pledges.journeyEnded(summary) } }
             guard summary == nil, let model, let center = model.center else { return }
             Task { await model.load(around: center, force: true) }
         }
@@ -76,7 +79,7 @@ struct WorldView: View {
     private func content(_ model: WorldViewModel) -> some View {
         ZStack(alignment: .top) {
             MapLibreView(
-                styleURL: Config.mapStyleURL(for: styleKey),
+                styleURL: worldStyleURL,
                 center: model.center ?? container.location.lastFix?.coordinate ?? SampleData.origin,
                 zoom: 14,
                 cells: model.cells,
@@ -185,7 +188,8 @@ struct WorldView: View {
                             units: model.units,
                             onNearest: {}
                         )
-                        NextUpCard(next: model.nextUp, units: model.units, activity: container.session.defaultActivity) {
+                        NextUpCard(next: model.nextUp, units: model.units, activity: container.session.defaultActivity,
+                                   pledge: container.pledges.isOn ? container.pledges.today : nil) {
                             act(on: model.nextUp, model)
                         }
                     }
@@ -282,6 +286,15 @@ struct WorldView: View {
             .padding(.horizontal, 12)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
+    }
+
+    /// The Outdoors style becomes the parchment map on the World tab only, behind
+    /// `parchment_map` (0.7.3); every other style and tab is as it was.
+    private var worldStyleURL: URL {
+        if styleKey == .adventure, container.session.isEnabled("parchment_map"), let parchment = Config.parchmentStyleURL {
+            return parchment
+        }
+        return Config.mapStyleURL(for: styleKey)
     }
 
     private var styleKey: Config.MapStyleKey {

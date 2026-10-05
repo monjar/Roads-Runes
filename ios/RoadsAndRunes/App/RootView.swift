@@ -57,6 +57,12 @@ struct RootView: View {
                 showPrologue = true
             }
         }
+        // The widgets' snapshot (0.7.3): after Journey's end, when the character
+        // moves (a streak kept, a level), and cleared on signing out.
+        .onChange(of: container.sync.latestSummary?.ride.id) { _, id in
+            if id != nil { WidgetSnapshotWriter.shared.journeyEnded() }
+        }
+        .onChange(of: WidgetSnapshotWriter.watched(container.session)) { WidgetSnapshotWriter.shared.write() }
         .tint(Theme.Colors.terracotta)
         // Every colour in the app is a fixed hex on cream; there is no dark palette
         // yet (docs/ROADMAP.md, 1.0), so stock forms must not go dark under it.
@@ -125,6 +131,11 @@ struct MainTabView: View {
         .animation(.snappy(duration: 0.3), value: tabBar.isHidden)
         .background(Theme.Colors.cream.ignoresSafeArea())
         .environment(tabBar)
+        // A widget's or a Shortcut's link to a tab (0.7.3), once the tabs are up.
+        .onChange(of: DeepLinkInbox.shared.destination, initial: true) {
+            guard let link = DeepLinkInbox.shared.takeDestination(), let target = AppTab(link: link) else { return }
+            withAnimation(.snappy(duration: 0.25)) { tab = target }
+        }
         // The first look at the bag after 0.7.2 pays the levels already reached: said once.
         .task { await container.session.refreshInventory() }
         .sheet(isPresented: Binding(
@@ -132,6 +143,13 @@ struct MainTabView: View {
             set: { shown in if !shown { container.session.levelRewardsToShow = [] } }
         )) {
             LevelRewardsSheet(rewards: container.session.levelRewardsToShow) { container.session.levelRewardsToShow = [] }
+        }
+        // A quick start (0.7.3): the route card with Start, from Siri, a widget, the board or the Watch.
+        .sheet(isPresented: Binding(
+            get: { QuickStartCoordinator.shared.isPresented && !container.rideRecorder.isActive },
+            set: { shown in if !shown, !QuickStartCoordinator.shared.isStarting { QuickStartCoordinator.shared.dismiss() } }
+        )) {
+            QuickStartSheet(coordinator: QuickStartCoordinator.shared)
         }
     }
 }

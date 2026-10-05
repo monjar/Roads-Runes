@@ -90,6 +90,8 @@ struct PlaceCard: View {
     var leavingLamp = false
     var lampError: String?
     var onLamp: () -> Void = {}
+    /// A letter to your future self, left here (0.7.3).
+    @State private var writingLetter = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -108,14 +110,25 @@ struct PlaceCard: View {
                 IconCircleButton(symbol: "xmark", background: Theme.Colors.surface, size: 34, action: onClose)
                     .accessibilityLabel("Close")
             }
-            Button(action: onDirections) {
-                let activity = container.session.defaultActivity
-                HStack(spacing: 10) {
-                    Image(systemName: activity.symbol)
-                    Text("\(activity.verb) here")
+            HStack(spacing: 10) {
+                Button(action: onDirections) {
+                    let activity = container.session.defaultActivity
+                    HStack(spacing: 10) {
+                        Image(systemName: activity.symbol)
+                        Text("\(activity.verb) here")
+                    }
                 }
+                .buttonStyle(.primary)
+                .accessibilityIdentifier("place.directions")
+                Button { writingLetter = true } label: {
+                    Label("Leave a letter", systemImage: "envelope")
+                }
+                .buttonStyle(.secondary)
+                .accessibilityIdentifier("place.leaveLetter")
             }
-            .buttonStyle(.primary)
+            .sheet(isPresented: $writingLetter) {
+                LetterSheet(coordinate: place.coordinate, placeName: place.name).presentationDetents([.medium, .large])
+            }
             if let lampCost {
                 lampSection(cost: lampCost)
             }

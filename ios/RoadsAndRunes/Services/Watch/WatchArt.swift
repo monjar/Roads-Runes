@@ -33,4 +33,12 @@ enum WatchArt {
     static func icon(for category: DiscoveryCategory) -> String? {
         GameIcon.forPlace(category.rawValue).rawValue
     }
+
+    /// A quest on Next up (0.7.3): its class's mark, a scroll for anyone's.
+    static func icon(for quest: Quest) -> String? {
+        switch quest.characterClass {
+        case .explorer, .wizard, .warrior, .scribe: return GameIcon.forClass(quest.characterClass.rawValue).rawValue
+        default: return GameIcon.scroll.rawValue
+        }
+    }
 }

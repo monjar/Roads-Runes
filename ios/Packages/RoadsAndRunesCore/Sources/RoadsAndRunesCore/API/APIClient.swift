@@ -285,6 +285,19 @@ public actor APIClient: RoadsAndRunesAPI {
     public func buyOffer(id: String) async throws -> InventoryState { try await request(Endpoints.buyOffer(id: id)) }
     public func levelRewards() async throws -> [LevelStep] { try await request(Endpoints.levelRewards()) }
 
+    // MARK: Between rides (0.7.3)
+
+    public func pledges(today: String) async throws -> PledgeState { try await request(Endpoints.pledges(today: today)) }
+    public func pledge(_ request: PledgeRequest) async throws -> Pledge { try await self.request(try Endpoints.pledge(request)) }
+    public func cancelPledge(day: String) async throws { try await requestNoContent(Endpoints.cancelPledge(day: day)) }
+    public func letters() async throws -> [Letter] {
+        let list: LetterList = try await request(Endpoints.letters())
+        return list.letters
+    }
+    public func writeLetter(_ request: LetterCreate) async throws -> Letter { try await self.request(try Endpoints.writeLetter(request)) }
+    public func deleteLetter(id: UUID) async throws { try await requestNoContent(Endpoints.deleteLetter(id: id)) }
+    public func sealedQuest(_ request: SealedQuestRequest) async throws -> Quest { try await self.request(try Endpoints.sealedQuest(request)) }
+
     // MARK: World
 
     public func world(center: Coordinate, radiusMeters: Double) async throws -> WorldSnapshot {

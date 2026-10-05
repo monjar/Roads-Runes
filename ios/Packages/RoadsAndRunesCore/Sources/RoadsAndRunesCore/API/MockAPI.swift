@@ -44,6 +44,11 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     var storedInventory: InventoryState = SampleData.sampleInventory
     var stallBought: Set<String> = []
     var levelRewardsUnpaid = true
+    /// Between rides (0.7.3): pledges by day, letters, and the one sealed quest.
+    var storedPledges: [String: Pledge] = [:]
+    var storedLetters: [Letter] = []
+    /// When a letter is old enough to be found again (the server's `letterMinAgeDays`).
+    public var letterMinAgeDays = 90
 
     public init(hasCharacter: Bool = true) {
         var user = SampleData.sampleUser

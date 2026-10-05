@@ -11,6 +11,8 @@ struct NavigationScreen: View {
     @State private var confirmingEnd = false
     /// A stop tapped on the map, read without leaving the ride.
     @State private var readingStop: RoutePOI?
+    /// Where a letter is being left (0.7.3): only at a standstill.
+    @State private var letterSpot: Coordinate?
 
     private var recorder: RideRecorder { container.rideRecorder }
     private var formatter: UnitFormatter { UnitFormatter(units: container.session.units) }
@@ -50,7 +52,8 @@ struct NavigationScreen: View {
                     MapPill(text: "\(TurnArrowView.phrase(for: instruction.sign)) · \(formatter.distance(meters: recorder.progress?.distanceToNextInstruction ?? instruction.distanceMeters))")
                 } else {
                     ObjectiveBanner(objective: recorder.currentObjective, quest: recorder.quest, title: recorder.title ?? LoreCopy.free(recorder.activity),
-                                    position: recorder.lastFix?.coordinate, formatter: formatter)
+                                    position: recorder.lastFix?.coordinate, formatter: formatter,
+                                    routeFraction: recorder.progress?.fractionComplete, isStill: recorder.isStill || recorder.state == .paused)
                 }
                 if let stop = recorder.nearbyStop {
                     NearbyStopCard(
@@ -88,6 +91,18 @@ struct NavigationScreen: View {
                     if container.location.accuracyPoor {
                         StatusPill(text: "GPS is weak", dot: Theme.Colors.terracottaLight)
                     }
+                    // A letter to your future self (0.7.3): written standing still, never on the move.
+                    if recorder.isStill || recorder.state == .paused, let here = recorder.lastFix?.coordinate {
+                        Button { letterSpot = here } label: {
+                            Label("Leave a letter", systemImage: "envelope")
+                                .font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink)
+                                .padding(.horizontal, 12).frame(height: 34)
+                                .background(Theme.Colors.cream, in: Capsule())
+                                .shadow(color: Theme.Colors.ink.opacity(0.14), radius: 2, y: 1)
+                        }
+                        .buttonStyle(.pressable)
+                        .accessibilityIdentifier("ride.leaveLetter")
+                    }
                 }
                 .padding(.horizontal, 2)
                 Spacer(minLength: 0)
@@ -119,12 +134,25 @@ struct NavigationScreen: View {
         }
         .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
         .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+        .sheet(isPresented: Binding(get: { letterSpot != nil }, set: { if !$0 { letterSpot = nil } })) {
+            if let letterSpot {
+                LetterSheet(coordinate: letterSpot).presentationDetents([.medium, .large])
+            }
+        }
+    }
+
+    /// A sealed quest's goal, done, is named by what it was (0.7.3).
+    private func named(_ objective: Objective) -> Objective {
+        guard let quest = recorder.quest, let goal = SealedQuest.goal(of: quest) else { return objective }
+        var named = objective
+        named.title = goal.title
+        return named
     }
 
     @ViewBuilder
     private var topCard: some View {
         if let objective = recorder.recentObjectiveCompletion {
-            ObjectiveCompleteCard(objective: objective, remaining: remainingObjectives)
+            ObjectiveCompleteCard(objective: named(objective), remaining: remainingObjectives)
                 .transition(.scale(scale: 0.9).combined(with: .opacity))
         } else if isOffRoute {
             OffRouteCard(
@@ -595,14 +623,28 @@ struct ObjectiveBanner: View {
     var title: String?
     let position: Coordinate?
     let formatter: UnitFormatter
+    /// How far along the route the rider is, and whether they are standing still:
+    /// a sealed quest's goal opens halfway and is read only at a standstill (0.7.3).
+    var routeFraction: Double?
+    var isStill = false
+
+    /// The objective's words, or for a sealed quest what may be said of its goal now.
+    static func line(for objective: Objective, quest: Quest?, routeFraction: Double?, isStill: Bool) -> String {
+        guard let quest, SealedQuest.isSealed(quest) else { return objective.title }
+        guard SealedQuest.isOpen(quest, routeFraction: routeFraction) else { return SealedQuest.shutLine }
+        guard isStill else { return "Your goal is open. Stop to read it." }
+        return SealedQuest.goal(of: quest)?.title ?? objective.title
+    }
 
     var body: some View {
         HStack(spacing: 12) {
             DiamondMarker(color: Theme.Colors.sage, size: 18)
             if let objective {
                 (Text("QUEST · ").font(Theme.Typography.eyebrow).foregroundStyle(Theme.Colors.sageLight)
-                    + Text(objective.title).font(Theme.Typography.text(14, .bold)).foregroundStyle(Theme.Colors.cream))
+                    + Text(Self.line(for: objective, quest: quest, routeFraction: routeFraction, isStill: isStill))
+                        .font(Theme.Typography.text(14, .bold)).foregroundStyle(Theme.Colors.cream))
                     .lineLimit(1)
+                    .accessibilityIdentifier("ride.objective")
                 Spacer(minLength: 8)
                 if let position, let target = objective.coordinate {
                     Text(formatter.distance(meters: GeoMath.distance(position, target)))

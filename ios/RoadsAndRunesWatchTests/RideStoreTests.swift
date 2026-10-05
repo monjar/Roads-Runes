@@ -269,4 +269,80 @@ final class RideStoreTests: XCTestCase {
         XCTAssertEqual(JourneyEndCard.lines(for: one).map(\.text), ["1 creature defeated", "3 chests opened"])
         XCTAssertEqual(JourneyEndCard.lines(for: WatchJourneyEnd()).map(\.text), ["Saved to your Journal"])
     }
+
+    // MARK: Between rides (0.7.3)
+
+    func testNextUpIsKeptAndALateOneDoesNotReplaceANewer() {
+        let store = RideStore()
+        var faces = 0
+        store.onFaceChanged = { faces += 1 }
+        let now = Date(timeIntervalSince1970: 200_000)
+        let newer = WatchIdleInfo(streakDays: 4, bounty: .init(name: "Fen Troll"), units: "IMPERIAL", updatedAt: now)
+        store.apply(idle: newer)
+        XCTAssertEqual(store.idle, newer)
+        XCTAssertEqual(store.units, .imperial, "Next up carries the units for the complication")
+        XCTAssertEqual(faces, 1)
+        store.apply(idle: WatchIdleInfo(streakDays: 3, updatedAt: now.addingTimeInterval(-60)))
+        XCTAssertEqual(store.idle?.streakDays, 4, "heard late, made earlier: let go")
+        // What the app group kept shows until the phone speaks, and never over what it said.
+        let fresh = RideStore()
+        fresh.restore(idle: WatchIdleInfo(streakDays: 2, updatedAt: now))
+        XCTAssertEqual(fresh.idle?.streakDays, 2)
+        store.restore(idle: WatchIdleInfo(streakDays: 1, updatedAt: now))
+        XCTAssertEqual(store.idle?.streakDays, 4)
+    }
+
+    func testPlanningLastsUntilTheRideComes() {
+        let store = RideStore()
+        let now = Date(timeIntervalSince1970: 300_000)
+        let request = WatchStartRequest.loop(minutes: 40, activity: .ride)
+        store.beginPlanning(request, at: now)
+        XCTAssertTrue(store.isPlanning)
+        // "It started" changes nothing on its own: the route summary is the answer.
+        store.apply(startResult: WatchStartResult(requestId: request.id, started: true))
+        XCTAssertTrue(store.isPlanning)
+        store.expirePlanning(at: now.addingTimeInterval(RideStore.planningTimeout - 1))
+        XCTAssertTrue(store.isPlanning)
+        store.apply(summary: summary(), receivedAt: now.addingTimeInterval(20))
+        XCTAssertNil(store.planning, "the ride came")
+        XCTAssertTrue(store.hasRoute)
+    }
+
+    func testPlanningFailsWhenThePhoneSaysSoOrTakesTooLong() {
+        let store = RideStore()
+        let now = Date(timeIntervalSince1970: 300_000)
+        let first = WatchStartRequest.bounty(activity: .run)
+        store.beginPlanning(first, at: now)
+        store.apply(startResult: WatchStartResult(requestId: UUID(), started: false))
+        XCTAssertTrue(store.isPlanning, "an answer to another question")
+        store.apply(startResult: WatchStartResult(requestId: first.id, started: false))
+        XCTAssertTrue(store.planningFailed)
+        store.dismissPlanning()
+        XCTAssertNil(store.planning)
+
+        let second = WatchStartRequest.quest(id: UUID())
+        store.beginPlanning(second, at: now)
+        store.failPlanning(id: first.id)
+        XCTAssertTrue(store.isPlanning, "the old request's failure is not this one's")
+        store.expirePlanning(at: now.addingTimeInterval(RideStore.planningTimeout))
+        XCTAssertTrue(store.planningFailed)
+    }
+
+    func testTheQuarryIsForTheComplicationWhileTheJourneyLasts() {
+        let store = RideStore()
+        XCTAssertNil(store.quarry)
+        var faces = 0
+        store.onFaceChanged = { faces += 1 }
+        store.apply(summary: summary(marks: marks))
+        XCTAssertEqual(store.quarry, WatchQuarry(name: "Fen Troll", icon: "troll", speciesId: "fen-troll"))
+        XCTAssertEqual(faces, 1)
+        var gone = update(instruction: instruction(1))
+        gone.goneMarkIds = [troll]
+        store.apply(update: gone)
+        XCTAssertNil(store.quarry, "defeated: the bounty or the streak takes the face again")
+        store.apply(summary: summary(marks: marks))
+        store.markEnded()
+        XCTAssertNil(store.quarry)
+        XCTAssertEqual(faces, 4)
+    }
 }

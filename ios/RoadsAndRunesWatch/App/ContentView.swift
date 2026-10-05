@@ -12,6 +12,8 @@ struct ContentView: View {
             Color.black.ignoresSafeArea()
             if store.hasRoute || store.isRiding {
                 RidePages()
+            } else if store.planning != nil {
+                PlanningScreen()
             } else if let end = store.journeyEnd {
                 JourneyEndCard(end: end, token: store.journeyEndToken) {
                     store.dismissJourneyEnd()
@@ -94,49 +96,14 @@ struct RidePages: View {
                 }
             }
             // Directions answer "what do I do next"; the map answers "where am I".
-            // Always-on keeps the directions, which cost nothing to redraw.
-            if !isLuminanceReduced {
-                MapScreen()
-            }
+            // Always-On keeps both (0.7.3): the map dims to the route, the rider and
+            // the next turn, and moves only now and then.
+            MapScreen()
             QuestScreen()
             StatsScreen()
             ControlsScreen()
         }
         .tabViewStyle(.verticalPage)
-    }
-}
-
-/// Ride ready (design 7a, screen 1): what is loaded, one sage pill to start.
-struct IdleScreen: View {
-    @Environment(RideStore.self) private var store
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("READY")
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(0.5)
-                .foregroundStyle(WatchTheme.accent)
-            Text("Roads & Runes")
-                .font(.system(size: 19, weight: .semibold))
-            Text("Start a journey on your iPhone")
-                .font(.system(size: 14))
-                .foregroundStyle(WatchTheme.secondary)
-            HStack(spacing: 8) {
-                Label(store.phoneReachable ? "iPhone" : "iPhone off", systemImage: store.phoneReachable ? "checkmark" : "xmark")
-                Label("Heart", systemImage: "checkmark")
-            }
-            .font(.system(size: 11, weight: .semibold))
-            .labelStyle(.titleAndIcon)
-            .foregroundStyle(store.phoneReachable ? WatchTheme.sageLight : WatchTheme.tertiary)
-            .padding(.top, 8)
-            Spacer()
-            IconShape(.cycling)
-                .foregroundStyle(WatchTheme.sage)
-                .frame(width: 34, height: 34)
-                .frame(maxWidth: .infinity)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.horizontal, 6)
     }
 }
 

@@ -33,6 +33,12 @@ struct QuestCard: View {
                 if !compact, let poster = quest.narrative.poster {
                     PosterLine(poster: poster)
                 }
+                // A sealed quest keeps its goal shut until halfway along its route (0.7.3).
+                if SealedQuest.isSealed(quest) {
+                    Text(SealedQuest.isOpen(quest, routeFraction: nil) ? SealedQuest.goal(of: quest)?.title ?? SealedQuest.shutLine : SealedQuest.shutLine)
+                        .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.terracottaDeep).lineLimit(1)
+                        .accessibilityIdentifier("quest.sealedGoal")
+                }
                 Text(facts).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).lineLimit(1)
                 if let reward = quest.rewards.rewardItems.first {
                     QuestItemRewardLine(item: reward)

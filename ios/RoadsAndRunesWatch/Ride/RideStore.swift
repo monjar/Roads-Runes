@@ -82,6 +82,44 @@ final class RideStore {
     /// Called on the main actor whenever the navigation state (or the presence of a route) changes.
     @ObservationIgnored var onRideStateChanged: ((NavigationState?) -> Void)?
 
+    // MARK: Between rides (0.7.3)
+
+    /// Next up from the phone, for the idle screen and the complication. Nil from
+    /// an older phone, which cannot start a journey from the wrist either.
+    private(set) var idle: WatchIdleInfo?
+
+    /// A journey asked for on the wrist: planning until the phone's route summary
+    /// arrives, failed when the phone says so, the message cannot go, or it takes
+    /// longer than `planningTimeout`.
+    enum Planning: Equatable {
+        case planning(id: UUID, since: Date)
+        case failed(id: UUID)
+    }
+
+    private(set) var planning: Planning?
+    /// Planning a route (and a sealed quest) takes seconds; this long means it is not coming.
+    static let planningTimeout: TimeInterval = 75
+
+    /// Called on the main actor when what the complication shows may have changed:
+    /// Next up, or the quarry of the journey under way.
+    @ObservationIgnored var onFaceChanged: (() -> Void)?
+
+    /// The creature the journey under way was planned for, while it stands.
+    var quarry: WatchQuarry? {
+        guard hasRoute else { return nil }
+        return worldMarks.first { $0.isQuarry && $0.kind == WatchWorldMark.monster }.map(WatchQuarry.init(mark:))
+    }
+
+    var isPlanning: Bool {
+        if case .planning = planning { return true }
+        return false
+    }
+
+    var planningFailed: Bool {
+        if case .failed = planning { return true }
+        return false
+    }
+
     init() {}
 
     // MARK: - Derived state
@@ -170,11 +208,14 @@ final class RideStore {
         summary = newSummary
         lastUpdateAt = receivedAt
         optimisticPaused = nil
+        // The ride asked for on the wrist has come.
+        planning = nil
         if currentInstruction == nil, let first = newSummary.instructions.first {
             currentInstruction = first
             currentDistanceToInstruction = first.distanceMeters
         }
         onRideStateChanged?(state)
+        onFaceChanged?()
     }
 
     func apply(update newUpdate: WatchNavigationUpdate, receivedAt: Date = Date()) {
@@ -202,6 +243,7 @@ final class RideStore {
         if previousState != newUpdate.state {
             onRideStateChanged?(newUpdate.state)
         }
+        if newUpdate.goneMarkIds != nil || newUpdate.state.isTerminal { onFaceChanged?() }
     }
 
     func apply(objective: WatchObjectiveCompleted, receivedAt: Date = Date()) {
@@ -230,6 +272,51 @@ final class RideStore {
         journeyEnd = nil
     }
 
+    // MARK: - Next up and starting from the wrist (0.7.3)
+
+    /// Next up from the phone. One made before the one already here (heard late) is let go.
+    func apply(idle newIdle: WatchIdleInfo) {
+        if let have = idle?.updatedAt, let made = newIdle.updatedAt, made < have { return }
+        idle = newIdle
+        setUnits(raw: newIdle.units)
+        onFaceChanged?()
+    }
+
+    /// Next up as the app group kept it, for the idle screen before the phone speaks.
+    func restore(idle kept: WatchIdleInfo?) {
+        guard idle == nil, let kept else { return }
+        idle = kept
+        setUnits(raw: kept.units)
+    }
+
+    /// "Planning…" until the ride comes.
+    func beginPlanning(_ request: WatchStartRequest, at now: Date = Date()) {
+        planning = .planning(id: request.id, since: now)
+    }
+
+    /// The phone's answer. Only "it did not start" changes anything: a start shows
+    /// itself with the route summary.
+    func apply(startResult result: WatchStartResult) {
+        guard case let .planning(id, _) = planning, result.requestId == nil || result.requestId == id else { return }
+        if !result.started { planning = .failed(id: id) }
+    }
+
+    /// The request could not reach the phone.
+    func failPlanning(id: UUID) {
+        guard case let .planning(current, _) = planning, current == id else { return }
+        planning = .failed(id: id)
+    }
+
+    /// Gives up on a plan that has taken longer than `planningTimeout` by `now`.
+    func expirePlanning(at now: Date = Date()) {
+        guard case let .planning(id, since) = planning, now.timeIntervalSince(since) >= Self.planningTimeout else { return }
+        planning = .failed(id: id)
+    }
+
+    func dismissPlanning() {
+        planning = nil
+    }
+
     /// Accepts "METRIC" / "imperial" / nil; unknown values leave the current setting alone.
     func setUnits(raw: String?) {
         guard let raw = raw, !raw.isEmpty else { return }
@@ -254,6 +341,7 @@ final class RideStore {
         optimisticPaused = nil
         pendingObjective = nil
         onRideStateChanged?(.cancelled)
+        onFaceChanged?()
     }
 
     func reset() {

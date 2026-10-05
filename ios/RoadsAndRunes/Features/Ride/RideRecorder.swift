@@ -191,7 +191,9 @@ final class RideRecorder {
         persistence.upsertActiveRide(clientRideId: clientRideId, serverRideId: nil, questId: self.quest?.id, routeId: package.route.id, bikeId: bikeId, startedAt: startedAt, state: .active)
         ride = try? await api.createRide(RideCreate(
             clientRideId: clientRideId, startedAt: startedAt, questId: self.quest?.id, bikeId: bikeId, routeId: package.route.id, title: self.title,
-            activity: self.activity, quarryId: quarryId
+            activity: self.activity, quarryId: quarryId,
+            // The rider's own day, whose pledge this journey keeps (0.7.3).
+            localDate: PledgeWindow.dayString(startedAt)
         ))
         if let ride { persistence.upsertActiveRide(clientRideId: clientRideId, serverRideId: ride.id, questId: self.quest?.id, routeId: package.route.id, bikeId: bikeId, startedAt: startedAt, state: .active) }
         await armFights(for: package, start: location.lastFix?.coordinate ?? package.route.path.first)
@@ -924,7 +926,7 @@ final class RideRecorder {
         guard ride == nil else { return }
         ride = try? await api.createRide(RideCreate(
             clientRideId: clientRideId, startedAt: startedAt, questId: quest?.id, bikeId: bikeId, routeId: package?.route.id, title: title,
-            activity: activity
+            activity: activity, localDate: PledgeWindow.dayString(startedAt)
         ))
         if let ride { persistence.upsertActiveRide(clientRideId: clientRideId, serverRideId: ride.id, questId: quest?.id, routeId: package?.route.id, bikeId: bikeId, startedAt: startedAt, state: state) }
     }
@@ -956,6 +958,8 @@ final class RideRecorder {
 
     private func sendWatchSummary() {
         guard let package else { return }
+        // The journey on the lock screen too (0.7.3); a new route keeps the one showing.
+        RideActivityController.shared.begin(activity: activity, questTitle: quest?.title ?? title, units: units)
         let objectives = (quest?.sortedObjectives ?? []).map { WatchObjective(objective: $0) }
         let stops = package.pois.prefix(12).map {
             WatchStop(id: $0.discoveryId, name: $0.name, latitude: $0.latitude, longitude: $0.longitude, requested: $0.requested == true,
@@ -1018,6 +1022,8 @@ final class RideRecorder {
             goneMarkIds: watchGoneMarkIds
         )
         watch.send(update: update, force: force)
+        // The lock screen, throttled by the controller; the last update (completed or cancelled) ends it.
+        RideActivityController.shared.update(update)
     }
 
     /// What has been opened, defeated or done on this ride, for the Watch map to take off.
@@ -1126,6 +1132,7 @@ final class RideRecorder {
     }
 
     func discardRecovered() {
+        RideActivityController.shared.end()
         if let saved = recoverableRide { persistence.deleteActiveRide(clientRideId: saved.clientRideId) }
         recoverableRide = nil
         try? activeRideStore.clear()

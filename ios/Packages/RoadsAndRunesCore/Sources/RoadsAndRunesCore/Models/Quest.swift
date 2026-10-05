@@ -142,6 +142,9 @@ public struct Quest: Codable, Hashable, Identifiable, Sendable {
     public var createdAt: Date?
     /// How the quest is meant to be done; nil from a server that predates activities.
     public var activity: Activity?
+    /// Anything a kind of quest carries beyond the rest (0.7.3: a sealed quest's
+    /// `revealAtFraction`). nil from a server that sends none.
+    public var extra: [String: JSONValue]?
 
     public init(
         id: UUID, questType: String, characterClass: CharacterClass, templateId: String, title: String, description: String,
@@ -149,9 +152,10 @@ public struct Quest: Codable, Hashable, Identifiable, Sendable {
         estimatedDurationMinutes: Int, baseXP: Int, status: QuestStatus, expiresAt: Date? = nil, storyQuestId: UUID? = nil,
         partyId: UUID? = nil, origin: Coordinate, objectives: [Objective], rewards: QuestRewards = QuestRewards(),
         suggestedRouteId: UUID? = nil, rideId: UUID? = nil, acceptedAt: Date? = nil, startedAt: Date? = nil,
-        completedAt: Date? = nil, createdAt: Date? = nil, activity: Activity? = nil
+        completedAt: Date? = nil, createdAt: Date? = nil, activity: Activity? = nil, extra: [String: JSONValue]? = nil
     ) {
         self.activity = activity
+        self.extra = extra
         self.id = id
         self.questType = questType
         self.characterClass = characterClass

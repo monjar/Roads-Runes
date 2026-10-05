@@ -117,6 +117,17 @@ public enum Endpoints {
     public static func buyOffer(id: String) -> Endpoint { Endpoint(method: .post, path: "/inventory/stall/\(id)/buy") }
     public static func levelRewards() -> Endpoint { Endpoint(method: .get, path: "/inventory/levels") }
 
+    // MARK: Between rides (0.7.3)
+    /// `today` is the phone's own date ("2026-10-05"): the server's day is UTC's.
+    public static func pledges(today: String) -> Endpoint { Endpoint(method: .get, path: "/pledge", query: [QueryItem("today", today)]) }
+    public static func pledge(_ body: PledgeRequest) throws -> Endpoint { try .json(.put, "/pledge", body: body) }
+    public static func cancelPledge(day: String) -> Endpoint { Endpoint(method: .delete, path: "/pledge/\(day)") }
+    public static func letters() -> Endpoint { Endpoint(method: .get, path: "/letters") }
+    public static func writeLetter(_ body: LetterCreate) throws -> Endpoint { try .json(.post, "/letters", body: body) }
+    public static func deleteLetter(id: UUID) -> Endpoint { Endpoint(method: .delete, path: "/letters/\(id.uuidString)") }
+    /// The board picks a destination and draws the route there and back: a plan, so it waits as long as one.
+    public static func sealedQuest(_ body: SealedQuestRequest) throws -> Endpoint { try .json(.post, "/quests/sealed", body: body, timeout: 120) }
+
     // MARK: World
     public static func world(center: Coordinate, radiusMeters: Double) -> Endpoint {
         Endpoint(method: .get, path: "/world", query: [

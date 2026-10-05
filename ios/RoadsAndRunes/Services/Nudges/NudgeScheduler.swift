@@ -5,10 +5,12 @@ import UserNotifications
 /// Two reminders, both about going out: the streak that ends tonight, and the bounty
 /// that arrives in the morning. Local only; nothing is sent anywhere. Rescheduled
 /// every time the app goes to the background, so they always match what is true.
+/// Beside them, one the rider asks for (0.7.3): a pledge's, at the time they chose.
 @MainActor
 final class NudgeScheduler {
     private static let streakID = "nudge.streak"
     private static let bountyID = "nudge.bounty"
+    static let pledgeID = "pledge.reminder"
     private static let enabledKey = "nudgesEnabled"
 
     private let defaults = UserDefaults.standard
@@ -27,7 +29,9 @@ final class NudgeScheduler {
         get { defaults.object(forKey: Self.enabledKey) as? Bool ?? true }
         set {
             defaults.set(newValue, forKey: Self.enabledKey)
-            if !newValue { UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.streakID, Self.bountyID]) }
+            if !newValue {
+                UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.streakID, Self.bountyID, Self.pledgeID])
+            }
         }
     }
 
@@ -79,5 +83,41 @@ final class NudgeScheduler {
             let trigger = UNCalendarNotificationTrigger(dateMatching: calendar.dateComponents([.year, .month, .day, .hour, .minute], from: morning), repeats: false)
             try? await center.add(UNNotificationRequest(identifier: Self.bountyID, content: content, trigger: trigger))
         }
+    }
+
+    // MARK: The pledge's reminder (0.7.3)
+
+    /// One reminder, on the pledged day at the time the rider picked; it replaces
+    /// any earlier one. Nothing when reminders are switched off or the time has passed.
+    func schedulePledgeReminder(for pledge: Pledge, now: Date = Date()) async {
+        guard active else { return }
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [Self.pledgeID])
+        guard isEnabled, pledge.isOpen, let remindAt = pledge.remindAt,
+              let when = PledgeWindow.reminderDate(day: pledge.day, remindAt: remindAt, now: now) else { return }
+        // Picking a time is asking for the reminder: ask for leave to send it now, if never asked.
+        if await center.notificationSettings().authorizationStatus == .notDetermined {
+            _ = try? await center.requestAuthorization(options: [.alert, .sound])
+        }
+        let status = await center.notificationSettings().authorizationStatus
+        guard status == .authorized || status == .provisional else { return }
+        let content = UNMutableNotificationContent()
+        let copy = NudgeScheduler.pledgeCopy(for: pledge)
+        content.title = copy.title
+        content.body = copy.body
+        content.sound = .default
+        let trigger = UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: when), repeats: false)
+        try? await center.add(UNNotificationRequest(identifier: Self.pledgeID, content: content, trigger: trigger))
+    }
+
+    func cancelPledgeReminder() {
+        guard active else { return }
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.pledgeID])
+    }
+
+    /// What the reminder says: what was pledged, and nothing about missing it.
+    static func pledgeCopy(for pledge: Pledge) -> (title: String, body: String) {
+        let what = pledge.targetKind == .quest ? "the quest \(pledge.targetName)" : pledge.targetName
+        return ("Today's pledge", "You pledged to go out for \(what) today.")
     }
 }

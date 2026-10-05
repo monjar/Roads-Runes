@@ -24,6 +24,8 @@ final class AppContainer {
     let mapPreferences: MapPreferencesStore
     let rideAudio: RideAudio
     let nudges: NudgeScheduler
+    /// Today's and tomorrow's pledge (0.7.3).
+    let pledges: PledgeStore
 
     /// Pending Strava OAuth code delivered through the URL scheme.
     var pendingStravaCode: String?
@@ -80,7 +82,9 @@ final class AppContainer {
         self.rideRecorder = recorder
         self.mapPreferences = preferences
         self.rideAudio = audio
-        self.nudges = NudgeScheduler(active: !inMemory && !uiTesting && !Self.isPreview)
+        let nudges = NudgeScheduler(active: !inMemory && !uiTesting && !Self.isPreview)
+        self.nudges = nudges
+        self.pledges = PledgeStore(api: resolvedAPI, session: session, nudges: nudges)
         watch.onCommand = { [weak recorder] command in
             Task { @MainActor in
                 guard let recorder else { return }
@@ -100,12 +104,18 @@ final class AppContainer {
         watch.onHeartRate = { [weak recorder] bpm in
             Task { @MainActor in recorder?.record(heartRate: bpm) }
         }
+        // A journey asked for on the wrist (0.7.3) is planned and started without a tap.
+        watch.onStartRequest = { start in
+            await QuickStartCoordinator.shared.handle(start, autoStart: true).value == .started
+        }
         health.onHeartRate = { [weak recorder] bpm in
             Task { @MainActor in recorder?.record(heartRate: bpm) }
         }
     }
 
     func bootstrap() async {
+        // Quick starts (0.7.3) plan from this container; one asked for before it was up is planned now.
+        QuickStartCoordinator.shared.attach(self)
         watch.activate()
         await session.bootstrap()
         rideRecorder.recoverIfNeeded()

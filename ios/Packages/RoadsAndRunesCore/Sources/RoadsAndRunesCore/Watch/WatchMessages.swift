@@ -222,11 +222,18 @@ public enum WatchMessageKind: String, Codable, CaseIterable, Hashable, Sendable 
     /// Journey's end, once the server has counted the journey (0.7.2). Older
     /// Watch builds ignore it.
     case journeyEnd
+    /// Watch → iPhone: plan this and start it (0.7.3). An older phone ignores it.
+    case startRequest
+    /// iPhone → Watch: what came of a start request (0.7.3). An older Watch ignores it.
+    case startResult
 
     /// Dictionary key holding the kind's raw value.
     public static let kindKey = "kind"
     /// Dictionary key holding the JSON-encoded payload (`Data`).
     public static let payloadKey = "payload"
+    /// Application-context key holding the JSON-encoded `WatchIdleInfo` (0.7.3),
+    /// beside whatever ride message the context carries. An older Watch never looks.
+    public static let idleInfoKey = "idleInfo"
 }
 
 public enum WatchMessageError: Error, Hashable, Sendable {
@@ -313,5 +320,42 @@ public enum WatchMessages {
 
     public static func journeyEnd(from message: [String: Any]) throws -> WatchJourneyEnd {
         try decode(WatchJourneyEnd.self, as: .journeyEnd, from: message)
+    }
+
+    public static func startRequest(_ request: WatchStartRequest) throws -> [String: Any] {
+        try encode(.startRequest, request)
+    }
+
+    public static func startRequest(from message: [String: Any]) throws -> WatchStartRequest {
+        try decode(WatchStartRequest.self, as: .startRequest, from: message)
+    }
+
+    public static func startResult(_ result: WatchStartResult) throws -> [String: Any] {
+        try encode(.startResult, result)
+    }
+
+    public static func startResult(from message: [String: Any]) throws -> WatchStartResult {
+        try decode(WatchStartResult.self, as: .startResult, from: message)
+    }
+
+    // MARK: The application context (0.7.3)
+
+    /// The application context to send: the ride's last message, if a journey is
+    /// under way, with Next up beside it. The context is replaced whole on every
+    /// send, so neither may push the other out.
+    public static func context(ride: [String: Any]?, idle: WatchIdleInfo?) throws -> [String: Any] {
+        var context = ride ?? [:]
+        if let idle {
+            context[WatchMessageKind.idleInfoKey] = try JSONCoding.encode(idle)
+        } else {
+            context.removeValue(forKey: WatchMessageKind.idleInfoKey)
+        }
+        return context
+    }
+
+    /// Next up, if the message (an application context) carries it.
+    public static func idleInfo(from message: [String: Any]) -> WatchIdleInfo? {
+        guard let data = message[WatchMessageKind.idleInfoKey] as? Data else { return nil }
+        return try? JSONCoding.decode(WatchIdleInfo.self, from: data)
     }
 }
