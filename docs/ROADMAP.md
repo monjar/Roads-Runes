@@ -2,7 +2,7 @@
 
 ## Where it stands (2026-10-04)
 
-Built on the `feat/old-roads` branch, not merged to master. 0.7.1 is on TestFlight (internal) and Fly; 0.7.2 to 0.9.0 were built on 2026-10-05 and are on the branch only:
+Built on the `feat/old-roads` branch, not merged to master. 0.7.2 to 0.9.0 were built on 2026-10-05; 0.9.0 is on Fly and on TestFlight (internal, build 20261005.1116) without the widgets, the Live Activity and the Watch complication, whose App IDs still need the app group attached (developer portal, or Xcode signed in):
 
 | Release | Built | Still yours |
 |---|---|---|
