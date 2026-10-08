@@ -95,8 +95,15 @@ extension MockAPI {
         }
     }
     public func deleteRide(id: UUID) async throws { try await run { self.storedRides[id] = nil } }
-    public func rideExportURL(id: UUID, format: RideExportFormat) -> URL {
-        URL(string: "\(baseURL.absoluteString)/api/v1/rides/\(id.uuidString)/export?format=\(format.rawValue)") ?? baseURL
+    /// A small stand-in file named like the server's ("Ride 8 Oct 2026.fit").
+    public func downloadRideExport(id: UUID, format: RideExportFormat) async throws -> URL {
+        try await run {
+            let ride = try self.requireRide(id)
+            let day = ride.startedAt.formatted(.dateTime.day().month(.abbreviated).year())
+            let name = ride.title ?? "\(LoreCopy.journey(ride.activity).capitalized) \(day)"
+            let path = SampleData.sampleRoute.path
+            return try ExportFile.write(Self.placeholderExport(format: format.rawValue, name: name, path: path), named: "\(name).\(format.rawValue)")
+        }
     }
 
     // MARK: Journal

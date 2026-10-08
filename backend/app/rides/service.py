@@ -24,6 +24,7 @@ from app.rides.schemas import (
     RidePatch,
     RidePointIn,
 )
+from app.rides.validation import CleanPoint, as_raw, validate_points
 from app.users.models import User
 
 
@@ -255,6 +256,12 @@ async def points(db: AsyncSession, ride: Ride) -> list[RidePoint]:
     return list(
         (await db.execute(select(RidePoint).where(RidePoint.ride_id == ride.id).order_by(RidePoint.sequence))).scalars()
     )
+
+
+async def kept_points(db: AsyncSession, ride: Ride) -> list[CleanPoint]:
+    """The fixes processing keeps, in time order: what an export carries. Malformed
+    and inaccurate fixes stay in the table but leave the journey's files."""
+    return validate_points(as_raw(await points(db, ride)), activity=ride.activity).points
 
 
 async def patch(db: AsyncSession, ride: Ride, payload: RidePatch) -> Ride:

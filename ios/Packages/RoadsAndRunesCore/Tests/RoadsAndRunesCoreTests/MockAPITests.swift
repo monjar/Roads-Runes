@@ -58,7 +58,7 @@ final class MockAPITests: XCTestCase {
         XCTAssertTrue(adventures.items.contains { $0.ride.id == ride.id })
     }
 
-    func testFailNextAndExportURL() async throws {
+    func testFailNextAndExport() async throws {
         let api = MockAPI()
         api.failNext = .server(code: APIErrorCode.rateLimited, message: "Slow down", status: 429)
         do {
@@ -68,8 +68,10 @@ final class MockAPITests: XCTestCase {
             XCTAssertEqual(error.errorCode, APIErrorCode.rateLimited)
         }
         _ = try await api.me()
-        let url = api.rideExportURL(id: SampleData.rideId, format: .gpx)
-        XCTAssertTrue(url.absoluteString.hasSuffix("/rides/\(SampleData.rideId.uuidString)/export?format=gpx"))
+        let url = try await api.downloadRideExport(id: SampleData.rideId, format: .gpx)
+        defer { ExportFile.discard(url) }
+        XCTAssertTrue(url.isFileURL, "the share sheet gets the file, never the API's address")
+        XCTAssertEqual(url.pathExtension, "gpx")
     }
 
     func testAQuestRouteStartsWhereThePlayerIs() async throws {

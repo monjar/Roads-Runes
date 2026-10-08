@@ -9,6 +9,8 @@ struct QuickStartSheet: View {
     @Environment(AppContainer.self) private var container
     @Environment(\.dismiss) private var dismiss
     let coordinator: QuickStartCoordinator
+    /// "Send to Garmin": the route as a FIT course, through the share sheet.
+    @State private var export: ExportRequest?
 
     private var units: Units { container.session.units }
 
@@ -33,6 +35,7 @@ struct QuickStartSheet: View {
             }
         }
         .presentationDragIndicator(.visible)
+        .sheet(item: $export) { ExportFileSheet(request: $0) }
     }
 
     // MARK: Planning
@@ -88,6 +91,14 @@ struct QuickStartSheet: View {
                 RouteCard(route: shown, selected: true, units: units, badge: badge)
                     .accessibilityIdentifier("quickStart.route")
                 RouteDetailPanel(route: shown, units: units, camera: MapCamera(fit: shown.path, padding: UIEdgeInsets(top: 26, left: 22, bottom: 46, right: 22)))
+                // Never a sealed quest's route: it would give the goal away.
+                if !sealed, !container.rideRecorder.isActive {
+                    Button { export = .garminCourse(routeId: plan.route.id) } label: {
+                        Label("Send to Garmin", systemImage: "paperplane")
+                    }
+                    .buttonStyle(.surfacePill)
+                    .accessibilityIdentifier("quickStart.garmin")
+                }
             }
             .padding(.horizontal, 20)
             .padding(.top, 16)

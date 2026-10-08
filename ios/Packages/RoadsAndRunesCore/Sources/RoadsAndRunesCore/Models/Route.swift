@@ -272,3 +272,9 @@ public struct RoutePackage: Codable, Hashable, Identifiable, Sendable {
         self.generatedAt = generatedAt
     }
 }
+
+/// `GET /routes/{id}/export?format=`: `fit` is the course a Garmin follows, `gpx` the same line for anything else.
+public enum RouteExportFormat: String, Sendable {
+    case fit
+    case gpx
+}

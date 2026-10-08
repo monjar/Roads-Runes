@@ -32,6 +32,8 @@ struct AdventureSummaryView: View {
     @State private var camera: MapCamera?
     @State private var reveal: Task<Void, Never>?
     @State private var sharing = false
+    /// "Save for Garmin": the journey as a FIT activity, imported by hand (docs/GARMIN.md, B1).
+    @State private var export: ExportRequest?
 
     private enum StravaLineState { case idle, sending, sent, failed(String) }
 
@@ -719,13 +721,21 @@ struct AdventureSummaryView: View {
                 Label("Saved to Health", systemImage: "heart.fill").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.sageDeep)
             }
             stravaLine
-            // The picture of this journey to send someone (0.7.3).
-            Button { sharing = true } label: {
-                Label("Share card", systemImage: "square.and.arrow.up")
+            FlowLayout(spacing: 8) {
+                // The picture of this journey to send someone (0.7.3).
+                Button { sharing = true } label: {
+                    Label("Share card", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.surfacePill)
+                .accessibilityIdentifier("summary.share")
+                .sheet(isPresented: $sharing) { ShareCardSheet(summary: summary) }
+                Button { export = .garminActivity(rideId: summary.ride.id, activity: summary.ride.activity) } label: {
+                    Label("Save for Garmin", systemImage: "square.and.arrow.down")
+                }
+                .buttonStyle(.surfacePill)
+                .accessibilityIdentifier("summary.garmin")
+                .sheet(item: $export) { ExportFileSheet(request: $0) }
             }
-            .buttonStyle(.surfacePill)
-            .accessibilityIdentifier("summary.share")
-            .sheet(isPresented: $sharing) { ShareCardSheet(summary: summary) }
             if let nudge = comeBackLine {
                 Label(nudge, systemImage: "flame.fill")
                     .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.terracottaDeep)
