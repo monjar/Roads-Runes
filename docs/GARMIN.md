@@ -1,6 +1,6 @@
 # Garmin
 
-A study, 2026-10-08. Nothing here is built. Two questions:
+A study, 2026-10-08. Two questions:
 
 - **A. Routes on the Garmin.** A rider plans a route in the app and follows it on a Garmin Edge or watch.
 - **B. Journeys into Garmin Connect.** A journey recorded by the app shows up in the rider's Garmin Connect account.
@@ -15,6 +15,8 @@ A study, 2026-10-08. Nothing here is built. Two questions:
 - **What we can offer for B** is a **FIT activity file** the rider imports at connect.garmin.com. Longer term, the journey could be recorded *on* the Garmin, so it is a Garmin activity from the start (see B3).
 
 Recommended order: FIT export for routes and journeys first (small, needs nobody's approval), then a Connect IQ app, then the Courses API once Garmin reopens. Details are under [Plan](#plan).
+
+**Where it stands:** steps 1 and 2 of the [Plan](#plan) are built on `feat/garmin`. `GET /routes/{id}/export` and `GET /rides/{id}/export?format=fit` serve the files; the phone has **Send to Garmin** and **Save for Garmin**, and the Journal's GPX export shares a file. Step 3 is protocol 12 in `docs/FIELD_TESTS.md` and needs a real Garmin. Steps 4 and 5 are not started.
 
 ---
 
