@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 import WatchKit
@@ -9,16 +10,17 @@ struct ObjectiveCompleteOverlay: View {
     let token: Int
     let dismiss: () -> Void
 
+    /// DEFEATED for the phone's GONE, PHASE BROKEN! for a legend's phase (`WristMarks.heading`).
+    private var label: String { WristMarks.heading(event) }
+
     var body: some View {
         VStack(spacing: 6) {
-            ZStack {
-                Circle().fill(WatchTheme.cream)
-                Image(systemName: "sparkle")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(WatchTheme.sage)
-            }
-            .frame(width: 56, height: 56)
-            Text(event.coins == nil ? "OBJECTIVE COMPLETE" : "YOURS")
+            // What happened, as the phone draws it: the creature defeated, a chest
+            // opened, a find; an item found ringed by its rarity.
+            MarkView(WristMarks.claim(event), palette: .watch)
+                .frame(width: 56, height: 56)
+            // DEFEATED, OPENED, FOUND, DONE or PHASE BROKEN!; an older phone sends none.
+            Text(label)
                 .font(.system(size: 11, weight: .bold))
                 .tracking(1.2)
                 .padding(.top, 6)
@@ -28,6 +30,11 @@ struct ObjectiveCompleteOverlay: View {
                 .lineLimit(2)
                 .minimumScaleFactor(0.7)
                 .padding(.horizontal, 10)
+            // An item found: Common, Rare or Legendary.
+            if let rarity = WristMarks.rarityWord(event.rarity) {
+                Text(rarity)
+                    .font(.system(size: 13, weight: .semibold))
+            }
             if let detail = event.detail {
                 Text(detail)
                     .font(.system(size: 13, weight: .medium))
@@ -41,7 +48,7 @@ struct ObjectiveCompleteOverlay: View {
                 Text("+\(xp) XP")
                     .font(.system(size: 30, weight: .bold, design: .rounded))
             } else if let coins = event.coins, coins > 0 {
-                Text("+\(coins) AC")
+                Text(LoreCopy.earned(coins))
                     .font(.system(size: 30, weight: .bold, design: .rounded))
             }
         }
@@ -52,7 +59,8 @@ struct ObjectiveCompleteOverlay: View {
         .background(WatchTheme.sage)
         .ignoresSafeArea()
         .task(id: token) {
-            WKInterfaceDevice.current().play(.success)
+            // One tap, from the game's set: a phase broken included.
+            TurnHaptics.tap(event.tap)
             try? await Task.sleep(for: .seconds(4))
             dismiss()
         }

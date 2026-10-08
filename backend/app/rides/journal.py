@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser, DBDep, SettingsDep
@@ -29,6 +29,10 @@ class AdventureEntry(APIModel):
     levelUps: list[dict[str, Any]]
     notes: str | None
     photos: list[str] = []
+    # The entry the outing left (0.6.2): a few written lines, composed from its facts.
+    entry: str | None = None
+    # 0.7.2: the model-written entry, when there is one ({"lines": [...], "by": "model"}).
+    entryWritten: dict[str, Any] | None = None
 
 
 async def entry(db: AsyncSession, ride: Ride) -> AdventureEntry:
@@ -43,6 +47,8 @@ async def entry(db: AsyncSession, ride: Ride) -> AdventureEntry:
         newCells=int(result.get("newCells", 0)),
         levelUps=result.get("levelUps", []),
         notes=ride.notes,
+        entry=result.get("entry"),
+        entryWritten=result.get("entryWritten"),
     )
 
 
@@ -55,6 +61,61 @@ async def adventures(
         items=[await entry(db, r) for r in rows if r.status in ("PROCESSED", "FLAGGED")],
         nextCursor=next_cursor,
     )
+
+
+class AtlasTraceOut(APIModel):
+    rideId: str
+    activity: str
+    # The day it began (the phone's own day when it said), "2026-10-05".
+    date: str
+    # Encoded (Google polyline, 1e5), at most 200 points.
+    polyline: str
+
+
+class AtlasDayOut(APIModel):
+    date: str
+    journeys: int
+    distanceMeters: float
+
+
+class AtlasFirstOut(APIModel):
+    # FIRST_CREATURE, FIRST_LEGEND, FIRST_RUNE, LONGEST_JOURNEY, HIGHEST_POINT or
+    # FIRST_DISTRICT_COMPLETE.
+    kind: str
+    date: str
+    text: str
+
+
+class AtlasYearOut(APIModel):
+    year: int
+    journeys: int
+    distanceMeters: float
+    newTiles: int
+    creaturesDefeated: int
+    legendsDefeated: int
+    runesCut: int
+    # Districts that became yours this year.
+    districtsYours: int
+    # The deed titles reached this year, in order.
+    deedsReached: list[str]
+    firsts: list[AtlasFirstOut]
+
+
+class AtlasOut(APIModel):
+    traces: list[AtlasTraceOut]
+    days: list[AtlasDayOut]
+    year: AtlasYearOut
+
+
+@router.get("/atlas", response_model=AtlasOut)
+async def atlas(user: CurrentUser, db: DBDep, year: int | None = Query(default=None, ge=2000, le=2100)) -> AtlasOut:
+    """The Atlas (0.9.0): every journey of the year as a trace (at most 1,000, the
+    newest), the days with a journey (the calendar), and the year's numbers and
+    firsts. `year` defaults to this one."""
+    from app.core.security import utcnow
+    from app.rides.atlas import atlas as build
+
+    return AtlasOut(**await build(db, user.id, year or utcnow().year))
 
 
 @router.get("/stats", response_model=ExplorationStats)

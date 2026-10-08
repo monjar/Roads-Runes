@@ -100,7 +100,11 @@ something the template does not produce is used as written rather than dropped.
 
 Rules the code keeps:
 
-* **One step at a time.** A chain read three-at-once is not a chain.
+* **One step at a time on each track.** A chain read three-at-once is not a
+  chain. Since 0.6.2 there are two tracks: `MAIN`, the campaign (Act I, "The
+  Board": First Light, What Settles, The Rune at the Crossing, each chapter
+  waiting for the one before through `after`), and `SIDE`, the trade's own arc.
+  Each has one live step at most.
 * **Progress is derived, never stored.** A step is done when a quest carrying its
   id is COMPLETED — there is no second source of truth to drift.
 * **A class arc is that class's**, measured against their *class* level; an open
@@ -117,18 +121,40 @@ Rules the code keeps:
 * **A stalled arc does not stall the others.** "Somewhere to Look From" needs high
   ground and a flat city has none, so `story.due()` returns the next step of
   *every* unlocked arc and `offer()` takes the first that can actually be built
-  here. The waiting one comes back the day the rider is somewhere it works.
-* **An arc has an ending.** Each arc names a `reward` (a title and a purse). The
-  ride that completes its last step is paid them: the title is set on the
-  character and kept until a level brings a new one, the purse is a `STORY_ARC`
-  coin line, and there is a `STORY_ARC_COMPLETED` XP line. Every completed step
+  here. The waiting one comes back the day the rider is somewhere it works, and
+  until then shows as WAITING with the reason its template gives
+  (`waitingReason`, kept on `characters.story_waiting`).
+* **A finale places its old one.** A template with an `elder` rule (the end of
+  The Rune at the Crossing) places a named elder bound to the step (tier 3, 400
+  hold, wanting Raido without needing it, 1.5 to 4 km out), and a thing a live
+  step points at does not leave while the step is open.
+* **An arc has an ending, paid once.** Each arc names a `reward` (a title and a
+  purse). `story.settle_arc` pays it on whichever path finished the last step (a
+  ride, a chest opened by hand, the complete button), keyed by arc: the title
+  through `award_title`, the purse as a `STORY_ARC` coin line outside the
+  per-ride cap, and a `STORY_ARC_COMPLETED` XP line. Every completed step
   says where it leaves the arc (`questCompletion.storyProgress`: steps done, the
   next step's title, or that the arc is finished).
 
 `GET /quests/story` returns every arc — locked ones included, because what is
 coming is the reason to come back — each step marked COMPLETED, OPEN (on the
-board now), READY (next up) or LOCKED. All of it is behind the `story_quests`
-feature flag.
+board now), READY (next up), WAITING or LOCKED. All of it is behind the
+`story_quests` feature flag.
+
+Act II, "Five More Cuts" (0.7.0), is five chapters after The Rune at the
+Crossing, one per rune (Kenaz, Ansuz, Wunjo, Sowilo, Dagaz), each learn,
+fetch, prove and cut: an old place, a `CARRY`, something seen off, and an
+`INSCRIBE_RUNE` in the rune's road form (a note for Ansuz, a stop for
+Wunjo). Finishing a chapter teaches its rune (`reward.rune`, held at rank I).
+A step may remember something (`flag`, set when its quest is finished with
+every optional objective done too) and a later step may read it
+(`variants`, by `ifFlag`): the second chapter's fetch is posted "for whoever
+came home the other way". Nothing is ever locked out.
+
+Every notice says who posted it (`narrative.poster`, a cast member and one of
+their lines, by seed) and has an authored `completion` line; a story step's
+comes from the arc file, a generated quest's from its template. Story-only
+templates (`storyOnly`) are dealt by their arc and never on the board.
 
 ## Progress and completion
 

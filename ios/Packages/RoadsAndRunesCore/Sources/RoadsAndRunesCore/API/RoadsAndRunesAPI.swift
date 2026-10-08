@@ -16,6 +16,8 @@ public protocol RoadsAndRunesAPI: Sendable {
 
     // MARK: Character
     func classes() async throws -> [ClassInfo]
+    /// The world's pages and what this player has met (`codex` flag).
+    func codex() async throws -> Codex
     func createCharacter(_ request: CharacterCreate) async throws -> Character
     func character() async throws -> Character
     func changeClass(_ request: CharacterClassChange) async throws -> Character
@@ -27,16 +29,72 @@ public protocol RoadsAndRunesAPI: Sendable {
     /// Today's bounty; nil until the world has been looked at today, or once it is gone.
     func bounty() async throws -> WorldObject?
     func lure(at center: Coordinate) async throws -> [WorldObject]
+    /// Whether a lamp at this spot would bring something, and where, without spending anything.
+    func lampCheck(at center: Coordinate) async throws -> LampCheck
     /// Open a chest or pick up a piece from beside it. Throws `OBJECT_OUT_OF_RANGE` when it is not within reach.
     func claimWorldObject(id: UUID, _ request: WorldObjectClaimRequest) async throws -> WorldObjectClaim
     func abilities() async throws -> [AbilityState]
     func unlockAbility(id: String) async throws -> Character
+    /// Every title there is, earned first (0.6.2).
+    func titles() async throws -> [TitleInfo]
+    /// Wear an earned title, or nil to wear the newest earned again (0.6.2).
+    func wearTitle(slug: String?) async throws -> Character
     func bikes() async throws -> [Bike]
     func createBike(_ bike: BikeIn) async throws -> Bike
     func updateBike(id: UUID, _ patch: BikeIn) async throws -> Bike
     func deleteBike(id: UUID) async throws
     func riderProfile() async throws -> RiderProfile
     func updateRiderProfile(_ profile: RiderProfile) async throws -> RiderProfile
+
+    // MARK: What you carry (0.7.2)
+    /// The slots, the bag and the consumables. The first call after 0.7.2 pays every
+    /// level already reached and says so in `levelRewardsPaid`, once.
+    func inventory() async throws -> InventoryState
+    /// Wear an item in its slot, or take the slot's item off (`itemId` nil).
+    func wearGear(_ choice: GearChoice) async throws -> InventoryState
+    func sellItem(id: UUID) async throws -> SellResult
+    /// Use a map piece or open a sealed chest (a lamp is used by `lure`, a rest token by itself).
+    func useConsumable(id: String, _ request: ConsumableUseRequest) async throws -> ConsumableUseResult
+    /// This week's four offers, or when the stall opens.
+    func stall() async throws -> Stall
+    func buyOffer(id: String) async throws -> InventoryState
+    /// What each of the fifty levels gives, and which are reached.
+    func levelRewards() async throws -> [LevelStep]
+
+    // MARK: Legends, lairs and treasure (0.8.0)
+    /// The legend awake (if any), those defeated, and creatures to go before the next wakes.
+    func legends() async throws -> LegendsState
+    /// One legend with the journeys that hurt it.
+    func legend(id: UUID) async throws -> Legend
+    /// Its one free move: somewhere else it can be reached. 409 `ALREADY_MOVED` after.
+    func moveLegend(id: UUID) async throws -> Legend
+    /// The treasure maps' clues still open (one at a time).
+    func treasureClues() async throws -> [TreasureClue]
+
+    // MARK: The parish (0.9.0)
+    /// The districts this player has passed through, last passed first.
+    func districts() async throws -> [District]
+    /// One district with its ledger.
+    func district(id: String) async throws -> District
+    /// The district at a point; nil outside every district.
+    func districtHere(at point: Coordinate) async throws -> District?
+    /// Every journey of a year on one map, its days, and its numbers.
+    func atlas(year: Int) async throws -> Atlas
+    /// Wear an ink, a marker frame or a crest frame; the inventory after.
+    func setLook(_ choice: LookChoice) async throws -> InventoryState
+
+    // MARK: Between rides (0.7.3)
+    /// Today's pledge and tomorrow's; `today` is the phone's own date, "YYYY-MM-DD".
+    func pledges(today: String) async throws -> PledgeState
+    /// Pledge a live creature or a quest on the board for a day; one a day, a second replaces it.
+    func pledge(_ request: PledgeRequest) async throws -> Pledge
+    func cancelPledge(day: String) async throws
+    /// Your letters, newest first.
+    func letters() async throws -> [Letter]
+    func writeLetter(_ request: LetterCreate) async throws -> Letter
+    func deleteLetter(id: UUID) async throws
+    /// A sealed quest of 20, 40 or 90 minutes from here, accepted, with its route.
+    func sealedQuest(_ request: SealedQuestRequest) async throws -> Quest
 
     // MARK: World
     func world(center: Coordinate, radiusMeters: Double) async throws -> WorldSnapshot
@@ -49,6 +107,16 @@ public protocol RoadsAndRunesAPI: Sendable {
     func quest(id: UUID) async throws -> Quest
     /// The authored arcs and where this rider stands in each.
     func storyArcs() async throws -> [StoryArc]
+    /// This week's notice and how far along it is (0.6.2).
+    func weekNotice() async throws -> WeekNotice
+    /// Runes held, ranked and inscribed (0.7.0).
+    func runes() async throws -> RunesState
+    func raiseRune(id: String) async throws -> RunesState
+    func inscribe(runes: [String]) async throws -> RunesState
+    func runeCuts() async throws -> [RuneCutInfo]
+    func deeds() async throws -> DeedsState
+    /// A route in a rune's road form, from here (0.7.0).
+    func runeRide(_ request: RuneRideRequest) async throws -> RuneRideResponse
     func acceptQuest(id: UUID) async throws -> Quest
     func startQuest(id: UUID, rideId: UUID?) async throws -> Quest
     func reportQuestProgress(id: UUID, events: [ObjectiveEvent]) async throws -> Quest

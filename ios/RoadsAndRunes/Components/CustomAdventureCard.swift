@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import SwiftUI
 
 /// Entry to a ride that is not a quest (design 1a, "What kind of ride today?"):
@@ -12,17 +13,17 @@ struct CustomAdventureCard: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .strokeBorder(Theme.Colors.terracotta, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-                Image(systemName: "signpost.right.fill")
-                    .font(.system(size: compact ? 18 : 24, weight: .bold))
+                IconShape(.treasureMap)
                     .foregroundStyle(Theme.Colors.terracottaDeep)
+                    .frame(width: compact ? 24 : 34, height: compact ? 24 : 34)
             }
             .frame(width: compact ? 44 : 64, height: compact ? 44 : 64)
             VStack(alignment: .leading, spacing: 2) {
-                Eyebrow(text: "Your own adventure", color: Theme.Colors.terracottaDeep)
-                Text("Ride somewhere new")
+                Eyebrow(text: "Your own journey", color: Theme.Colors.terracottaDeep)
+                Text("Go somewhere new")
                     .font(compact ? Theme.Typography.cardTitle : Theme.Typography.voice(18, relativeTo: .title3))
                     .foregroundStyle(Theme.Colors.ink)
-                Text("Describe the ride · every new road counts")
+                Text("Describe it · every new road counts")
                     .font(Theme.Typography.caption)
                     .foregroundStyle(Theme.Colors.muted)
                     .lineLimit(1)
@@ -34,6 +35,6 @@ struct CustomAdventureCard: View {
         .padding(.horizontal, 14)
         .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Your own adventure. Ride somewhere new.")
+        .accessibilityLabel("Your own journey. Go somewhere new.")
     }
 }

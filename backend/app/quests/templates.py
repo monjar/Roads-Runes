@@ -30,6 +30,17 @@ OBJECTIVE_TYPES = (
     "SLAY_MONSTER",
     "OPEN_CHEST",
     "COLLECT",
+    # 0.7.0: a rune cut round a place (a road form, a note, or a stop), and something
+    # taken from one place to another.
+    "INSCRIBE_RUNE",
+    "CARRY",
+    # 0.8.0: a lair's great chest opened, and so much damage to the legend on one journey.
+    "LAIR_VISIT",
+    "WOUND_BOSS",
+    # 0.9.0: new tiles in a district (home, any, or one never been to, to a %), and a
+    # loop round a district's edge.
+    "DISTRICT_TILES",
+    "DISTRICT_LOOP",
 )
 
 DIFFICULTIES = ("EASY", "MODERATE", "HARD", "EPIC")
@@ -44,6 +55,8 @@ def all_templates() -> list[dict[str, Any]]:
     for t in templates:
         for o in t["objectives"]:
             assert o["type"] in OBJECTIVE_TYPES, f"unknown objective type in {t['id']}"
+        # Every notice says something when it is done (docs/ROADMAP.md, 0.6.2).
+        assert t.get("completion"), f"{t['id']} has no completion line"
     return templates
 
 
@@ -58,6 +71,10 @@ def templates_for(
     unlocked = unlocked or set()
     out = []
     for t in all_templates():
+        # A retired template is kept for quests already out, and never dealt again;
+        # a story-only one is dealt by its arc and never on the board.
+        if t.get("retired") or t.get("storyOnly"):
+            continue
         # A quest for anyone is a quest for this class too.
         if t["characterClass"] not in (character_class.upper(), ANY_CLASS):
             continue

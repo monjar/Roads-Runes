@@ -17,6 +17,8 @@ struct PendingReckoning: Codable, Hashable {
     /// "Opened: Old chest": what the phone saw taken, which the server may yet overrule.
     var claimed: [String]
     var objectivesDone: Int
+    /// Ride, run or walk, so the holding screen says which; nil from a build before it was kept.
+    var activity: Activity?
 }
 
 /// Uploads ride data when the network allows and replays anything that
@@ -36,6 +38,9 @@ final class SyncService {
     }
 
     var latestSummary: AdventureSummary?
+    /// Called once for each summary that arrives, however late (the app reopened
+    /// offline, the phone was locked): the Watch's Journey's end hangs off it.
+    @ObservationIgnored var onSummary: ((AdventureSummary) -> Void)?
     /// The ride just ended, until its summary comes. Kept on disk: ending a ride
     /// used to drop the rider on the tabs with nothing, and a summary that arrived
     /// after the app was closed was never seen at all.
@@ -176,6 +181,7 @@ final class SyncService {
             do {
                 if let summary = try await api.rideSummary(id: rideId) {
                     latestSummary = summary
+                    onSummary?(summary)
                     clearPending()
                     await session.refreshCharacter()
                     if !summary.levelUps.isEmpty { analytics.track(.levelUp, properties: ["rideId": rideId.uuidString]) }

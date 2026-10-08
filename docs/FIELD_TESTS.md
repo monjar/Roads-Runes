@@ -57,10 +57,14 @@ minutes) and see what the ride looks like afterwards.
 
 ### 5. The Watch on its own
 **Question:** does the Watch do its job without looking at the phone?
-Start from the Watch, phone in a pocket. Check: distance and time keep pace
+Lock the phone and put it in a pocket first, then start from the Watch's Next up
+screen (0.7.3: "Quick loop", a quest, or the bounty) and ride with the Watch. Note
+whether the phone planned and started while locked, and how long "Planning…" took;
+if it couldn't, start on the phone and carry on. Check: distance and time keep pace
 with the phone; the turn haptic arrives before the turn, not at it; the
 objective haptic fires; Always-On shows the stat you want at a glance;
-heart rate is present in the summary; ending from the Watch ends the ride.
+heart rate is present in the summary; ending from the Watch ends the ride. Note every wrist tap that was not a
+turn, and whether any of them felt like one.
 
 ### 6. Battery, three modes
 **Question:** what does a two-hour ride cost?
@@ -82,6 +86,39 @@ Ride somewhere the app has never been (another borough, another town).
 Check: quests appear for the new place within a minute of opening the
 Quests tab; discoveries import; the fog and the cell count make sense; the
 board does not repeat quests from home.
+
+### 9. Sound in a pocket
+**Question:** can the ride be followed by ear without missing the road?
+Phone in a pocket, one earbud or none, sound set to chimes (and, once, to
+chimes and voice). Before setting off, press "Hear a fight" in Settings (under
+Sound on a ride) so you know what each sound means; with the Watch on, it
+taps the wrist too. Check: could traffic
+always be heard; roughly how many sounds a minute on a busy stretch and on a
+quiet one; which chimes you could name without looking; whether any sound
+arrived late enough to be confusing; whether the voice should stay off. This
+decides how much the game is allowed to say while moving.
+
+### 10. A shape on real streets
+**Question:** can a rune be cut on the roads round here without riding badly?
+Ride a loop round a few blocks, then try a triangle. Check: did the app see
+the shape (the reckoning names it); was there any turn that felt wrong — a
+U-turn, a junction crossed awkwardly, a one-way street, a footpath ridden.
+If any turn felt wrong on a bike, runes are cut on foot only.
+
+### 11. A rune ride
+**Question:** can a rune be planned, ridden and woken without riding badly?
+Inscribe Raido (Character, Runes), then "Cut it" and take the loop the planner
+offers. Ride it as planned. Check: did any turn feel wrong or unsafe; did the
+reckoning say Raido woke; is the cut marked on the Journal's map; did a
+creature in reach take a rune blow. Then, on foot, the same with Sowilo's
+zigzag. Note any loop the matcher did not read (send the GPX).
+
+## Every release's gate outing
+
+Each release in `docs/ROADMAP.md` is gated on one real outing with the build
+before it. Name the release and the protocol in the report. Run
+`backend/scripts/play_report.py` afterwards and add its "it worked if"
+answer.
 
 ## Handing it over
 

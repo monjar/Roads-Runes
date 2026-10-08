@@ -32,6 +32,21 @@ async def balance(db: AsyncSession, user_id: uuid.UUID) -> int:
     return wallet.balance if wallet else 0
 
 
+def _refuse_short(balance: int, amount: int) -> None:
+    if balance < amount:
+        raise Conflict(
+            f"That costs {amount} coins and you have {balance}. Open chests and defeat creatures to earn more.",
+            code="INSUFFICIENT_AC",
+            details={"cost": amount, "balance": balance},
+        )
+
+
+async def can_pay(db: AsyncSession, user_id: uuid.UUID, amount: int) -> None:
+    """Refuse before anything is made, as `debit` would after: a purchase that
+    builds something first checks here, so a refusal leaves nothing behind."""
+    _refuse_short(await balance(db, user_id), amount)
+
+
 async def credit(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -74,12 +89,7 @@ async def debit(
     if amount <= 0:
         raise ValueError("debit needs a positive amount")
     wallet = await get_or_create_wallet(db, user_id)
-    if wallet.balance < amount:
-        raise Conflict(
-            f"That costs {amount} Active Coins and you have {wallet.balance}",
-            code="INSUFFICIENT_AC",
-            details={"cost": amount, "balance": wallet.balance},
-        )
+    _refuse_short(wallet.balance, amount)
     wallet.balance -= amount
     transaction = WalletTransaction(
         user_id=user_id, wallet_id=wallet.id, amount=-amount, kind=kind, payload=payload or {}

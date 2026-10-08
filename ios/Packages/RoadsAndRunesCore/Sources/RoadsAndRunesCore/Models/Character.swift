@@ -18,8 +18,10 @@ public struct Ability: Codable, Hashable, Identifiable, Sendable {
     public var requiredClassLevel: Int
     public var maxRank: Int
     public var effects: [AbilityEffect]
+    /// Whether the server acts on it yet; nil from servers before 0.6.0.
+    public var working: Bool?
 
-    public init(id: String, characterClass: CharacterClass, name: String, description: String, requiredClassLevel: Int, maxRank: Int, effects: [AbilityEffect]) {
+    public init(id: String, characterClass: CharacterClass, name: String, description: String, requiredClassLevel: Int, maxRank: Int, effects: [AbilityEffect], working: Bool? = nil) {
         self.id = id
         self.characterClass = characterClass
         self.name = name
@@ -27,10 +29,11 @@ public struct Ability: Codable, Hashable, Identifiable, Sendable {
         self.requiredClassLevel = requiredClassLevel
         self.maxRank = maxRank
         self.effects = effects
+        self.working = working
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, characterClass, name, description, requiredClassLevel, maxRank, effects
+        case id, characterClass, name, description, requiredClassLevel, maxRank, effects, working
     }
 
     /// `effects` defaults to empty: a ride summary that lists an unlocked ability without
@@ -44,6 +47,7 @@ public struct Ability: Codable, Hashable, Identifiable, Sendable {
         requiredClassLevel = try c.decode(Int.self, forKey: .requiredClassLevel)
         maxRank = try c.decode(Int.self, forKey: .maxRank)
         effects = try c.decodeIfPresent([AbilityEffect].self, forKey: .effects) ?? []
+        working = try c.decodeIfPresent(Bool.self, forKey: .working)
     }
 }
 
@@ -98,6 +102,10 @@ public struct Character: Codable, Hashable, Identifiable, Sendable {
     public var longestStreakDays: Int?
     /// True once an outing has counted today: "keep it alive" becomes "done".
     public var streakActiveToday: Bool?
+    /// The sheet a ride started now would carry (0.6.1), for an outing started offline.
+    public var sheet: CharacterSheet? = nil
+    /// The player chose the title they wear (0.6.2); earning another no longer changes it.
+    public var titlePinned: Bool? = nil
 
     public init(
         id: UUID, name: String, characterClass: CharacterClass, overallLevel: Int, overallXP: Int,
@@ -182,13 +190,21 @@ public struct ClassInfo: Codable, Hashable, Identifiable, Sendable {
     public var tagline: String
     public var description: String
     public var enabled: Bool
+    /// The trade's guild, saying and crest id (docs/WORLD.md); nil from servers before 0.6.0.
+    public var guild: String?
+    public var saying: String?
+    public var crest: String?
 
-    public init(id: String, name: String, tagline: String, description: String, enabled: Bool) {
+    public init(id: String, name: String, tagline: String, description: String, enabled: Bool,
+                guild: String? = nil, saying: String? = nil, crest: String? = nil) {
         self.id = id
         self.name = name
         self.tagline = tagline
         self.description = description
         self.enabled = enabled
+        self.guild = guild
+        self.saying = saying
+        self.crest = crest
     }
 
     public var characterClass: CharacterClass { CharacterClass.lenient(id) }
@@ -276,5 +292,44 @@ public struct RiderProfile: Codable, Hashable, Sendable {
         self.gravelComfort = gravelComfort
         self.technicalTrailComfort = technicalTrailComfort
         self.cyclewayPreference = cyclewayPreference
+    }
+}
+
+/// A title, earned or not (`GET /character/titles`, 0.6.2): `how` says how to earn it.
+public struct TitleInfo: Codable, Hashable, Identifiable, Sendable {
+    public var slug: String
+    public var name: String
+    /// LEVEL, ARC, DEED or CAST.
+    public var source: String
+    public var how: String
+    public var earned: Bool
+    public var earnedAt: Date?
+    public var worn: Bool
+
+    public var id: String { slug }
+
+    public init(slug: String, name: String, source: String, how: String, earned: Bool, earnedAt: Date? = nil, worn: Bool = false) {
+        self.slug = slug
+        self.name = name
+        self.source = source
+        self.how = how
+        self.earned = earned
+        self.earnedAt = earnedAt
+        self.worn = worn
+    }
+}
+
+/// `PUT /character/title`: an earned title to wear, or nil for the newest earned.
+public struct TitleChoice: Codable, Hashable, Sendable {
+    public var slug: String?
+
+    public init(slug: String?) {
+        self.slug = slug
+    }
+
+    // `{"slug": null}` is the request to go back to the newest; it must be sent, not dropped.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(slug, forKey: .slug)
     }
 }

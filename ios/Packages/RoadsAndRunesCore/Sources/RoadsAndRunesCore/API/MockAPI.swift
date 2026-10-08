@@ -15,10 +15,13 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     public private(set) var rerouteRequests: [RerouteRequest] = []
     /// While set, reroutes fail with this (a planner that cannot be reached), however many are asked for.
     public var rerouteFailure: APIError?
+    /// While true every call fails as a phone with no signal does, for the offline paths.
+    public var offline = false
 
     let lock = NSLock()
     var user: User
     var storedCharacter: Character?
+    var storedRunes: RunesState = SampleData.sampleRunes
     var storedCoins = 0
     var storedTransactions: [WalletTransaction] = []
     var storedObjects: [UUID: WorldObject] = Dictionary(uniqueKeysWithValues: SampleData.sampleObjects.map { ($0.id, $0) })
@@ -36,6 +39,22 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     var storedParties: [UUID: Party]
     var strava = StravaStatus(connected: false, uploadMode: .never, enabled: true)
     var exploredCells: [ExplorationCell]
+    /// What you carry (0.7.2): the bag, this week's stall, and whether the levels
+    /// already reached have been paid yet (the first `inventory()` pays them).
+    var storedInventory: InventoryState = SampleData.sampleInventory
+    var stallBought: Set<String> = []
+    var levelRewardsUnpaid = true
+    /// Between rides (0.7.3): pledges by day, letters, and the one sealed quest.
+    var storedPledges: [String: Pledge] = [:]
+    var storedLetters: [Letter] = []
+    /// When a letter is old enough to be found again (the server's `letterMinAgeDays`).
+    public var letterMinAgeDays = 90
+    /// Legends, lairs and treasure (0.8.0): the legend awake and those defeated, and the open clues.
+    var storedLegends: LegendsState = SampleData.sampleLegends
+    var storedClues: [TreasureClue] = []
+    /// The parish (0.9.0): the districts passed through, by id, and the Atlas.
+    var storedDistricts: [District] = SampleData.sampleDistricts
+    var storedAtlas: Atlas = SampleData.sampleAtlas
 
     public init(hasCharacter: Bool = true) {
         var user = SampleData.sampleUser
@@ -55,6 +74,23 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
         storedFriends = [SampleData.sampleFriend]
         storedParties = [SampleData.sampleParty.id: SampleData.sampleParty]
         exploredCells = SampleData.sampleWorld.cells
+        // A lair round a park (0.8.0), live for another nine days.
+        let lair = SampleData.sampleLair(endsAt: Date().addingTimeInterval(9 * 86_400))
+        storedObjects[lair.id] = lair
+    }
+
+    /// Sets the legends as a test wants them (nil awake: none).
+    public func setLegends(_ legends: LegendsState) {
+        lock.lock()
+        defer { lock.unlock() }
+        storedLegends = legends
+    }
+
+    /// Sets the districts as a test wants them.
+    public func setDistricts(_ districts: [District]) {
+        lock.lock()
+        defer { lock.unlock() }
+        storedDistricts = districts
     }
 
     /// Puts something in the world, or replaces what is there, for a test to ride past.
@@ -73,6 +109,7 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
         }
         lock.lock()
         defer { lock.unlock() }
+        if offline { throw APIError.network(URLError(.notConnectedToInternet)) }
         if let error = failNext {
             failNext = nil
             throw error
@@ -140,7 +177,7 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
             let isMe = userId == self.user.id
             return PublicProfile(
                 id: userId, displayName: isMe ? self.user.displayName : "Bea", characterClass: .explorer,
-                overallLevel: isMe ? self.storedCharacter?.overallLevel : 5, title: isMe ? self.storedCharacter?.title : "Pathfinder",
+                overallLevel: isMe ? self.storedCharacter?.overallLevel : 5, title: isMe ? self.storedCharacter?.title : "Familiar Face",
                 questsCompleted: 12, discoveriesFound: 30, favouriteTerrain: "GRAVEL", friendship: isMe ? FriendshipState.none : FriendshipState.friends,
                 recentAdventures: [
                     AdventureSummaryPublic(
@@ -155,6 +192,7 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     // MARK: Character
 
     public func classes() async throws -> [ClassInfo] { try await run { SampleData.sampleClasses } }
+    public func codex() async throws -> Codex { try await run { SampleData.sampleCodex } }
     public func createCharacter(_ request: CharacterCreate) async throws -> Character {
         try await run {
             if self.storedCharacter != nil {
@@ -169,6 +207,9 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
             character.unspentAbilityPoints = 0
             self.storedCharacter = character
             self.user.hasCharacter = true
+            self.storedInventory = InventoryState(slots: SampleData.gearSlots(level: 1), consumables: SampleData.consumables([:]))
+            self.stallBought = []
+            self.levelRewardsUnpaid = true
             return character
         }
     }
@@ -181,7 +222,7 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
             }
             let cost = character.classChangeCostAC ?? 0
             if cost > self.storedCoins {
-                throw APIError.server(code: "INSUFFICIENT_AC", message: "That costs \(cost) Active Coins and you have \(self.storedCoins)", status: 409)
+                throw APIError.server(code: "INSUFFICIENT_AC", message: "That costs \(cost) coins and you have \(self.storedCoins)", status: 409)
             }
             var progress = character.classProgress ?? [:]
             progress[character.characterClass.rawValue] = ClassProgress(classXp: character.classXP, classLevel: character.classLevel)
@@ -208,6 +249,9 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
             self.storedCharacter = nil
             self.storedCoins = 0
             self.storedTransactions = []
+            self.storedInventory = InventoryState(slots: SampleData.gearSlots(level: 1), consumables: SampleData.consumables([:]))
+            self.stallBought = []
+            self.levelRewardsUnpaid = true
             self.user.hasCharacter = false
         }
     }
@@ -231,7 +275,7 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
         try await run {
             guard var object = self.storedObjects[id] else { throw self.notFound("World object") }
             guard let reach = object.reachMeters else {
-                throw APIError.server(code: APIErrorCode.objectNotClaimable, message: "A monster has to be beaten on the move", status: 409)
+                throw APIError.server(code: APIErrorCode.objectNotClaimable, message: "A thing is seen off on the move, not from here", status: 409)
             }
             guard object.status == .spawned else {
                 throw APIError.server(code: APIErrorCode.objectGone, message: "It has already gone", status: 409)
@@ -244,15 +288,25 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
             object.claimedAt = Date()
             self.storedObjects[id] = object
             self.storedCoins += object.rewardAC
-            return WorldObjectClaim(object: object, acAwarded: object.rewardAC, walletBalance: self.storedCoins)
+            // A chest holds a lamp as well (0.7.2), so the find has something to show.
+            var found: ItemFound?
+            if object.kind == .chest {
+                self.give(ConsumableId.lamp, count: 1)
+                found = ItemFound(kind: "CONSUMABLE", consumable: ConsumableId.lamp, name: "Lamp", icon: "lantern", source: "CHEST", fromName: object.name)
+            }
+            return WorldObjectClaim(object: object, acAwarded: object.rewardAC, walletBalance: self.storedCoins, itemFound: found)
         }
     }
     public func lure(at center: Coordinate) async throws -> [WorldObject] {
         try await run {
-            if self.storedCoins < 50 {
-                throw APIError.server(code: "INSUFFICIENT_AC", message: "That costs 50 Active Coins and you have \(self.storedCoins)", status: 409)
+            // A lamp from the bag first (0.7.2), then coins.
+            if self.takeConsumable(ConsumableId.lamp) {
+                // nothing to pay
+            } else if self.storedCoins < 50 {
+                throw APIError.server(code: "INSUFFICIENT_AC", message: "That costs 50 coins and you have \(self.storedCoins)", status: 409)
+            } else {
+                self.storedCoins -= 50
             }
-            self.storedCoins -= 50
             let lured = WorldObject(
                 id: UUID(),
                 kind: .monster,
@@ -265,7 +319,14 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
                 monster: SampleData.sampleMonster.monster
             )
             self.storedObjects[lured.id] = lured
-            return self.storedObjects.values.filter { $0.status == .spawned }
+            // As the server does: only what came.
+            return [lured]
+        }
+    }
+    public func lampCheck(at center: Coordinate) async throws -> LampCheck {
+        try await run {
+            let lamps = self.storedInventory.count(of: ConsumableId.lamp)
+            return LampCheck(ok: true, cost: lamps > 0 ? 0 : 50, placeName: "the towpath", lampsInBag: lamps)
         }
     }
     public func abilities() async throws -> [AbilityState] { try await run { try self.requireCharacter().abilities } }
@@ -280,6 +341,34 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
             character.abilities[index].unlocked = true
             character.abilities[index].canUnlock = character.abilities[index].rank < character.abilities[index].ability.maxRank
             character.unspentAbilityPoints -= 1
+            self.storedCharacter = character
+            return character
+        }
+    }
+    public func titles() async throws -> [TitleInfo] {
+        try await run {
+            let character = try self.requireCharacter()
+            return SampleData.sampleTitles.map { title in
+                var t = title
+                t.worn = t.earned && t.name == character.title
+                return t
+            }
+        }
+    }
+    public func wearTitle(slug: String?) async throws -> Character {
+        try await run {
+            var character = try self.requireCharacter()
+            let earned = SampleData.sampleTitles.filter(\.earned)
+            if let slug {
+                guard let title = earned.first(where: { $0.slug == slug }) else {
+                    throw APIError.server(code: APIErrorCode.conflict, message: "That title has not been earned", status: 409)
+                }
+                character.title = title.name
+                character.titlePinned = true
+            } else {
+                character.title = earned.last?.name ?? character.title
+                character.titlePinned = false
+            }
             self.storedCharacter = character
             return character
         }

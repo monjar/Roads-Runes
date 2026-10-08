@@ -7,6 +7,13 @@ from Overpass the first time a rider generates quests or plans a ride there.
 The tile is recorded in `poi_import_areas` so it is fetched once; a failed
 fetch is retried after RETRY_AFTER. Overpass is a shared public service, so
 each query is small and capped and the configured mirrors are tried in turn.
+
+0.9.0: the same query fetches a fifth set, the named place nodes that are
+districts (`regions`, never Discoveries and never hidden places). The districts of
+a tile are tracked on their own key (`regions:v1:<row>:<col>`), so a tile imported
+before 0.9.0 fetches only its place nodes, once, and TILE_VERSION stays as it is.
+With the `place_lore` flag, places with a `wikidata` tag get a checked line from
+Wikidata at import (discoveries/place_lore.py).
 """
 
 from __future__ import annotations
@@ -27,6 +34,7 @@ from app.core.logging import get_logger
 from app.core.security import utcnow
 from app.db.session import get_session_factory
 from app.discoveries.models import Discovery, PoiImportArea
+from app.discoveries.place_lore import LoreFetcher, add_lore, wikidata_fetcher
 from app.exploration.cells import cell_for
 
 log = get_logger(__name__)
@@ -35,7 +43,14 @@ TILES_PER_DEGREE = 10
 # Part of every tile key. Bump it when the query learns a new kind of place, and
 # tiles imported under the old query are read again on the next visit; `store`
 # skips what is already known, so the second pass only adds the new kinds.
-TILE_VERSION = "v2"
+# v3: kept the tags that say a place is a memorial, a church, a cemetery or private
+# (app/discoveries/sensitivity.py), so every tile is fetched again once.
+# v4 (0.8.0): kept how high a peak is (`ele`, for the Hill King) and what a path is
+# (`highway`, for the Trail Wyrm), so every tile is fetched again once more.
+TILE_VERSION = "v4"
+# The districts of a tile (0.9.0) are imported once on their own key, whatever TILE_VERSION is.
+REGIONS_VERSION = "regions:v1"
+PLACE_KINDS = ("suburb", "neighbourhood", "quarter", "village", "town", "hamlet")
 RETRY_AFTER = timedelta(minutes=15)
 # Quest generation waits this long for the tile the rider is in; the import carries on after.
 FIRST_TILE_WAIT_SECONDS = 15.0
@@ -63,6 +78,18 @@ KEEP_TAGS = (
     "outdoor_seating",
     "stars",
     "route",
+    # What makes a place one the game must leave alone (app/discoveries/sensitivity.py).
+    "landuse",
+    "religion",
+    "memorial",
+    "building",
+    "cemetery",
+    "access",
+    "healthcare",
+    "artwork_type",
+    # Where a legend lives (app/legends/anchors.py): how high, and what kind of path.
+    "ele",
+    "highway",
 )
 
 BBox = tuple[float, float, float, float]  # (south, west, north, east)
@@ -74,6 +101,12 @@ _background: set[asyncio.Task[None]] = set()
 
 def tile_key(lat: float, lon: float) -> str:
     return f"{TILE_VERSION}:{math.floor(lat * TILES_PER_DEGREE)}:{math.floor(lon * TILES_PER_DEGREE)}"
+
+
+def regions_key(key: str) -> str:
+    """The key the districts of a tile are tracked by: "regions:v1:514:-1"."""
+    row, col = key.split(":")[-2:]
+    return f"{REGIONS_VERSION}:{row}:{col}"
 
 
 def tile_bbox(key: str) -> BBox:
@@ -136,7 +169,21 @@ def overpass_query(bbox: BBox) -> str:
   way[highway~"^(path|track|bridleway)$"][name];
   relation[route~"^(bicycle|mtb|hiking|foot)$"][name];
 )->.trails;
-.trails out center tags 120;"""
+.trails out center tags 120;
+{_PLACES_SET}"""
+
+
+_PLACES_SET = f"""(
+  node[place~"^({"|".join(PLACE_KINDS)})$"][name];
+)->.districts;
+.districts out center tags 300;"""
+
+
+def places_query(bbox: BBox) -> str:
+    """Only the districts: for a tile whose places were imported before 0.9.0."""
+    south, west, north, east = bbox
+    return f"""[out:json][timeout:25][bbox:{south},{west},{north},{east}];
+{_PLACES_SET}"""
 
 
 def category_for(tags: dict[str, str]) -> str | None:
@@ -204,42 +251,136 @@ def parse_elements(elements: list[dict[str, Any]], resolution: int) -> list[dict
     return places
 
 
-async def store(db: AsyncSession, places: list[dict[str, Any]]) -> int:
-    """Adds the places not already known by OSM id; returns how many were new."""
-    ids = list({p["osm_id"] for p in places})
-    known: set[str] = set()
+def parse_regions(elements: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The named place nodes among Overpass elements, as Region fields."""
+    from app.districts.geo import tile_of
+
+    out: dict[str, dict[str, Any]] = {}
+    for element in elements:
+        tags = element.get("tags") or {}
+        kind = str(tags.get("place") or "")
+        name = str(tags.get("name", "")).strip()
+        if kind not in PLACE_KINDS or not name or element.get("type", "node") != "node":
+            continue
+        if "lat" in element:
+            lat, lon = float(element["lat"]), float(element["lon"])
+        elif "center" in element:
+            lat, lon = float(element["center"]["lat"]), float(element["center"]["lon"])
+        else:
+            continue
+        osm_id = f"n{element['id']}"
+        out[osm_id] = {
+            "osm_id": osm_id,
+            "name": name[:120],
+            "kind": kind,
+            "latitude": lat,
+            "longitude": lon,
+            "tile": tile_of(lat, lon),
+        }
+    return list(out.values())
+
+
+async def store_regions(db: AsyncSession, regions: list[dict[str, Any]]) -> int:
+    """Adds the districts not already known by OSM id (and renames or moves the known
+    ones); returns how many were new."""
+    from app.districts.models import Region
+
+    ids = [r["osm_id"] for r in regions]
+    known: dict[str, Region] = {}
     for start in range(0, len(ids), 500):
         chunk = ids[start : start + 500]
-        known.update(
-            o for o in (await db.execute(select(Discovery.osm_id).where(Discovery.osm_id.in_(chunk)))).scalars() if o
-        )
+        for row in (await db.execute(select(Region).where(Region.osm_id.in_(chunk)))).scalars():
+            known[row.osm_id] = row
+    added = 0
+    for region in regions:
+        row = known.get(region["osm_id"])
+        if row is None:
+            db.add(Region(place_counts={}, **region))
+            added += 1
+            continue
+        for field in ("name", "kind", "latitude", "longitude", "tile"):
+            if getattr(row, field) != region[field]:
+                setattr(row, field, region[field])
+    await db.flush()
+    return added
+
+
+async def store(db: AsyncSession, places: list[dict[str, Any]]) -> int:
+    """Adds the places not already known by OSM id; returns how many were new.
+
+    A place already known has its tags refreshed: a tile fetched again after the
+    kept tags grew (TILE_VERSION) must reach the places it fetched last time.
+    """
+    ids = list({p["osm_id"] for p in places})
+    known: dict[str, Discovery] = {}
+    for start in range(0, len(ids), 500):
+        chunk = ids[start : start + 500]
+        for row in (await db.execute(select(Discovery).where(Discovery.osm_id.in_(chunk)))).scalars():
+            if row.osm_id:
+                known[row.osm_id] = row
     added = 0
     for place in places:
         if place["osm_id"] in known:
+            row = known[place["osm_id"]]
+            merged = {**(row.tags or {}), **(place.get("tags") or {})}
+            if merged != (row.tags or {}):
+                row.tags = merged
             continue
-        known.add(place["osm_id"])
-        db.add(Discovery(source="OSM", moderation_status="APPROVED", cycling_accessible=True, **place))
+        row = Discovery(source="OSM", moderation_status="APPROVED", cycling_accessible=True, **place)
+        known[place["osm_id"]] = row
+        db.add(row)
         added += 1
     await db.flush()
     return added
 
 
-async def import_tile(db: AsyncSession, key: str, fetch: Fetcher, resolution: int) -> int:
-    """Fetches and stores one tile's places and records the attempt; the caller commits."""
-    try:
-        added = await store(db, parse_elements(await fetch(tile_bbox(key)), resolution))
-        status = "OK"
-    except Exception as exc:  # noqa: BLE001 - a failed area is retried later, never fatal
-        await db.rollback()
-        log.warning("poi_import_failed", tile=key, error=str(exc)[:200])
-        added, status = 0, "FAILED"
+async def _mark(db: AsyncSession, key: str, status: str, count: int, *, keep_ok: bool = False) -> None:
     area = await db.get(PoiImportArea, key)
     if area is None:
         area = PoiImportArea(key=key)
         db.add(area)
-    area.status, area.poi_count, area.imported_at = status, added, utcnow()
+    elif keep_ok and area.status == "OK" and status != "OK":
+        return
+    area.status, area.poi_count, area.imported_at = status, count, utcnow()
     await db.flush()
-    log.info("poi_import_done", tile=key, status=status, added=added)
+
+
+async def import_tile(
+    db: AsyncSession, key: str, fetch: Fetcher, resolution: int, *, lore: LoreFetcher | None = None
+) -> int:
+    """Fetches and stores one tile's places and districts and records both attempts;
+    the caller commits. With `lore` (the `place_lore` flag), places with a wikidata
+    tag are given a checked line."""
+    regions_added = 0
+    try:
+        elements = await fetch(tile_bbox(key))
+        places = parse_elements(elements, resolution)
+        added = await store(db, places)
+        regions_added = await store_regions(db, parse_regions(elements))
+        status = "OK"
+        if lore is not None:
+            await add_lore(db, [p["osm_id"] for p in places], lore)
+    except Exception as exc:  # noqa: BLE001 - a failed area is retried later, never fatal
+        await db.rollback()
+        log.warning("poi_import_failed", tile=key, error=str(exc)[:200])
+        added, status = 0, "FAILED"
+    await _mark(db, key, status, added)
+    await _mark(db, regions_key(key), status, regions_added, keep_ok=True)
+    log.info("poi_import_done", tile=key, status=status, added=added, districts=regions_added)
+    return added
+
+
+async def import_regions_tile(db: AsyncSession, key: str, fetch: Fetcher) -> int:
+    """Fetches and stores only one tile's districts (a tile imported before 0.9.0)."""
+    try:
+        added = await store_regions(db, parse_regions(await fetch(tile_bbox(key))))
+        status = "OK"
+    except Exception as exc:  # noqa: BLE001
+        await db.rollback()
+        log.warning("districts_import_failed", tile=key, error=str(exc)[:200])
+        added, status = 0, "FAILED"
+    await _mark(db, regions_key(key), status, added)
+    log.info("districts_import_done", tile=key, status=status, added=added)
     return added
 
 
@@ -259,6 +400,23 @@ async def due_tiles(db: AsyncSession, keys: list[str]) -> list[str]:
     return [k for k in keys if k not in fresh]
 
 
+async def due_region_tiles(db: AsyncSession, keys: list[str]) -> list[str]:
+    """Tiles whose districts were never imported, or failed more than RETRY_AFTER ago."""
+    cutoff = utcnow() - RETRY_AFTER
+    wanted = {regions_key(k): k for k in keys}
+    fresh = set(
+        (
+            await db.execute(
+                select(PoiImportArea.key).where(
+                    PoiImportArea.key.in_(list(wanted)),
+                    or_(PoiImportArea.status == "OK", PoiImportArea.imported_at > cutoff),
+                )
+            )
+        ).scalars()
+    )
+    return [k for k in keys if regions_key(k) not in fresh]
+
+
 async def ensure_pois(
     settings: Settings,
     latitude: float,
@@ -266,27 +424,40 @@ async def ensure_pois(
     *,
     wait: bool = True,
     fetch: Fetcher | None = None,
+    places_fetch: Fetcher | None = None,
+    lore_fetch: LoreFetcher | None = None,
     session_factory: async_sessionmaker[AsyncSession] | None = None,
 ) -> None:
     """Imports the places around a point if the area is new.
 
     With `wait`, the tile under the point is awaited for up to
     FIRST_TILE_WAIT_SECONDS (quest generation needs it); the eight neighbours
-    follow in the background, one at a time.
+    follow in the background, one at a time. Tiles imported before 0.9.0 fetch
+    only their districts, in the background (`places_fetch`; a test's `fetch`
+    serves both).
     """
     if not settings.poi_import_enabled:
         return
     factory = session_factory or get_session_factory()
+    places_fetch = places_fetch or fetch or places_fetcher(settings)
     fetch = fetch or overpass_fetcher(settings)
+    lore = lore_fetch or (wikidata_fetcher() if settings.flags.get("place_lore") else None)
     keys = tiles_around(latitude, longitude)
     async with factory() as db:
         due = await due_tiles(db, keys)
-    if not due:
+        only_districts = [k for k in await due_region_tiles(db, keys) if k not in due]
+    if not due and not only_districts:
         return
-    first = _start(keys[0], factory, fetch, settings.h3_resolution) if keys[0] in due else _running.get(keys[0])
+    first = (
+        _start(keys[0], factory, fetch, settings.h3_resolution, lore=lore) if keys[0] in due else _running.get(keys[0])
+    )
     rest = [k for k in due if k != keys[0]]
     if rest:
-        _in_background(_import_in_turn(rest, first, factory, fetch, settings.h3_resolution))
+        _in_background(_import_in_turn(rest, first, factory, fetch, settings.h3_resolution, lore=lore))
+    if only_districts:
+        _in_background(_districts_in_turn(only_districts, first, factory, places_fetch))
+    if not due:
+        return
     if wait and first is not None:
         try:
             await asyncio.wait_for(asyncio.shield(first), FIRST_TILE_WAIT_SECONDS)
@@ -349,10 +520,19 @@ def cancel_all() -> None:
 
 
 def overpass_fetcher(settings: Settings) -> Fetcher:
+    return _fetcher(settings, overpass_query)
+
+
+def places_fetcher(settings: Settings) -> Fetcher:
+    """Only a tile's districts (0.9.0)."""
+    return _fetcher(settings, places_query)
+
+
+def _fetcher(settings: Settings, build: Callable[[BBox], str]) -> Fetcher:
     urls = [u.strip() for u in settings.overpass_urls.split(",") if u.strip()]
 
     async def fetch(bbox: BBox) -> list[dict[str, Any]]:
-        query = overpass_query(bbox)
+        query = build(bbox)
         failure = "no Overpass endpoint configured"
         async with httpx.AsyncClient(timeout=40.0, headers={"User-Agent": USER_AGENT}) as client:
             for url in urls:
@@ -375,22 +555,67 @@ def overpass_fetcher(settings: Settings) -> Fetcher:
     return fetch
 
 
-def _start(key: str, factory: async_sessionmaker[AsyncSession], fetch: Fetcher, resolution: int) -> asyncio.Task[int]:
+def _start(
+    key: str,
+    factory: async_sessionmaker[AsyncSession],
+    fetch: Fetcher,
+    resolution: int,
+    *,
+    lore: LoreFetcher | None = None,
+) -> asyncio.Task[int]:
     task = _running.get(key)
     if task is None or task.done():
-        task = asyncio.create_task(_run_tile(key, factory, fetch, resolution))
+        task = asyncio.create_task(_run_tile(key, factory, fetch, resolution, lore=lore))
         _running[key] = task
         task.add_done_callback(lambda t, k=key: _running.pop(k) if _running.get(k) is t else None)
     return task
 
 
-async def _run_tile(key: str, factory: async_sessionmaker[AsyncSession], fetch: Fetcher, resolution: int) -> int:
+async def _run_tile(
+    key: str,
+    factory: async_sessionmaker[AsyncSession],
+    fetch: Fetcher,
+    resolution: int,
+    *,
+    lore: LoreFetcher | None = None,
+) -> int:
     async with factory() as db:
         if not await due_tiles(db, [key]):  # another request imported it meanwhile
             return 0
-        added = await import_tile(db, key, fetch, resolution)
+        added = await import_tile(db, key, fetch, resolution, lore=lore)
         await db.commit()
         return added
+
+
+def _start_districts(key: str, factory: async_sessionmaker[AsyncSession], fetch: Fetcher) -> asyncio.Task[int]:
+    rkey = regions_key(key)
+    task = _running.get(rkey)
+    if task is None or task.done():
+        task = asyncio.create_task(_run_districts(key, factory, fetch))
+        _running[rkey] = task
+        task.add_done_callback(lambda t, k=rkey: _running.pop(k) if _running.get(k) is t else None)
+    return task
+
+
+async def _run_districts(key: str, factory: async_sessionmaker[AsyncSession], fetch: Fetcher) -> int:
+    async with factory() as db:
+        if not await due_region_tiles(db, [key]):
+            return 0
+        added = await import_regions_tile(db, key, fetch)
+        await db.commit()
+        return added
+
+
+async def _districts_in_turn(
+    keys: list[str], first: asyncio.Task[int] | None, factory: async_sessionmaker[AsyncSession], fetch: Fetcher
+) -> None:
+    if first is not None:
+        await asyncio.wait([first])
+    for key in keys:
+        try:
+            await _start_districts(key, factory, fetch)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("districts_import_failed", tile=key, error=str(exc)[:200])
 
 
 async def _import_in_turn(
@@ -399,12 +624,14 @@ async def _import_in_turn(
     factory: async_sessionmaker[AsyncSession],
     fetch: Fetcher,
     resolution: int,
+    *,
+    lore: LoreFetcher | None = None,
 ) -> None:
     if first is not None:
         await asyncio.wait([first])  # the neighbours queue behind the tile the rider is in
     for key in keys:
         try:
-            await _start(key, factory, fetch, resolution)
+            await _start(key, factory, fetch, resolution, lore=lore)
         except Exception as exc:  # noqa: BLE001
             log.warning("poi_import_failed", tile=key, error=str(exc)[:200])
 

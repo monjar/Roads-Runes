@@ -1,0 +1,20 @@
+{
+  "_comment": "Looks (0.9.0): route ink, marker frames and crest frames. Bought at the stall (its fifth offer each week) and kept as inventory_items rows whose ids carry their kind (ink:, marker:, crest:); the free ones (price 0) everyone has. The route line has always been terracotta, so Terracotta is the default ink and plain Ink is free to choose. Crest frames are also earned: each deed tier reached gives one (crest:<deed>-<tier>, inventory/deeds.py). `color` is the ink's line on the maps.",
+  "defaults": {"ink": "ink:terracotta", "markerFrame": "marker:plain", "crestFrame": "crest:plain"},
+  "items": [
+    {"id": "ink:ink", "kind": "INK", "name": "Ink", "color": "#2E2A24", "text": "Your journeys drawn in plain dark ink.", "price": 0},
+    {"id": "ink:terracotta", "kind": "INK", "name": "Terracotta", "color": "#B5583A", "text": "Your journeys drawn in warm red clay, as they always have been.", "price": 0},
+    {"id": "ink:sage", "kind": "INK", "name": "Sage", "color": "#7A8A5E", "text": "Your journeys drawn in soft green.", "price": 200},
+    {"id": "ink:gold", "kind": "INK", "name": "Gold", "color": "#C49A2C", "text": "Your journeys drawn in gold.", "price": 400},
+    {"id": "ink:wizard-blue", "kind": "INK", "name": "Wizard Blue", "color": "#3D5A99", "text": "Your journeys drawn in a wizard's blue.", "price": 300},
+    {"id": "ink:scribe-plum", "kind": "INK", "name": "Scribe Plum", "color": "#6B3F69", "text": "Your journeys drawn in a scribe's purple.", "price": 300},
+    {"id": "marker:plain", "kind": "MARKER_FRAME", "name": "Plain", "text": "A simple ring round your marker.", "price": 0},
+    {"id": "marker:rope", "kind": "MARKER_FRAME", "name": "Rope", "text": "A twist of rope round your marker.", "price": 200},
+    {"id": "marker:laurel", "kind": "MARKER_FRAME", "name": "Laurel", "text": "Laurel leaves round your marker.", "price": 300},
+    {"id": "marker:runic", "kind": "MARKER_FRAME", "name": "Runic", "text": "A ring of runes round your marker.", "price": 400},
+    {"id": "crest:plain", "kind": "CREST_FRAME", "name": "Plain", "text": "Your crest as it is.", "price": 0},
+    {"id": "crest:oak", "kind": "CREST_FRAME", "name": "Oak Leaves", "text": "Oak leaves round your crest.", "price": 250},
+    {"id": "crest:silver", "kind": "CREST_FRAME", "name": "Silver", "text": "A silver border round your crest.", "price": 350},
+    {"id": "crest:starry", "kind": "CREST_FRAME", "name": "Starry", "text": "A ring of stars round your crest.", "price": 400}
+  ]
+}

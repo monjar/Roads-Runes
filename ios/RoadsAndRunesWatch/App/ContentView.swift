@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 import WatchKit
@@ -11,6 +12,12 @@ struct ContentView: View {
             Color.black.ignoresSafeArea()
             if store.hasRoute || store.isRiding {
                 RidePages()
+            } else if store.planning != nil {
+                PlanningScreen()
+            } else if let end = store.journeyEnd {
+                JourneyEndCard(end: end, token: store.journeyEndToken) {
+                    store.dismissJourneyEnd()
+                }
             } else {
                 IdleScreen()
             }
@@ -30,16 +37,40 @@ struct ContentView: View {
 
 /// A turn, felt: two soft taps as it comes up; when it is here, one for a right
 /// turn and two for a left (design 7a), so the wrist says which way without a look.
+/// Every tap is named in Core (`WristTap`), where a test keeps a fight's taps
+/// apart from these.
 enum TurnHaptics {
     static func play(_ cue: TurnCue) {
-        let device = WKInterfaceDevice.current()
         switch cue {
         case .approaching:
-            device.play(.click)
-            later(0.25) { device.play(.click) }
+            tap(.click)
+            later(0.25) { tap(.click) }
         case .now(let side):
-            device.play(side == .left ? .directionDown : .directionUp)
-            if side == .left { later(0.45) { device.play(.directionDown) } }
+            tap(side == .left ? .directionDown : .directionUp)
+            if side == .left { later(0.45) { tap(.directionDown) } }
+        }
+    }
+
+    /// A fight beat: one tap, never one a turn uses.
+    static func play(_ beat: FightBeat) {
+        tap(beat.tap)
+    }
+
+    /// Journey's end has come: the journey is over, so no turn is near to be
+    /// mistaken for it, and it takes the game's own success tap.
+    static func journeyEnded() {
+        tap(.success)
+    }
+
+    static func tap(_ tap: WristTap) {
+        let device = WKInterfaceDevice.current()
+        switch tap {
+        case .click: device.play(.click)
+        case .directionUp: device.play(.directionUp)
+        case .directionDown: device.play(.directionDown)
+        case .start: device.play(.start)
+        case .success: device.play(.success)
+        case .failure: device.play(.failure)
         }
     }
 
@@ -65,49 +96,14 @@ struct RidePages: View {
                 }
             }
             // Directions answer "what do I do next"; the map answers "where am I".
-            // Always-on keeps the directions, which cost nothing to redraw.
-            if !isLuminanceReduced {
-                MapScreen()
-            }
+            // Always-On keeps both (0.7.3): the map dims to the route, the rider and
+            // the next turn, and moves only now and then.
+            MapScreen()
             QuestScreen()
             StatsScreen()
             ControlsScreen()
         }
         .tabViewStyle(.verticalPage)
-    }
-}
-
-/// Ride ready (design 7a, screen 1): what is loaded, one sage pill to start.
-struct IdleScreen: View {
-    @Environment(RideStore.self) private var store
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("READY")
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(0.5)
-                .foregroundStyle(WatchTheme.accent)
-            Text("Roads & Runes")
-                .font(.system(size: 19, weight: .semibold))
-            Text("Start a ride on your iPhone")
-                .font(.system(size: 14))
-                .foregroundStyle(WatchTheme.secondary)
-            HStack(spacing: 8) {
-                Label(store.phoneReachable ? "iPhone" : "iPhone off", systemImage: store.phoneReachable ? "checkmark" : "xmark")
-                Label("Heart", systemImage: "checkmark")
-            }
-            .font(.system(size: 11, weight: .semibold))
-            .labelStyle(.titleAndIcon)
-            .foregroundStyle(store.phoneReachable ? WatchTheme.sageLight : WatchTheme.tertiary)
-            .padding(.top, 8)
-            Spacer()
-            Image(systemName: "bicycle")
-                .font(.system(size: 28, weight: .bold))
-                .foregroundStyle(WatchTheme.sage)
-                .frame(maxWidth: .infinity)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.horizontal, 6)
     }
 }
 

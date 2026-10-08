@@ -1,7 +1,7 @@
 import RoadsAndRunesCore
 import SwiftUI
 
-/// Today's bounty on the Quests tab: one monster, twice the purse, gone at midnight.
+/// Today's bounty on the Quests tab: one creature, double coins, here for about a day.
 struct BountyCard: View {
     let bounty: WorldObject
     var distanceMeters: Double?
@@ -13,7 +13,7 @@ struct BountyCard: View {
     var body: some View {
         Button(action: onPlan) {
             HStack(spacing: 14) {
-                EncounterGlyph(kind: .monster, bounty: true, size: 48)
+                EncounterGlyph(object: bounty, size: 48)
                 VStack(alignment: .leading, spacing: 3) {
                     Eyebrow(text: "Today's bounty", color: Theme.Colors.terracottaDeep)
                     Text(bounty.name).font(Theme.Typography.cardTitle).foregroundStyle(Theme.Colors.ink).lineLimit(1)
@@ -24,7 +24,7 @@ struct BountyCard: View {
             }
             .padding(16)
             .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Color(red: 0.85, green: 0.65, blue: 0.13).opacity(0.7), lineWidth: 1.5))
+            .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Theme.Colors.gold.opacity(0.7), lineWidth: 1.5))
         }
         .buttonStyle(.pressable)
         .accessibilityIdentifier("bounty")
@@ -34,8 +34,12 @@ struct BountyCard: View {
         var parts: [String] = []
         if let anchor = bounty.anchorName { parts.append("at \(anchor)") }
         if let distanceMeters { parts.append(formatter.distance(meters: distanceMeters)) }
-        parts.append("\(bounty.rewardAC) AC · gone tonight")
-        if let first = bounty.monster?.killMethods.first { parts.append(first.hint) }
+        parts.append(LoreCopy.purse(bounty.rewardAC))
+        if let monster = bounty.monster, monster.foughtByEffort, let wants = monster.wants {
+            parts.append(LoreCopy.weakTo(wants))
+        } else if let first = bounty.monster?.killMethods.first {
+            parts.append(first.hint)
+        }
         return parts.joined(separator: " · ")
     }
 }

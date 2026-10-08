@@ -1,0 +1,90 @@
+{
+  "_comment": "The five people who write the board, the codex and the book. They write; they are never described and never answer. One name per card. `posts` is what their notices are for: a trade, ANY or BOUNTY. Lines are picked by seed, never by a model.",
+  "cast": [
+    {
+      "id": "ada-pym",
+      "name": "Ada Pym",
+      "role": "Keeps the board",
+      "posts": "ANY",
+      "grammar": "Notices. No 'I'. Fragments; a day of the week.",
+      "page": "Pins what needs looking at and does not say who told her. The board has been hers longer than anybody has asked. Her notices are short because the pins are.",
+      "pageBy": "enid-sallow",
+      "lines": [
+        "Wanted: somebody. The park, north side. Up since Tuesday.",
+        "Three on the board. One curling at the corner.",
+        "Somebody to go and look. Any day this week.",
+        "Still up from Monday. Nobody has touched it.",
+        "Notice. Not urgent. Has not been urgent for a while.",
+        "Posted Thursday. Still here Friday."
+      ]
+    },
+    {
+      "id": "tam-hurdle",
+      "name": "Tam Hurdle",
+      "role": "Roadmender",
+      "posts": "WARRIOR",
+      "grammar": "The shortest. Weather and gradient. No joke.",
+      "page": "Mends the roads by walking them, which is most of mending. Writes about hills, rain and distance, and nothing else. Has never once been late.",
+      "pageBy": "enid-sallow",
+      "lines": [
+        "Hill. Wet. It will keep.",
+        "Long one. Take water.",
+        "Mended by the bridge. Something had been sitting in it.",
+        "Steep at the top. Fine after.",
+        "Wind from the west. Go out into it.",
+        "Road up by the school. Go round."
+      ]
+    },
+    {
+      "id": "enid-sallow",
+      "name": "Enid Sallow",
+      "role": "Hedge-scholar",
+      "posts": "WIZARD",
+      "grammar": "The only one who hedges, the only long sentences, and the one who carries the wit.",
+      "page": "E. Sallow declines to write about herself. She keeps the codex, holds three theories about the fog, and would like it noted that she has been right about two things. W. Garth, by request.",
+      "pageBy": "walter-garth",
+      "lines": [
+        "Fen Troll. I have the habits down; the reasons I am still guessing at.",
+        "The map files it as a ruin. The map is being polite.",
+        "Three theories about the fog. I hold all of them, on different days.",
+        "There is a mark there that nobody explains. I would like it explained.",
+        "Somebody meant something by it. Go and stand where they stood.",
+        "I would go myself, but I would only take notes."
+      ]
+    },
+    {
+      "id": "walter-garth",
+      "name": "Walter Garth",
+      "role": "Toll-keeper",
+      "posts": "SCRIBE",
+      "grammar": "Always a figure, never an adjective.",
+      "page": "Keeps the book: every coin in and every coin out. Counts the reckoning at the end of each outing. Has never been seen to round up.",
+      "pageBy": "enid-sallow",
+      "lines": [
+        "Troll, sixty. Box, twenty-five. Eighty-five in the book.",
+        "Change of trade: one hundred and fifty. Paperwork.",
+        "Nothing is yours until it is in the book.",
+        "Three entries this week. One more would make four.",
+        "The roads pay. The book says so.",
+        "Seventy-five, less twenty. Fifty-five."
+      ]
+    },
+    {
+      "id": "nell-foss",
+      "name": "Nell Foss",
+      "role": "Lamplighter",
+      "posts": "EXPLORER",
+      "grammar": "A place and a time of day, reported plain.",
+      "page": "Lights the lamps and reports what was not there the day before. Works the edge, past the last lamp, where the Wayfinders go. Posts the bounty.",
+      "pageBy": "enid-sallow",
+      "lines": [
+        "By the pond. Not there at lamp-lighting.",
+        "One for today. On a road people use.",
+        "Past the last lamp, north side.",
+        "Something new at the edge. Morning round.",
+        "Two streets over. Still there at the second lamp.",
+        "Under the bridge. Lit at six."
+      ]
+    }
+  ]
+}

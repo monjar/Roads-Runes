@@ -70,6 +70,10 @@ public enum ObjectiveType: String, SafeEnum {
     case slayMonster = "SLAY_MONSTER"
     case openChest = "OPEN_CHEST"
     case collect = "COLLECT"
+    /// 0.7.0: a rune round a place (a shape, a note or a stop), judged by the server.
+    case inscribeRune = "INSCRIBE_RUNE"
+    /// 0.7.0: one place, then later another.
+    case carry = "CARRY"
     case unknown = "UNKNOWN"
 }
 

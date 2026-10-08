@@ -18,7 +18,9 @@ from app.quests.schemas import (
     QuestOut,
     QuestProgressRequest,
     QuestStartRequest,
+    SealedQuestRequest,
     StoryArcOut,
+    WeekNoticeOut,
 )
 from app.routing import service as routing
 from app.routing.schemas import RouteOptionOut
@@ -79,6 +81,35 @@ async def generate(
     return Page(items=[service.quest_out(q) for q in quests], nextCursor=None)
 
 
+@router.post("/sealed", response_model=QuestOut)
+async def sealed(
+    payload: SealedQuestRequest,
+    user: CurrentUser,
+    db: DBDep,
+    settings: SettingsDep,
+    llm: Annotated[object, Depends(get_llm)],
+    engine: Annotated[object, Depends(get_router_client)],
+) -> QuestOut:
+    """A sealed quest (0.7.3): the board picks somewhere about half the time away and
+    a way there and back; the goal stays hidden until `revealAtFraction` of the route."""
+    from app.quests import sealed as sealed_quests
+
+    character = await get_character(db, user)
+    quest = await sealed_quests.create(
+        db,
+        settings,
+        engine,  # type: ignore[arg-type]
+        llm,  # type: ignore[arg-type]
+        user,
+        character,
+        minutes=payload.minutes,
+        latitude=payload.latitude,
+        longitude=payload.longitude,
+        activity=payload.activity,
+    )
+    return service.quest_out(quest)
+
+
 @router.get("/story", response_model=list[StoryArcOut])
 async def story_arcs(user: CurrentUser, db: DBDep, settings: SettingsDep) -> list[StoryArcOut]:
     """The authored arcs and where the rider stands in each.
@@ -89,6 +120,16 @@ async def story_arcs(user: CurrentUser, db: DBDep, settings: SettingsDep) -> lis
     require_flag(settings, "story_quests")
     character = await get_character(db, user)
     return [StoryArcOut(**arc) for arc in await story.progress(db, user, character)]
+
+
+@router.get("/week", response_model=WeekNoticeOut)
+async def week_notice(user: CurrentUser, db: DBDep) -> WeekNoticeOut:
+    """This week's notice and how far along it is."""
+    from app.core.security import utcnow
+    from app.quests import week
+
+    state = await week.standing(db, user.id, utcnow().date())
+    return WeekNoticeOut(**{k: v for k, v in state.items() if k != "startsAt"})
 
 
 @router.get("/{quest_id}", response_model=QuestOut)

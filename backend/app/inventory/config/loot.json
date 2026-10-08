@@ -1,0 +1,40 @@
+{
+  "_comment": "What drops, how often, and what the stall sells (docs/ROADMAP.md 0.7.2). Read by inventory/loot.py, which is pure: a drop is seeded by the object it came from, so a rerun of the same ride drops the same thing, and the ledger key drop:{objectId} means it drops it once. Prices are starting values; tune them with backend/scripts/price_check.py against the real coin ledger.",
+  "dropChance": {
+    "MONSTER": {"1": 0.35, "2": 0.6, "3": 1.0},
+    "CHEST": {"1": 0.25, "2": 0.45, "3": 0.8},
+    "COLLECTABLE": {"1": 0.0, "2": 0.0, "3": 0.0}
+  },
+  "bountyBonus": 0.25,
+  "grudgeChance": 1.0,
+  "mossyScale": 2.0,
+  "gearShare": 0.7,
+  "consumableWeights": {"LAMP": 3, "MAP_FRAGMENT": 3, "REST_TOKEN": 2, "SEALED_CHEST": 2},
+  "sealedChestRareFromTier": 3,
+  "rarityWeights": {
+    "1": [85, 14, 1],
+    "2": [65, 30, 5],
+    "3": [40, 48, 12]
+  },
+  "pityAfter": 5,
+  "questRewards": {"HARD": {"rarity": "RARE"}, "EPIC": {"rarity": "LEGENDARY", "chance": 0.25, "fallback": "RARE"}},
+  "stall": {
+    "opensAtLevel": 3,
+    "gearOffers": 2,
+    "consumableOffers": 2,
+    "gearRarityWeights": {"COMMON": 2, "RARE": 1},
+    "consumableWeights": {"LAMP": 3, "MAP_FRAGMENT": 3, "REST_TOKEN": 2, "SEALED_CHEST_COMMON": 2, "SEALED_CHEST_RARE": 1},
+    "prices": {
+      "COMMON": 150,
+      "RARE": 450,
+      "LAMP": 40,
+      "MAP_FRAGMENT": 60,
+      "REST_TOKEN": 80,
+      "SEALED_CHEST_COMMON": 120,
+      "SEALED_CHEST_RARE": 300
+    }
+  },
+  "mapPiece": {"rings": 2, "searchMeters": 5000},
+  "_treasureMap": "0.8.0: a treasure map comes from every phase of a legend broken, and from a tier-3 chest `chestChance` of the time (seeded by the chest, given once). Used, it buries a chest `distanceMeters` away at a place with something to say about it; a journey passing within `openMeters` opens it for `coins` and an item of the `rarityTier` chest weights, never nothing.",
+  "treasureMap": {"chestTier": 3, "chestChance": 0.3, "distanceMeters": [1000, 4000], "openMeters": 40, "coins": 120, "rarityTier": 3}
+}

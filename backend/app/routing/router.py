@@ -13,6 +13,8 @@ from app.routing.schemas import (
     RouteGenerateResponse,
     RouteOptionOut,
     RoutePackageOut,
+    RuneRideRequest,
+    RuneRideResponse,
 )
 
 router = APIRouter(prefix="/routes", tags=["routes"])
@@ -35,14 +37,46 @@ async def generate(
     )
 
 
+@router.post("/rune", response_model=RuneRideResponse)
+async def rune_ride(
+    payload: RuneRideRequest,
+    user: CurrentUser,
+    db: DBDep,
+    settings: SettingsDep,
+    engine: Annotated[object, Depends(get_router_client)],
+    llm: Annotated[object, Depends(get_llm)],
+) -> RuneRideResponse:
+    """Up to three ways to cut a rune from here (409 `RUNE_NOT_A_SHAPE`, `RUNE_NOT_FOR_ACTIVITY`)."""
+    from app.routing import rune_rides
+
+    results, form, hint = await rune_rides.plan(
+        db,
+        settings,
+        engine,
+        llm,
+        user,
+        payload.origin,
+        payload.rune,
+        payload.activity,
+        payload.bikeId,  # type: ignore[arg-type]
+    )
+    return RuneRideResponse(
+        alternatives=[service.route_out(r, c) for r, c in results],
+        rune=payload.rune,
+        roadForm=form,
+        hint=hint,
+        engine=results[0][0].engine,
+    )
+
+
 @router.get("/{route_id}", response_model=RouteOptionOut)
 async def get(route_id: uuid.UUID, user: CurrentUser, db: DBDep) -> RouteOptionOut:
     return service.route_out(await service.get_route(db, user, route_id))
 
 
 @router.get("/{route_id}/package", response_model=RoutePackageOut)
-async def package(route_id: uuid.UUID, user: CurrentUser, db: DBDep) -> RoutePackageOut:
-    return await service.package(db, user, route_id)
+async def package(route_id: uuid.UUID, user: CurrentUser, db: DBDep, settings: SettingsDep) -> RoutePackageOut:
+    return await service.package(db, user, route_id, settings)
 
 
 @router.post("/{route_id}/reroute", response_model=RouteOptionOut)

@@ -1,6 +1,7 @@
 """Import every model so `Base.metadata` is complete for Alembic and tests."""
 
 from app.auth.models import RefreshToken  # noqa: F401
+from app.between.models import Letter, Pledge  # noqa: F401
 from app.characters.models import (  # noqa: F401
     Bike,
     Character,
@@ -9,11 +10,21 @@ from app.characters.models import (  # noqa: F401
 )
 from app.db.base import Base
 from app.discoveries.models import Discovery, PoiImportArea, UserDiscovery  # noqa: F401
+from app.districts.models import Region, UserRegion  # noqa: F401
 from app.economy.models import UserStreak, Wallet, WalletTransaction  # noqa: F401
 from app.exploration.models import UserExplorationCell  # noqa: F401
 from app.integrations.models import StravaConnection  # noqa: F401
+from app.inventory.models import (  # noqa: F401
+    CharacterDeed,
+    InventoryItem,
+    ItemEvent,
+    Loadout,
+    RuneCut,
+    RuneHolding,
+)
+from app.legends.models import OldOne  # noqa: F401
 from app.notifications.models import DeviceToken  # noqa: F401
-from app.progression.models import RewardEvent, XPEvent  # noqa: F401
+from app.progression.models import CharacterTitle, RewardEvent, XPEvent  # noqa: F401
 from app.quests.models import (  # noqa: F401
     QuestInstance,
     QuestObjective,

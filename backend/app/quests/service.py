@@ -27,13 +27,15 @@ from app.economy import service as economy
 from app.economy.rules import quest_ac
 from app.exploration.cells import cell_for
 from app.exploration.service import known_cells, reveal
+from app.lore.catalog import poster
 from app.quests import narrative, story
 from app.quests.generator import GeneratedQuest, GenerationContext, POICandidate, WorldObjectCandidate, generate
 from app.quests.models import QuestInstance, QuestObjective, QuestProgressEvent
 from app.quests.schemas import ObjectiveEventIn, ObjectiveOut, ObjectiveProgress, QuestOut
 from app.quests.state_machine import assert_transition
-from app.quests.templates import ANY_CLASS
+from app.quests.templates import ANY_CLASS, all_templates
 from app.users.models import User
+from app.world_objects import lairs
 from app.world_objects import service as world_objects
 from app.world_objects.models import WorldObject
 
@@ -46,6 +48,9 @@ NEARBY_RADIUS_M = 25_000.0
 # (15 km for a ride, scaled for feet), or most of an outing they call comfortable.
 QUEST_REACH_KM = 18.0
 QUEST_REACH_OF_COMFORTABLE = 0.6
+
+
+HIDDEN_KEYS = ("poiName", "category", "objectName", "objectPlace")
 
 
 def objective_out(o: QuestObjective) -> ObjectiveOut:
@@ -63,7 +68,7 @@ def objective_out(o: QuestObjective) -> ObjectiveOut:
         targetCells=o.target_cells,
         targetElevationMeters=o.target_elevation_meters,
         targetCount=o.target_count,
-        discoveryId=o.discovery_id,
+        discoveryId=None if hidden else o.discovery_id,
         required=o.required,
         order=o.order,
         completionRule=o.completion_rule,
@@ -71,8 +76,19 @@ def objective_out(o: QuestObjective) -> ObjectiveOut:
         completedAt=o.completed_at,
         provisional=o.provisional,
         progress=ObjectiveProgress(current=o.progress_current, target=o.progress_target),
-        extra=o.extra or {},
+        # Nor does the puzzle name it: the place's name and what it is stay back too.
+        extra={k: v for k, v in (o.extra or {}).items() if not hidden or k not in HIDDEN_KEYS},
     )
+
+
+def quest_extra(q: QuestInstance) -> dict[str, Any]:
+    """A sealed quest's minutes and reveal point (kept in its narrative), and its goal
+    (kept on its objective): quests/sealed.py. Nothing for any other quest."""
+    sealed = (q.narrative or {}).get("sealed")
+    if not isinstance(sealed, dict):
+        return {}
+    goal = next(((o.extra or {}).get("goal") for o in q.objectives if (o.extra or {}).get("goal")), None)
+    return {"sealed": True, **sealed, **({"goal": goal} if goal else {})}
 
 
 def quest_out(q: QuestInstance) -> QuestOut:
@@ -102,13 +118,14 @@ def quest_out(q: QuestInstance) -> QuestOut:
         startedAt=q.started_at,
         completedAt=q.completed_at,
         createdAt=q.created_at,
+        extra=quest_extra(q),
     )
 
 
 async def get_quest(db: AsyncSession, user: User, quest_id: uuid.UUID) -> QuestInstance:
     quest = await db.get(QuestInstance, quest_id)
     if quest is None or quest.user_id != user.id:
-        raise NotFound("Quest not found")
+        raise NotFound("We couldn't find that quest. It may have ended, so check the quest board.")
     return quest
 
 
@@ -178,10 +195,24 @@ async def build_context(
     # Places come from OpenStreetMap the first time an area is used, so quests work anywhere.
     await osm_import.ensure_pois(settings, latitude, longitude)
     pois = await discoveries_nearby(db, latitude, longitude, 30_000 * (1 + poi_bonus), limit=800)
+    # A lair, from level 8 (0.8.0), for the step that sends the player to one.
+    try:
+        async with db.begin_nested():
+            await lairs.ensure_offered(db, settings, character, near=(latitude, longitude))
+    except Exception as exc:  # noqa: BLE001 - a board without a lair, never no board
+        log.error("lair_offer_failed", error=str(exc)[:200])
     # And the chests, pieces and monsters already placed here, for the quests that point at them.
     placed = await world_objects.ensure_spawned(
         db, settings, user.id, latitude, longitude, 6000, character_class=character.character_class, activity=activity
     )
+    # The legend awake (0.8.0), for the step that asks for damage to it.
+    from app.legends.models import AWAKE, OldOne
+
+    awake = await db.scalar(select(OldOne).where(OldOne.character_id == character.id, OldOne.status == AWAKE))
+    # The player's home district (0.9.0), for Act IV.
+    from app.districts.service import most_visited
+
+    home = await most_visited(db, user.id)
     completed = [
         r
         for (r,) in (
@@ -224,20 +255,43 @@ async def build_context(
                 o.latitude,
                 o.longitude,
                 o.expires_at,
+                bounty=bool(o.bounty),
             )
             for o in placed
         ],
+        legend=(
+            WorldObjectCandidate(
+                str(awake.id), "LEGEND", awake.name, awake.anchor_name, awake.latitude, awake.longitude, None
+            )
+            if awake is not None
+            else None
+        ),
+        home_district=(
+            {"id": str(home.id), "name": home.name, "latitude": home.latitude, "longitude": home.longitude}
+            if home is not None
+            else None
+        ),
     )
 
 
 def _persist(user: User, generated: GeneratedQuest, now: datetime) -> QuestInstance:
+    from app.inventory.service import quest_reward_items
+
+    # The id is made here, not at the flush, so the item a hard quest offers can be
+    # seeded by it (0.7.2): the same quest always offers the same thing.
+    quest_id = uuid.uuid4()
+    rewards = dict(generated.rewards or {})
+    if not rewards.get("items"):
+        rewards["items"] = quest_reward_items(quest_id, generated.difficulty)
     quest = QuestInstance(
+        id=quest_id,
         user_id=user.id,
         template_id=generated.template_id,
         quest_type=generated.quest_type,
         character_class=generated.character_class,
         activity=generated.activity,
-        title=generated.title,
+        # A place's name can be long; Postgres holds a string to its column.
+        title=generated.title[:120],
         description=generated.description,
         narrative=generated.narrative,
         difficulty=generated.difficulty,
@@ -248,14 +302,14 @@ def _persist(user: User, generated: GeneratedQuest, now: datetime) -> QuestInsta
         expires_at=now + timedelta(days=QUEST_TTL_DAYS),
         latitude=generated.latitude,
         longitude=generated.longitude,
-        rewards=generated.rewards,
+        rewards=rewards,
         generation_seed=generated.seed,
     )
     for o in generated.objectives:
         quest.objectives.append(
             QuestObjective(
                 objective_type=o.objective_type,
-                title=o.title,
+                title=o.title[:160],
                 latitude=o.latitude,
                 longitude=o.longitude,
                 radius_meters=o.radius_meters,
@@ -316,7 +370,7 @@ async def generate_quests(
         )
     except Exception as exc:  # noqa: BLE001
         log.error(EVENT_QUEST_GENERATION_FAILED, error=str(exc))
-        raise QuestGenerationFailed("Quest generation failed") from exc
+        raise QuestGenerationFailed("We couldn't make quests here just now. Try again in a moment.") from exc
     # A quest the rider already has open is never dealt twice. This used to fall
     # back to generating without the exclusions "rather than returning nothing",
     # and a rider who had been offered every template got the whole board again:
@@ -330,6 +384,9 @@ async def generate_quests(
     object_expiry = {o.id: o.expires_at for o in ctx.world_objects if o.expires_at is not None}
     for g in generated:
         g = narrative.with_story(g)
+        # Who put it up, and one of their lines: attached after the story is
+        # written, so neither the model nor the composed paragraph can drop it.
+        g.narrative = {**(g.narrative or {}), "poster": poster(g.character_class, f"{user.id}:{g.seed}:{now.date()}")}
         quest = _persist(user, g, now)
         # A quest about something in the world is over when that thing is.
         for o in g.objectives:
@@ -472,6 +529,30 @@ async def retire_orphaned(db: AsyncSession, user: User) -> int:
     return retired
 
 
+async def retire_retired_templates(db: AsyncSession, user: User) -> int:
+    """A quest from a template that is no longer dealt (the Tempo, which asked for a
+    speed) leaves the board; one already being ridden still resolves."""
+    retired_ids = {t["id"] for t in all_templates() if t.get("retired")}
+    if not retired_ids:
+        return 0
+    rows = (
+        await db.execute(
+            select(QuestInstance).where(
+                QuestInstance.user_id == user.id,
+                QuestInstance.status.in_(["AVAILABLE", "ACCEPTED"]),
+                QuestInstance.template_id.in_(retired_ids),
+            )
+        )
+    ).scalars()
+    retired = 0
+    for quest in rows:
+        quest.status = "EXPIRED"
+        retired += 1
+    if retired:
+        await db.flush()
+    return retired
+
+
 async def ensure_available(
     db: AsyncSession,
     settings: Settings,
@@ -486,6 +567,11 @@ async def ensure_available(
     await retire_duplicates(db, user, latitude, longitude)
     await retire_unreachable(db, user, latitude, longitude)
     await retire_orphaned(db, user)
+    await retire_retired_templates(db, user)
+    # A Folded Map worn offers one more (BOARD_EXTRA), 0.7.2.
+    from app.inventory.service import sheet_for
+
+    minimum += int((await sheet_for(db, character)).rules.get("BOARD_EXTRA", 0))
     available = await list_quests(db, user, "AVAILABLE", latitude, longitude, 20)
     if len(available) < minimum:
         await generate_quests(
@@ -498,11 +584,15 @@ async def ensure_available(
             db, settings, llm, user, character, latitude, longitude, 1, activity=activity, only_any=True
         )
         available = await list_quests(db, user, "AVAILABLE", latitude, longitude, 20)
-    # The spine: one authored step, waiting until it is ridden. Generated quests
-    # are a different three every time and go nowhere; an arc is what the rider is
-    # actually in the middle of.
-    if settings.flags.get("story_quests") and not any(q.story_quest_id for q in available):
-        if await story.offer(db, settings, llm, user, character, latitude, longitude, utcnow(), activity):
+    # The spine: one authored step per track (the campaign, and the trade's own
+    # arc), waiting until it is done. Generated quests are a different three
+    # every time and go nowhere; an arc is what the player is in the middle of.
+    if settings.flags.get("story_quests"):
+        offered = False
+        for track in story.TRACKS:
+            if await story.offer(db, settings, llm, user, character, latitude, longitude, utcnow(), activity, track):
+                offered = True
+        if offered:
             available = await list_quests(db, user, "AVAILABLE", latitude, longitude, 20)
     return available
 

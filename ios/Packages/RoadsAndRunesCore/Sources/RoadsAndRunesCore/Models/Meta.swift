@@ -52,6 +52,23 @@ public enum APIErrorCode {
     public static let objectNotClaimable = "OBJECT_NOT_CLAIMABLE"
     public static let gpsTooWeak = "GPS_TOO_WEAK"
     public static let claimTooFast = "CLAIM_TOO_FAST"
+    // What you carry (0.7.2).
+    public static let wrongSlot = "WRONG_SLOT"
+    public static let slotLocked = "SLOT_LOCKED"
+    public static let loadoutLocked = "LOADOUT_LOCKED"
+    public static let takeOffFirst = "TAKE_OFF_FIRST"
+    public static let noneLeft = "NONE_LEFT"
+    public static let noHiddenPlace = "NO_HIDDEN_PLACE"
+    public static let openLater = "OPEN_LATER"
+    public static let stallClosed = "STALL_CLOSED"
+    public static let alreadyBought = "ALREADY_BOUGHT"
+    public static let insufficientCoins = "INSUFFICIENT_AC"
+    /// 0.8.0: a legend's one free move is used; a second treasure map while one is open.
+    public static let alreadyMoved = "ALREADY_MOVED"
+    public static let oneAtATime = "ONE_AT_A_TIME"
+    /// 0.9.0: a look worn that the player does not own, or one of another kind.
+    public static let notOwned = "LOOK_NOT_OWNED"
+    public static let wrongLook = "WRONG_LOOK"
 }
 
 public struct StravaStatus: Codable, Hashable, Sendable {
@@ -122,12 +139,15 @@ public struct AppConfig: Codable, Hashable, Sendable {
     public var h3Resolution: Int
     public var levels: LevelLimits
     public var environment: String?
+    /// The fight's constants (0.6.1); nil from an older server.
+    public var combat: CombatConstants?
 
-    public init(featureFlags: [String: Bool], h3Resolution: Int, levels: LevelLimits, environment: String? = nil) {
+    public init(featureFlags: [String: Bool], h3Resolution: Int, levels: LevelLimits, environment: String? = nil, combat: CombatConstants? = nil) {
         self.featureFlags = featureFlags
         self.h3Resolution = h3Resolution
         self.levels = levels
         self.environment = environment
+        self.combat = combat
     }
 
     public func isEnabled(_ flag: String) -> Bool { featureFlags[flag] ?? false }
@@ -142,6 +162,10 @@ public enum FeatureFlag {
     public static let fogOfWar = "fog_of_war"
     public static let storyQuests = "story_quests"
     public static let strava = "strava"
+    /// 0.7.3: the Outdoors style drawn as ink on paper (the World and, from 0.9.0, the Atlas).
+    public static let parchmentMap = "parchment_map"
+    /// 0.9.0: Wikidata's line on a place, "From Wikidata: …".
+    public static let placeLore = "place_lore"
 }
 
 /// `GET /health`.

@@ -23,11 +23,11 @@ class RateLimiter:
             if count == 1:
                 await self.redis.expire(redis_key, 65)
             if count > self.per_minute:
-                raise RateLimited("Too many requests")
+                raise RateLimited("That was a lot at once. Wait a moment and try again.")
             return
         hits = self._memory[key]
         cutoff = now - 60
         self._memory[key] = hits = [t for t in hits if t > cutoff]
         if len(hits) >= self.per_minute:
-            raise RateLimited("Too many requests")
+            raise RateLimited("That was a lot at once. Wait a moment and try again.")
         hits.append(now)

@@ -1,5 +1,6 @@
 import CoreLocation
 import MapLibre
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -10,16 +11,26 @@ struct MapMarker: Identifiable, Hashable {
         case stop, stopActive
         /// The world's objects: a chest to pass, a piece to gather, a monster to beat, the day's bounty.
         case chest, collectable, monster, bounty
+        /// A legend (0.8.0), drawn larger than anything else, and a lair's middle.
+        case legend, lair
     }
 
     let id: String
     let coordinate: Coordinate
     let kind: Kind
     let title: String
-    /// SF Symbol drawn inside the marker, so a stop looks like what it is.
-    var symbol: String?
     /// A chest or a piece the player is standing close enough to take: it wears a gold ring.
     var inReach = false
+    /// What the marker shows (RoadsAndRunesArt): a creature, a chest, a stop's
+    /// kind of place. Without one, a marker of its kind shows a plain face.
+    var mark: Mark?
+}
+
+/// A quiet name on the map (0.9.0): a district's, shown only zoomed out.
+struct MapLabel: Identifiable, Hashable {
+    let id: String
+    let coordinate: Coordinate
+    let text: String
 }
 
 /// How far the player can reach from where they stand, drawn as a ring around them.
@@ -63,12 +74,26 @@ struct MapLibreView: UIViewRepresentable {
     var center: Coordinate?
     var zoom: Double = 13
     var cells: [CellRender] = []
+    /// The fog as ink (0.7.0, `InkFog.wash`): the outer ring, then the read ground as
+    /// holes. Drawn instead of `cells` when given; never on the ride screen.
+    var inkWash: [[Coordinate]] = []
     var route: [Coordinate] = []
     /// A dashed line that is not a route: the way back to one, or the crow's flight
     /// to where a route will go once it has been drawn.
     var guide: [Coordinate] = []
     var reach: MapReach?
+    /// A lair's seven tiles (0.8.0): outlined, the visited ones filled.
+    var lairTiles: [LairTile] = []
     var markers: [MapMarker] = []
+    /// The route line's colour (0.9.0: the ink worn); nil is the plain terracotta.
+    var routeColor: UIColor?
+    /// Every journey's line at once (0.9.0, the Atlas), drawn thin in `routeColor`.
+    var traces: [[Coordinate]] = []
+    /// District names (0.9.0), shown only when zoomed out past `labelsBelowZoom`.
+    var labels: [MapLabel] = []
+    var labelsBelowZoom: Double = 13.5
+    /// The rider marker's frame (0.9.0): plain, rope, laurel or runic.
+    var riderFrame: String?
     var emphasis: MapEmphasis = .none
     var followsUser = false
     var navigationMode = false
@@ -141,11 +166,17 @@ struct MapLibreView: UIViewRepresentable {
         private var styleLoaded = false
         private var markers: [String: (marker: MapMarker, annotation: MLNPointAnnotation)] = [:]
         private var lastCellsHash = 0
+        private var lastInkHash = 0
         private var lastRouteHash: Int?
         private var lastGuideHash: Int?
         private var lastReachHash: Int?
+        private var lastLairHash: Int?
         private var appliedFollowZoom = false
         private var appliedEmphasis: MapEmphasis?
+        private var lastRouteColor: UIColor?
+        private var lastTracesHash: Int?
+        private var lastLabelsHash: Int?
+        private weak var riderView: RiderLocationView?
 
         init(_ parent: MapLibreView) { self.parent = parent }
 
@@ -156,9 +187,14 @@ struct MapLibreView: UIViewRepresentable {
                 return symbols.identifier
             })
             lastCellsHash = 0
+            lastInkHash = 0
             lastRouteHash = nil
             lastGuideHash = nil
             lastReachHash = nil
+            lastLairHash = nil
+            lastRouteColor = nil
+            lastTracesHash = nil
+            lastLabelsHash = nil
             appliedEmphasis = nil
             apply(to: mapView)
             reportVisibleRegion(mapView)
@@ -180,9 +216,15 @@ struct MapLibreView: UIViewRepresentable {
             guard styleLoaded, let style = mapView.style else { return }
             applyEmphasis(style)
             applyFog(style)
+            applyInk(style)
             applyRoute(style)
             applyGuide(style)
             applyReach(style)
+            applyLair(style)
+            applyTraces(style)
+            applyLabels(style)
+            applyRouteColor(style)
+            riderView?.apply(frame: LookStyle.MarkerFrame(parent.riderFrame))
             applyMarkers(mapView)
             applyCamera(mapView)
             applyFollowZoom(mapView)
@@ -308,6 +350,67 @@ struct MapLibreView: UIViewRepresentable {
             }
         }
 
+        // MARK: The fog as ink (0.7.0)
+
+        /// One paper wash with the read ground cut out of it, a feathered edge where
+        /// the paper meets the map, and a dotted frontier along it.
+        private func applyInk(_ style: MLNStyle) {
+            var hasher = Hasher()
+            for ring in parent.inkWash {
+                hasher.combine(ring.count)
+                if let first = ring.first { hasher.combine(first.latitude); hasher.combine(first.longitude) }
+            }
+            let hash = hasher.finalize()
+            guard hash != lastInkHash else { return }
+            lastInkHash = hash
+            let source = ensureSource(style, id: "rr-ink")
+            let edges = ensureSource(style, id: "rr-ink-edges")
+            guard let outer = parent.inkWash.first, outer.count >= 4 else {
+                source.shape = MLNShapeCollectionFeature(shapes: [])
+                edges.shape = MLNShapeCollectionFeature(shapes: [])
+                return
+            }
+            func coords(_ ring: [Coordinate]) -> [CLLocationCoordinate2D] {
+                ring.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+            }
+            let holes: [MLNPolygon] = parent.inkWash.dropFirst().map { ring in
+                var points = coords(ring)
+                return MLNPolygon(coordinates: &points, count: UInt(points.count))
+            }
+            var outerPoints = coords(outer)
+            let wash = MLNPolygonFeature(coordinates: &outerPoints, count: UInt(outerPoints.count), interiorPolygons: holes)
+            source.shape = wash
+            let lines: [MLNPolylineFeature] = parent.inkWash.dropFirst().map { ring in
+                var points = coords(ring)
+                return MLNPolylineFeature(coordinates: &points, count: UInt(points.count))
+            }
+            edges.shape = MLNShapeCollectionFeature(shapes: lines)
+            if style.layer(withIdentifier: "rr-ink-wash") == nil {
+                let fill = MLNFillStyleLayer(identifier: "rr-ink-wash", source: source)
+                fill.fillColor = NSExpression(forConstantValue: UIColor(hex: 0xF3E7D2, alpha: 0.9))
+                fill.fillAntialiased = NSExpression(forConstantValue: true)
+                let feather = MLNLineStyleLayer(identifier: "rr-ink-feather", source: edges)
+                feather.lineColor = NSExpression(forConstantValue: UIColor(hex: 0xF3E7D2, alpha: 0.75))
+                feather.lineWidth = NSExpression(forConstantValue: 16)
+                feather.lineBlur = NSExpression(forConstantValue: 12)
+                let frontier = MLNLineStyleLayer(identifier: "rr-ink-frontier", source: edges)
+                frontier.lineColor = NSExpression(forConstantValue: UIColor(hex: 0x645C50, alpha: 0.5))
+                frontier.lineWidth = NSExpression(forConstantValue: 1.3)
+                frontier.lineDashPattern = NSExpression(forConstantValue: [0.5, 3])
+                frontier.lineCap = NSExpression(forConstantValue: "round")
+                // Over the roads, under the labels, so names still read through the paper.
+                if let firstLabel = style.layers.first(where: { $0 is MLNSymbolStyleLayer }) {
+                    style.insertLayer(fill, below: firstLabel)
+                    style.insertLayer(feather, below: firstLabel)
+                    style.insertLayer(frontier, below: firstLabel)
+                } else {
+                    style.addLayer(fill)
+                    style.addLayer(feather)
+                    style.addLayer(frontier)
+                }
+            }
+        }
+
         // MARK: Route line
 
         private func applyRoute(_ style: MLNStyle) {
@@ -322,8 +425,10 @@ struct MapLibreView: UIViewRepresentable {
                 source.shape = nil
             }
             if style.layer(withIdentifier: "rr-route-line") == nil {
+                let ink = parent.routeColor ?? UIColor(hex: 0xC67139)
+                lastRouteColor = ink
                 let glow = MLNLineStyleLayer(identifier: "rr-route-glow", source: source)
-                glow.lineColor = NSExpression(forConstantValue: UIColor(hex: 0xC67139, alpha: 0.16))
+                glow.lineColor = NSExpression(forConstantValue: ink.withAlphaComponent(0.16))
                 glow.lineWidth = NSExpression(forConstantValue: 18)
                 glow.lineCap = NSExpression(forConstantValue: "round")
                 glow.lineJoin = NSExpression(forConstantValue: "round")
@@ -335,7 +440,7 @@ struct MapLibreView: UIViewRepresentable {
                 casing.lineJoin = NSExpression(forConstantValue: "round")
                 style.addLayer(casing)
                 let line = MLNLineStyleLayer(identifier: "rr-route-line", source: source)
-                line.lineColor = NSExpression(forConstantValue: UIColor(hex: 0xC67139))
+                line.lineColor = NSExpression(forConstantValue: ink)
                 line.lineWidth = NSExpression(forConstantValue: 5)
                 line.lineCap = NSExpression(forConstantValue: "round")
                 line.lineJoin = NSExpression(forConstantValue: "round")
@@ -401,6 +506,119 @@ struct MapLibreView: UIViewRepresentable {
             }
         }
 
+        /// A lair (0.8.0): its seven tiles outlined in sage, the visited ones washed in.
+        private func applyLair(_ style: MLNStyle) {
+            var hasher = Hasher()
+            hasher.combine(parent.lairTiles)
+            let hash = hasher.finalize()
+            guard hash != lastLairHash else { return }
+            lastLairHash = hash
+            let source = ensureSource(style, id: "rr-lair")
+            let tiles: [MLNPolygonFeature] = parent.lairTiles.compactMap { tile in
+                guard tile.outline.count >= 3 else { return nil }
+                var coords = tile.outline.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+                if let first = coords.first { coords.append(first) }
+                let feature = MLNPolygonFeature(coordinates: &coords, count: UInt(coords.count))
+                feature.attributes = ["visited": tile.visited ? 1 : 0]
+                return feature
+            }
+            source.shape = MLNShapeCollectionFeature(shapes: tiles)
+            if style.layer(withIdentifier: "rr-lair-fill") == nil {
+                let fill = MLNFillStyleLayer(identifier: "rr-lair-fill", source: source)
+                fill.fillColor = NSExpression(forConstantValue: UIColor(hex: 0x7A8A5E, alpha: 0.38))
+                fill.predicate = NSPredicate(format: "visited == 1")
+                let line = MLNLineStyleLayer(identifier: "rr-lair-line", source: source)
+                line.lineColor = NSExpression(forConstantValue: UIColor(hex: 0x56633F, alpha: 0.9))
+                line.lineWidth = NSExpression(forConstantValue: 2)
+                line.lineJoin = NSExpression(forConstantValue: "round")
+                if let firstLabel = style.layers.first(where: { $0 is MLNSymbolStyleLayer }) {
+                    style.insertLayer(fill, below: firstLabel)
+                    style.insertLayer(line, below: firstLabel)
+                } else {
+                    style.addLayer(fill)
+                    style.addLayer(line)
+                }
+            }
+        }
+
+        /// The route in the ink worn (0.9.0): the line and its glow take its colour.
+        private func applyRouteColor(_ style: MLNStyle) {
+            let color = parent.routeColor ?? UIColor(hex: 0xC67139)
+            guard color != lastRouteColor else { return }
+            lastRouteColor = color
+            (style.layer(withIdentifier: "rr-route-line") as? MLNLineStyleLayer)?.lineColor = NSExpression(forConstantValue: color)
+            (style.layer(withIdentifier: "rr-route-glow") as? MLNLineStyleLayer)?.lineColor = NSExpression(forConstantValue: color.withAlphaComponent(0.16))
+            (style.layer(withIdentifier: "rr-traces-line") as? MLNLineStyleLayer)?.lineColor = NSExpression(forConstantValue: color.withAlphaComponent(0.75))
+        }
+
+        /// Every journey of the year at once (0.9.0, the Atlas): thin lines in the ink.
+        private func applyTraces(_ style: MLNStyle) {
+            var hasher = Hasher()
+            hasher.combine(parent.traces.count)
+            for trace in parent.traces {
+                hasher.combine(trace.count)
+                hasher.combine(trace.first)
+            }
+            let hash = hasher.finalize()
+            guard hash != lastTracesHash else { return }
+            lastTracesHash = hash
+            let source = ensureSource(style, id: "rr-traces")
+            let lines: [MLNPolylineFeature] = parent.traces.compactMap { trace in
+                guard trace.count >= 2 else { return nil }
+                var coords = trace.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+                return MLNPolylineFeature(coordinates: &coords, count: UInt(coords.count))
+            }
+            source.shape = MLNShapeCollectionFeature(shapes: lines)
+            if style.layer(withIdentifier: "rr-traces-line") == nil {
+                let casing = MLNLineStyleLayer(identifier: "rr-traces-casing", source: source)
+                casing.lineColor = NSExpression(forConstantValue: UIColor.white.withAlphaComponent(0.6))
+                casing.lineWidth = NSExpression(forConstantValue: 4)
+                casing.lineCap = NSExpression(forConstantValue: "round")
+                casing.lineJoin = NSExpression(forConstantValue: "round")
+                let line = MLNLineStyleLayer(identifier: "rr-traces-line", source: source)
+                line.lineColor = NSExpression(forConstantValue: (parent.routeColor ?? UIColor(hex: 0xC67139)).withAlphaComponent(0.75))
+                line.lineWidth = NSExpression(forConstantValue: 2.2)
+                line.lineCap = NSExpression(forConstantValue: "round")
+                line.lineJoin = NSExpression(forConstantValue: "round")
+                style.addLayer(casing)
+                style.addLayer(line)
+            }
+        }
+
+        /// District names (0.9.0): quiet ink lettering, only zoomed out, in the style's own font.
+        private func applyLabels(_ style: MLNStyle) {
+            var hasher = Hasher()
+            hasher.combine(parent.labels)
+            hasher.combine(parent.labelsBelowZoom)
+            let hash = hasher.finalize()
+            guard hash != lastLabelsHash else { return }
+            lastLabelsHash = hash
+            let source = ensureSource(style, id: "rr-labels")
+            let points: [MLNPointFeature] = parent.labels.map { label in
+                let point = MLNPointFeature()
+                point.coordinate = CLLocationCoordinate2D(latitude: label.coordinate.latitude, longitude: label.coordinate.longitude)
+                point.attributes = ["name": label.text]
+                return point
+            }
+            source.shape = MLNShapeCollectionFeature(shapes: points)
+            let existing = style.layer(withIdentifier: "rr-labels-text") as? MLNSymbolStyleLayer
+            let layer = existing ?? MLNSymbolStyleLayer(identifier: "rr-labels-text", source: source)
+            layer.maximumZoomLevel = Float(parent.labelsBelowZoom)
+            guard existing == nil else { return }
+            layer.text = NSExpression(forKeyPath: "name")
+            if let fonts = style.layers.compactMap({ ($0 as? MLNSymbolStyleLayer)?.textFontNames }).first {
+                layer.textFontNames = fonts
+            }
+            layer.textFontSize = NSExpression(forConstantValue: 13)
+            layer.textColor = NSExpression(forConstantValue: UIColor(hex: 0x474238, alpha: 0.85))
+            layer.textHaloColor = NSExpression(forConstantValue: UIColor(hex: 0xF5EAD8, alpha: 0.9))
+            layer.textHaloWidth = NSExpression(forConstantValue: 1.5)
+            layer.textLetterSpacing = NSExpression(forConstantValue: 0.08)
+            layer.textTransform = NSExpression(forConstantValue: "uppercase")
+            layer.textAllowsOverlap = NSExpression(forConstantValue: false)
+            style.addLayer(layer)
+        }
+
         /// Two alternatives often have the same number of points, and comparing counts
         /// left the previous route drawn under the one the rider had just picked.
         private func routeHash() -> Int {
@@ -448,12 +666,14 @@ struct MapLibreView: UIViewRepresentable {
 
         func mapView(_ mapView: MLNMapView, viewFor annotation: MLNAnnotation) -> MLNAnnotationView? {
             if annotation is MLNUserLocation {
-                return RiderLocationView()
+                let rider = RiderLocationView(frame: LookStyle.MarkerFrame(parent.riderFrame))
+                riderView = rider
+                return rider
             }
             guard let marker = marker(for: annotation) else { return nil }
-            let identifier = "marker-\(marker.kind.rawValue)-\(marker.symbol ?? "plain")\(marker.inReach ? "-reach" : "")"
+            let identifier = "marker-\(marker.kind.rawValue)-\(marker.mark?.id ?? "none")\(marker.inReach ? "-reach" : "")"
             return mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
-                ?? MarkerAnnotationView(reuseIdentifier: identifier, kind: marker.kind, symbol: marker.symbol, inReach: marker.inReach)
+                ?? MarkerAnnotationView(reuseIdentifier: identifier, kind: marker.kind, inReach: marker.inReach, mark: marker.mark)
         }
 
         private func marker(for annotation: MLNAnnotation) -> MapMarker? {
@@ -513,192 +733,128 @@ struct MapLibreView: UIViewRepresentable {
     }
 }
 
-/// Shape carries meaning before colour: quests and objectives are diamonds,
-/// mysteries are dashed "?" circles, stops are small ink dots.
+/// Every marker is a mark (RoadsAndRunesArt): a paper token with an ink ring and
+/// what the thing is drawn on it — a creature, a chest, a scroll for a quest, a
+/// tavern sign for a pub — so the map and the cards show the same faces. Within
+/// reach a thing grows and takes a gold ring: this one can be had now.
 final class MarkerAnnotationView: MLNAnnotationView {
-    /// Gold, for the bounty and for what is within reach.
-    private static let gold = UIColor(red: 0.85, green: 0.65, blue: 0.13, alpha: 1)
+    /// Gold, for what is within reach.
+    private static let gold = UIColor(red: 0xD9 / 255, green: 0xA6 / 255, blue: 0x21 / 255, alpha: 1)
 
-    init(reuseIdentifier: String, kind: MapMarker.Kind, symbol: String? = nil, inReach: Bool = false) {
+    init(reuseIdentifier: String, kind: MapMarker.Kind, inReach: Bool = false, mark: Mark? = nil) {
         super.init(reuseIdentifier: reuseIdentifier)
-        switch kind {
-        case .stop, .stopActive:
-            // A stop on the route reads as what it is — a cup, a mug, a column —
-            // and grows while the rider has it open.
-            let size: CGFloat = kind == .stopActive ? 40 : 30
-            frame = CGRect(x: 0, y: 0, width: size, height: size)
-            layer.cornerRadius = size / 2
-            layer.borderWidth = kind == .stopActive ? 3.5 : 2.5
-            layer.borderColor = UIColor.white.cgColor
-            backgroundColor = Self.color(for: kind)
-            if let symbol,
-               let glyph = UIImage(
-                   systemName: symbol,
-                   withConfiguration: UIImage.SymbolConfiguration(pointSize: size * 0.44, weight: .bold)
-               ) {
-                let image = UIImageView(image: glyph.withTintColor(.white, renderingMode: .alwaysOriginal))
-                image.frame = bounds
-                image.contentMode = .center
-                addSubview(image)
-            }
-        case .chest, .collectable, .monster, .bounty:
-            // The world's objects read as what they are: a box, a spark, a flame; the
-            // bounty wears a gold ring.
-            // Within reach it grows and takes the gold ring too: this one can be had now.
-            let size: CGFloat = (kind == .collectable ? 26 : 34) + (inReach ? 6 : 0)
-            // The disc is small on a map; the thing a thumb has to hit is not.
-            let touch = max(size, 44)
-            frame = CGRect(x: 0, y: 0, width: touch, height: touch)
-            let disc = UIView(frame: bounds.insetBy(dx: (touch - size) / 2, dy: (touch - size) / 2))
-            disc.isUserInteractionEnabled = false
-            disc.layer.cornerRadius = size / 2
-            disc.layer.borderWidth = kind == .bounty || inReach ? 3.5 : 2.5
-            disc.layer.borderColor = kind == .bounty || inReach ? Self.gold.cgColor : UIColor.white.cgColor
-            disc.backgroundColor = Self.color(for: kind)
-            addSubview(disc)
-            let name: String = {
-                switch kind {
-                case .chest: return "shippingbox.fill"
-                case .collectable: return "sparkles"
-                default: return "flame.fill"
-                }
-            }()
-            if let glyph = UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(pointSize: size * 0.46, weight: .bold)) {
-                let image = UIImageView(image: glyph.withTintColor(.white, renderingMode: .alwaysOriginal))
-                image.frame = bounds
-                image.contentMode = .center
-                addSubview(image)
-            }
-        case .quest, .questActive, .objective, .objectiveDone:
-            let size: CGFloat = 30
-            frame = CGRect(x: 0, y: 0, width: size, height: size)
-            let diamond = UIView(frame: CGRect(x: 5, y: 5, width: 20, height: 20))
-            diamond.backgroundColor = Self.color(for: kind)
-            diamond.layer.cornerRadius = 5
-            diamond.layer.borderWidth = 2.5
-            diamond.layer.borderColor = UIColor.white.cgColor
-            diamond.transform = CGAffineTransform(rotationAngle: .pi / 4)
-            addSubview(diamond)
-            if kind == .objectiveDone {
-                let check = UILabel(frame: bounds)
-                check.text = "✓"
-                check.font = .systemFont(ofSize: 13, weight: .heavy)
-                check.textColor = .white
-                check.textAlignment = .center
-                addSubview(check)
-            }
-        case .discovery:
-            let size: CGFloat = 26
-            frame = CGRect(x: 0, y: 0, width: size, height: size)
+        let size = Self.size(kind) + (inReach ? 6 : 0)
+        // The token is small on a map; the thing a thumb has to hit is not.
+        let touch = max(size, 44)
+        frame = CGRect(x: 0, y: 0, width: touch, height: touch)
+        let face = UIImageView(frame: bounds.insetBy(dx: (touch - size) / 2, dy: (touch - size) / 2))
+        face.image = MarkImageCache.shared.image(mark ?? Self.fallback(kind), size: size)
+        face.isUserInteractionEnabled = false
+        addSubview(face)
+        if inReach {
             let ring = CAShapeLayer()
-            ring.path = UIBezierPath(ovalIn: bounds.insetBy(dx: 1.5, dy: 1.5)).cgPath
-            ring.fillColor = UIColor(hex: 0xF5EAD8, alpha: 0.92).cgColor
-            ring.strokeColor = UIColor(hex: 0x82796A).cgColor
-            ring.lineWidth = 2
-            ring.lineDashPattern = [3, 2]
+            ring.path = UIBezierPath(ovalIn: face.frame.insetBy(dx: -3, dy: -3)).cgPath
+            ring.fillColor = UIColor.clear.cgColor
+            ring.strokeColor = Self.gold.cgColor
+            ring.lineWidth = 3
             layer.addSublayer(ring)
-            let label = UILabel(frame: bounds)
-            label.text = "?"
-            label.font = .systemFont(ofSize: 14, weight: .bold)
-            label.textColor = UIColor(hex: 0x645C50)
-            label.textAlignment = .center
-            addSubview(label)
-        case .place:
-            // The selected place: a terracotta teardrop whose tip sits on the coordinate.
-            frame = CGRect(x: 0, y: 0, width: 30, height: 40)
-            let pin = CAShapeLayer()
-            let path = UIBezierPath(arcCenter: CGPoint(x: 15, y: 15), radius: 13, startAngle: .pi * 0.8, endAngle: .pi * 0.2, clockwise: true)
-            path.addLine(to: CGPoint(x: 15, y: 38))
-            path.close()
-            pin.path = path.cgPath
-            pin.fillColor = Self.color(for: kind).cgColor
-            pin.strokeColor = UIColor.white.cgColor
-            pin.lineWidth = 2.5
-            layer.addSublayer(pin)
-            let dot = CALayer()
-            dot.frame = CGRect(x: 10, y: 10, width: 10, height: 10)
-            dot.cornerRadius = 5
-            dot.backgroundColor = UIColor.white.cgColor
-            layer.addSublayer(dot)
-            centerOffset = CGVector(dx: 0, dy: -18)
-        case .result:
-            let size: CGFloat = 18
-            frame = CGRect(x: 0, y: 0, width: size, height: size)
-            layer.cornerRadius = size / 2
-            layer.borderWidth = 3
-            layer.borderColor = UIColor.white.cgColor
-            backgroundColor = Self.color(for: kind)
-        case .poi:
-            let size: CGFloat = 16
-            frame = CGRect(x: 0, y: 0, width: size, height: size)
-            layer.cornerRadius = size / 2
-            layer.borderWidth = 2.5
-            layer.borderColor = UIColor.white.cgColor
-            backgroundColor = UIColor(hex: 0x201E1D)
         }
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.25
-        layer.shadowOffset = CGSize(width: 0, height: 3)
-        layer.shadowRadius = 4
     }
 
     required init?(coder: NSCoder) { nil }
 
-    private static func color(for kind: MapMarker.Kind) -> UIColor {
+    private static func size(_ kind: MapMarker.Kind) -> CGFloat {
         switch kind {
-        case .quest: return UIColor(hex: 0x7A8A5E)
-        case .questActive: return UIColor(hex: 0xC67139)
-        case .objective: return UIColor(hex: 0xC67139)
-        case .objectiveDone: return UIColor(hex: 0x56633F)
-        case .discovery: return UIColor(hex: 0x82796A)
-        case .poi: return UIColor(hex: 0x201E1D)
-        case .stop: return UIColor(hex: 0xC67139)
-        case .stopActive: return UIColor(hex: 0x8C491A)
-        case .place, .result: return UIColor(hex: 0xC67139)
-        case .chest: return UIColor(hex: 0x4A433A)
-        case .collectable: return UIColor(hex: 0x56633F)
-        case .monster, .bounty: return UIColor(hex: 0x8C491A)
+        case .legend: return 50
+        case .monster, .bounty, .chest, .questActive, .stopActive, .place: return 38
+        case .lair: return 34
+        case .collectable, .quest, .objective, .objectiveDone, .stop: return 32
+        case .discovery, .result: return 28
+        case .poi: return 24
+        }
+    }
+
+    /// What a marker shows when the caller gave it no face of its own.
+    private static func fallback(_ kind: MapMarker.Kind) -> Mark {
+        switch kind {
+        case .monster: return .creature(Sigil(nil))
+        case .bounty: return .creature(Sigil(nil), bounty: true)
+        case .legend: return .legend(icon: nil)
+        case .lair: return .lair
+        case .chest: return .chest(tier: 1)
+        case .collectable: return .token(.runeStone)
+        case .quest, .questActive: return .quest
+        case .objective: return .objective
+        case .objectiveDone: return .token(.flag, ring: .sage)
+        case .discovery: return .mystery
+        case .stop, .stopActive, .poi, .result: return .place("PLACE")
+        case .place: return .token(.pin, ring: .terracotta)
         }
     }
 }
 
-/// "You are here": a sage circle with a white ring and a soft halo, with a beak
+/// "You are here": a terracotta circle on a paper ring with a soft halo, with a beak
 /// pointing the way the rider is facing — their course while they are moving, the
 /// compass while they are stopped, and nothing at all when neither is known.
 final class RiderLocationView: MLNUserLocationAnnotationView {
     private let halo = CALayer()
     private let dot = CALayer()
     private let beak = CAShapeLayer()
+    /// The frame worn round the dot (0.9.0); plain is the paper ring the dot always had.
+    private let frameLayer = CALayer()
+    private var worn: LookStyle.MarkerFrame = .plain
 
-    init() {
+    init(frame markerFrame: LookStyle.MarkerFrame = .plain) {
         super.init(frame: CGRect(x: 0, y: 0, width: 52, height: 52))
         halo.frame = bounds.insetBy(dx: 4, dy: 4)
         halo.cornerRadius = 22
-        halo.backgroundColor = UIColor(hex: 0x7A8A5E, alpha: 0.25).cgColor
+        halo.backgroundColor = UIColor(hex: 0xC67139, alpha: 0.22).cgColor
         // Added before the dot so the dot covers its base; rotated about the centre,
         // which is the coordinate itself.
         beak.frame = bounds
         beak.path = Self.beak(in: bounds)
-        beak.fillColor = UIColor(hex: 0x7A8A5E).cgColor
-        beak.strokeColor = UIColor.white.cgColor
+        beak.fillColor = UIColor(hex: 0xC67139).cgColor
+        beak.strokeColor = UIColor(hex: 0xF5EAD8).cgColor
         beak.lineWidth = 2
         beak.lineJoin = .round
         beak.isHidden = true
         dot.frame = CGRect(x: 15, y: 15, width: 22, height: 22)
         dot.cornerRadius = 11
-        dot.backgroundColor = UIColor(hex: 0x7A8A5E).cgColor
-        dot.borderColor = UIColor.white.cgColor
+        dot.backgroundColor = UIColor(hex: 0xC67139).cgColor
+        dot.borderColor = UIColor(hex: 0xF5EAD8).cgColor
         dot.borderWidth = 4
-        dot.shadowColor = UIColor.black.cgColor
-        dot.shadowOpacity = 0.3
-        dot.shadowOffset = CGSize(width: 0, height: 3)
-        dot.shadowRadius = 5
+        dot.shadowColor = UIColor(hex: 0x201E1D).cgColor
+        dot.shadowOpacity = 0.9
+        dot.shadowOffset = .zero
+        dot.shadowRadius = 0.6
         layer.addSublayer(halo)
         layer.addSublayer(beak)
+        frameLayer.frame = bounds
+        layer.addSublayer(frameLayer)
         layer.addSublayer(dot)
+        apply(frame: markerFrame, force: true)
     }
 
     required init?(coder: NSCoder) { nil }
+
+    /// Draws the frame worn round the dot: nothing more for plain, a rope, a laurel or runic notches.
+    func apply(frame markerFrame: LookStyle.MarkerFrame, force: Bool = false) {
+        guard force || markerFrame != worn else { return }
+        worn = markerFrame
+        frameLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
+        guard markerFrame != .plain else { return }
+        let ring = dot.frame.insetBy(dx: -3, dy: -3)
+        for stroke in RiderFrameDrawing.strokes(markerFrame, ring: ring) {
+            let shape = CAShapeLayer()
+            shape.path = stroke.path.cgPath
+            shape.fillColor = UIColor.clear.cgColor
+            shape.strokeColor = stroke.color.cgColor
+            shape.lineWidth = stroke.style.lineWidth
+            shape.lineCap = stroke.style.lineCap == .round ? .round : .butt
+            if !stroke.style.dash.isEmpty { shape.lineDashPattern = stroke.style.dash.map { NSNumber(value: Double($0)) } }
+            frameLayer.addSublayer(shape)
+        }
+    }
 
     private static func beak(in bounds: CGRect) -> CGPath {
         let path = UIBezierPath()

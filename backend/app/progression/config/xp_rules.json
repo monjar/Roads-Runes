@@ -47,6 +47,11 @@
     "WARRIOR": {"CLIMB_COMPLETED": 0.30, "LONG_DISTANCE_ADVENTURE": 0.30},
     "SCRIBE": {"DISCOVERY_FOUND": 0.25, "QUEST_OBJECTIVE_COMPLETED": 0.10}
   },
+  "welcomeBack": {
+    "_comment": "The first outing after afterDays or more away pays its first firstMeters twice: a share of the outing's XP. \"The roads kept your place.\"",
+    "afterDays": 14,
+    "firstMeters": 1000
+  },
   "classXpShare": 0.6,
   "caps": {
     "perRideTotal": 3000,

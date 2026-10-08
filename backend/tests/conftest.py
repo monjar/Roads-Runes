@@ -41,6 +41,19 @@ def settings():
     return s
 
 
+@pytest.fixture(autouse=True)
+def no_festival_today(monkeypatch):
+    """The festivals (0.9.0) are worked out from today's date, so a suite run in late
+    September would find Harvest's arc on every board. No festival is on in a test
+    unless it says so (tests/test_seasons_and_act_four.py)."""
+    from app.quests import story
+
+    async def none(db, user, now=None):
+        return None
+
+    monkeypatch.setattr(story, "_festival_now", none)
+
+
 @pytest.fixture
 async def engine(settings):
     # asyncpg connections belong to the event loop that opened them and every test runs in

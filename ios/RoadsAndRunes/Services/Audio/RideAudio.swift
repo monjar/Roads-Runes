@@ -14,6 +14,10 @@ final class RideAudio: NSObject {
     /// Called when a spoken line has finished, so the next can take its turn.
     var onFinishedSpeaking: (() -> Void)?
     private(set) var isSpeaking = false
+    /// When the last chime scheduled will have finished.
+    private var chimeEndsAt = Date.distantPast
+    /// Something is being heard now: a line, or a chime still ringing.
+    var isBusy: Bool { isSpeaking || Date() < chimeEndsAt }
 
     private let enabled: Bool
     private let modeProvider: () -> RideSound
@@ -58,6 +62,7 @@ final class RideAudio: NSObject {
         guard engine.isRunning else { return }
         player.scheduleBuffer(buffer, at: nil, options: [])
         if !player.isPlaying { player.play() }
+        chimeEndsAt = max(chimeEndsAt, Date()).addingTimeInterval(chime.length(step: step))
     }
 
     func speak(_ line: String) {
@@ -80,11 +85,33 @@ final class RideAudio: NSObject {
             if !player.isPlaying { player.play() }
         }
         guard sound == .voice else { return }
-        let utterance = AVSpeechUtterance(string: "Bog Wraith beaten. 60 coins.")
+        let line = RideEvent.claimed(name: "Bog Wraith", kind: .monster, coins: 60, set: nil).spoken() ?? ""
+        let utterance = AVSpeechUtterance(string: line)
         utterance.voice = AVSpeechSynthesisVoice(language: "en-GB")
         utterance.preUtteranceDelay = 0.9
         isSpeaking = true
         synthesizer.speak(utterance)
+    }
+
+    /// A fight, played as a ride would play it, for hearing it on a road before
+    /// one is met (docs/FIELD_TESTS.md): it notices you, a rune strikes, it is defeated.
+    /// `onBeat` is given the wrist taps, for the Watch.
+    func playScriptedFight(onBeat: @escaping (FightBeat) -> Void = { _ in }) {
+        guard enabled, mode != .off else { return }
+        let steps: [(event: RideEvent, beat: FightBeat?, after: Double)] = [
+            (.engaged(name: "Grey Stag", wants: ["CLIMB", "RUNE"]), .engaged, 0.3),
+            (.landed(name: "Grey Stag", kind: "RUNE"), nil, 5),
+            (.claimed(name: "Grey Stag", kind: .monster, coins: 120, set: nil), nil, 5),
+        ]
+        Task { @MainActor [weak self] in
+            for step in steps {
+                try? await Task.sleep(for: .milliseconds(Int(step.after * 1000)))
+                guard let self else { return }
+                if let chime = step.event.chime { self.play(chime, step: step.event.chimeStep) }
+                if let beat = step.beat { onBeat(beat) }
+                if self.mode == .voice, let line = step.event.spoken() { self.speak(line) }
+            }
+        }
     }
 
     // MARK: Session and engine

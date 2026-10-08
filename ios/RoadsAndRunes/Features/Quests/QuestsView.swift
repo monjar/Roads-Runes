@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -12,6 +13,9 @@ struct QuestsView: View {
     /// Navigation state lives in the view so setting it always pushes the detail.
     @State private var selectedQuest: Quest?
     @State private var showingStory = false
+    @State private var showingRunes = false
+    /// A quest to open, handed over from a marker tapped on the World map.
+    var openQuest: Binding<UUID?> = .constant(nil)
 
     var body: some View {
         NavigationStack {
@@ -35,6 +39,22 @@ struct QuestsView: View {
                             .buttonStyle(.pressable)
                             .accessibilityIdentifier("customAdventure")
                             .disabled(container.rideRecorder.isActive)
+                        // Pick a time, the board picks the way (0.7.3): planned by the quick start.
+                        SealedQuestCard { minutes in
+                            QuickStartCoordinator.shared.handle(.sealed(minutes: minutes), autoStart: false)
+                        }
+                        .disabled(container.rideRecorder.isActive)
+                        // A treasure map's clue (0.8.0): kept here, never a marker on the map.
+                        ForEach(container.legends.clues) { clue in TreasureClueCard(clue: clue) }
+                        if let notice = model.weekNotice {
+                            WeekNoticeCard(notice: notice)
+                        }
+                        // The festival's arc (0.9.0), while its window is open.
+                        if let season = model.seasonArc {
+                            SeasonArcCard(arc: season) { questId in
+                                Task { await open(questId: questId) }
+                            }
+                        }
                         if let bounty = model.bounty {
                             BountyCard(
                                 bounty: bounty,
@@ -44,31 +64,36 @@ struct QuestsView: View {
                             )
                             .disabled(container.rideRecorder.isActive)
                         }
-                        section("Nearby adventures", model.available, empty: model.isLoading ? "Looking around…" : "Nothing nearby yet. Move around the map or generate more.")
+                        // The story and rune rides near the top, where they can be found.
+                        if container.session.isEnabled("story_quests") {
+                            section("Story", model.story, empty: "No story quest on the board yet.")
+                            shortcut("Story progress", icon: .openBook, id: "quests.story") { showingStory = true }
+                        }
+                        if container.session.character?.sheet?.inscribed != nil {
+                            shortcut("Rune rides · ride a rune's shape", icon: .runeStone, id: "quests.runeRides") { showingRunes = true }
+                        }
+                        if model.isLoading, model.all.isEmpty {
+                            // Loading is not "nothing here": say it is looking.
+                            HStack(spacing: 10) {
+                                ProgressView().tint(Theme.Colors.terracotta)
+                                Text("Finding quests near you…").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 12)
+                            .accessibilityIdentifier("quests.loading")
+                        }
+                        section("Quests nearby", model.available, empty: model.isLoading ? "Finding quests near you…" : "No quests nearby yet. Tap Find more quests below.")
                         if !model.recommended.isEmpty {
                             section("For \(ClassStyle.name(model.characterClass))s", model.recommended, empty: "")
                         }
                         if !model.forAnyone.isEmpty {
                             section("For anyone", model.forAnyone, empty: "")
                         }
-                        if container.session.isEnabled("story_quests") {
-                            section("Story", model.story, empty: "No story step on the board yet.")
-                            Button { showingStory = true } label: {
-                                HStack {
-                                    Text("The arcs so far").font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.terracottaDeep)
-                                    Spacer()
-                                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.Colors.muted)
-                                }
-                                .padding(.vertical, 10)
-                                .padding(.horizontal, 14)
-                                .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
-                            }
-                            .buttonStyle(.pressable)
-                        }
-                        if container.session.isEnabled("party_quests") { section("Party", model.party, empty: "No party quests.") }
-                        section("Completed", model.completed, empty: "Your completed adventures will appear here.", compact: true)
-                        Button("Generate more quests here") { Task { await model.generateMore() } }
+                        if container.session.isEnabled("party_quests") { section("Party", model.party, empty: "No party quests yet.") }
+                        section("Completed", model.completed, empty: "Finished quests appear here.", compact: true)
+                        Button("Find more quests") { Task { await model.generateMore() } }
                             .buttonStyle(.secondaryWide)
+                            .accessibilityIdentifier("quests.findMore")
                     }
                     .padding(.horizontal, 22)
                     .padding(.top, 8)
@@ -78,6 +103,7 @@ struct QuestsView: View {
             .background(Theme.Colors.cream)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(item: $selectedQuest) { quest in QuestDetailView(quest: quest) }
+            .navigationDestination(isPresented: $showingRunes) { RunesScreen() }
             .navigationDestination(isPresented: $showingStory) {
                 StoryArcsView(onOpenQuest: { questId in
                     // Back to the board, on the step they tapped.
@@ -86,7 +112,10 @@ struct QuestsView: View {
                     selectedQuest = quest
                 })
             }
-            .refreshable { await model?.load() }
+            .refreshable {
+                await model?.load()
+                await container.legends.refreshClues()
+            }
             .sheet(item: $plannerQuest) { quest in RoutePlannerView(quest: quest) }
             .sheet(isPresented: $planningCustom) { RoutePlannerView(quest: nil) }
             .sheet(item: $bountyDestination) { place in RoutePlannerView(quest: nil, destination: place) }
@@ -97,11 +126,44 @@ struct QuestsView: View {
             .onChange(of: container.rideRecorder.isActive) { _, active in
                 if !active { Task { await model?.load() } }
             }
+            .onChange(of: container.sync.latestSummary) { _, summary in
+                if summary != nil { Task { await container.legends.refreshClues() } }
+            }
+            .onChange(of: openQuest.wrappedValue, initial: true) { _, id in
+                guard let id else { return }
+                Task { await open(questId: id) }
+            }
         }
         .task {
             if model == nil { model = QuestsViewModel(container: container) }
             await model?.load()
         }
+        .task { await container.legends.refreshClues() }
+    }
+
+    /// The quest a World marker pointed at, once the board has it.
+    private func open(questId: UUID) async {
+        if model == nil { model = QuestsViewModel(container: container) }
+        if model?.all.contains(where: { $0.id == questId }) != true { await model?.load() }
+        openQuest.wrappedValue = nil
+        if let quest = model?.all.first(where: { $0.id == questId }) { selectedQuest = quest }
+    }
+
+    /// A row that leads somewhere: an icon, a label, a chevron.
+    private func shortcut(_ title: String, icon: GameIcon, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                IconShape(icon).foregroundStyle(Theme.Colors.terracottaDeep).frame(width: 20, height: 20)
+                Text(title).font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.terracottaDeep)
+                Spacer()
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.Colors.muted)
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 14)
+            .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
+        }
+        .buttonStyle(.pressable)
+        .accessibilityIdentifier(id)
     }
 
     @ViewBuilder
@@ -204,7 +266,7 @@ struct QuestDetailView: View {
                             IconCircleButton(symbol: "chevron.left") { dismiss() }.accessibilityLabel("Back").accessibilityIdentifier("quest.back")
                             Spacer()
                             HStack(spacing: 8) {
-                                Image(systemName: ClassStyle.symbol(quest.characterClass)).font(.system(size: 13, weight: .bold))
+                                ClassEmblem(characterClass: quest.characterClass, size: 22)
                                 Eyebrow(text: "\(ClassStyle.name(quest.characterClass)) quest", color: Theme.Colors.cream)
                             }
                             .foregroundStyle(Theme.Colors.cream)
@@ -219,11 +281,12 @@ struct QuestDetailView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(quest.title).font(Theme.Typography.voice(30, relativeTo: .largeTitle)).foregroundStyle(Theme.Colors.ink)
                         Text(quest.narrative.hook ?? quest.description).font(Theme.Typography.text(14)).foregroundStyle(Theme.Colors.inkSoft).lineSpacing(3)
+                        if let poster = quest.narrative.poster { PosterLine(poster: poster) }
                         VStack(spacing: 8) {
                             let objectives = quest.sortedObjectives
                             ForEach(Array(objectives.enumerated()), id: \.element.id) { offset, objective in
                                 ObjectiveRow(
-                                    objective: objective,
+                                    objective: SealedQuestCopy.shown(objective, in: quest),
                                     distanceMeters: model.distance(to: objective),
                                     units: model.units,
                                     index: objective.required ? requiredIndex(objectives, offset) : nil,
@@ -232,9 +295,12 @@ struct QuestDetailView: View {
                             }
                         }
                         HStack(spacing: 8) {
-                            FactTile(value: formatter.distance(meters: model.route?.distanceMeters ?? quest.recommendedDistanceKm * 1000), label: "Journey")
+                            FactTile(value: formatter.distance(meters: model.route?.distanceMeters ?? quest.recommendedDistanceKm * 1000), label: "Distance")
                             FactTile(value: formatter.duration(seconds: model.route.map { Double($0.estimatedDurationSeconds) } ?? Double(quest.estimatedDurationMinutes * 60)), label: "At your pace")
                             FactTile(value: "\(quest.rewards.xp ?? quest.baseXP)", label: rewardLabel(quest), valueColor: Theme.Colors.sageDeep)
+                        }
+                        ForEach(Array(quest.rewards.rewardItems.enumerated()), id: \.offset) { _, item in
+                            QuestItemRewardLine(item: item)
                         }
                         HStack(spacing: 8) {
                             SuitabilityChip(difficulty: quest.difficulty)
@@ -242,6 +308,10 @@ struct QuestDetailView: View {
                         }
                         if let completion = quest.narrative.completion, quest.status == .completed {
                             Text(completion).font(Theme.Typography.text(14)).foregroundStyle(Theme.Colors.inkSoft).italic()
+                        }
+                        // A promise to go out for it (0.7.3), while it is on the board.
+                        if quest.status == .available || quest.status == .accepted {
+                            PledgeButton(kind: .quest, targetId: quest.id, targetName: quest.title, mark: .quest)
                         }
                     }
                     .padding(.horizontal, 22)
@@ -316,13 +386,15 @@ struct QuestDetailView: View {
             return MapMarker(id: objective.id.uuidString, coordinate: coordinate, kind: objective.status == .completed ? .objectiveDone : .objective, title: objective.title)
         }
         // What the route passes on the way, so the rider can see where the coffee is.
-        for poi in route?.pois.prefix(10) ?? [] {
+        // Not for a sealed quest: a stop on its way could name the goal (0.7.3).
+        let stops: [RoutePOI] = SealedQuest.isSealed(quest) ? [] : Array(route?.pois.prefix(10) ?? [])
+        for poi in stops {
             out.append(MapMarker(
                 id: "stop-\(poi.id.uuidString)",
                 coordinate: poi.coordinate,
                 kind: poi.id == focused?.id ? .stopActive : .stop,
                 title: poi.name,
-                symbol: DiscoveryIcon.symbol(for: poi.category)
+                mark: DiscoveryIcon.mark(for: poi.category)
             ))
         }
         return out
@@ -337,24 +409,24 @@ struct QuestDetailView: View {
             HStack(spacing: 10) {
                 switch quest.status {
                 case .available:
-                    Button { Task { await model.accept() } } label: { busyLabel("Accept", busy: model.busy) }
+                    Button { Task { await model.accept() } } label: { busyLabel("Accept quest", busy: model.busy) }
                         .buttonStyle(.secondary)
                         .accessibilityIdentifier("quest.accept")
-                    Button("Begin quest") { showPlanner = true }
+                    Button("Start quest") { showPlanner = true }
                         .buttonStyle(.primary)
                         .accessibilityIdentifier("quest.begin")
                 case .accepted:
-                    Button { Task { await model.abandon() } } label: { busyLabel("Abandon", busy: model.busy) }
+                    Button { Task { await model.abandon() } } label: { busyLabel("Abandon quest", busy: model.busy) }
                         .buttonStyle(.secondary)
                         .accessibilityIdentifier("quest.abandon")
-                    Button("Plan the ride") { showPlanner = true }
+                    Button("Plan route") { showPlanner = true }
                         .buttonStyle(.primary)
                         .accessibilityIdentifier("quest.plan")
                 case .active:
-                    Button { Task { await model.abandon() } } label: { busyLabel("Abandon", busy: model.busy) }
+                    Button { Task { await model.abandon() } } label: { busyLabel("Abandon quest", busy: model.busy) }
                         .buttonStyle(.secondary)
                         .accessibilityIdentifier("quest.abandon")
-                    Button("Continue") { showPlanner = true }
+                    Button("Continue quest") { showPlanner = true }
                         .buttonStyle(.primary)
                         .accessibilityIdentifier("quest.continue")
                 default:

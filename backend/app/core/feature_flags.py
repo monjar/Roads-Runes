@@ -15,7 +15,7 @@ def is_enabled(settings: Settings, flag: str) -> bool:
 
 def require_flag(settings: Settings, flag: str) -> None:
     if not is_enabled(settings, flag):
-        raise FeatureDisabled(f"Feature '{flag}' is not enabled", details={"flag": flag})
+        raise FeatureDisabled("That isn't switched on yet. Look for it in a later update.", details={"flag": flag})
 
 
 def class_enabled(settings: Settings, character_class: str) -> bool:

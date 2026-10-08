@@ -28,6 +28,17 @@ final class FlakyAPI: RoadsAndRunesAPI, @unchecked Sendable {
     func worldObject(id: UUID) async throws -> WorldObject { try await inner.worldObject(id: id) }
     func bounty() async throws -> WorldObject? { try await inner.bounty() }
     func lure(at center: Coordinate) async throws -> [WorldObject] { try await inner.lure(at: center) }
+    func lampCheck(at center: Coordinate) async throws -> LampCheck { try await inner.lampCheck(at: center) }
+    func codex() async throws -> Codex { try await inner.codex() }
+    func titles() async throws -> [TitleInfo] { try await inner.titles() }
+    func wearTitle(slug: String?) async throws -> Character { try await inner.wearTitle(slug: slug) }
+    func weekNotice() async throws -> WeekNotice { try await inner.weekNotice() }
+    func runes() async throws -> RunesState { try await inner.runes() }
+    func raiseRune(id: String) async throws -> RunesState { try await inner.raiseRune(id: id) }
+    func inscribe(runes: [String]) async throws -> RunesState { try await inner.inscribe(runes: runes) }
+    func runeCuts() async throws -> [RuneCutInfo] { try await inner.runeCuts() }
+    func deeds() async throws -> DeedsState { try await inner.deeds() }
+    func runeRide(_ request: RuneRideRequest) async throws -> RuneRideResponse { try await inner.runeRide(request) }
     func claimWorldObject(id: UUID, _ request: WorldObjectClaimRequest) async throws -> WorldObjectClaim { try await inner.claimWorldObject(id: id, request) }
     func abilities() async throws -> [AbilityState] { try await inner.abilities() }
     func unlockAbility(id: String) async throws -> Character { try await inner.unlockAbility(id: id) }
@@ -36,6 +47,29 @@ final class FlakyAPI: RoadsAndRunesAPI, @unchecked Sendable {
     func updateBike(id: UUID, _ patch: BikeIn) async throws -> Bike { try await inner.updateBike(id: id, patch) }
     func deleteBike(id: UUID) async throws { try await inner.deleteBike(id: id) }
     func riderProfile() async throws -> RiderProfile { try await inner.riderProfile() }
+    func inventory() async throws -> InventoryState { try await inner.inventory() }
+    func wearGear(_ choice: GearChoice) async throws -> InventoryState { try await inner.wearGear(choice) }
+    func sellItem(id: UUID) async throws -> SellResult { try await inner.sellItem(id: id) }
+    func useConsumable(id: String, _ request: ConsumableUseRequest) async throws -> ConsumableUseResult { try await inner.useConsumable(id: id, request) }
+    func stall() async throws -> Stall { try await inner.stall() }
+    func buyOffer(id: String) async throws -> InventoryState { try await inner.buyOffer(id: id) }
+    func levelRewards() async throws -> [LevelStep] { try await inner.levelRewards() }
+    func pledges(today: String) async throws -> PledgeState { try await inner.pledges(today: today) }
+    func pledge(_ request: PledgeRequest) async throws -> Pledge { try await inner.pledge(request) }
+    func cancelPledge(day: String) async throws { try await inner.cancelPledge(day: day) }
+    func letters() async throws -> [Letter] { try await inner.letters() }
+    func writeLetter(_ request: LetterCreate) async throws -> Letter { try await inner.writeLetter(request) }
+    func deleteLetter(id: UUID) async throws { try await inner.deleteLetter(id: id) }
+    func sealedQuest(_ request: SealedQuestRequest) async throws -> Quest { try await inner.sealedQuest(request) }
+    func legends() async throws -> LegendsState { try await inner.legends() }
+    func legend(id: UUID) async throws -> Legend { try await inner.legend(id: id) }
+    func moveLegend(id: UUID) async throws -> Legend { try await inner.moveLegend(id: id) }
+    func treasureClues() async throws -> [TreasureClue] { try await inner.treasureClues() }
+    func districts() async throws -> [District] { try await inner.districts() }
+    func district(id: String) async throws -> District { try await inner.district(id: id) }
+    func districtHere(at point: Coordinate) async throws -> District? { try await inner.districtHere(at: point) }
+    func atlas(year: Int) async throws -> Atlas { try await inner.atlas(year: year) }
+    func setLook(_ choice: LookChoice) async throws -> InventoryState { try await inner.setLook(choice) }
     func updateRiderProfile(_ profile: RiderProfile) async throws -> RiderProfile { try await inner.updateRiderProfile(profile) }
     func world(center: Coordinate, radiusMeters: Double) async throws -> WorldSnapshot { try await inner.world(center: center, radiusMeters: radiusMeters) }
     func exploration(in box: BoundingBox) async throws -> ExplorationResponse { try await inner.exploration(in: box) }

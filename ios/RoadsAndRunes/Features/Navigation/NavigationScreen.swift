@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -10,6 +11,8 @@ struct NavigationScreen: View {
     @State private var confirmingEnd = false
     /// A stop tapped on the map, read without leaving the ride.
     @State private var readingStop: RoutePOI?
+    /// Where a letter is being left (0.7.3): only at a standstill.
+    @State private var letterSpot: Coordinate?
 
     private var recorder: RideRecorder { container.rideRecorder }
     private var formatter: UnitFormatter { UnitFormatter(units: container.session.units) }
@@ -25,6 +28,8 @@ struct NavigationScreen: View {
                 route: recorder.package?.route.path ?? [],
                 guide: guide,
                 markers: markers,
+                // The rider in the marker frame worn (0.9.0).
+                riderFrame: container.session.inventory?.look?.markerFrame,
                 followsUser: true,
                 navigationMode: true,
                 onMarkerTap: { marker in
@@ -48,7 +53,9 @@ struct NavigationScreen: View {
                 if recorder.recentObjectiveCompletion != nil, let instruction = recorder.progress?.nextInstruction {
                     MapPill(text: "\(TurnArrowView.phrase(for: instruction.sign)) · \(formatter.distance(meters: recorder.progress?.distanceToNextInstruction ?? instruction.distanceMeters))")
                 } else {
-                    ObjectiveBanner(objective: recorder.currentObjective, quest: recorder.quest, title: recorder.title, position: recorder.lastFix?.coordinate, formatter: formatter)
+                    ObjectiveBanner(objective: recorder.currentObjective, quest: recorder.quest, title: recorder.title ?? LoreCopy.free(recorder.activity),
+                                    position: recorder.lastFix?.coordinate, formatter: formatter,
+                                    routeFraction: recorder.progress?.fractionComplete, isStill: recorder.isStill || recorder.state == .paused)
                 }
                 if let stop = recorder.nearbyStop {
                     NearbyStopCard(
@@ -63,7 +70,8 @@ struct NavigationScreen: View {
                         .transition(.scale(scale: 0.9).combined(with: .opacity))
                 }
                 if let encounter = recorder.encounter {
-                    EncounterBanner(status: encounter, formatter: formatter) { note in
+                    EncounterBanner(status: encounter, formatter: formatter, isStill: recorder.isStill,
+                                    wordReach: container.session.config?.combat?.wordRadiusMeters ?? 120) { note in
                         recorder.complete(encounter: encounter.object, note: note, photoTaken: false)
                     }
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -85,6 +93,18 @@ struct NavigationScreen: View {
                     if container.location.accuracyPoor {
                         StatusPill(text: "GPS is weak", dot: Theme.Colors.terracottaLight)
                     }
+                    // A letter to your future self (0.7.3): written standing still, never on the move.
+                    if recorder.isStill || recorder.state == .paused, let here = recorder.lastFix?.coordinate {
+                        Button { letterSpot = here } label: {
+                            Label("Leave a letter", systemImage: "envelope")
+                                .font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink)
+                                .padding(.horizontal, 12).frame(height: 34)
+                                .background(Theme.Colors.cream, in: Capsule())
+                                .shadow(color: Theme.Colors.ink.opacity(0.14), radius: 2, y: 1)
+                        }
+                        .buttonStyle(.pressable)
+                        .accessibilityIdentifier("ride.leaveLetter")
+                    }
                 }
                 .padding(.horizontal, 2)
                 Spacer(minLength: 0)
@@ -105,21 +125,36 @@ struct NavigationScreen: View {
             .padding(.bottom, 8)
         }
         .background(Theme.Colors.cream.ignoresSafeArea())
-        .confirmationDialog("End this ride?", isPresented: $confirmingEnd, titleVisibility: .visible) {
-            Button("End & save") { Task { await recorder.finish() } }
-            Button("Discard ride", role: .destructive) { recorder.discard() }
-            Button("Keep riding", role: .cancel) {}
+        .confirmationDialog("End this \(journey)?", isPresented: $confirmingEnd, titleVisibility: .visible) {
+            Button("Save \(journey)") { Task { await recorder.finish() } }
+                .accessibilityIdentifier("ride.save")
+            Button("Discard \(journey)", role: .destructive) { recorder.discard() }
+                .accessibilityIdentifier("ride.discard")
+            Button("Keep going", role: .cancel) {}
         } message: {
             Text("\(formatter.distance(meters: recorder.stats.distanceMeters)) · \(formatter.duration(seconds: recorder.stats.elapsedSeconds)) · saved to Health")
         }
         .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
         .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+        .sheet(isPresented: Binding(get: { letterSpot != nil }, set: { if !$0 { letterSpot = nil } })) {
+            if let letterSpot {
+                LetterSheet(coordinate: letterSpot).presentationDetents([.medium, .large])
+            }
+        }
+    }
+
+    /// A sealed quest's goal, done, is named by what it was (0.7.3).
+    private func named(_ objective: Objective) -> Objective {
+        guard let quest = recorder.quest, let goal = SealedQuest.goal(of: quest) else { return objective }
+        var named = objective
+        named.title = goal.title
+        return named
     }
 
     @ViewBuilder
     private var topCard: some View {
         if let objective = recorder.recentObjectiveCompletion {
-            ObjectiveCompleteCard(objective: objective, remaining: remainingObjectives)
+            ObjectiveCompleteCard(objective: named(objective), remaining: remainingObjectives)
                 .transition(.scale(scale: 0.9).combined(with: .opacity))
         } else if isOffRoute {
             OffRouteCard(
@@ -130,9 +165,12 @@ struct NavigationScreen: View {
                 onReroute: { recorder.rerouteNow() }
             )
         } else {
-            TurnCard(progress: recorder.progress, route: recorder.package?.route, state: recorder.state, formatter: formatter)
+            TurnCard(progress: recorder.progress, route: recorder.package?.route, state: recorder.state, formatter: formatter, activity: recorder.activity)
         }
     }
+
+    /// "ride", "run" or "walk": what the screen calls the journey under way.
+    private var journey: String { LoreCopy.journey(recorder.activity) }
 
     private var isOffRoute: Bool {
         recorder.state == .offRoute || recorder.state == .rerouting || recorder.isRerouting
@@ -152,12 +190,12 @@ struct NavigationScreen: View {
 
     private var statsPill: some View {
         HStack(spacing: 0) {
-            NavMetric(title: "\(formatter.distanceUnitLabel) ridden", value: formatter.distanceValue(meters: recorder.stats.distanceMeters).formatted(.number.precision(.fractionLength(1))))
-            NavMetric(title: "\(formatter.distanceUnitLabel) new territory", value: formatter.distanceValue(meters: recorder.newTerritoryMeters).formatted(.number.precision(.fractionLength(1))), accent: true, alignment: .center)
+            NavMetric(title: "\(formatter.distanceUnitLabel) \(LoreCopy.travelled(recorder.activity))", value: formatter.distanceValue(meters: recorder.stats.distanceMeters).formatted(.number.precision(.fractionLength(1))))
+            NavMetric(title: "\(formatter.distanceUnitLabel) newly explored", value: formatter.distanceValue(meters: recorder.newTerritoryMeters).formatted(.number.precision(.fractionLength(1))), accent: true, alignment: .center)
                 .padding(.horizontal, 10)
                 .overlay(alignment: .leading) { Rectangle().fill(Theme.Colors.cream.opacity(0.15)).frame(width: 1) }
                 .overlay(alignment: .trailing) { Rectangle().fill(Theme.Colors.cream.opacity(0.15)).frame(width: 1) }
-            NavMetric(title: "ride time", value: formatter.duration(seconds: recorder.stats.elapsedSeconds), alignment: .trailing)
+            NavMetric(title: "time", value: formatter.duration(seconds: recorder.stats.elapsedSeconds), alignment: .trailing)
             Button { recorder.pause() } label: {
                 Image(systemName: "pause.fill")
                     .font(.system(size: 18, weight: .bold))
@@ -167,7 +205,8 @@ struct NavigationScreen: View {
             }
             .buttonStyle(.pressable)
             .padding(.leading, 18)
-            .accessibilityLabel("Pause ride")
+            .accessibilityLabel("Pause \(journey)")
+            .accessibilityIdentifier("ride.pause")
         }
         .padding(.vertical, 16)
         .padding(.horizontal, 22)
@@ -224,12 +263,13 @@ struct NavigationScreen: View {
             .foregroundStyle(Theme.Colors.cream)
             HStack(spacing: 10) {
                 Button { recorder.resume() } label: {
-                    HStack(spacing: 8) { Image(systemName: "play.fill"); Text("Resume") }
+                    HStack(spacing: 8) { Image(systemName: "play.fill"); Text("Resume \(journey)") }
                 }
                 .buttonStyle(.sage)
+                .accessibilityIdentifier("ride.resume")
                 .frame(maxWidth: .infinity)
                 Button { confirmingEnd = true } label: {
-                    Text("End")
+                    Text("End \(journey)")
                         .font(Theme.Typography.buttonSmall)
                         .foregroundStyle(Theme.Colors.terracottaLight)
                         .frame(maxWidth: .infinity)
@@ -238,6 +278,7 @@ struct NavigationScreen: View {
                 }
                 .buttonStyle(.pressable)
                 .frame(width: 120)
+                .accessibilityIdentifier("ride.end")
             }
         }
         .padding(.vertical, 20)
@@ -261,8 +302,13 @@ struct NavigationScreen: View {
         for object in recorder.objectsOnMap {
             out.append(MapMarker(
                 id: "object-\(object.id.uuidString)", coordinate: object.coordinate,
-                kind: WorldViewModel.markerKind(for: object), title: object.name
+                kind: WorldViewModel.markerKind(for: object), title: object.name, mark: .of(object)
             ))
+        }
+        // The legend (0.8.0), as large as on the World map, until its phase breaks.
+        if let legend = recorder.legendOnMap {
+            out.append(MapMarker(id: "legend-\(legend.id.uuidString)", coordinate: legend.coordinate, kind: .legend, title: legend.name,
+                                 mark: .of(legend)))
         }
         // The cafés, pubs and landmarks on the route, as what they are rather than as
         // anonymous dots, and tappable for their name and detour.
@@ -272,7 +318,7 @@ struct NavigationScreen: View {
                 coordinate: poi.coordinate,
                 kind: poi.discoveryId == readingStop?.discoveryId ? .stopActive : .stop,
                 title: poi.name,
-                symbol: DiscoveryIcon.symbol(for: poi.category)
+                mark: DiscoveryIcon.mark(for: poi.category)
             ))
         }
         return out
@@ -285,6 +331,8 @@ struct TurnCard: View {
     let route: RouteOption?
     let state: NavigationState
     let formatter: UnitFormatter
+    /// Ride, run or walk, for "Free run"; nil says "Free journey".
+    var activity: Activity?
 
     var body: some View {
         HStack(spacing: 18) {
@@ -313,7 +361,7 @@ struct TurnCard: View {
             } else {
                 Image(systemName: state == .paused ? "pause.fill" : "location.north.line.fill").font(.system(size: 40, weight: .bold)).foregroundStyle(Theme.Colors.ink).frame(width: 64)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(state == .paused ? "Paused" : (route == nil ? "Free ride" : "Follow the route")).font(Theme.Typography.text(24, .bold)).foregroundStyle(Theme.Colors.ink)
+                    Text(state == .paused ? "Paused" : (route == nil ? LoreCopy.free(activity) : "Follow the route")).font(Theme.Typography.text(24, .bold)).foregroundStyle(Theme.Colors.ink)
                     Text(route == nil ? "Every new road counts." : "Directions start at the first turn.").font(Theme.Typography.text(15)).foregroundStyle(Theme.Colors.muted)
                 }
                 Spacer(minLength: 0)
@@ -412,11 +460,8 @@ struct NearbyStopCard: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: DiscoveryIcon.symbol(for: poi.category))
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(Theme.Colors.sageDeep)
+            MarkView(DiscoveryIcon.mark(for: poi.category))
                 .frame(width: 34, height: 34)
-                .background(Theme.Colors.cream, in: Circle())
             VStack(alignment: .leading, spacing: 1) {
                 Text(poi.name)
                     .font(Theme.Typography.text(15, .bold))
@@ -441,16 +486,20 @@ struct NearbyStopCard: View {
     }
 }
 
-/// "Beaten: Bog Wraith · +150 AC", for a few seconds, the moment it happens.
+/// "Defeated: Bog Wraith · +150 coins", for a few seconds, the moment it happens.
 struct ClaimToast: View {
     let object: WorldObject
 
     var body: some View {
         HStack(spacing: 10) {
-            EncounterGlyph(kind: object.kind, bounty: object.isBounty, size: 30)
-            Text("\(verb): \(object.name)").font(Theme.Typography.text(15, .bold)).foregroundStyle(Theme.Colors.ink).lineLimit(1)
+            EncounterGlyph(object: object, size: 30)
+            Text(object.isLegend ? "\(LegendCopy.phaseBroken) \(object.name)" : "\(verb): \(object.name)")
+                .font(Theme.Typography.text(15, .bold)).foregroundStyle(Theme.Colors.ink).lineLimit(1)
             Spacer(minLength: 6)
-            Text("+\(object.rewardAC) AC").font(Theme.Typography.text(15, .bold).monospacedDigit()).foregroundStyle(Theme.Colors.terracottaDeep)
+            if !object.isLegend {
+                Text(LoreCopy.earned(object.rewardAC)).font(Theme.Typography.text(15, .bold).monospacedDigit())
+                    .foregroundStyle(Theme.Colors.terracottaDeep)
+            }
         }
         .padding(.vertical, 9)
         .padding(.horizontal, 14)
@@ -461,45 +510,77 @@ struct ClaimToast: View {
 
     private var verb: String {
         switch object.kind {
-        case .monster: return "Beaten"
+        case .monster: return "Defeated"
         case .chest: return "Opened"
         default: return "Found"
         }
     }
 }
 
-/// The nearest thing in the world and how the fight is going: "Bog Wraith · 120 m",
-/// the way in, and a bar that fills as the fast kilometre or the rune comes together.
+/// The nearest thing in the world and how the fight is going: "Bog Wraith · 120 m".
+/// A creature fought by effort sits in a ring of its health, redrawn in tenths with no
+/// numbers and no animation. Words under the name, and the note button, show
+/// only at a standstill (Core `Stillness`): nothing to read while moving.
 struct EncounterBanner: View {
     let status: EncounterStatus
     let formatter: UnitFormatter
+    var isStill = false
+    /// How near a note has to be written to strike.
+    var wordReach: Double = 120
     var onNote: (String) -> Void = { _ in }
     @State private var writingNote = false
 
     private var loreMethod: KillMethod? { status.object.monster?.killMethods.first { $0.method == .lore } }
 
+    /// The note button: a note, near a creature fought by effort; the old way, the Scribe's way past it.
+    private var noteLabel: String? {
+        guard isStill, status.object.kind == .monster else { return nil }
+        if status.object.monster?.foughtByEffort == true {
+            return status.distanceMeters <= wordReach ? "Write a note" : nil
+        }
+        guard let lore = loreMethod else { return nil }
+        // This sheet takes words, not photographs: a way in that needs one is not offered,
+        // and nothing is offered from further than the server would accept it.
+        if lore.params["requires"]?.arrayValue?.contains(.string("photo")) == true { return nil }
+        guard status.distanceMeters <= (lore.double("radiusMeters") ?? 120) * 1.5 else { return nil }
+        return "Write a note"
+    }
+
+    private var line: String {
+        if let wants = status.object.monster?.wants, status.object.monster?.foughtByEffort == true {
+            return LoreCopy.weakTo(wants)
+        }
+        return status.hint ?? (status.object.kind == .chest ? "Pass close by to open it" : "Pass close by to pick it up")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
-                EncounterGlyph(kind: status.object.kind, bounty: status.object.isBounty, size: 34)
+                if let tenths = status.holdTenths {
+                    HoldRing(tenths: tenths) { EncounterGlyph(object: status.object, size: 30) }
+                } else {
+                    EncounterGlyph(object: status.object, size: 34)
+                }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(status.object.name).font(Theme.Typography.text(15, .bold)).foregroundStyle(Theme.Colors.cream).lineLimit(1)
-                    Text(status.hint ?? (status.object.kind == .chest ? "pass close by to open it" : "pass close by to pick it up"))
-                        .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.cream.opacity(0.85)).lineLimit(2)
+                    if isStill {
+                        Text(line)
+                            .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.cream.opacity(0.85)).lineLimit(2)
+                    }
                 }
                 Spacer(minLength: 8)
                 Text(formatter.distance(meters: status.distanceMeters))
                     .font(Theme.Typography.text(17, .bold).monospacedDigit()).foregroundStyle(Theme.Colors.cream)
             }
-            if let progress = status.progress {
+            if let progress = status.progress, status.hold == nil {
                 ProgressView(value: min(1, max(0, progress))).tint(Theme.Colors.cream)
                     .accessibilityIdentifier("encounter.progress")
             }
-            if let lore = loreMethod, status.object.kind == .monster {
+            if let noteLabel {
                 Button {
                     writingNote = true
                 } label: {
-                    Label(lore.params["requires"]?.arrayValue?.contains(.string("photo")) == true ? "Write a note (and take a photo)" : "Write a note", systemImage: "square.and.pencil")
+                    Label(noteLabel, systemImage: "square.and.pencil")
                         .font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink)
                         .padding(.horizontal, 12).frame(height: 34).background(Theme.Colors.cream, in: Capsule())
                 }
@@ -521,22 +602,60 @@ struct EncounterBanner: View {
     }
 }
 
+/// Its health, as a ring round its face: whole when untouched, drawn in tenths, with
+/// no numbers and no animation (docs/ROADMAP.md, 0.6.1).
+struct HoldRing<Content: View>: View {
+    let tenths: Int
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(Theme.Colors.cream.opacity(0.25), lineWidth: 3)
+            Circle()
+                .trim(from: 0, to: CGFloat(max(0, min(10, tenths))) / 10)
+                .stroke(Theme.Colors.cream, style: StrokeStyle(lineWidth: 3, lineCap: .butt))
+                .rotationEffect(.degrees(-90))
+            content
+        }
+        .frame(width: 40, height: 40)
+        .transaction { $0.animation = nil }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Creature health")
+        .accessibilityValue("\(max(0, min(10, tenths)) * 10) percent left")
+        .accessibilityIdentifier("encounter.hold")
+    }
+}
+
 /// The quest as a second, quieter line: diamond, "QUEST · objective", distance.
 struct ObjectiveBanner: View {
     let objective: Objective?
     let quest: Quest?
-    /// Custom adventure name shown in place of "Free ride".
+    /// The journey's own name, or "Free ride".
     var title: String?
     let position: Coordinate?
     let formatter: UnitFormatter
+    /// How far along the route the rider is, and whether they are standing still:
+    /// a sealed quest's goal opens halfway and is read only at a standstill (0.7.3).
+    var routeFraction: Double?
+    var isStill = false
+
+    /// The objective's words, or for a sealed quest what may be said of its goal now.
+    static func line(for objective: Objective, quest: Quest?, routeFraction: Double?, isStill: Bool) -> String {
+        guard let quest, SealedQuest.isSealed(quest) else { return objective.title }
+        guard SealedQuest.isOpen(quest, routeFraction: routeFraction) else { return SealedQuest.shutLine }
+        guard isStill else { return "Your goal is open. Stop to read it." }
+        return SealedQuest.goal(of: quest)?.title ?? objective.title
+    }
 
     var body: some View {
         HStack(spacing: 12) {
             DiamondMarker(color: Theme.Colors.sage, size: 18)
             if let objective {
                 (Text("QUEST · ").font(Theme.Typography.eyebrow).foregroundStyle(Theme.Colors.sageLight)
-                    + Text(objective.title).font(Theme.Typography.text(14, .bold)).foregroundStyle(Theme.Colors.cream))
+                    + Text(Self.line(for: objective, quest: quest, routeFraction: routeFraction, isStill: isStill))
+                        .font(Theme.Typography.text(14, .bold)).foregroundStyle(Theme.Colors.cream))
                     .lineLimit(1)
+                    .accessibilityIdentifier("ride.objective")
                 Spacer(minLength: 8)
                 if let position, let target = objective.coordinate {
                     Text(formatter.distance(meters: GeoMath.distance(position, target)))
@@ -545,7 +664,7 @@ struct ObjectiveBanner: View {
                     Text("\(Int(objective.progress.fraction * 100))%").font(Theme.Typography.text(16, .bold).monospacedDigit()).foregroundStyle(Theme.Colors.cream)
                 }
             } else {
-                Text(quest == nil ? "\(title ?? "Free ride") · every new road counts" : "All objectives complete · head home")
+                Text(quest == nil ? "\(title ?? LoreCopy.free(nil)) · every new road counts" : "All objectives complete · head home")
                     .font(Theme.Typography.text(14, .semibold)).foregroundStyle(Theme.Colors.cream).lineLimit(1)
                 Spacer(minLength: 0)
             }
@@ -565,11 +684,7 @@ struct ObjectiveCompleteCard: View {
 
     var body: some View {
         HStack(spacing: 18) {
-            ZStack {
-                Circle().fill(Theme.Colors.cream)
-                Image(systemName: "sparkle").font(.system(size: 28, weight: .bold)).foregroundStyle(Theme.Colors.sage)
-            }
-            .frame(width: 64, height: 64)
+            MarkView(.token(.flag, ring: .sage)).frame(width: 64, height: 64)
             VStack(alignment: .leading, spacing: 4) {
                 Eyebrow(text: "Objective complete", color: Theme.Colors.cream)
                 Text(objective.title).font(Theme.Typography.voice(24, relativeTo: .title)).foregroundStyle(Theme.Colors.cream).lineLimit(2)

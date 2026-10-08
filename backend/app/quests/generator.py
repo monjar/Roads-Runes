@@ -29,6 +29,7 @@ from app.core.geo import destination_point, haversine_m
 from app.core.logging import get_logger
 from app.economy.rules import quest_ac
 from app.exploration.cells import cell_center, cell_for, frontier_cells
+from app.lore.catalog import articled
 from app.quests.templates import ANY_CLASS, DIFFICULTIES, template_by_id, templates_for
 
 REGION_RADIUS_M = 250.0  # radius around a cell centre that counts as "entered"
@@ -59,6 +60,7 @@ class WorldObjectCandidate:
     latitude: float
     longitude: float
     expires_at: datetime | None = None
+    bounty: bool = False
 
 
 @dataclass
@@ -84,6 +86,11 @@ class GenerationContext:
     poi_visibility_bonus: float = 0.0
     activity: str = "RIDE"  # RIDE | RUN | WALK (core/activity.py)
     world_objects: list[WorldObjectCandidate] = field(default_factory=list)
+    # The legend awake (0.8.0), kind LEGEND, for a step that asks for damage to it.
+    legend: WorldObjectCandidate | None = None
+    # The district with the most of the player's tiles (0.9.0), for Act IV's Home
+    # Ground: {"id", "name", "latitude", "longitude"}.
+    home_district: dict[str, Any] | None = None
 
 
 @dataclass
@@ -243,10 +250,12 @@ def _poi_candidates(ctx: GenerationContext, rules: dict[str, Any]) -> list[POICa
     lo, hi = rules.get("poiDistanceKm", [3 * default_reach, 15 * default_reach])
     lo_m, hi_m = lo * 1000, hi * 1000 * (1 + ctx.poi_visibility_bonus)
     category = rules.get("poiCategory")
+    # One category, or any of several.
+    categories = set(category) if isinstance(category, list) else ({category} if category else set())
     tag_any = rules.get("poiTagAny")
     out = []
     for poi in ctx.pois:
-        if category and poi.category != category:
+        if categories and poi.category not in categories:
             continue
         if tag_any and not any(t in " ".join(str(v) for v in poi.tags.values()).lower() for t in tag_any):
             continue
@@ -270,6 +279,12 @@ def _fact_for(poi: POICandidate) -> str:
         if value:
             return f"The map files it as {str(value).replace('_', ' ')}."
     return "The map says almost nothing about it."
+
+
+def _fill(text: str, variables: dict[str, Any]) -> str:
+    """A template line with its variables in, and the article before a world
+    object's name made to fit it ("an Old chest", "the Long Cold")."""
+    return articled(text.format(**variables), str(variables.get("objectName") or ""))
 
 
 def _difficulty(distance_km: float, ctx: GenerationContext, elevation_m: float = 0.0) -> str:
@@ -328,6 +343,26 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
         variables["poiFact"] = _fact_for(poi)
         farthest_m = haversine_m(ctx.latitude, ctx.longitude, poi.latitude, poi.longitude)
 
+    # Somewhere to take it to (CARRY): a second real place, a walk or a ride from the first.
+    carry_to: POICandidate | None = None
+    if "carryTo" in rules and poi is not None:
+        to_rules = dict(rules["carryTo"])
+        lo, hi = (float(x) * 1000 for x in to_rules.get("distanceKm", [1, 4]))
+        wanted = to_rules.get("poiCategory")
+        wanted = set(wanted) if isinstance(wanted, list) else ({wanted} if wanted else set())
+        options = [
+            p
+            for p in ctx.pois
+            if p.id != poi.id
+            and (not wanted or p.category in wanted)
+            and lo <= haversine_m(poi.latitude, poi.longitude, p.latitude, p.longitude) <= hi
+        ]
+        if not options:
+            return None
+        carry_to = rng.choice(options)
+        variables["carryToName"] = carry_to.name
+        farthest_m = max(farthest_m, haversine_m(ctx.latitude, ctx.longitude, carry_to.latitude, carry_to.longitude))
+
     region_cells: list[str] = []
     if "regionCount" in rules:
         count = int(rules["regionCount"])
@@ -362,8 +397,10 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
     target_object: WorldObjectCandidate | None = None
     if "worldObject" in rules:
         kind = str(rules["worldObject"].get("kind", "MONSTER"))
+        # A bounty step (0.8.0) points only at the day's bounty.
+        bounty_only = bool(rules["worldObject"].get("bounty"))
         pool = sorted(
-            (o for o in ctx.world_objects if o.kind == kind),
+            (o for o in ctx.world_objects if o.kind == kind and (o.bounty or not bounty_only)),
             key=lambda o: haversine_m(ctx.latitude, ctx.longitude, o.latitude, o.longitude),
         )
         if not pool:
@@ -375,12 +412,34 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
             farthest_m, haversine_m(ctx.latitude, ctx.longitude, target_object.latitude, target_object.longitude)
         )
 
+    # The legend awake (0.8.0): a step that asks for damage to it needs one.
+    legend = ctx.legend if "legendDamage" in rules else None
+    if "legendDamage" in rules:
+        if legend is None:
+            return None
+        variables["legendName"] = legend.name
+        variables["legendDamage"] = int(rules["legendDamage"])
+        farthest_m = max(farthest_m, haversine_m(ctx.latitude, ctx.longitude, legend.latitude, legend.longitude))
+
+    # A district step (0.9.0): "home" needs a district the player has been in.
+    home = ctx.home_district if rules.get("district") == "home" else None
+    if rules.get("district") == "home":
+        if home is None:
+            return None
+        variables["districtName"] = home["name"]
+    if "districtTiles" in rules:
+        variables["districtTiles"] = int(rules["districtTiles"])
+    if "districtPercent" in rules:
+        variables["districtPercent"] = int(rules["districtPercent"])
+    if "walkKm" in rules:
+        variables["walkKm"] = rules["walkKm"]
+
     explored_region_cells: list[str] = []
     order = 0
     for spec in template["objectives"]:
         order += 1
         otype = spec["type"]
-        title = spec["title"].format(**{k: v for k, v in variables.items()}) if variables else spec["title"]
+        title = _fill(spec["title"], variables) if variables else spec["title"]
         obj = GeneratedObjective(objective_type=otype, title=title, required=spec.get("required", True), order=order)
 
         if otype == "VISIT_POI" and poi is not None:
@@ -420,7 +479,23 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
             obj.target_meters = variables.get("distanceKm", 15) * 1000 * fraction
             obj.extra = {"fraction": fraction}
         elif otype == "COMPLETE_DISTANCE":
-            obj.target_meters = variables.get("distanceKm", 15) * 1000
+            obj.target_meters = float(variables.get("walkKm") or variables.get("distanceKm", 15)) * 1000
+            if spec.get("activity"):
+                # Only this kind of journey counts (a walk, for Going Quiet).
+                obj.extra = {"activity": str(spec["activity"])}
+        elif otype == "DISTRICT_TILES":
+            mode = str(rules.get("district") or "any")
+            obj.extra = {"district": mode}
+            if mode == "new":
+                obj.target_value = float(rules.get("districtPercent", 25))
+            else:
+                obj.target_count = int(rules.get("districtTiles", 10))
+            if home is not None:
+                obj.latitude, obj.longitude = float(home["latitude"]), float(home["longitude"])
+                obj.extra = {**obj.extra, "districtId": str(home["id"]), "districtName": home["name"]}
+        elif otype == "DISTRICT_LOOP":
+            obj.target_value = round(float(rules.get("edgeShare", 0.6)) * 100)
+            obj.extra = {"edgeShare": float(rules.get("edgeShare", 0.6))}
         elif otype == "REACH_ELEVATION":
             obj.target_elevation_meters = float(
                 variables.get("elevationMeters") or max(150, ctx.comfortable_elevation_gain * 0.6)
@@ -441,6 +516,49 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
             obj.target_value = float(variables.get("speedKmh", 20))
             # A fast two kilometres is not a tempo ride.
             obj.extra = {"minDistanceMeters": float(variables.get("distanceKm", 10)) * 1000 * 0.8}
+        elif otype == "INSCRIBE_RUNE":
+            if poi is None:
+                return None
+            form = str(spec.get("roadForm") or rules.get("roadForm") or "LOOP")
+            obj.latitude, obj.longitude = poi.latitude, poi.longitude
+            # A shape may be cut anywhere within reach of the place; a note or a stop at it.
+            obj.radius_meters = float(spec.get("radiusMeters", 1500 if form not in ("NOTE", "STOP") else 120))
+            obj.discovery_id = poi.id
+            obj.extra = {"roadForm": form, "rune": spec.get("rune"), "poiName": poi.name, "category": poi.category}
+            if form == "NOTE":
+                obj.extra["safety"] = "Stop safely before completing this objective."
+            if form == "STOP":
+                obj.extra["stopSeconds"] = int(spec.get("stopSeconds", 300))
+        elif otype == "CARRY":
+            if poi is None or carry_to is None:
+                return None
+            obj.latitude, obj.longitude = poi.latitude, poi.longitude
+            obj.radius_meters = float(spec.get("radiusMeters", 80))
+            obj.discovery_id = poi.id
+            obj.target_count = 2
+            obj.extra = {
+                "poiName": poi.name,
+                "to": {
+                    "latitude": carry_to.latitude,
+                    "longitude": carry_to.longitude,
+                    "name": carry_to.name,
+                    "discoveryId": carry_to.id,
+                },
+            }
+        elif otype == "LAIR_VISIT":
+            if target_object is None or target_object.kind != "LAIR":
+                return None
+            obj.latitude, obj.longitude = target_object.latitude, target_object.longitude
+            obj.radius_meters = 500.0
+            obj.target_count = int(rules.get("lairNeed", 5))
+            obj.extra = {"kind": "LAIR", "objectName": target_object.name, "objectId": target_object.id}
+        elif otype == "WOUND_BOSS":
+            if legend is None:
+                return None
+            obj.latitude, obj.longitude = legend.latitude, legend.longitude
+            obj.radius_meters = 1000.0
+            obj.target_value = float(rules["legendDamage"])
+            obj.extra = {"kind": "LEGEND", "legendId": legend.id, "legendName": legend.name}
         elif otype in ("SLAY_MONSTER", "OPEN_CHEST", "COLLECT"):
             wanted = int(rules.get("worldObject", {}).get("count", 1))
             obj.target_count = 1 if otype == "SLAY_MONSTER" else wanted
@@ -473,8 +591,12 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
     speed_kmh = ASSUMED_SPEED_KMH.get(ctx.activity, 15.0)
     duration = int(distance_km / speed_kmh * 60 + 10)
     narrative = rng.choice(template["narrative"])
-    title = narrative["title"].format(**variables)
-    description = narrative["description"].format(**variables)
+    title = _fill(narrative["title"], variables)
+    description = _fill(narrative["description"], variables)
+    try:
+        completion = _fill(str(template.get("completion") or ""), variables) or None
+    except (KeyError, IndexError, ValueError):
+        completion = None
     return GeneratedQuest(
         template_id=template["id"],
         quest_type=template["questType"],
@@ -486,7 +608,7 @@ def instantiate(template: dict[str, Any], ctx: GenerationContext, salt: int = 0)
         estimated_duration_minutes=duration,
         base_xp=base_xp,
         objectives=objectives,
-        narrative={"hook": description, "completion": None, "source": "template"},
+        narrative={"hook": description, "completion": completion, "source": "template"},
         seed=f"{template['id']}:{salt}",
         latitude=ctx.latitude,
         longitude=ctx.longitude,

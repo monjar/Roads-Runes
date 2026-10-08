@@ -21,7 +21,23 @@ TRANSACTION_KINDS = (
     "STREAK",
     "CLASS_CHANGE",
     "LURE",
+    "WEEK_NOTICE",
+    "RUNE_RANK",
+    # 0.7.2: a stall purchase, an item sold (by hand, or on the spot into a full
+    # bag), and a level's coins (unused: levels pay in consumables).
+    "STALL",
+    "ITEM_SOLD",
+    "LEVEL_REWARD",
     "ADJUSTMENT",
+    # 0.8.0: a legend's phase broken, a lair's great chest, buried treasure found;
+    # each paid outside the per-journey cap.
+    "LEGEND",
+    "LAIR",
+    "TREASURE",
+    # 0.9.0: a district complete (its purse, once) and the week's pay for the
+    # districts that are yours; both outside the per-journey cap.
+    "DISTRICT",
+    "DISTRICT_PAY",
 )
 
 
@@ -58,6 +74,7 @@ def compute_ride_ac(
     quest_difficulty: str | None = None,
     claims: list[dict[str, Any]] | None = None,
     extra_lines: list[ACLine] | None = None,
+    coin_pct: dict[str, float] | None = None,
 ) -> list[ACLine]:
     """What a ride earns: coins per kilometre by activity, one per new cell, the quest's
     purse, and whatever was opened, gathered or beaten on the way."""
@@ -65,8 +82,10 @@ def compute_ride_ac(
     lines: list[ACLine] = []
     km = max(0.0, distance_meters) / 1000
     per_km = rules["perKm"].get(activity, rules["perKm"]["RIDE"])
-    if int(km * per_km) > 0:
-        lines.append(ACLine("RIDE_DISTANCE", int(km * per_km), {"km": round(km, 1), "perKm": per_km}))
+    # The Saddle Roll pays more for distance (COIN_PCT.RIDE_DISTANCE).
+    distance_ac = int(km * per_km * (1 + float((coin_pct or {}).get("RIDE_DISTANCE", 0.0))))
+    if distance_ac > 0:
+        lines.append(ACLine("RIDE_DISTANCE", distance_ac, {"km": round(km, 1), "perKm": per_km}))
     if new_cells > 0 and rules["newCell"] > 0:
         lines.append(ACLine("NEW_CELLS", new_cells * int(rules["newCell"]), {"cells": new_cells}))
     if quest_completed:
@@ -74,12 +93,15 @@ def compute_ride_ac(
     kinds = {"CHEST": "CHEST_OPENED", "COLLECTABLE": "COLLECTABLE", "MONSTER": "MONSTER_SLAIN"}
     for claim in claims or []:
         reward = int(claim.get("rewardAC", 0))
+        # A knack that makes boxes pay more (characters/sheet.py `coin_pct`).
+        reward = int(round(reward * (1 + float((coin_pct or {}).get(str(claim.get("kind")), 0.0)))))
         if reward <= 0:
             continue
         kind = "BOUNTY" if claim.get("bounty") else kinds.get(str(claim.get("kind")), "ADJUSTMENT")
         lines.append(ACLine(kind, reward, {"objectId": str(claim.get("id")), "name": claim.get("name")}))
-    lines.extend(extra_lines or [])
-    return apply_cap(lines, int(rules["caps"]["perRideTotal"]))
+    # Sets, streaks and arcs pay their purse whole: the cap is for what an outing
+    # earns by the kilometre and the thing, not for an ending.
+    return apply_cap(lines, int(rules["caps"]["perRideTotal"])) + list(extra_lines or [])
 
 
 def apply_cap(lines: list[ACLine], cap: int) -> list[ACLine]:

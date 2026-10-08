@@ -15,6 +15,8 @@ final class AppContainer {
     let persistence: PersistenceService
     let cellIndexing: H3CellIndexing
     let routePackages: FileRoutePackageStore
+    /// The last world loaded, kept beside the route packages for a ride started offline (0.7.2).
+    let worldCache: FileWorldCacheStore
     let activeRideStore: FileActiveRideStore
     let watch: WatchSessionService
     let sync: SyncService
@@ -22,6 +24,12 @@ final class AppContainer {
     let mapPreferences: MapPreferencesStore
     let rideAudio: RideAudio
     let nudges: NudgeScheduler
+    /// Today's and tomorrow's pledge (0.7.3).
+    let pledges: PledgeStore
+    /// The legend awake and the treasure maps' clues (0.8.0).
+    let legends: LegendStore
+    /// The districts passed through and the one here (0.9.0).
+    let districts: DistrictStore
 
     /// Pending Strava OAuth code delivered through the URL scheme.
     var pendingStravaCode: String?
@@ -40,9 +48,17 @@ final class AppContainer {
         let health = HealthKitService(enabled: !inMemory && !uiTesting)
         let watch = WatchSessionService()
         let session = SessionStore(api: resolvedAPI)
-        let routePackages = FileRoutePackageStore(directory: directory.appendingPathComponent("routes", isDirectory: true))
+        let routes = directory.appendingPathComponent("routes", isDirectory: true)
+        let routePackages = FileRoutePackageStore(directory: routes)
+        // In tests the last world is kept apart, so one test's world is not another's.
+        let worldCache = FileWorldCacheStore(directory: inMemory
+            ? FileManager.default.temporaryDirectory.appendingPathComponent("rr-world-\(UUID().uuidString)", isDirectory: true)
+            : routes)
         let activeRideStore = FileActiveRideStore(directory: directory)
-        if uiTesting { try? activeRideStore.clear() }
+        if uiTesting {
+            try? activeRideStore.clear()
+            try? worldCache.clear()
+        }
         let pendingURL = inMemory || uiTesting ? nil : directory.appendingPathComponent("pending-reckoning.json")
         let sync = SyncService(api: resolvedAPI, persistence: persistence, session: session, analytics: analytics, pendingURL: pendingURL)
         let preferences = MapPreferencesStore()
@@ -52,8 +68,8 @@ final class AppContainer {
         let audio = RideAudio(enabled: !inMemory && !Self.isPreview && wantsAudio) { preferences.rideSound }
         let recorder = RideRecorder(
             api: resolvedAPI, location: location, health: health, watch: watch, sync: sync, persistence: persistence,
-            cellIndexing: H3CellIndexing(), activeRideStore: activeRideStore, routePackages: routePackages, analytics: analytics, session: session,
-            audio: audio
+            cellIndexing: H3CellIndexing(), activeRideStore: activeRideStore, routePackages: routePackages, worldCache: worldCache,
+            analytics: analytics, session: session, audio: audio
         )
         self.api = resolvedAPI
         self.analytics = analytics
@@ -64,12 +80,20 @@ final class AppContainer {
         self.session = session
         self.cellIndexing = H3CellIndexing()
         self.routePackages = routePackages
+        self.worldCache = worldCache
         self.activeRideStore = activeRideStore
         self.sync = sync
         self.rideRecorder = recorder
         self.mapPreferences = preferences
         self.rideAudio = audio
-        self.nudges = NudgeScheduler(active: !inMemory && !uiTesting && !Self.isPreview)
+        let nudges = NudgeScheduler(active: !inMemory && !uiTesting && !Self.isPreview)
+        self.nudges = nudges
+        self.pledges = PledgeStore(api: resolvedAPI, session: session, nudges: nudges)
+        self.legends = LegendStore(api: resolvedAPI, worldCache: worldCache)
+        self.districts = DistrictStore(api: resolvedAPI)
+        // Signature haptics (0.8.0) at rest only, and never from tests or previews.
+        SignatureHapticsPlayer.shared.isRiding = { [weak recorder] in recorder?.isActive ?? false }
+        SignatureHapticsPlayer.shared.enabled = !inMemory && !uiTesting && !Self.isPreview
         watch.onCommand = { [weak recorder] command in
             Task { @MainActor in
                 guard let recorder else { return }
@@ -80,8 +104,18 @@ final class AppContainer {
                 }
             }
         }
+        // Journey's end on the wrist, whenever the counted summary arrives. One for a
+        // journey that ended over an hour ago would only puzzle the rider.
+        sync.onSummary = { [weak watch] summary in
+            if let ended = summary.ride.endedAt, Date().timeIntervalSince(ended) > 3600 { return }
+            watch?.send(journeyEnd: WatchJourneyEnd(summary: summary, placeIcon: WatchArt.icon(for:)))
+        }
         watch.onHeartRate = { [weak recorder] bpm in
             Task { @MainActor in recorder?.record(heartRate: bpm) }
+        }
+        // A journey asked for on the wrist (0.7.3) is planned and started without a tap.
+        watch.onStartRequest = { start in
+            await QuickStartCoordinator.shared.handle(start, autoStart: true).value == .started
         }
         health.onHeartRate = { [weak recorder] bpm in
             Task { @MainActor in recorder?.record(heartRate: bpm) }
@@ -89,6 +123,8 @@ final class AppContainer {
     }
 
     func bootstrap() async {
+        // Quick starts (0.7.3) plan from this container; one asked for before it was up is planned now.
+        QuickStartCoordinator.shared.attach(self)
         watch.activate()
         await session.bootstrap()
         rideRecorder.recoverIfNeeded()
@@ -105,6 +141,11 @@ final class AppContainer {
 
     static var isPreview: Bool {
         ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+    }
+
+    /// One UI test launches with the prologue (RR_SHOW_PROLOGUE=1); the rest skip it.
+    static var showsPrologueInUITest: Bool {
+        ProcessInfo.processInfo.environment["RR_SHOW_PROLOGUE"] == "1"
     }
 
     static var isUITesting: Bool {

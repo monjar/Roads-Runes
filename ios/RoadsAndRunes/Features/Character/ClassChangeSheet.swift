@@ -21,11 +21,11 @@ struct ClassChangeSheet: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Eyebrow(text: "Change class", color: Theme.Colors.terracottaDeep)
+                        Eyebrow(text: LoreCopy.changeClass, color: Theme.Colors.terracottaDeep)
                         Spacer()
                         IconCircleButton(symbol: "xmark", background: Theme.Colors.surface) { dismiss() }.accessibilityLabel("Close")
                     }
-                    Text("Who do you\nride as now?").font(Theme.Typography.voice(32, relativeTo: .largeTitle)).foregroundStyle(Theme.Colors.ink)
+                    Text("Choose your\nnew class").font(Theme.Typography.voice(32, relativeTo: .largeTitle)).foregroundStyle(Theme.Colors.ink)
                     Text(terms).font(Theme.Typography.text(13.5)).foregroundStyle(Theme.Colors.muted).lineSpacing(2)
                     ForEach(classes) { info in
                         let value = info.characterClass
@@ -83,15 +83,15 @@ struct ClassChangeSheet: View {
         guard let character else { return "" }
         let cost = character.classChangeCostAC ?? 0
         if let next = character.nextClassChangeAt, next > Date() {
-            return "You changed class recently. The next change opens \(next.formatted(.relative(presentation: .named)))."
+            return "You changed class recently. You can change again \(next.formatted(.relative(presentation: .named)))."
         }
-        let price = cost == 0 ? "This change is free" : "This change costs \(cost) Active Coins (you have \(character.activeCoins ?? 0))"
-        return "\(price). Your level, XP, coins and discoveries stay; each class keeps its own level for when you come back to it."
+        let price = cost == 0 ? "This change is free" : "This change costs \(LoreCopy.purse(cost)) (you have \(character.activeCoins ?? 0))"
+        return "\(price). Your level, XP, coins and places found stay, and each class keeps its own level for when you come back to it."
     }
 
     private var buttonTitle: String {
-        guard let selected else { return "Pick a class" }
+        guard let selected else { return "Choose a class" }
         let cost = character?.classChangeCostAC ?? 0
-        return cost == 0 ? "Become \(ClassStyle.name(selected))" : "Become \(ClassStyle.name(selected)) for \(cost) AC"
+        return cost == 0 ? "Become \(ClassStyle.name(selected))" : "Become \(ClassStyle.name(selected)) for \(LoreCopy.purse(cost))"
     }
 }

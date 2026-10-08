@@ -6,6 +6,8 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.characters.service import maybe_character
+from app.characters.sheet import CharacterSheet
 from app.core.activity import normalise
 from app.core.errors import NotFound, RideInvalidState
 from app.core.pagination import decode_cursor, encode_cursor
@@ -52,14 +54,25 @@ def ride_out(ride: Ride) -> RideOut:
         stravaActivityId=ride.strava_activity_id,
         stravaUploadStatus=ride.strava_upload_status,
         stravaError=ride.strava_error,
+        loadout=ride.loadout_snapshot,
+        quarryId=ride.quarry_id,
+        entryWritten=(ride.processing_result or {}).get("entryWritten"),
     )
 
 
 async def get_ride(db: AsyncSession, user: User, ride_id: uuid.UUID) -> Ride:
     ride = await db.get(Ride, ride_id)
     if ride is None or ride.user_id != user.id or ride.status == "DISCARDED":
-        raise NotFound("Ride not found")
+        raise NotFound("We couldn't find that journey. Go back and try again.")
     return ride
+
+
+async def _sheet_now(db: AsyncSession, user_id: uuid.UUID) -> CharacterSheet:
+    """The character as it is now, inscribed runes and worn gear and all, for
+    freezing onto a ride."""
+    from app.inventory.service import sheet_for
+
+    return await sheet_for(db, await maybe_character(db, user_id))
 
 
 async def create_ride(db: AsyncSession, user: User, payload: RideCreate) -> Ride:
@@ -74,10 +87,15 @@ async def create_ride(db: AsyncSession, user: User, payload: RideCreate) -> Ride
         activity=normalise(payload.activity),
         title=(payload.title or "").strip() or None,
         started_at=payload.startedAt,
+        local_date=payload.localDate,
         quest_id=payload.questId,
         bike_id=payload.bikeId,
         route_id=payload.routeId,
+        quarry_id=payload.quarryId,
         visibility=visibility,
+        # What the character was as the ride began: the fight is judged against
+        # this, on the server and on the phone, whatever changes mid-ride.
+        loadout_snapshot=(await _sheet_now(db, user.id)).to_dict(),
     )
     db.add(ride)
     await db.flush()
@@ -98,7 +116,7 @@ async def _next_sequence(db: AsyncSession, ride_id: uuid.UUID) -> int:
 
 async def add_points(db: AsyncSession, ride: Ride, points: list[RidePointIn]) -> int:
     if ride.status != "RECORDING":
-        raise RideInvalidState("Ride is not recording")
+        raise RideInvalidState("This journey has already finished. Start a new one to keep recording.")
     if not points:
         return 0
     seq = await _next_sequence(db, ride.id)
@@ -132,7 +150,7 @@ async def add_points(db: AsyncSession, ride: Ride, points: list[RidePointIn]) ->
 
 async def add_cells(db: AsyncSession, ride: Ride, cells: list[str]) -> int:
     if ride.status != "RECORDING":
-        raise RideInvalidState("Ride is not recording")
+        raise RideInvalidState("This journey has already finished. Start a new one to keep recording.")
     merged = list(
         dict.fromkeys(list(ride.client_cells or []) + [c for c in cells if isinstance(c, str) and len(c) <= 16])
     )
@@ -146,7 +164,7 @@ async def complete_ride(db: AsyncSession, ride: Ride, payload: RideCompleteIn) -
     if ride.status != "RECORDING":
         if ride.status in ("UPLOADED", "PROCESSING", "PROCESSED", "FLAGGED"):
             return ride  # idempotent
-        raise RideInvalidState("Ride cannot be completed")
+        raise RideInvalidState("This journey can't be finished now. Start a new one.")
     if payload.points:
         await add_points(db, ride, payload.points)
     if payload.cellsVisited:
@@ -206,7 +224,23 @@ async def summary(db: AsyncSession, user: User, ride: Ride) -> AdventureSummary 
         acBreakdown=result.get("acBreakdown", []),
         walletBalance=result.get("walletBalance"),
         worldObjects=result.get("worldObjects"),
+        quarryId=result.get("quarryId"),
         streak=result.get("streak"),
+        entry=result.get("entry"),
+        weekNotice=result.get("weekNotice"),
+        codexFirsts=result.get("codexFirsts") or [],
+        runesFound=result.get("runesFound"),
+        deeds=result.get("deeds"),
+        itemsFound=result.get("itemsFound"),
+        entryWritten=result.get("entryWritten"),
+        pledge=result.get("pledge"),
+        letters=result.get("letters"),
+        legend=result.get("legend"),
+        lair=result.get("lair"),
+        treasureFound=result.get("treasureFound"),
+        legendWoke=result.get("legendWoke"),
+        districts=result.get("districts") or [],
+        districtPay=result.get("districtPay"),
     )
 
 

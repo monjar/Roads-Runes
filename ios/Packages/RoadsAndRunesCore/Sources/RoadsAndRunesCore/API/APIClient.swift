@@ -244,6 +244,7 @@ public actor APIClient: RoadsAndRunesAPI {
     // MARK: Character
 
     public func classes() async throws -> [ClassInfo] { try await request(Endpoints.classes()) }
+    public func codex() async throws -> Codex { try await request(Endpoints.codex()) }
     public func createCharacter(_ request: CharacterCreate) async throws -> Character { try await self.request(try Endpoints.createCharacter(request)) }
     public func character() async throws -> Character { try await request(Endpoints.character()) }
     public func changeClass(_ request: CharacterClassChange) async throws -> Character { try await self.request(try Endpoints.changeClass(request)) }
@@ -260,14 +261,69 @@ public actor APIClient: RoadsAndRunesAPI {
     }
     public func claimWorldObject(id: UUID, _ request: WorldObjectClaimRequest) async throws -> WorldObjectClaim { try await self.request(try Endpoints.claimWorldObject(id: id, request)) }
     public func lure(at center: Coordinate) async throws -> [WorldObject] { try await request(try Endpoints.lure(LureRequest(latitude: center.latitude, longitude: center.longitude))) }
+    public func lampCheck(at center: Coordinate) async throws -> LampCheck { try await request(Endpoints.lampCheck(at: center)) }
     public func abilities() async throws -> [AbilityState] { try await request(Endpoints.abilities()) }
     public func unlockAbility(id: String) async throws -> Character { try await request(Endpoints.unlockAbility(id: id)) }
+    public func titles() async throws -> [TitleInfo] { try await request(Endpoints.titles()) }
+    public func wearTitle(slug: String?) async throws -> Character { try await request(try Endpoints.wearTitle(TitleChoice(slug: slug))) }
     public func bikes() async throws -> [Bike] { try await request(Endpoints.bikes()) }
     public func createBike(_ bike: BikeIn) async throws -> Bike { try await request(try Endpoints.createBike(bike)) }
     public func updateBike(id: UUID, _ patch: BikeIn) async throws -> Bike { try await request(try Endpoints.updateBike(id: id, patch)) }
     public func deleteBike(id: UUID) async throws { try await requestNoContent(Endpoints.deleteBike(id: id)) }
     public func riderProfile() async throws -> RiderProfile { try await request(Endpoints.riderProfile()) }
     public func updateRiderProfile(_ profile: RiderProfile) async throws -> RiderProfile { try await request(try Endpoints.updateRiderProfile(profile)) }
+
+    // MARK: What you carry
+
+    public func inventory() async throws -> InventoryState { try await request(Endpoints.inventory()) }
+    public func wearGear(_ choice: GearChoice) async throws -> InventoryState { try await request(try Endpoints.wearGear(choice)) }
+    public func sellItem(id: UUID) async throws -> SellResult { try await request(Endpoints.sellItem(id: id)) }
+    public func useConsumable(id: String, _ request: ConsumableUseRequest) async throws -> ConsumableUseResult {
+        try await self.request(try Endpoints.useConsumable(id: id, request))
+    }
+    public func stall() async throws -> Stall { try await request(Endpoints.stall()) }
+    public func buyOffer(id: String) async throws -> InventoryState { try await request(Endpoints.buyOffer(id: id)) }
+    public func levelRewards() async throws -> [LevelStep] { try await request(Endpoints.levelRewards()) }
+
+    // MARK: Legends, lairs and treasure (0.8.0)
+
+    public func legends() async throws -> LegendsState { try await request(Endpoints.legends()) }
+    public func legend(id: UUID) async throws -> Legend { try await request(Endpoints.legend(id: id)) }
+    public func moveLegend(id: UUID) async throws -> Legend { try await request(Endpoints.moveLegend(id: id)) }
+    public func treasureClues() async throws -> [TreasureClue] {
+        let open: TreasureClues = try await request(Endpoints.treasureClues())
+        return open.clues
+    }
+
+    // MARK: The parish (0.9.0)
+
+    public func districts() async throws -> [District] { try await request(Endpoints.districts()) }
+    public func district(id: String) async throws -> District { try await request(Endpoints.district(id: id)) }
+    /// Outside every district the server answers null or 404: nil either way.
+    public func districtHere(at point: Coordinate) async throws -> District? {
+        do {
+            let found: District? = try await request(Endpoints.districtHere(at: point))
+            return found
+        } catch let error as APIError {
+            if case .server(_, _, let status) = error, status == 404 { return nil }
+            throw error
+        }
+    }
+    public func atlas(year: Int) async throws -> Atlas { try await request(Endpoints.atlas(year: year)) }
+    public func setLook(_ choice: LookChoice) async throws -> InventoryState { try await request(try Endpoints.setLook(choice)) }
+
+    // MARK: Between rides (0.7.3)
+
+    public func pledges(today: String) async throws -> PledgeState { try await request(Endpoints.pledges(today: today)) }
+    public func pledge(_ request: PledgeRequest) async throws -> Pledge { try await self.request(try Endpoints.pledge(request)) }
+    public func cancelPledge(day: String) async throws { try await requestNoContent(Endpoints.cancelPledge(day: day)) }
+    public func letters() async throws -> [Letter] {
+        let list: LetterList = try await request(Endpoints.letters())
+        return list.letters
+    }
+    public func writeLetter(_ request: LetterCreate) async throws -> Letter { try await self.request(try Endpoints.writeLetter(request)) }
+    public func deleteLetter(id: UUID) async throws { try await requestNoContent(Endpoints.deleteLetter(id: id)) }
+    public func sealedQuest(_ request: SealedQuestRequest) async throws -> Quest { try await self.request(try Endpoints.sealedQuest(request)) }
 
     // MARK: World
 
@@ -341,6 +397,13 @@ public actor APIClient: RoadsAndRunesAPI {
 
     public func searchUsers(query: String) async throws -> [FriendSummary] { try await request(Endpoints.searchUsers(query: query)) }
     public func storyArcs() async throws -> [StoryArc] { try await request(Endpoints.storyArcs()) }
+    public func weekNotice() async throws -> WeekNotice { try await request(Endpoints.weekNotice()) }
+    public func runes() async throws -> RunesState { try await request(Endpoints.runes()) }
+    public func raiseRune(id: String) async throws -> RunesState { try await request(Endpoints.raiseRune(id: id)) }
+    public func inscribe(runes: [String]) async throws -> RunesState { try await request(try Endpoints.inscribe(InscribeRequest(runes: runes))) }
+    public func runeCuts() async throws -> [RuneCutInfo] { try await request(Endpoints.runeCuts()) }
+    public func deeds() async throws -> DeedsState { try await request(Endpoints.deeds()) }
+    public func runeRide(_ request: RuneRideRequest) async throws -> RuneRideResponse { try await self.request(try Endpoints.runeRide(request)) }
     public func friends() async throws -> [FriendSummary] { try await request(Endpoints.friends()) }
     public func friendRequests() async throws -> FriendRequests { try await request(Endpoints.friendRequests()) }
     public func sendFriendRequest(userId: UUID) async throws -> FriendRequestResult { try await request(try Endpoints.sendFriendRequest(userId: userId)) }

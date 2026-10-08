@@ -29,6 +29,12 @@ public struct Ride: Codable, Hashable, Identifiable, Sendable {
     public var stravaUploadStatus: String?
     public var stravaActivityId: String?
     public var stravaError: String?
+    /// The character sheet frozen when the ride was created (0.6.1); the fight folds over it.
+    public var loadout: CharacterSheet? = nil
+    /// The thing the outing was planned for.
+    public var quarryId: UUID? = nil
+    /// The model-written entry, when one was written (0.7.2, `chronicle_llm`).
+    public var entryWritten: EntryWritten? = nil
 
     public init(
         id: UUID, clientRideId: UUID, status: RideStatus, title: String? = nil, startedAt: Date, endedAt: Date? = nil,
@@ -107,8 +113,16 @@ public struct RideCreate: Codable, Hashable, Sendable {
     public var title: String?
     /// Ride, run or walk; nil lets the server assume a ride.
     public var activity: Activity?
+    /// The world object this outing was planned for ("Plan a route here"), if any.
+    public var quarryId: UUID?
+    /// The day it began on the phone's own calendar, "YYYY-MM-DD" (0.7.3): the day
+    /// whose pledge it keeps. nil leaves the server to use the start's UTC date.
+    public var localDate: String?
 
-    public init(clientRideId: UUID, startedAt: Date, questId: UUID? = nil, bikeId: UUID? = nil, routeId: UUID? = nil, title: String? = nil, activity: Activity? = nil) {
+    public init(clientRideId: UUID, startedAt: Date, questId: UUID? = nil, bikeId: UUID? = nil, routeId: UUID? = nil, title: String? = nil, activity: Activity? = nil, quarryId: UUID? = nil,
+                localDate: String? = nil) {
+        self.quarryId = quarryId
+        self.localDate = localDate
         self.clientRideId = clientRideId
         self.startedAt = startedAt
         self.questId = questId
@@ -232,6 +246,50 @@ public struct AdventureSummary: Codable, Hashable, Sendable {
     /// What the ride took from the world, and what it walked past.
     public var worldObjects: WorldObjectOutcome?
     public var streak: StreakOutcome?
+    /// The thing the outing was planned for; its fight leads the reckoning.
+    public var quarryId: String? = nil
+    /// 0.6.2: the entry the outing left, the week's notice when this outing met it,
+    /// and creatures met for the first time (the reckoning's codex stamp).
+    public var entry: String? = nil
+    public var weekNotice: WeekNotice? = nil
+    public var codexFirsts: [CodexFirst]? = nil
+    /// 0.7.0: rune stones picked up, and what the outing did for the deeds.
+    public var runesFound: [RuneFound]? = nil
+    public var deeds: DeedsOutcome? = nil
+    /// 0.7.2: gear and consumables found (sold on the spot when the bag was full),
+    /// and the model-written entry when one was written.
+    public var itemsFound: [ItemFound]? = nil
+    public var entryWritten: EntryWritten? = nil
+    /// 0.7.3: a pledge this journey kept (a missed one is never sent), and letters
+    /// written here a season or more ago, found again.
+    public var pledge: PledgeKept? = nil
+    public var letters: [FoundLetter]? = nil
+    /// 0.8.0: what the journey did to the legend, the lair's tiles, and buried
+    /// treasure it passed and opened.
+    public var legend: LegendOutcome?
+    public var lair: LairOutcome?
+    public var treasureFound: TreasureFinds?
+    /// A legend that woke at the end of this journey: "A legend has woken: the Fog Dragon".
+    public var legendWoke: LegendWoke?
+    /// 0.9.0: the districts this journey passed through (new tiles, became yours,
+    /// District complete!) and the week's pay for those that are yours, on the
+    /// first journey of an ISO week.
+    public var districts: [DistrictOutcome]?
+    public var districtPay: DistrictPay?
+
+    /// The districts this journey made yours, by name.
+    public var districtsMadeYours: [String] { (districts ?? []).filter(\.becameYours).map(\.name) }
+    /// The districts this journey completed, by name.
+    public var districtsCompleted: [String] { (districts ?? []).filter(\.completed).map(\.name) }
+
+    /// Buried treasure opened on this journey, however the server sent it.
+    public var treasures: [TreasureFound] { treasureFound?.finds ?? [] }
+
+    /// The entry to read: the model's lines when there are some, else the composed one.
+    public var entryToRead: String? {
+        if let written = entryWritten?.text, !written.isEmpty { return written }
+        return entry
+    }
 
     public init(ride: Ride, quest: Quest? = nil, questCompletion: QuestCompletion? = nil, xpAwarded: Int, xpBreakdown: [XPBreakdownEntry], newCells: Int, newTerritoryMeters: Double, newRoadsMeters: Double, discoveries: [DiscoverySummary], levelUps: [LevelUp], abilitiesUnlocked: [Ability], titlesUnlocked: [String]? = nil, flags: [String], acAwarded: Int? = nil, acBreakdown: [ACBreakdownEntry]? = nil, walletBalance: Int? = nil, worldObjects: WorldObjectOutcome? = nil, streak: StreakOutcome? = nil) {
         self.streak = streak
@@ -266,10 +324,21 @@ public struct AdventureEntry: Codable, Hashable, Identifiable, Sendable {
     public var levelUps: [LevelUp]?
     public var notes: String?
     public var photos: [String]
+    /// The outing's written lines (0.6.2).
+    public var entry: String?
+    /// The model-written entry (0.7.2), shown in place of `entry` when present.
+    public var entryWritten: EntryWritten? = nil
 
     public var id: UUID { ride.id }
 
-    public init(ride: Ride, quest: Quest? = nil, xpAwarded: Int, discoveries: [DiscoverySummary], newTerritoryMeters: Double, newCells: Int? = nil, levelUps: [LevelUp]? = nil, notes: String? = nil, photos: [String] = []) {
+    /// The entry to read: the model's lines when there are some (here or on the ride), else the composed one.
+    public var entryToRead: String? {
+        if let written = (entryWritten ?? ride.entryWritten)?.text, !written.isEmpty { return written }
+        return entry
+    }
+
+    public init(ride: Ride, quest: Quest? = nil, xpAwarded: Int, discoveries: [DiscoverySummary], newTerritoryMeters: Double, newCells: Int? = nil, levelUps: [LevelUp]? = nil, notes: String? = nil, photos: [String] = [], entry: String? = nil) {
+        self.entry = entry
         self.ride = ride
         self.quest = quest
         self.xpAwarded = xpAwarded

@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import false as sa_false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, JSONType, TimestampMixin, TZDateTime, UUIDPrimaryKeyMixin
@@ -20,8 +21,17 @@ class Character(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     class_xp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     overall_level: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     class_level: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    # Not read since 0.6.2: knacks to choose are derived per trade
+    # (characters.service.knacks_to_choose). Kept for older code paths.
     ability_points: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     title: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    # The player chose the title they wear; earning another no longer changes it.
+    title_pinned: Mapped[bool] = mapped_column(default=False, server_default=sa_false(), nullable=False)
+    # Story steps that could not be placed where the player is, and why, by step slug.
+    story_waiting: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict, nullable=False)
+    # Things the player did that later notices remember (0.7.0): set by an optional
+    # objective done, read by a later step's wording. Nothing is ever locked out.
+    story_flags: Mapped[list[Any]] = mapped_column(JSONType, default=list, nullable=False)
     # Class XP and level of the classes this character has been, keyed by class id,
     # so switching back restores them: {"WIZARD": {"classXp": 1200, "classLevel": 4}}.
     class_progress: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict, nullable=False)

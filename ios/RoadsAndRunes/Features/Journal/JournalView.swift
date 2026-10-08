@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -8,7 +9,13 @@ final class JournalViewModel {
     private(set) var discoveries: [UserDiscovery] = []
     private(set) var stats: ExplorationStats?
     private(set) var cells: [CellRender] = []
+    /// The fog as ink (0.7.0): the paper over ground not yet read, with the read ground cut out.
+    private(set) var inkWash: [[Coordinate]] = []
+    /// Where runes were cut, drawn on the map (0.7.0).
+    private(set) var cuts: [RuneCutInfo] = []
     private(set) var mapCenter: Coordinate?
+    /// The world's pages and what this player has met; nil while loading, or with the codex off.
+    private(set) var codex: Codex?
     var error: String?
     private let container: AppContainer
 
@@ -35,13 +42,34 @@ final class JournalViewModel {
             discoveries = try await container.api.myDiscoveries().items
             stats = try await container.api.journalStats()
             error = nil
+            if container.session.isEnabled("codex") {
+                codex = try? await container.api.codex()
+            }
         } catch {
             self.error = error.localizedDescription
         }
         let center = container.location.lastFix?.coordinate ?? adventures.first?.quest?.origin ?? SampleData.origin
-        if let world = try? await container.api.world(center: center, radiusMeters: 8000) {
-            mapCenter = center
+        mapCenter = center
+        cuts = (try? await container.api.runeCuts()) ?? []
+        // The read ground, whether or not the World draws the fog, as one wash.
+        let dLat = 8000 / 111_195.0, dLon = 8000 / (111_195.0 * max(0.2, cos(center.latitude * .pi / 180)))
+        let box = BoundingBox(minLat: center.latitude - dLat, minLon: center.longitude - dLon,
+                              maxLat: center.latitude + dLat, maxLon: center.longitude + dLon)
+        if let read = try? await container.api.exploration(in: box) {
+            let outlines = container.cellIndexing.outlines(of: read.cells.map(\.h3))
+            inkWash = InkFog.wash(bounds: InkFog.padded(box), outlines: outlines)
+            cells = []
+        } else if let world = try? await container.api.world(center: center, radiusMeters: 8000) {
             cells = FogGrid(indexing: container.cellIndexing).render(serverCells: world.cells, localStates: [:])
+        }
+    }
+
+    /// A mark where each rune ride was made: "Raido rune ride, by the pond".
+    var cutMarkers: [MapMarker] {
+        cuts.map { cut in
+            MapMarker(id: "cut-\(cut.id)", coordinate: cut.coordinate, kind: .collectable,
+                      title: cut.placeName.map { "\(cut.name) rune ride, by \($0)" } ?? "\(cut.name) rune ride",
+                      mark: .rune(cut.runeId))
         }
     }
 
@@ -93,14 +121,26 @@ final class JournalViewModel {
 }
 
 enum JournalSection: Int, CaseIterable, Hashable {
-    case adventures, discoveries, map, stats
+    case adventures, discoveries, map, districts, stats
 
-    var title: String {
+    /// The second segment is the codex (docs/WORLD.md) when it is on: the places
+    /// found are its last chapter. The map grew into the Atlas (0.9.0), with the
+    /// districts beside it.
+    func title(codex: Bool) -> String {
         switch self {
-        case .adventures: return "Adventures"
-        case .discoveries: return "Discoveries"
-        case .map: return "Map"
+        case .adventures: return "Journeys"
+        case .discoveries: return codex ? "Codex" : "Places"
+        case .map: return "Atlas"
+        case .districts: return "Districts"
         case .stats: return "Stats"
+        }
+    }
+
+    var identifier: String? {
+        switch self {
+        case .map: return "journal.segment.atlas"
+        case .districts: return "journal.segment.districts"
+        default: return nil
         }
     }
 }
@@ -123,16 +163,27 @@ struct JournalView: View {
                         Text("Journal").font(Theme.Typography.voice(32, relativeTo: .largeTitle)).foregroundStyle(Theme.Colors.ink)
                         Spacer()
                         if let stats = model?.stats {
-                            Text("\(exploredArea(stats)) · \(stats.discoveriesFound) discoveries").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                            Text("\(exploredArea(stats)) explored · \(stats.discoveriesFound) \(stats.discoveriesFound == 1 ? "place" : "places") found").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
                         }
                     }
-                    SegmentedPill(options: JournalSection.allCases, title: { $0.title }, selection: $section)
+                    SegmentedPill(options: JournalSection.allCases, title: { $0.title(codex: codexOn) }, selection: $section,
+                                  identifier: { $0.identifier })
                     if let model {
                         if let error = model.error { ErrorLine(text: error) }
                         switch section {
                         case .adventures: adventures(model)
-                        case .discoveries: discoveries(model)
-                        case .map: mapSection(model)
+                        case .discoveries:
+                            if codexOn {
+                                CodexBrowser(codex: model.codex, showWants: container.session.isEnabled("effort_combat")) {
+                                    discoveries(model)
+                                }
+                            } else {
+                                discoveries(model)
+                            }
+                        case .map:
+                            AtlasSection(journal: model)
+                            mapSection(model)
+                        case .districts: DistrictsSection()
                         case .stats: StatsView(stats: model.stats, units: model.units)
                         }
                     } else {
@@ -147,15 +198,15 @@ struct JournalView: View {
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await model?.load() }
             .confirmationDialog(
-                "Delete this adventure?",
+                "Delete this journey?",
                 isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
                 titleVisibility: .visible,
                 presenting: deleting
             ) { entry in
-                Button("Delete", role: .destructive) { Task { _ = await model?.delete(entry) } }
-                Button("Keep", role: .cancel) {}
+                Button("Delete journey", role: .destructive) { Task { _ = await model?.delete(entry) } }
+                Button("Keep journey", role: .cancel) {}
             } message: { _ in
-                Text("It leaves the journal and the stats. XP already earned stays.")
+                Text("It's removed from your Journal and stats. The XP you earned stays.")
             }
         }
         .task {
@@ -166,6 +217,8 @@ struct JournalView: View {
             if summary == nil { Task { await model?.load() } }
         }
     }
+
+    private var codexOn: Bool { container.session.isEnabled("codex") }
 
     private func exploredArea(_ stats: ExplorationStats) -> String {
         let area = Double(stats.cellsVisited) * 0.1053
@@ -182,19 +235,33 @@ struct JournalView: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text(month.title).font(Theme.Typography.heading).foregroundStyle(Theme.Colors.ink)
                     Spacer()
-                    Text("\(month.adventures) adventure\(month.adventures == 1 ? "" : "s")").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                    Text("\(month.adventures) \(month.adventures == 1 ? "journey" : "journeys")").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
                 }
                 HStack(spacing: 16) {
-                    fact(f.distance(meters: month.newTerritoryMeters), "new roads")
-                    fact("\(month.discoveries)", "discoveries")
+                    fact(f.distance(meters: month.newTerritoryMeters), "newly explored")
+                    fact("\(month.discoveries)", month.discoveries == 1 ? "place" : "places")
                     fact("\(month.quests)", "quests")
                     fact(f.elevation(meters: month.climbMeters), "")
                 }
             }
             .card()
         }
+        // Letters to your future self (0.7.3): where, when, and whether one came back.
+        NavigationLink { LettersView() } label: {
+            HStack(spacing: 10) {
+                IconShape(.quillInk).foregroundStyle(Theme.Colors.terracottaDeep).frame(width: 20, height: 20)
+                Text("Your letters").font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.terracottaDeep)
+                Spacer()
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.Colors.muted)
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 14)
+            .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
+        }
+        .buttonStyle(.pressable)
+        .accessibilityIdentifier("journal.letters")
         if model.adventures.isEmpty {
-            EmptyState(icon: "book.closed", title: "No adventures yet", message: "Your completed rides, quests and discoveries will be recorded here.")
+            EmptyState(icon: .openBook, title: LoreCopy.emptyJournalTitle, message: LoreCopy.emptyJournalMessage)
         }
         ForEach(model.adventures) { entry in
             NavigationLink { AdventureDetailView(entry: entry, onDelete: { await model.delete(entry) }) } label: {
@@ -203,7 +270,7 @@ struct JournalView: View {
             .buttonStyle(.pressable)
             .accessibilityIdentifier("adventureRow")
             .contextMenu {
-                Button(role: .destructive) { deleting = entry } label: { Label("Delete adventure", systemImage: "trash") }
+                Button(role: .destructive) { deleting = entry } label: { Label("Delete journey", systemImage: "trash") }
             }
         }
     }
@@ -214,7 +281,7 @@ struct JournalView: View {
             .lineLimit(1)
     }
 
-    // MARK: Discoveries (14b)
+    // MARK: Places found (14b)
 
     @ViewBuilder
     private func discoveries(_ model: JournalViewModel) -> some View {
@@ -231,7 +298,7 @@ struct JournalView: View {
         }
         let visible = items.filter { filter == nil || $0.group == filter }
         if visible.isEmpty {
-            EmptyState(icon: "sparkle", title: "Nothing discovered yet", message: "Ride past landmarks, parks, pubs and viewpoints to add them to your collection.")
+            EmptyState(icon: .star, title: "No places found yet", message: "Pass landmarks, parks, pubs and viewpoints to add them here.")
         }
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
             ForEach(visible) { item in
@@ -252,16 +319,16 @@ struct JournalView: View {
 
     // MARK: Map
 
+    /// Under the Atlas: the tiles explored, and what the paper means.
     @ViewBuilder
     private func mapSection(_ model: JournalViewModel) -> some View {
-        mapCard(model, height: 360)
         if let stats = model.stats {
             HStack(spacing: 8) {
-                FactTile(value: "\(stats.cellsVisited)", label: "Areas visited")
+                FactTile(value: "\(stats.cellsVisited)", label: "Tiles visited")
                 FactTile(value: "\(stats.cellsExplored)", label: "Fully explored")
-                FactTile(value: "\(stats.cellsDiscovered ?? 0)", label: "Revealed by quests")
+                FactTile(value: "\(stats.cellsDiscovered ?? 0)", label: "Shown by quests")
             }
-            Text("Open the World to keep clearing the fog.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+            Text("Blank paper is the fog: unexplored. Go there to fill in the map.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
         }
     }
 
@@ -272,12 +339,13 @@ struct JournalView: View {
                 center: model.mapCenter ?? SampleData.origin,
                 zoom: 11.5,
                 cells: model.cells,
+                inkWash: model.inkWash,
                 route: [],
-                markers: []
+                markers: model.cutMarkers
             )
             .allowsHitTesting(false)
             if let stats = model.stats {
-                StatusPill(text: "\(stats.cellsVisited) areas · \(stats.cellsExplored) fully explored").padding(12)
+                StatusPill(text: "\(stats.cellsVisited) tiles · \(stats.cellsExplored) fully explored").padding(12)
             }
         }
         .frame(height: height)
@@ -294,22 +362,27 @@ struct AdventureRow: View {
     var body: some View {
         let f = UnitFormatter(units: units)
         HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(entry.quest.map { ClassStyle.color($0.characterClass) } ?? Theme.Colors.track)
-                Image(systemName: entry.quest.map { ClassStyle.symbol($0.characterClass) } ?? "bicycle")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(entry.quest == nil ? Theme.Colors.muted : Theme.Colors.cream)
+            // A quest's crest, or for a free journey what it was: a bike, a run, a walk.
+            Group {
+                if let quest = entry.quest {
+                    ClassEmblem(characterClass: quest.characterClass, size: 64)
+                } else {
+                    MarkView(.rider(entry.ride.activity?.rawValue ?? "RIDE")).frame(width: 64, height: 64)
+                }
             }
-            .frame(width: 64, height: 64)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(entry.quest?.title ?? entry.ride.title ?? "Free ride").font(Theme.Typography.cardTitle).foregroundStyle(Theme.Colors.ink).lineLimit(1)
+                    Text(entry.quest?.title ?? entry.ride.title ?? LoreCopy.free(entry.ride.activity)).font(Theme.Typography.cardTitle).foregroundStyle(Theme.Colors.ink).lineLimit(1)
                     Spacer(minLength: 6)
                     Text("+\(entry.xpAwarded) XP")
                         .font(Theme.Typography.captionStrong)
                         .foregroundStyle(entry.quest.map { ClassStyle.textColor($0.characterClass) } ?? Theme.Colors.sageDeep)
                 }
                 Text(meta(f)).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).lineLimit(1)
+                // The first line of the entry, for a journal that reads like one.
+                if let written = entry.entryToRead, let first = written.split(separator: ".").first, !first.isEmpty {
+                    Text(first + ".").font(Theme.Typography.caption).italic().foregroundStyle(Theme.Colors.inkSoft).lineLimit(1)
+                }
             }
         }
         .padding(.vertical, 12)
@@ -319,8 +392,8 @@ struct AdventureRow: View {
 
     private func meta(_ f: UnitFormatter) -> String {
         var parts = [entry.ride.startedAt.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)), f.distance(meters: entry.ride.distanceMeters)]
-        if !entry.discoveries.isEmpty { parts.append("\(entry.discoveries.count) discover\(entry.discoveries.count == 1 ? "y" : "ies")") }
-        if entry.newTerritoryMeters > 0 { parts.append("\(f.distance(meters: entry.newTerritoryMeters)) new") }
+        if !entry.discoveries.isEmpty { parts.append("\(entry.discoveries.count) \(entry.discoveries.count == 1 ? "place" : "places")") }
+        if entry.newTerritoryMeters > 0 { parts.append("\(f.distance(meters: entry.newTerritoryMeters)) explored") }
         return parts.joined(separator: " · ")
     }
 }
@@ -334,11 +407,11 @@ struct StatsView: View {
         if let stats {
             let f = UnitFormatter(units: units)
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                FactTile(value: f.distance(meters: stats.newTerritoryKm * 1000), label: "New territory")
+                FactTile(value: f.distance(meters: stats.newTerritoryKm * 1000), label: "Newly explored")
                 FactTile(value: f.distance(meters: stats.uniqueRoadsKm * 1000), label: "Unique roads")
                 FactTile(value: "\(stats.regionsVisited)", label: "Regions visited")
                 FactTile(value: "\(stats.questsCompleted)", label: "Quests completed")
-                FactTile(value: "\(stats.discoveriesFound)", label: "Discoveries")
+                FactTile(value: "\(stats.discoveriesFound)", label: "Places found")
                 FactTile(value: "\(stats.storyQuestsCompleted)", label: "Story quests")
                 FactTile(value: f.distance(meters: stats.totalDistanceMeters), label: "Total distance")
                 FactTile(value: f.elevation(meters: stats.totalElevationMeters), label: "Total climb")
@@ -383,9 +456,9 @@ struct AdventureDetailView: View {
                 .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.sageDeep)
         } else if status == "FAILED" {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Strava upload failed: \(stravaError ?? entry.ride.stravaError ?? "unknown reason")")
+                Text("Couldn't send to Strava. \(stravaError ?? entry.ride.stravaError ?? "Try again.")")
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.terracottaDeep)
-                Button(stravaBusy ? "Retrying…" : "Retry") { uploadToStrava() }.buttonStyle(.surfacePill).disabled(stravaBusy)
+                Button(stravaBusy ? "Retrying…" : "Try again") { uploadToStrava() }.buttonStyle(.surfacePill).disabled(stravaBusy)
             }
         } else if strava?.connected == true {
             Button(stravaBusy ? "Sending…" : "Upload to Strava") { uploadToStrava() }.buttonStyle(.surfacePill).disabled(stravaBusy)
@@ -416,6 +489,10 @@ struct AdventureDetailView: View {
     @State private var refreshed: Ride?
     @State private var reckoning: AdventureSummary?
     @State private var loadingReckoning = false
+    /// The share card (0.7.3) is made from the journey's summary, fetched when asked for.
+    @State private var sharing: AdventureSummary?
+    @State private var loadingShare = false
+    @State private var shareError: String?
 
     var body: some View {
         let f = UnitFormatter(units: container.session.units)
@@ -434,22 +511,29 @@ struct AdventureDetailView: View {
                     }
                 }
                 HStack(alignment: .bottom) {
-                    Text(entry.quest?.title ?? entry.ride.title ?? "Free ride").font(Theme.Typography.voice(28, relativeTo: .title)).foregroundStyle(Theme.Colors.ink)
+                    Text(entry.quest?.title ?? entry.ride.title ?? LoreCopy.free(entry.ride.activity)).font(Theme.Typography.voice(28, relativeTo: .title)).foregroundStyle(Theme.Colors.ink)
                     Spacer(minLength: 8)
                     Text("+\(entry.xpAwarded) XP").font(Theme.Typography.text(22, .bold)).foregroundStyle(Theme.Colors.sageDeep)
                 }
-                MapLibreView(styleURL: Config.mapStyleURL(for: .adventure), center: geometry?.path.first ?? entry.quest?.origin, zoom: 12, cells: [], route: geometry?.path ?? [], markers: markers)
+                // The model's lines when it wrote some (0.7.2), else the composed entry.
+                if let written = entry.entryToRead, !written.isEmpty {
+                    Text(written).font(Theme.Typography.text(15)).italic().foregroundStyle(Theme.Colors.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("journal.entry")
+                }
+                MapLibreView(styleURL: Config.mapStyleURL(for: .adventure), center: geometry?.path.first ?? entry.quest?.origin, zoom: 12, cells: [],
+                             route: geometry?.path ?? [], markers: markers, routeColor: LookStyle.routeColor(container.session.inventory))
                     .frame(height: 220)
                     .background(Theme.Colors.surface)
                     .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
                 HStack(spacing: 8) {
-                    FactTile(value: f.distance(meters: entry.ride.distanceMeters), label: "Ridden")
+                    FactTile(value: f.distance(meters: entry.ride.distanceMeters), label: "Distance")
                     FactTile(value: f.duration(seconds: Double(entry.ride.durationSeconds)), label: "Time")
                     FactTile(value: f.elevation(meters: entry.ride.elevationGainMeters), label: "Climbed")
-                    FactTile(value: f.distance(meters: entry.newTerritoryMeters), label: "New", valueColor: Theme.Colors.sageDeep)
+                    FactTile(value: f.distance(meters: entry.newTerritoryMeters), label: "Explored", valueColor: Theme.Colors.sageDeep)
                 }
                 if !entry.discoveries.isEmpty {
-                    SectionHeader(title: "Discoveries", subtitle: "\(entry.discoveries.count)")
+                    SectionHeader(title: "Places found", subtitle: "\(entry.discoveries.count)")
                     ForEach(entry.discoveries) { discovery in
                         NavigationLink { DiscoveryDetailView(discoveryId: discovery.id) } label: {
                             DiscoveryCard(discovery: discovery, subtitle: DiscoveryIcon.group(for: discovery.category))
@@ -458,7 +542,7 @@ struct AdventureDetailView: View {
                     }
                 }
                 SectionHeader(title: "Notes")
-                TextField("What made this ride memorable?", text: $notes, axis: .vertical)
+                TextField("What made this \(LoreCopy.journey(entry.ride.activity)) memorable?", text: $notes, axis: .vertical)
                     .font(Theme.Typography.text(15))
                     .lineLimit(3...6)
                     .padding(14)
@@ -471,11 +555,29 @@ struct AdventureDetailView: View {
                         loadingReckoning = false
                     }
                 } label: {
-                    Label(loadingReckoning ? "Fetching…" : "See the reckoning", systemImage: "scroll")
+                    Label(loadingReckoning ? "Loading…" : "See journey's end", systemImage: "scroll")
                 }
                 .buttonStyle(.surfacePill)
                 .disabled(loadingReckoning)
                 .accessibilityIdentifier("journal.reckoning")
+                Button {
+                    loadingShare = true
+                    Task {
+                        do {
+                            sharing = try await container.api.rideSummary(id: entry.ride.id)
+                            shareError = sharing == nil ? "This journey is still being counted. Try again in a moment." : nil
+                        } catch {
+                            shareError = error.localizedDescription
+                        }
+                        loadingShare = false
+                    }
+                } label: {
+                    Label(loadingShare ? "Loading…" : "Share card", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.surfacePill)
+                .disabled(loadingShare)
+                .accessibilityIdentifier("journal.share")
+                if let shareError { ErrorLine(text: shareError) }
                 HStack(spacing: 8) {
                     Button("Save notes") { Task { _ = try? await container.api.updateRide(id: entry.ride.id, RidePatch(notes: notes)) } }.buttonStyle(.inkPill)
                     ShareLink(item: container.api.rideExportURL(id: entry.ride.id, format: .gpx)) { Label("Export GPX", systemImage: "square.and.arrow.up") }.buttonStyle(.surfacePill)
@@ -488,19 +590,20 @@ struct AdventureDetailView: View {
         }
         .background(Theme.Colors.cream)
         .toolbar(.hidden, for: .navigationBar)
-        .confirmationDialog("Delete this adventure?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) {
+        .confirmationDialog("Delete this journey?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete journey", role: .destructive) {
                 Task {
                     if let onDelete, await onDelete() { dismiss() }
                 }
             }
-            Button("Keep", role: .cancel) {}
+            Button("Keep journey", role: .cancel) {}
         } message: {
-            Text("It leaves the journal and the stats. XP already earned stays.")
+            Text("It's removed from your Journal and stats. The XP you earned stays.")
         }
         .fullScreenCover(item: $reckoning) { summary in
             AdventureSummaryView(summary: summary, units: container.session.units, animated: false) { reckoning = nil }
         }
+        .sheet(item: $sharing) { summary in ShareCardSheet(summary: summary) }
         .task {
             notes = entry.notes ?? ""
             geometry = try? await container.api.rideGeometry(id: entry.ride.id)
@@ -530,10 +633,7 @@ struct DiscoveryDetailView: View {
                 }
                 if let discovery {
                     HStack(spacing: 14) {
-                        ZStack {
-                            Circle().fill(DiscoveryIcon.color(for: discovery.category))
-                            Image(systemName: DiscoveryIcon.symbol(for: discovery.category)).font(.system(size: 22, weight: .bold)).foregroundStyle(Theme.Colors.cream)
-                        }
+                        MarkView(DiscoveryIcon.mark(for: discovery.category))
                         .frame(width: 56, height: 56)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(discovery.name).font(Theme.Typography.voice(26, relativeTo: .title)).foregroundStyle(Theme.Colors.ink)
@@ -542,6 +642,12 @@ struct DiscoveryDetailView: View {
                     }
                     if let description = discovery.description {
                         Text(description).font(Theme.Typography.text(14)).foregroundStyle(Theme.Colors.inkSoft).lineSpacing(3)
+                    }
+                    // Place lore (0.9.0): Wikidata's line, with its credit.
+                    if let lore = discovery.loreLine {
+                        Text(lore).font(Theme.Typography.caption).italic().foregroundStyle(Theme.Colors.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("place.lore")
                     }
                     let marker = MapMarker(id: discovery.id.uuidString, coordinate: discovery.coordinate, kind: .discovery, title: discovery.name)
                     MapLibreView(styleURL: Config.mapStyleURL(for: .adventure), center: discovery.coordinate, zoom: 14, cells: [], route: [], markers: [marker])
@@ -563,7 +669,7 @@ struct DiscoveryDetailView: View {
                                 .onTapGesture { rating = star }
                         }
                     }
-                    Button("Save") {
+                    Button("Save note") {
                         Task { _ = try? await container.api.updateUserDiscovery(id: discoveryId, UserDiscoveryIn(note: note, rating: rating == 0 ? nil : rating)) }
                     }
                     .buttonStyle(.inkPill)

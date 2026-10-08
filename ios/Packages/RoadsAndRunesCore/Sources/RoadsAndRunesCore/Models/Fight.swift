@@ -1,0 +1,282 @@
+import Foundation
+
+/// The character as the fight sees it, frozen onto a ride when it starts
+/// (backend `characters/sheet.py`). The phone never works out a build; it folds
+/// the fight over the sheet the server froze.
+public struct CharacterSheet: Codable, Hashable, Sendable {
+    public var version: Int
+    public var characterClass: String
+    public var overallLevel: Int
+    public var classLevel: Int
+    /// Summed percentages per kind of effort: 0.3 is +30%.
+    public var damagePct: [String: Double]
+    public var runeThreshold: Double
+    public var runeReachMeters: Double
+    /// Knacks that depend on the thing or the outing (0.6.2). Optional: a version 1
+    /// sheet has none.
+    public var vsEldersPct: Double?
+    public var lateRoadPct: Double?
+    public var lateRoadAfterMeters: Double?
+    public var wordOldPlacesPct: Double?
+    /// 0.7.0: the runes inscribed, by rank, and the rules they make ("CARRIED_SCALE": 2).
+    /// From 0.7.2 the gear worn adds its rules here too, merged on the server.
+    public var inscribed: [String: Int]?
+    public var rules: [String: Double]?
+    /// 0.7.2 (sheet version 4): the gear worn, item id by slot, and how much better finds are.
+    public var gear: [String: String]? = nil
+    public var lootFindPct: Double? = nil
+    /// 0.8.0 (sheet version 5): the capstone skills, against legends only — a
+    /// percentage by kind ({"GROUND": 0.25}) and how far a note reaches a legend.
+    public var vsLegendsPct: [String: Double]?
+    public var legendWordRadiusMeters: Double?
+
+    /// The combat constants with what the inscribed runes and the gear change that
+    /// the phone can follow: the opening blow (Raido, the Drover's Bell), how far the
+    /// word reaches (Ansuz), finishing what is nearly done (the Unrung Bell) and
+    /// what each new tile counts for (the Cartographer's Atlas).
+    public func fightConstants(_ cfg: CombatConstants) -> CombatConstants {
+        cfg.with(rules: rules)
+    }
+
+    /// Things are sighted further out with Kenaz inscribed (600 m) or a bell worn (`SIGHT_M`).
+    public var sightMeters: Double? {
+        let kenaz: Double? = rules?["REVEAL_RINGS"] != nil ? 600 : nil
+        let bell = rules?["SIGHT_M"].flatMap { $0 > 0 ? $0 : nil }
+        switch (kenaz, bell) {
+        case let (k?, b?): return max(k, b)
+        case let (k?, nil): return k
+        case let (nil, b?): return b
+        default: return nil
+        }
+    }
+
+    /// The constants against one thing, after `fightConstants` (`CharacterSheet.foe_cfg`):
+    /// Thurisaz makes the opening blow on an elder, a bounty or a legend that many
+    /// times stronger, and Tiwaz (0.9.0, `QUARRY_CARRIED_SCALE`) the opening blow on
+    /// the journey's quarry, the creature it was planned for (each scales the
+    /// fraction; its cap is not).
+    public func foeConstants(_ cfg: CombatConstants, elder: Bool, quarry: Bool = false) -> CombatConstants {
+        var out = cfg
+        if elder, let scale = rules?["ELDER_CARRIED_SCALE"], scale > 0 {
+            out.carriedFraction *= scale
+        }
+        if quarry, let scale = rules?["QUARRY_CARRIED_SCALE"], scale > 0 {
+            out.carriedFraction *= scale
+        }
+        return out
+    }
+
+    /// The constants against a legend (`CharacterSheet.legend_cfg`): an elder's, and
+    /// a note reaching as far as the Loremaster's.
+    public func legendConstants(_ cfg: CombatConstants, quarry: Bool = false) -> CombatConstants {
+        var out = foeConstants(cfg, elder: true, quarry: quarry)
+        if let reach = legendWordRadiusMeters, reach != 0 { out.wordRadiusMeters = max(out.wordRadiusMeters, reach) }
+        return out
+    }
+
+    /// The build against a legend (`CharacterSheet.pct_against_legend`): as against
+    /// an elder, plus the capstone skills' percentages, kind by kind.
+    public func pctAgainstLegend(madeGoodMeters: Double, onFoot: Bool) -> [String: Double] {
+        var pct = pct(againstElder: true, madeGoodMeters: madeGoodMeters, onFoot: onFoot)
+        for (kind, extra) in vsLegendsPct ?? [:] { pct[kind, default: 0] += extra }
+        return pct
+    }
+
+    /// The build against one thing on this outing, as the server works it out
+    /// (`CharacterSheet.pct_against`). The phone does not know which places are old,
+    /// so the Historian's knack is left out and the phone is early, never late.
+    public func pct(againstElder elder: Bool, madeGoodMeters: Double, onFoot: Bool) -> [String: Double] {
+        var pct = damagePct
+        if elder, let bonus = vsEldersPct, bonus > 0 {
+            for kind in FightResolver.kinds { pct[kind, default: 0] += bonus }
+        }
+        if let bonus = lateRoadPct, bonus > 0, madeGoodMeters > (lateRoadAfterMeters ?? 10_000) / (onFoot ? 2 : 1) {
+            pct["ROAD", default: 0] += bonus
+        }
+        return pct
+    }
+
+    public init(version: Int = 1, characterClass: String = "EXPLORER", overallLevel: Int = 1, classLevel: Int = 1,
+                damagePct: [String: Double] = [:], runeThreshold: Double = 0.22, runeReachMeters: Double = 1000) {
+        self.version = version
+        self.characterClass = characterClass
+        self.overallLevel = overallLevel
+        self.classLevel = classLevel
+        self.damagePct = damagePct
+        self.runeThreshold = runeThreshold
+        self.runeReachMeters = runeReachMeters
+    }
+
+    public static let neutral = CharacterSheet()
+}
+
+/// The fight's numbers (`world_objects.json`, `combat`), sent on `GET /config` so
+/// a change needs no release. The defaults are the server's at 0.6.1, for a
+/// phone that starts offline.
+public struct CombatConstants: Codable, Hashable, Sendable {
+    public var engageMeters: Double = 150
+    public var groundMeters: Double = 1000
+    public var breakOffMeters: Double = 1300
+    public var strideMeters: Double = 15
+    public var maxJumpMeters: Double = 250
+    public var maxAccuracyMeters: Double = 30
+    public var climbBandMeters: Double = 3
+    public var roadCellResolution: Int = 11
+    public var roadCapMeters: Double = 4000
+    public var holdByTier: [String: Double] = ["1": 100, "2": 220, "3": 400]
+    public var rates: [String: Double] = ["ROAD": 0.01, "GROUND": 15, "CLIMB": 1.25, "RUNE": 100, "WORD": 60]
+    public var footScale: [String: Double] = ["ROAD": 2, "GROUND": 2, "CLIMB": 1.25]
+    public var wants: Double = 2
+    public var minds: Double = 0.5
+    public var sheetClamp: [Double] = [0.25, 3.0]
+    public var carriedFraction: Double = 0.2
+    public var carriedCap: Double = 0.3
+    public var wordRadiusMeters: Double = 120
+    public var wordMinChars: Int = 12
+    public var runeReachMeters: Double = 1000
+    public var minOutingMeters: Double = 500
+    /// Not on the wire: set from the sheet's rules (0.7.2). A creature left with
+    /// health at or under this fraction of its most is defeated (`FINISH_UNDER`, 0 = off).
+    public var finishUnder: Double = 0
+    /// Not on the wire: what one new tile counts for as exploring (`GROUND_CELL_SCALE`).
+    public var groundCellScale: Double = 1
+    /// Not on the wire (0.8.0, Uruz `CLIMB_SHARED_M`): climbing within this many
+    /// metres of a thing counts in full against it, before contact too; 0 = off.
+    public var climbSharedMeters: Double = 0
+
+    public init() {}
+
+    /// These constants with the sheet's rules applied, as the server's `fight_cfg`
+    /// and fold apply them: scales multiply, reaches and the finish take the larger.
+    public func with(rules: [String: Double]?) -> CombatConstants {
+        var out = self
+        guard let rules else { return out }
+        if let scale = rules["CARRIED_SCALE"], scale > 0 { out.carriedFraction = carriedFraction * scale }
+        if let reach = rules["WORD_RADIUS_M"] { out.wordRadiusMeters = max(wordRadiusMeters, reach) }
+        if let under = rules["FINISH_UNDER"], under > 0 { out.finishUnder = max(finishUnder, under) }
+        if let scale = rules["GROUND_CELL_SCALE"], scale > 0 { out.groundCellScale = groundCellScale * scale }
+        // The Hard Six (0.8.0): Nauthiz widens what counts as met, Uruz shares climbing.
+        if let engage = rules["ENGAGE_M"], engage != 0 { out.engageMeters = max(engageMeters, engage) }
+        if let shared = rules["CLIMB_SHARED_M"], shared != 0 { out.climbSharedMeters = shared }
+        return out
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case engageMeters, groundMeters, breakOffMeters, strideMeters, maxJumpMeters, maxAccuracyMeters
+        case climbBandMeters, roadCellResolution, roadCapMeters, holdByTier, rates, footScale, wants, minds
+        case sheetClamp, carriedFraction, carriedCap, wordRadiusMeters, wordMinChars, runeReachMeters, minOutingMeters
+    }
+
+    /// Every field optional on the wire: a server that adds or drops one does not
+    /// stop the phone from fighting.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = CombatConstants()
+        engageMeters = try c.decodeIfPresent(Double.self, forKey: .engageMeters) ?? d.engageMeters
+        groundMeters = try c.decodeIfPresent(Double.self, forKey: .groundMeters) ?? d.groundMeters
+        breakOffMeters = try c.decodeIfPresent(Double.self, forKey: .breakOffMeters) ?? d.breakOffMeters
+        strideMeters = try c.decodeIfPresent(Double.self, forKey: .strideMeters) ?? d.strideMeters
+        maxJumpMeters = try c.decodeIfPresent(Double.self, forKey: .maxJumpMeters) ?? d.maxJumpMeters
+        maxAccuracyMeters = try c.decodeIfPresent(Double.self, forKey: .maxAccuracyMeters) ?? d.maxAccuracyMeters
+        climbBandMeters = try c.decodeIfPresent(Double.self, forKey: .climbBandMeters) ?? d.climbBandMeters
+        roadCellResolution = try c.decodeIfPresent(Int.self, forKey: .roadCellResolution) ?? d.roadCellResolution
+        roadCapMeters = try c.decodeIfPresent(Double.self, forKey: .roadCapMeters) ?? d.roadCapMeters
+        holdByTier = try c.decodeIfPresent([String: Double].self, forKey: .holdByTier) ?? d.holdByTier
+        rates = try c.decodeIfPresent([String: Double].self, forKey: .rates) ?? d.rates
+        footScale = try c.decodeIfPresent([String: Double].self, forKey: .footScale) ?? d.footScale
+        wants = try c.decodeIfPresent(Double.self, forKey: .wants) ?? d.wants
+        minds = try c.decodeIfPresent(Double.self, forKey: .minds) ?? d.minds
+        sheetClamp = try c.decodeIfPresent([Double].self, forKey: .sheetClamp) ?? d.sheetClamp
+        carriedFraction = try c.decodeIfPresent(Double.self, forKey: .carriedFraction) ?? d.carriedFraction
+        carriedCap = try c.decodeIfPresent(Double.self, forKey: .carriedCap) ?? d.carriedCap
+        wordRadiusMeters = try c.decodeIfPresent(Double.self, forKey: .wordRadiusMeters) ?? d.wordRadiusMeters
+        wordMinChars = try c.decodeIfPresent(Int.self, forKey: .wordMinChars) ?? d.wordMinChars
+        runeReachMeters = try c.decodeIfPresent(Double.self, forKey: .runeReachMeters) ?? d.runeReachMeters
+        minOutingMeters = try c.decodeIfPresent(Double.self, forKey: .minOutingMeters) ?? d.minOutingMeters
+    }
+}
+
+/// What the server decided one outing did to one thing (`worldObjects.fights[]`).
+public struct FightReport: Codable, Hashable, Sendable, Identifiable {
+    public var id: UUID
+    public var name: String?
+    public var speciesId: String?
+    public var tier: Int
+    public var bounty: Bool?
+    /// SEEN_OFF, LOOSENED or UNTOUCHED.
+    public var outcome: String
+    public var holdMax: Int
+    public var holdBefore: Int
+    public var holdAfter: Int
+    /// Hold taken, by kind (ROAD, GROUND, CLIMB, RUNE, WORD, CARRIED).
+    public var damage: [String: Int]
+    public var units: [String: Double]?
+    public var finisher: String?
+    public var runeLanded: Bool?
+    public var wordLanded: Bool?
+    public var wouldHaveDone: WouldHaveDone?
+    public var expiresAt: Date?
+    /// Where it stood, for the ink mark on the reckoning's map.
+    public var latitude: Double?
+    public var longitude: Double?
+
+    public var seenOff: Bool { outcome == "SEEN_OFF" }
+    public var coordinate: Coordinate? {
+        guard let latitude, let longitude else { return nil }
+        return Coordinate(latitude: latitude, longitude: longitude)
+    }
+    public var taken: Int { holdBefore - holdAfter }
+
+    public init(id: UUID, name: String? = nil, speciesId: String? = nil, tier: Int = 1, bounty: Bool? = nil, outcome: String,
+                holdMax: Int, holdBefore: Int, holdAfter: Int, damage: [String: Int] = [:], units: [String: Double]? = nil,
+                finisher: String? = nil, runeLanded: Bool? = nil, wordLanded: Bool? = nil,
+                wouldHaveDone: WouldHaveDone? = nil, expiresAt: Date? = nil, latitude: Double? = nil, longitude: Double? = nil) {
+        self.id = id
+        self.name = name
+        self.speciesId = speciesId
+        self.tier = tier
+        self.bounty = bounty
+        self.outcome = outcome
+        self.holdMax = holdMax
+        self.holdBefore = holdBefore
+        self.holdAfter = holdAfter
+        self.damage = damage
+        self.units = units
+        self.finisher = finisher
+        self.runeLanded = runeLanded
+        self.wordLanded = wordLanded
+        self.wouldHaveDone = wouldHaveDone
+        self.expiresAt = expiresAt
+        self.latitude = latitude
+        self.longitude = longitude
+    }
+}
+
+/// The cheapest effort it wanted that would have finished it: "13 m of height".
+public struct WouldHaveDone: Codable, Hashable, Sendable {
+    public var kind: String
+    public var units: Double
+    public var unit: String
+
+    public init(kind: String, units: Double, unit: String) {
+        self.kind = kind
+        self.units = units
+        self.unit = unit
+    }
+}
+
+/// A creature met for the first time on an outing (`codexFirsts`), for the codex stamp.
+public struct CodexFirst: Codable, Hashable, Sendable, Identifiable {
+    public var speciesId: String
+    public var name: String
+    /// What it was called when met: an elder's own name.
+    public var metAs: String?
+
+    public var id: String { speciesId }
+
+    public init(speciesId: String, name: String, metAs: String? = nil) {
+        self.speciesId = speciesId
+        self.name = name
+        self.metAs = metAs
+    }
+}

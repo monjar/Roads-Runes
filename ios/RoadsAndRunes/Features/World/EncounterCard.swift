@@ -1,15 +1,18 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
-/// A chest, a piece or a monster on the World map: what it is, what it pays and
+/// A chest, a piece or a creature on the World map: what it is, what it pays and
 /// how to get it. Within reach of a chest or a piece the action is to take it;
-/// further off, and for a monster, it is to plan a route there.
+/// further off, and for a creature, it is to plan a route there.
 struct EncounterCard: View {
     let object: WorldObject
     var distanceMeters: Double?
     let units: Units
     /// The player is close enough to open it or pick it up.
     var inReach = false
+    /// How much of the ground round it is new to the player, once known.
+    var groundRound: WorldViewModel.GroundRound?
     var claiming = false
     var claimError: String?
     var onClaim: () -> Void = {}
@@ -21,11 +24,14 @@ struct EncounterCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
-                EncounterGlyph(kind: object.kind, bounty: object.isBounty, size: 48)
+                EncounterGlyph(object: object, size: 48)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
-                        Text(object.name).font(Theme.Typography.voice(20, relativeTo: .title3)).foregroundStyle(Theme.Colors.ink).lineLimit(2)
+                        Text(object.shownName).font(Theme.Typography.voice(20, relativeTo: .title3)).foregroundStyle(Theme.Colors.ink).lineLimit(2)
                         if object.isBounty { Eyebrow(text: "Bounty", color: Theme.Colors.terracottaDeep) }
+                        if let variant = object.monster?.variant {
+                            Eyebrow(text: variant.name, color: Theme.Colors.sageDeep).accessibilityIdentifier("encounter.variant")
+                        }
                     }
                     Text(facts).font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.muted).lineLimit(2)
                     if let flavour = object.monster?.flavour {
@@ -35,15 +41,25 @@ struct EncounterCard: View {
                 Spacer(minLength: 0)
                 IconCircleButton(symbol: "xmark", background: Theme.Colors.surface, size: 34, action: onClose)
                     .accessibilityLabel("Close")
+                    .accessibilityIdentifier("encounter.close")
             }
-            if let monster = object.monster, !monster.killMethods.isEmpty {
+            // A variant says what it changes; a creature back for a second go says so (0.7.2).
+            if let variant = object.monster?.variant, let text = variant.text, !text.isEmpty {
+                row(.sparkles, text).accessibilityIdentifier("encounter.variantText")
+            }
+            if let grudge = object.monster?.grudge {
+                row(.crossedSwords, grudge.line ?? "It got away twice. Now it's back, and grumpier.")
+                    .accessibilityIdentifier("encounter.grudge")
+            }
+            if let monster = object.monster, monster.foughtByEffort {
+                wantsSection(monster)
+            } else if let monster = object.monster, !monster.killMethods.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("How to beat it").font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink)
+                    Text("How to defeat it").font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink)
                     ForEach(Array(monster.killMethods.enumerated()), id: \.offset) { _, method in
                         HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: Self.symbol(for: method.method))
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(Theme.Colors.terracottaDeep)
+                            MarkView(.icon(Self.icon(for: method.method), spot: .terracotta))
+                                .frame(width: 18, height: 18)
                                 .frame(width: 22)
                             Text(method.hint).font(Theme.Typography.text(13)).foregroundStyle(Theme.Colors.inkSoft)
                         }
@@ -55,8 +71,11 @@ struct EncounterCard: View {
             }
             if let standing = object.setStanding {
                 // Which set, how much of it is held, and whether this piece adds to it.
-                Label(standing.line + (object.pieceOwned == true ? " · you have this one" : ""), systemImage: "sparkles")
-                    .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.sageDeep)
+                HStack(spacing: 6) {
+                    MarkView(.icon(.sparkles, spot: .sage)).frame(width: 16, height: 16)
+                    Text(standing.line + (object.pieceOwned == true ? " · you already have this one" : ""))
+                }
+                .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.sageDeep)
                     .accessibilityIdentifier("encounter.set")
             }
             if let claimError { ErrorLine(text: claimError) }
@@ -64,8 +83,8 @@ struct EncounterCard: View {
                 Button(action: onClaim) {
                     ZStack {
                         HStack(spacing: 10) {
-                            Image(systemName: object.kind == .chest ? "shippingbox.fill" : "sparkles")
-                            Text(object.kind == .chest ? "Open chest" : "Pick it up")
+                            MarkView(.icon(object.kind == .chest ? .openChest : .runeStone, spot: .paper)).frame(width: 20, height: 20)
+                            Text(object.kind == .chest ? "Open chest" : "Pick up \(object.piece ?? "piece")")
                         }
                         .opacity(claiming ? 0 : 1)
                         if claiming { ProgressView().tint(Theme.Colors.cream) }
@@ -84,6 +103,10 @@ struct EncounterCard: View {
                 .buttonStyle(.primary)
                 .accessibilityIdentifier("encounter.plan")
             }
+            // A promise to go out for it (0.7.3), mornings for today and evenings for tomorrow.
+            if object.kind == .monster {
+                PledgeButton(kind: .creature, targetId: object.id, targetName: object.name, mark: .of(object))
+            }
         }
         .padding(18)
         .background(Theme.Colors.cream, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
@@ -92,10 +115,59 @@ struct EncounterCard: View {
         .accessibilityIdentifier("encounterCard")
     }
 
+    /// Effort is damage: what it is weak to and resists, its health, its rune and
+    /// the rune's shape, how long since the player passed, and how much of the
+    /// ground around it is unexplored. Numbers are fine here: the card is read at rest.
+    @ViewBuilder
+    private func wantsSection(_ monster: MonsterInfo) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("How to defeat it").font(Theme.Typography.text(13, .semibold)).foregroundStyle(Theme.Colors.ink)
+            row(.sword, LoreCopy.weakTo(monster.wants ?? []))
+                .accessibilityIdentifier("encounter.wants")
+            if let minds = monster.minds, !minds.isEmpty {
+                row(.resist, LoreCopy.resists(minds)).accessibilityIdentifier("encounter.minds")
+            }
+            if let holdMax = monster.holdMax {
+                let left = monster.holdLeft ?? holdMax
+                row(.heart, left < holdMax ? "Health \(left) / \(holdMax) · weakened" : "Health \(holdMax) / \(holdMax)")
+                    .accessibilityIdentifier("encounter.hold")
+            }
+            if let rune = Self.runeName(monster.rune) {
+                row(.runeStone, LoreCopy.runeHow(rune, form: monster.roadForm))
+                    .accessibilityIdentifier("encounter.rune")
+            }
+            if let days = monster.unpassedDays, days >= 30 {
+                row(.hourglass, "You haven't been here in \(days) days.")
+            }
+            if let groundRound, groundRound.of > 0 {
+                row(.treasureMap, groundRound.unread == 0
+                    ? "You've explored all the ground around it."
+                    : "\(groundRound.unread) of \(groundRound.of) tiles around it are unexplored.")
+                    .accessibilityIdentifier("encounter.ground")
+            }
+        }
+    }
+
+    private func row(_ icon: GameIcon, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            MarkView(.icon(icon, spot: .terracotta))
+                .frame(width: 18, height: 18)
+                .frame(width: 22)
+            Text(text).font(Theme.Typography.text(13)).foregroundStyle(Theme.Colors.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// "kenaz" → "Kenaz".
+    static func runeName(_ id: String?) -> String? {
+        guard let id, !id.isEmpty else { return nil }
+        return id.prefix(1).uppercased() + id.dropFirst()
+    }
+
     /// Within reach it says so; out of reach it says how much closer to get.
     private func howToTakeIt(_ reach: Double) -> String {
         let piece = object.kind == .collectable
-        if inReach { return piece ? "You are close enough to pick it up." : "You are close enough to open it." }
+        if inReach { return piece ? "You're close enough to pick it up." : "You're close enough to open it." }
         let within = "Get within \(formatter.distance(meters: reach))"
         guard let distanceMeters, distanceMeters > reach else { return "\(within) to \(piece ? "pick it up" : "open it")." }
         return "\(within) to \(piece ? "pick it up" : "open it") · \(formatter.distance(meters: distanceMeters - reach)) to go."
@@ -105,58 +177,42 @@ struct EncounterCard: View {
         var parts: [String] = []
         if let anchor = object.anchorName { parts.append("at \(anchor)") }
         if let distanceMeters { parts.append(formatter.distance(meters: distanceMeters)) }
-        parts.append("\(object.rewardAC) AC")
+        parts.append(LoreCopy.purse(object.rewardAC))
         let days = max(0, Int(object.expiresAt.timeIntervalSinceNow / 86_400))
-        parts.append(days == 0 ? "gone tonight" : "\(days) day\(days == 1 ? "" : "s") left")
+        parts.append(days == 0 ? "last day" : "\(days) day\(days == 1 ? "" : "s") left")
         return parts.joined(separator: " · ")
     }
 
-    static func symbol(for method: KillMethodKind) -> String {
+    static func icon(for method: KillMethodKind) -> GameIcon {
         switch method {
-        case .pace: return "hare.fill"
-        case .rune: return "scribble.variable"
-        case .climb: return "mountain.2.fill"
-        case .lore: return "square.and.pencil"
-        case .explore: return "map.fill"
-        case .unknown: return "questionmark"
+        case .pace: return .road
+        case .rune: return .runeStone
+        case .climb: return .climb
+        case .lore: return .note
+        case .explore: return .treasureMap
+        case .unknown: return .mystery
         }
     }
 }
 
-/// The world object's mark: a box for a chest, a flame for a monster, sparkles for a piece.
+/// The world object's face (RoadsAndRunesArt): a creature's sigil in its tier's
+/// frame, a chest by tier, a rune-stone or a coin for a piece.
 struct EncounterGlyph: View {
-    let kind: WorldObjectKind
-    var bounty = false
+    let mark: Mark
     var size: CGFloat = 40
 
+    init(object: WorldObject, size: CGFloat = 40) {
+        mark = .of(object)
+        self.size = size
+    }
+
+    /// For a place that has only the kind.
+    init(kind: WorldObjectKind, bounty: Bool = false, size: CGFloat = 40) {
+        mark = .of(kind: kind, bounty: bounty)
+        self.size = size
+    }
+
     var body: some View {
-        ZStack {
-            Circle().fill(color)
-            Image(systemName: symbol)
-                .font(.system(size: size * 0.44, weight: .bold))
-                .foregroundStyle(Theme.Colors.cream)
-            if bounty {
-                Circle().stroke(Color(red: 0.85, green: 0.65, blue: 0.13), lineWidth: 3)
-            }
-        }
-        .frame(width: size, height: size)
-    }
-
-    private var symbol: String {
-        switch kind {
-        case .chest: return "shippingbox.fill"
-        case .monster: return "flame.fill"
-        case .collectable: return "sparkles"
-        case .unknown: return "questionmark"
-        }
-    }
-
-    private var color: Color {
-        switch kind {
-        case .chest: return Theme.Colors.inkSoft
-        case .monster: return Theme.Colors.terracottaDeep
-        case .collectable: return Theme.Colors.sageDeep
-        case .unknown: return Theme.Colors.muted
-        }
+        MarkView(mark).frame(width: size, height: size)
     }
 }

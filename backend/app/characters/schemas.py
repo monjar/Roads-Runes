@@ -21,6 +21,9 @@ class AbilityOut(APIModel):
     requiredClassLevel: int
     maxRank: int
     effects: list[dict[str, Any]] = []
+    # Whether the server acts on this knack yet. Most were promised before they
+    # did anything; the sheet says so plainly rather than advertise them.
+    working: bool | None = None
 
 
 class AbilityState(APIModel):
@@ -70,6 +73,29 @@ class CharacterOut(APIModel):
     longestStreakDays: int = 0
     # True once an outing has counted today, so the app can say "keep it alive" or "done".
     streakActiveToday: bool = False
+    # The sheet a ride started now would be frozen with (characters/sheet.py), so an
+    # outing started offline folds the fight over the last one seen.
+    sheet: dict[str, Any] | None = None
+    # The player chose the title they wear (PUT /character/title); earning another
+    # no longer changes it.
+    titlePinned: bool = False
+
+
+class TitleOut(APIModel):
+    """A title, earned or not: `how` says how to earn it."""
+
+    slug: str
+    name: str
+    source: str
+    how: str
+    earned: bool
+    earnedAt: datetime | None = None
+    worn: bool = False
+
+
+class TitleChoice(APIModel):
+    # A title earned, or null to wear the newest earned again.
+    slug: str | None = None
 
 
 class ClassInfo(APIModel):
@@ -78,6 +104,11 @@ class ClassInfo(APIModel):
     tagline: str
     description: str
     enabled: bool
+    # The trade's guild, its saying and its crest id (docs/WORLD.md). Optional:
+    # an older server sends none, and the app draws the class symbol instead.
+    guild: str | None = None
+    saying: str | None = None
+    crest: str | None = None
 
 
 class BikeIn(APIModel):

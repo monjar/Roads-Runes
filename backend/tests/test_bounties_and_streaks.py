@@ -27,7 +27,9 @@ async def test_one_bounty_a_day_worth_double(explorer_client):
     bounty = bounties[0]
     assert bounty["kind"] == "MONSTER"
     assert bounty["rewardAC"] == 2 * world_objects.load_ac_rules()["monster"][str(bounty["tier"])]
-    assert bounty["expiresAt"].startswith((datetime.now(UTC).date() + timedelta(days=1)).isoformat()[:10])
+    # A day and a half to two days, not midnight: a midnight deadline pays for riding after dark.
+    ends = datetime.fromisoformat(bounty["expiresAt"].replace("Z", "+00:00"))
+    assert timedelta(hours=35) <= ends - datetime.now(UTC) <= timedelta(hours=48)
     assert (await c.get("/world/objects/bounty")).json()["id"] == bounty["id"]
 
     # Looking again today does not conjure a second one, even after this one is beaten.
@@ -39,8 +41,11 @@ async def test_one_bounty_a_day_worth_double(explorer_client):
     paid = next(line for line in summary["acBreakdown"] if line["kind"] == "BOUNTY")
     # The grandest bounty is worth a whole ride's cap on its own, so with the
     # kilometres on top every line is scaled down a little and the sum is the cap.
+    # The day's streak coins and a set's purse are paid outside it (economy/rules.py),
+    # which made this fail whenever the bounty drawn was the top tier.
     if paid.get("detail", {}).get("capped"):
-        assert summary["acAwarded"] == world_objects.load_ac_rules()["caps"]["perRideTotal"]
+        uncapped = sum(line["ac"] for line in summary["acBreakdown"] if line["kind"] in ("STREAK", "SET_COMPLETED"))
+        assert summary["acAwarded"] - uncapped == world_objects.load_ac_rules()["caps"]["perRideTotal"]
         assert paid["ac"] >= bounty["rewardAC"] * 0.9
     else:
         assert paid["ac"] == bounty["rewardAC"]
@@ -66,7 +71,14 @@ async def test_days_in_a_row_pay_and_reset(explorer_client):
     # one whose last day is older than yesterday is over, whatever the row says.
     day1 = datetime.now(UTC).replace(hour=9, minute=0, second=0, microsecond=0) - timedelta(days=1)
     summary = await _ride_on(c, day1)
-    assert summary["streak"] == {"days": 1, "longest": 1, "extended": True, "milestone": None, "bonusAC": 5}
+    assert summary["streak"] == {
+        "days": 1,
+        "longest": 1,
+        "extended": True,
+        "milestone": None,
+        "bonusAC": 5,
+        "restTokenUsed": False,
+    }
     assert any(line["kind"] == "STREAK" and line["ac"] == 5 for line in summary["acBreakdown"])
     # The same day again adds nothing; the next day adds a day.
     assert (await _ride_on(c, day1 + timedelta(hours=3)))["streak"]["extended"] is False

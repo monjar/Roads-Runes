@@ -65,12 +65,12 @@ def test_every_class_has_quests_and_every_template_renders():
             assert not any("{" in t for t in texts), f"{template['id']} left a placeholder in {texts}"
 
 
-def test_warrior_quests_ask_for_pace_and_time():
+def test_warrior_quests_ask_for_time_not_speed():
+    """The Tempo quest asked for an average speed; it is retired and never dealt."""
     ctx = context("WARRIOR")
-    tempo = generator.instantiate(next(t for t in all_templates() if t["id"] == "WARRIOR_STEADY_TEMPO"), ctx, salt=1)
-    speed = next(o for o in tempo.objectives if o.objective_type == "SUSTAIN_SPEED")
-    assert 15 <= speed.progress_target <= 30
-    assert speed.extra["minDistanceMeters"] > 0  # a fast two kilometres does not count
+    offered = templates_for("WARRIOR", 50)
+    assert all(t["id"] != "WARRIOR_STEADY_TEMPO" for t in offered)
+    assert not any(o["type"] == "SUSTAIN_SPEED" for t in offered for o in t["objectives"])
 
     hour = generator.instantiate(next(t for t in all_templates() if t["id"] == "WARRIOR_HOUR_OF_IRON"), ctx, salt=1)
     duration = next(o for o in hour.objectives if o.objective_type == "RIDE_DURATION")

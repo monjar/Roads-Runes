@@ -142,12 +142,19 @@ Never includes home location, ride start/end points or live location.
   "characterClass": "EXPLORER",
   "overallLevel": 8, "overallXP": 1820, "nextOverallLevelXP": 2200, "overallLevelFloorXP": 1500,
   "classLevel": 6, "classXP": 900, "nextClassLevelXP": 1200, "classLevelFloorXP": 700,
-  "title": "Wanderer",
+  "title": "Familiar Face", "titlePinned": false,
   "abilities": [AbilityState],
   "unspentAbilityPoints": 1,
   "createdAt": "..."
 }
 ```
+
+Since 0.6.2 `unspentAbilityPoints` is the knacks this trade has to choose,
+derived from the trade's level less what it has learned, and only the current
+trade's knacks count anywhere (the sheet, quests, XP). `titlePinned` (optional)
+is true once the player has chosen what to wear. `sheet` gains `vsEldersPct`,
+`lateRoadPct`, `lateRoadAfterMeters` and `wordOldPlacesPct` (all optional), and
+`xpPct` / `coinPct` carry the XP and coin knacks.
 
 `Ability` / `AbilityState`:
 
@@ -157,10 +164,10 @@ Never includes home location, ride start/end points or live location.
     "id": "explorer_trail_sense",
     "characterClass": "EXPLORER",
     "name": "Trail Sense",
-    "description": "Reveal more interesting nearby paths.",
-    "requiredClassLevel": 5,
+    "description": "Quest stops are looked for 15% further out, and new ground does 5% more against things, per rank.",
+    "requiredClassLevel": 2,
     "maxRank": 3,
-    "effects": [{"type": "QUEST_POI_VISIBILITY", "perRank": 0.15}]
+    "effects": [{"type": "QUEST_POI_VISIBILITY", "perRank": 0.15}, {"type": "DAMAGE_PCT", "kind": "GROUND", "perRank": 0.05}]
   },
   "rank": 1,
   "unlocked": true,
@@ -168,10 +175,26 @@ Never includes home location, ride start/end points or live location.
 }
 ```
 
+`ability.working` (0.6.0, optional) says whether the server acts on that knack
+yet; the character sheet marks the others "not yet".
+
+- `GET /character/classes` → `[ClassInfo]`: `{"id": "WIZARD", "name": "Wizard", "tagline": "Cuts the runes again. Looks twice.", "description": "…", "enabled": true, "guild": "the Cutters", "saying": "Look twice, then once more.", "crest": "wizard"}`. `guild`, `saying` and `crest` are optional (0.6.0); a trade's lore is in `docs/WORLD.md`.
 - `POST /character` `{"name": "Rowan", "characterClass": "EXPLORER"}` → `Character` (409 if exists; 403 `FEATURE_DISABLED` for classes behind flags).
 - `GET /character`
 - `GET /character/abilities` → `[AbilityState]`
-- `POST /character/abilities/{abilityId}/unlock` → `Character`
+- `POST /character/abilities/{abilityId}/unlock` → `Character` (409 `NO_ABILITY_POINTS` with no knack to choose)
+- `GET /character/titles` (0.6.2) → `[Title]`, every title there is, the earned first:
+  `{"slug": "level-5", "name": "Familiar Face", "source": "LEVEL|ARC|DEED|CAST", "how": "Reach level 5.", "earned": true, "earnedAt": "...", "worn": true}`
+- `PUT /character/title` (0.6.2) `{"slug": "arc-first-light"}` → `Character`: wear an earned title
+  and keep it (409 `TITLE_NOT_EARNED`); `{"slug": null}` wears the newest earned again.
+
+A title is worn as soon as it is earned until the player chooses one. Since 0.7.0 there are deed
+titles (`DEED`, five per deed) and the cast's (`CAST`): finishing enough of one person's notices
+(by `narrative.poster.castId`) earns their title, which is all the standing with the cast there is. Level titles are Passer-by (1),
+Familiar Face (5), Roadwise (10), Journeyman (20), Waywright (30), Old Hand (40) and Known to the
+Roads (50); finishing an arc gives its own. New XP sources in 0.6.2: `PATHFINDER`, `FAR_WANDERER`,
+`WELCOME_BACK` (the first outing after 14 days or more pays its first kilometre twice), and
+`STORY_ARC_COMPLETED` is paid once per arc whichever way its last step was finished.
 - `GET /character/bikes` → `[Bike]`; `POST /character/bikes`; `PATCH /character/bikes/{id}`; `DELETE /character/bikes/{id}`
 
 `Bike`:
@@ -192,6 +215,59 @@ Never includes home location, ride start/end points or live location.
   "trafficTolerance": 0.3, "gravelComfort": 0.6, "technicalTrailComfort": 0.2, "cyclewayPreference": 0.8
 }
 ```
+
+---
+
+## Codex
+
+### `GET /codex` (flag `codex`)
+
+The world in its own words, and what this player has met of it. Nothing is
+stored: "met" is read from the player's own world objects. Pages about
+mechanics the server is not running yet (a page whose `flag` is off) are left
+out.
+
+```json
+{
+  "chapters": [{"id": "WORLD", "title": "The Old Roads"}, {"id": "CREATURES", "title": "Things that settle"}, "…"],
+  "entries": [{"id": "the-fog", "chapter": "WORLD", "title": "The fog", "body": ["Ground you have not read. …"],
+               "by": "enid-sallow", "byName": "Enid Sallow", "characterClass": null}],
+  "creatures": [{
+    "id": "fen-troll", "name": "Fen Troll", "family": "WATER", "flavour": "Sleeps by the water; wakes for footsteps.",
+    "hint": "Keeps to water.", "page": "…", "leaves": "a bridge nail",
+    "wants": ["ROAD", "RUNE"], "minds": ["WORD"], "rune": "dagaz",
+    "elders": [{"tier": 2, "name": "Culvert Troll", "flavour": "…", "seen": true}, {"tier": 3, "name": "Old Arch", "flavour": "…", "seen": false}],
+    "sigil": {"body": "hulk", "feature": "horns", "mark": "water"},
+    "state": "MET", "seenCount": 3, "seenOffCount": 1, "firstSeenAt": "…", "lastSeenOffAt": "…"
+  }],
+  "runes": [{"id": "raido", "name": "Raido", "order": 5, "six": "ROAD", "gloss": "The road-rune. …", "lends": "the road",
+             "roadForm": "LOOP", "state": "HELD", "found": 2}],
+  "sixes": [{"id": "ROAD", "name": "the Road Six", "how": "Found lying anywhere. …"}],
+  "people": [{"id": "ada-pym", "name": "Ada Pym", "role": "Keeps the board", "posts": "ANY", "page": "…", "pageBy": "enid-sallow", "lines": ["…"]}],
+  "counts": {"creaturesSeenOff": 1, "creaturesSeen": 2, "creaturesTotal": 12, "runesHeld": 1, "runesTotal": 24}
+}
+```
+
+`state` for a creature is `UNSEEN` (never placed for this player), `SEEN` (on
+their map at least once) or `MET` (seen off, or loosened). A rune is `HELD` or
+`NOT_FOUND`. `wants`/`minds` are kinds of effort (`ROAD`, `GROUND`, `CLIMB`,
+`RUNE`, `WORD`); the app shows them only when `effort_combat` is on. A monster
+placed from 0.6.0 carries `speciesId` in its payload, and its `name` is its
+elder's name at tiers 2 and 3.
+
+With `effort_combat` on (0.6.1) a monster's `monster` block gains `holdMax`,
+`holdLeft`, `wants`, `minds`, `rune`, `roadForm` and sometimes `unpassedDays`,
+and its `killMethods` is empty, so a phone from before 0.6.1 never judges a
+fight. A ride summary's `worldObjects.fights[]` reports each fight
+(`outcome` SEEN_OFF / LOOSENED / UNTOUCHED, `holdBefore`, `holdAfter`,
+`damage` by kind, `finisher`, `wouldHaveDone`, and the thing's `latitude` and
+`longitude` for the reckoning's ink mark), `missed[].reason` gains
+`LOOSENED` and `UNTOUCHED`, and the XP breakdown gains `BLOWS_LANDED`.
+
+A note sent as an encounter event (`method: LORE`, with `note`) is, with the
+flag on, the word: the server places it on the trace at the fix nearest its
+`occurredAt` and it lands on anything within 120 m. No event is sent for a
+creature seen off by effort; the server reads the trace.
 
 ---
 
@@ -244,7 +320,8 @@ A piece (`COLLECTABLE`) carries its set: `setId`, `piece`, `setName`, `setSize`,
 player, `setOwned` (how many different pieces of it they hold) and `pieceOwned` (they already hold this
 one, so it is coins and not progress).
 
-`kind` is `CHEST`, `COLLECTABLE` or `MONSTER`; `status` is `SPAWNED`, `CLAIMED` or `EXPIRED`.
+`kind` is `CHEST`, `COLLECTABLE`, `MONSTER` or (0.8.0) `LAIR`; `status` is `SPAWNED`, `CLAIMED` or
+`EXPIRED` (buried treasure is `HIDDEN` and never listed).
 `claimRadiusMeters` is how close the player must be to take it, and null for a monster.
 
 ### `POST /world/objects/{id}/claim`
@@ -271,6 +348,18 @@ taken by hand during a ride counts towards that ride's quest.
 `OBJECT_GONE` (already claimed or expired), `OBJECT_NOT_CLAIMABLE` (a monster), `GPS_TOO_WEAK`
 (accuracy worse than 65 m), `CLAIM_TOO_FAST` (more than 500 m from the last one, faster than 25 m/s).
 
+### `POST /world/objects/lure`
+
+A lamp left out: one creature comes to the nearest named place within 250 m of the spot, quota
+aside, and the player's purse pays 50 coins only if something comes.
+
+```json
+{"latitude": 51.4990, "longitude": -0.0480}
+```
+
+→ `[WorldObject]` (the one that came). `409 NOTHING_TO_LURE` when there is no place to come to
+(no charge); `409 INSUFFICIENT_AC` when the purse is short.
+
 ---
 
 ## Quests
@@ -285,7 +374,8 @@ taken by hand during a ride counts towards that ride's quest.
   "templateId": "EXPLORER_NEW_TERRITORY",
   "title": "Beyond the Water",
   "description": "...",
-  "narrative": {"hook": "...", "completion": "..."},
+  "narrative": {"hook": "...", "completion": "...",
+                "poster": {"castId": "nell-foss", "name": "Nell Foss", "line": "By the pond. Not there at lamp-lighting."}},
   "difficulty": "EASY|MODERATE|HARD|EPIC",
   "recommendedDistanceKm": 28,
   "estimatedDurationMinutes": 120,
@@ -318,16 +408,29 @@ taken by hand during a ride counts towards that ride's quest.
 }
 ```
 
-Objective types: `VISIT_LOCATION, VISIT_REGION, EXPLORE_DISTANCE, EXPLORE_NEW_ROADS, REACH_ELEVATION, COMPLETE_DISTANCE, COMPLETE_CLIMB, VISIT_POI, PHOTO_LOCATION, WRITE_NOTE, VISIT_MULTIPLE_LOCATIONS, RETURN_TO_START, COMPLETE_WITH_FRIEND, COMPLETE_ROUTE, RIDE_DURATION, SUSTAIN_SPEED`.
+Objective types: `VISIT_LOCATION, VISIT_REGION, EXPLORE_DISTANCE, EXPLORE_NEW_ROADS, REACH_ELEVATION, COMPLETE_DISTANCE, COMPLETE_CLIMB, VISIT_POI, PHOTO_LOCATION, WRITE_NOTE, VISIT_MULTIPLE_LOCATIONS, RETURN_TO_START, COMPLETE_WITH_FRIEND, COMPLETE_ROUTE, RIDE_DURATION, SUSTAIN_SPEED, SLAY_MONSTER, OPEN_CHEST, COLLECT, INSCRIBE_RUNE, CARRY`.
+
+0.7.0 adds two. `INSCRIBE_RUNE` asks for a rune round a place: `extra.roadForm` is `LOOP`,
+`TRIANGLE`, `SQUARE` or `ZIGZAG` (a shape cut with the trace within `radiusMeters` of the
+place, judged by the rune matcher), `NOTE` (a note of a few words sent as the objective's
+`progress` event within reach) or `STOP` (staying within reach for `extra.stopSeconds`);
+`extra.rune` names the rune. `CARRY` asks for the trace to reach the objective's place and
+later `extra.to` (`{"latitude", "longitude", "name", "discoveryId"}`); `progress` counts 0, 1
+(picked up) and 2 (delivered).
 
 `RIDE_DURATION` counts minutes and `SUSTAIN_SPEED` the ride's average km/h (with a floor
 in `extra.minDistanceMeters`, so a fast two kilometres does not pass); both are judged
 server-side when the ride is processed. `PHOTO_LOCATION` and `WRITE_NOTE` need the rider
 to act and complete through `POST /quests/{id}/progress`.
 
-A puzzle objective (Wizard quests) omits `latitude`/`longitude` until it is completed —
-the route generated for the quest still passes the place, but the app cannot name or pin
-it. The app renders such an objective as "hidden".
+A puzzle objective (Wizard quests) omits `latitude`/`longitude`, `discoveryId` and the
+place's name and category in `extra` until it is completed — the route generated for the
+quest still passes the place, but the app cannot name or pin it, and neither the composed
+story nor the model is told its name. The app renders such an objective as "hidden".
+
+Every notice carries `narrative.poster` (0.6.2, optional): who put it up and one of their
+lines, picked by seed and attached after the story is written. `narrative.completion` is
+an authored line for every template and every story step.
 
 - `GET /quests?latitude&longitude&status=AVAILABLE&limit` → paginated. If the
   user has fewer than 3 `AVAILABLE` quests near the point the server
@@ -350,6 +453,34 @@ post-processing re-validates.
 - `POST /quests/{id}/abandon` → `Quest`
 - `GET /quests/{id}/route?latitude&longitude` → `RouteOption`: the quest's route from where the player is (spec §20 "suggested route"). A quest starts where the player stands: the route runs from the given position through the objectives still to do and back, with the rider's default bike and profile, and is stored as the quest's `suggestedRouteId`. It is returned unchanged while the player stays within 150 m of where it starts; further than that it is drawn again from the new position, and the quest's `origin` and any `RETURN_TO_START` objective move with it. Without a position the stored route is returned as it is. A route that cannot be drawn is `502 ROUTE_GENERATION_FAILED`, never a quest with no route and no reason. `POST /routes/generate` with the `questId` (the planner's "Tweak the route") adds alternatives without replacing it.
 - The board (`GET /quests`) routes its `AVAILABLE` and `ACCEPTED` quests from the position it is given, and retires what cannot be done from there: a quest whose furthest target is beyond reach (18 km for a ride, scaled for feet, or 0.6 × the comfortable distance if that is more), and a quest whose chest or monster has gone. A quest about a world object expires when the object does.
+- `POST /quests/sealed` (0.7.3) `{"minutes": 20|40|90, "latitude", "longitude", "activity": "RIDE|RUN|WALK|null"}` → `Quest`, already `ACCEPTED`, with its route fixed (`suggestedRouteId`; `GET /quests/{id}/route` returns it). See **The sealed quest** below.
+
+### The sealed quest (0.7.3)
+
+Pick a time, the board picks the way, the goal opens halfway. The server picks somewhere about half the time away at the activity's usual pace (`core/activity.py`: ride 15, run 9.5, walk 4.8 km/h), as the crow flies over roads about 1.3 times longer: a hidden place or a creature when there is one in reach, a place already found when not, a tile on the map at the last (never a memorial, grave, place of worship or hospital). The route goes there and back, so the journey lasts about the minutes asked. One at a time: a new sealed quest retires one that is `AVAILABLE` or `ACCEPTED` (`EXPIRED`); one already `ACTIVE` is left alone. It expires a day after it is made.
+
+```json
+{
+  "id": "uuid", "questType": "SEALED", "templateId": "SEALED", "characterClass": "ANY", "activity": "RIDE",
+  "title": "Sealed quest (40 min)",
+  "description": "The board picked the way. Your goal opens halfway.",
+  "narrative": {"hook": "The board picked the way. Your goal opens halfway.", "completion": null, "source": "sealed",
+                "sealed": {"minutes": 40, "revealAtFraction": 0.5}},
+  "difficulty": "EASY", "baseXP": 150, "rewards": {"xp": 150, "ac": 20, "items": [], "titles": []},
+  "recommendedDistanceKm": 9.6, "estimatedDurationMinutes": 38,
+  "status": "ACCEPTED", "suggestedRouteId": "uuid",
+  "objectives": [{
+    "objectiveType": "VISIT_POI", "title": "Reach the goal",
+    "latitude": null, "longitude": null, "discoveryId": null, "radiusMeters": 90,
+    "extra": {"sealed": true, "hidden": true, "revealAtFraction": 0.5, "goal": Goal}
+  }],
+  "extra": {"sealed": true, "minutes": 40, "revealAtFraction": 0.5, "goal": Goal}
+}
+```
+
+`Goal` = `{"kind": "PLACE|CREATURE|TILE", "name": "Stave Hill", "title": "Ride to Stave Hill", "latitude", "longitude", "category": "VIEWPOINT|null", "discoveryId": "uuid|null", "objectId": "uuid|null", "icon": "troll|null"}` (`icon` is a creature's `GameIcon`). The objective is hidden the way a puzzle's is (no pin, no name on the objective until it is done), but the goal itself rides along in `extra.goal`, and the route (and `GET /routes/{id}/package`, whose `quest` is the same `Quest`) leads there: the hiding is the app's, until the route is `revealAtFraction` along it, and then only at a standstill and in Journey's end. A creature goal is reached (within 150 m), not fought for; a place goal is `VISIT_POI` (90 m), a tile `VISIT_LOCATION` (250 m). Paid like an `EASY` quest for 20 and 40 minutes and a `MODERATE` one for 90. `minutes` other than 20, 40 or 90 is 400 `VALIDATION_ERROR`; a route that cannot be drawn is 502 `ROUTE_GENERATION_FAILED` and makes no quest.
+
+`Quest.extra` (0.7.3) is `{}` for every other quest.
 
 `QuestCompletion`:
 
@@ -366,8 +497,6 @@ post-processing re-validates.
 ```
 
 ---
-
-## Routes
 
 ### `GET /quests/story`
 
@@ -387,11 +516,491 @@ flag; 403 when it is off.
 }]
 ```
 
-`state` is `COMPLETED` (ridden), `OPEN` (on the board now, `questId` set), `READY`
-(next up) or `LOCKED` (waiting on the step before). Locked arcs are returned too —
-`unlocked` says whether this rider's class and level have reached it. A step is
-put on the board by `GET /quests` (`ensure_available`), one at a time, and never
-expires. See `docs/QUEST_SYSTEM.md` for the rules.
+`state` is `COMPLETED` (done), `OPEN` (on the board now, `questId` set), `READY`
+(next up), `WAITING` (next up, but it cannot be set where the player is;
+`waitingReason` says why) or `LOCKED` (waiting on the step before). Locked arcs are
+returned too — `unlocked` says whether this player's class, level and the chapter
+before have reached it. A step is put on the board by `GET /quests`
+(`ensure_available`), one per track, and never expires.
+
+0.6.2 adds to each arc (all optional): `track` (`MAIN`, the campaign; `SIDE`, a
+trade's own arc), `act` and `actTitle`, `chapter`, `after` (the chapter that must be
+finished first), `giver` (a cast id) and `reward` (`{"title", "ac"}`). Act I, "The
+Board", is First Light, What Settles and The Rune at the Crossing; its finale places a
+named elder bound to its step, which stays while the step is open. An arc's ending is
+paid once, whichever way its last step was finished. See `docs/QUEST_SYSTEM.md`.
+
+### `GET /quests/week` (0.6.2)
+
+The week's notice: one goal an ISO week, a fixed target, paid once (150 coins and
+200 XP) by the outing that meets it.
+
+```json
+{"week": "2026-W41", "kind": "OUTINGS|NEW_GROUND|PLACES|SEEN_OFF", "title": "Three outings this week.",
+ "line": "Pinned Monday. Comes down Sunday night.", "postedBy": "Ada Pym", "target": 3, "unit": "outings",
+ "progress": 1, "done": false, "paid": false, "coins": 150, "xp": 200, "endsAt": "..."}
+```
+
+## Runes and deeds (0.7.0)
+
+Runes are the build. A rune is held from its first stone (picked up on an outing or by
+hand, from the Road Six set anywhere and the Ground Six only on their own kind of ground);
+after that each stone is a shard towards the next rank. Only inscribed runes act, each
+changing one rule (`backend/app/inventory/config/runes.json`); a rank widens the rule's
+number, never a damage percentage. Slots open at levels 1, 10 and 25.
+
+- `GET /runes` → `{"runes": [Rune], "inscribed": ["raido"], "slots": 1, "slotsAtLevel": [1, 10, 25]}`,
+  `Rune` = `{"id", "name", "six": "ROAD|GROUND", "gloss", "roadForm", "held", "rank", "shards", "inscribed",
+  "rule" (what it does at its rank, or rank I), "nextRank": {"shards": 2, "coins": 100}|null}`
+- `POST /runes/{id}/rank` → `Runes`: two stones and coins take it a rank deeper (409 `RUNE_NOT_HELD`,
+  `RUNE_NEEDS_STONES`, `RUNE_MAX_RANK`, `INSUFFICIENT_AC`)
+- `PUT /runes/inscribed` `{"runes": ["raido", "kenaz"]}` → `Runes` (409 `NO_SLOT`, `RUNE_NOT_HELD`,
+  `RUNE_TWICE`, `LOADOUT_LOCKED` while a ride is recording)
+- `GET /runes/cuts` → `[{"runeId", "name", "latitude", "longitude", "woke", "source": "WAKING|FIGHT|QUEST",
+  "placeName", "cutAt", "rideId"}]`, for the marks on the maps
+- `GET /character/deeds` → `{"deeds": [{"id": "LEGS|LUNGS|EYES|HAND|INK", "name", "what", "unit", "value",
+  "tier", "next", "title", "frame"}], "records": [{"id": "RECORD_FURTHEST|RECORD_NEW_GROUND|RECORD_HIGHEST",
+  "name", "unit", "value"}]}`
+
+The sheet (`Character.sheet`, `Ride.loadout`) gains `inscribed` (`{"raido": 1}`) and `rules`
+(`{"CARRIED_SCALE": 2.0}`). Cutting an inscribed rune's road form on an outing planned as its rune ride wakes it: it counts
+a rank deeper for that outing and lands a rune blow on every creature within reach
+(`worldObjects.woken`). A shape cut by chance on an ordinary outing wakes nothing. A ride summary gains `runesFound` (stones picked up) and `deeds`
+(`{"reached": [{"deed", "name", "tier", "title", "frame"}], "records": [...]}`). Deed titles
+join `GET /character/titles` (`source: DEED`).
+
+Cartographer, Arcane Sight and Second Chance work from 0.7.0: a ring of ground read round
+new cells (`discovered_via: CARTOGRAPHER`), rune stones likelier, and one missed optional
+objective of a finished quest counting (`extra.forgiven`).
+
+## Gear, the bag and the stall (0.7.2)
+
+Gear is worn in five slots that open with level: Bell (1), Lantern (3), Bag (5), Map case
+(13) and Keepsake (21). Fifteen items (`backend/app/inventory/config/gear.json`), Common,
+Rare or Legendary; each changes a rule, never a damage percentage, and joins the runes'
+rules on the sheet (`Character.sheet.rules`, `gear`, `lootFindPct`; sheet version 4). A
+Legendary item comes to a player once, ever. Every change goes through
+`inventory/service.py` and its idempotent ledger.
+
+- `GET /inventory` → `Inventory`:
+  ```json
+  {"slots": [{"slot": "BELL", "name": "Bell", "opensAtLevel": 1, "open": true, "item": GearItem|null}],
+   "bag": [GearItem], "bagSize": 20,
+   "consumables": [{"id": "LAMP|MAP_FRAGMENT|REST_TOKEN|SEALED_CHEST_COMMON|SEALED_CHEST_RARE",
+                    "name": "Lamp", "icon": "lantern", "text": "...", "count": 2}],
+   "finishesSinceRare": 3, "levelRewardsPaid": [LevelReward]}
+  ```
+  `GearItem` = `{"id", "itemId": "tin-bell", "name": "Tin Bell", "slot", "rarity": "COMMON|RARE|LEGENDARY",
+  "icon": "tinBell", "text": "Creatures show up from 500 m away.", "sellPrice", "equipped", "acquiredAt",
+  "source": "MONSTER|BOUNTY|CHEST|QUEST|STALL|SEALED_CHEST"}`. The first call after 0.7.2 pays every level
+  already reached, once, and lists it in `levelRewardsPaid`.
+- `PUT /inventory/gear` `{"slot": "BELL", "itemId": uuid|null}` → `Inventory` (409 `WRONG_SLOT`,
+  `SLOT_LOCKED`, `LOADOUT_LOCKED` during a recording ride)
+- `POST /inventory/items/{id}/sell` → `Inventory` with `soldFor` and `walletBalance` (409 `TAKE_OFF_FIRST`)
+- `POST /inventory/consumables/{id}/use` `{"latitude", "longitude"}` → `{"consumable", "revealedTiles",
+  "placeName", "latitude", "longitude", "itemFound": ItemFound|null, "inventory": Inventory}`. A map piece
+  reveals tiles round the nearest hidden place within 5 km (409 `NO_HIDDEN_PLACE`); a sealed chest gives an
+  item of its rarity (409 `OPEN_LATER` during a journey). None held: 409 `NONE_LEFT`. Lamps are used by
+  `POST /world/objects/lure` before coins, and rest tokens by the streak, on their own.
+- `GET /inventory/stall` → `{"open", "opensAtLevel": 3, "week": "2026-W41", "resetsAt",
+  "offers": [{"id": "w41-0", "kind": "GEAR|CONSUMABLE", "itemId", "consumable", "name", "rarity", "icon",
+  "slot", "text", "price", "bought"}]}`: four offers a week, the same all week.
+- `POST /inventory/stall/{offerId}/buy` → `Inventory` (409 `STALL_CLOSED`, `ALREADY_BOUGHT`,
+  `INSUFFICIENT_AC`)
+- `GET /inventory/levels` → `[{"level": 3, "reached": true, "rewards": [{"kind":
+  "SLOT|RUNE_SLOT|STALL|TITLE|CONSUMABLE", "text": "Lantern slot opens", "icon", "consumable", "count",
+  "slot", "level"}]}]` for levels 1 to 50: every level gives something.
+
+New coin kinds in `GET /wallet/transactions`: `STALL`, `ITEM_SOLD`.
+
+**What a journey found.** A ride summary (and `POST /world/objects/{id}/claim`, as `itemFound`) gains
+`itemsFound`: `[{"kind": "GEAR|CONSUMABLE", "inventoryItemId", "itemId", "consumable", "name", "icon",
+"rarity", "slot", "source": "MONSTER|CHEST|QUEST|BOUNTY", "fromName": "Fen Troll", "soldOnTheSpot": false,
+"soldFor": null}]`. A drop into a full bag (20) is sold on the spot. `streak.restTokenUsed` says a rest
+token kept the streak over a missed day; `levelUps[].rewards` lists what each new level gave. Hard quests
+carry a Rare item in `rewards.items` (`{"itemId", "name", "rarity", "icon", "slot"}`), epic ones sometimes a
+Legendary.
+
+**Creatures.** Twenty-four species; every `monster.sigil` carries an `icon` (a `GameIcon` name).
+`monster.variant` = `{"id": "STUBBORN|SKITTISH|MOSSY", "name": "Stubborn", "text"}` and `displayName`
+("Stubborn Fen Troll"). A creature that gets away weakened twice from the same place comes back once as a
+grudge: `monster.grudge` = `{"epithet": "Grumpy", "line"}`, named "Fen Troll the Grumpy". The Codex
+creature page gains `trophies` (`{"name": "a bridge nail", "count": 3}`).
+
+**The written entry** (flag `chronicle_llm`, off): after a ride is counted, a job may write
+`entryWritten` (`{"lines": [...], "by": "model"}`) on the ride and its journal entry. The composed
+`entry` stays; the app shows the written one when there is one.
+
+## Between rides (0.7.3)
+
+### The pledge (flag `pledge`)
+
+A promise to go out for one creature or quest on one day. Kept, Journey's end says "You said you would. You did."; missed, nothing is ever said or charged. Behind `pledge` (on where `ENVIRONMENT=development`, off elsewhere); 403 `FEATURE_DISABLED` when it is off.
+
+`Pledge`:
+
+```json
+{"day": "2026-10-06", "targetKind": "CREATURE|QUEST", "targetId": "uuid", "targetName": "Fen Troll",
+ "icon": "troll", "remindAt": "07:30", "status": "PLEDGED|KEPT"}
+```
+
+`day` is the phone's own date. `icon` is a `GameIcon` name: the creature's mark, or for a quest the mark of the creature it is about, else `scroll`. `remindAt` (`HH:MM`, 24-hour) is the phone's one local reminder; the server only keeps it. `targetName` is kept as it was when pledged.
+
+- `GET /pledge?today=2026-10-05` → `{"today": Pledge|null, "tomorrow": Pledge|null}`. `today` is the phone's date (the server's UTC date without it). Any earlier pledge still `PLEDGED` becomes `MISSED` here, quietly; a missed pledge is never returned.
+- `PUT /pledge` `{"day": "2026-10-06", "targetKind": "CREATURE", "targetId": "uuid", "remindAt": "07:30"}` → `Pledge`. One a day: a second for the same day replaces the first. The target must be the player's live creature (`SPAWNED`, not expired) or an open quest (`AVAILABLE`, `ACCEPTED`, `ACTIVE`): otherwise 404 "That creature or quest isn't on your map any more. Pick another.". A day that is not today or tomorrow anywhere on Earth (the server's UTC date, one day before to two after) is 400 `PLEDGE_DAY`; a malformed `remindAt` is 400 `VALIDATION_ERROR`.
+- `DELETE /pledge/{day}` → 204, pledged or not.
+
+A journey keeps the pledge for its day (`localDate` sent on `POST /rides`; without it, the UTC date of `startedAt` and a day either side) when it defeated the creature pledged or finished the quest pledged (on the ride, or by a chest opened by hand during it). A pledge already marked missed for that day is kept all the same. The ride summary then carries:
+
+```json
+"pledge": {"kept": true, "day": "2026-10-06", "targetKind": "CREATURE", "targetId": "uuid",
+           "targetName": "Fen Troll", "icon": "troll", "line": "You said you would. You did."}
+```
+
+Otherwise there is no `pledge` key. A failure here is a Journey's end without the line, never a lost journey.
+
+### Letters
+
+A line left at a place for yourself, never sent anywhere. The phone decides when one may be written (at a standstill, during a journey or not); the server takes it any time.
+
+`Letter`:
+
+```json
+{"id": "uuid", "text": "The bench by the river gets the sun at four.", "latitude": 51.49, "longitude": -0.04,
+ "placeName": "The Mayflower", "writtenAt": "...", "shownAt": null, "shownRideId": null}
+```
+
+- `POST /letters` `{"latitude", "longitude", "text"}` → 201 `Letter`. `text` is trimmed and must then be 1 to 140 characters: 400 `LETTER_EMPTY` ("Your letter is empty. Write a few words first.") or `LETTER_TOO_LONG` ("That letter is too long. Keep it to 140 characters."). `placeName` is the nearest named place within 80 m, if any.
+- `GET /letters` → `[Letter]`, newest first (a plain list).
+- `DELETE /letters/{id}` → 204; 404 when it is not there ("That letter is already gone. Refresh your letters.").
+
+A journey that passes within 60 m of a letter written at least `letterMinAgeDays` before it began (`GET /config`; 90 by default, `LETTER_MIN_AGE_DAYS`), and not shown before, shows it once: the letter gets `shownAt` and `shownRideId`, and the ride summary carries
+
+```json
+"letters": [{"id": "uuid", "text": "Remember the heron.", "writtenAt": "...", "placeName": "The Mayflower",
+             "latitude": 51.49, "longitude": -0.04, "line": "You wrote this here in October."}]
+```
+
+(`"in October 2025."` when it was written in another year; `[]` when none). A flagged journey finds letters too: they are not a reward.
+
+## Legends, lairs and treasure (0.8.0)
+
+On screen a boss is a **legend**; the code keeps `old_ones` / `OldOne`. No flag: a legend
+is fought whether `effort_combat` is on or off.
+
+### Legends
+
+One legend is awake at a time. It wakes, with no scheduler, after a journey is processed
+and on `GET /legends`, when none is awake and the player has defeated 3 creatures since a
+legend last woke or fell asleep (ever, for the first). A legend asleep wakes again first,
+with the health it had; otherwise the next in this order that can live somewhere near the
+player, skipping those defeated: the Fog Dragon, the Water Wyrm, the Hill King, the Trail
+Wyrm, the Rune Golem (`backend/app/world_objects/config/legends.json`). After all five, the
+second round: "The Fog Dragon II", each phase a quarter more health (625).
+
+Where it lives: 2 to 8 km from where the player usually starts, only where the routing
+engine finds a way for how they move (the route must end within 300 m of it), never at a
+sensitive place. The Fog Dragon lies at the edge of the biggest connected block of
+unexplored tiles in that ring (its tile next to explored ground nearest the block's
+middle); the Water Wyrm at water with a trail within 200 m; the Hill King at the highest
+viewpoint by its `ele` tag (else the nearest); the Trail Wyrm on a trail (a named route
+first); the Rune Golem at an old place.
+
+Health is three phases of 500. A journey that comes within reach (`engageMeters`, 150 m, or
+Nauthiz's) folds the fight model against the **current phase** only: weak to = `wants`,
+resists = `minds`, its ground 1 km. A legend counts as an elder (Vanguard, Thurisaz), and
+the capstones add their percentages. At most one phase breaks per journey and per day:
+damage past a break is lost and the next phase starts full; a phase that would break on a
+day one already broke is left with 1 (`heldOver`). A phase's `rune` says what lands as a
+rune: `ANY` (any rune shape ridden near it, or a woken rune), `WOKEN` (only a rune woken on
+a rune ride), or a rune id (`dagaz`: only its shape, `roadForm`). `stopIsNote`: a stop of
+3 minutes within a note's reach counts as a note. Each journey's wound is kept by ride id;
+a rerun replaces it.
+
+Left alone, a legend heals 50 (a tenth of a phase) per full week since it was last hit (or
+woke), worked out on read, never above the phase's health and never un-breaking a phase.
+After 4 weeks untouched it falls asleep (`DORMANT`, off the map) with what it had healed. It
+never takes anything from the player.
+
+Pay, once each by `legend:{id}:phase:{n}`: a phase broken pays 150 coins (`LEGEND`, outside
+the per-journey cap), 300 XP (`LEGEND_PHASE`), a Rare item and a treasure map. The third
+phase is the defeat instead: 400 coins, 800 XP (`LEGEND_DEFEATED`), a Legendary item (the
+Rare of its slot when that Legendary was had), a treasure map, its Hard rune (as a stone
+towards the next rank if held) and the title "Bane of the Fog Dragon" (`source: LEGEND`).
+
+`LegendOut`:
+
+```json
+{"id": "uuid", "speciesId": "fog-dragon", "name": "The Fog Dragon", "icon": "fogDragon",
+ "flavour": "...", "page": "...", "livesAt": "the biggest stretch of unexplored tiles near you",
+ "latitude": 51.51, "longitude": -0.06, "anchorName": "Near Burgess Park", "status": "AWAKE|DORMANT|DEFEATED",
+ "phase": 1,
+ "phases": [{"n": 1, "weakTo": ["GROUND"], "resists": ["WORD"], "healthMax": 500, "healthLeft": 360,
+             "broken": false, "rune": null, "roadForm": null, "stopIsNote": false}],
+ "healthLeft": 1360, "healthMax": 1500, "moved": false, "wokeAt": "...", "lastHitAt": "...",
+ "defeatedAt": null, "healsPerWeek": 50, "rune": "hagalaz", "sleepsAfterDays": 28, "sleepsAt": "...",
+ "phaseBrokenToday": false, "round": 1, "journeys": null}
+```
+
+- `GET /legends?latitude&longitude` → `{"awake": LegendOut|null, "defeated": [LegendSummary], "sleeping":
+  [LegendSummary], "creaturesUntilNext": 2|null}` (null while one is awake). Wakes one first if it is due.
+  The position is optional: it is used only when the player has no journey counted yet (otherwise a
+  legend lives near where they usually start).
+  `LegendSummary` = `{"id", "speciesId", "name", "icon", "status", "rune", "wokeAt", "defeatedAt"}`.
+- `GET /legends/{id}` → `LegendOut` with `journeys: [{"rideId", "date": "2026-10-05", "damage": 140,
+  "phase": 1}]`. 404 `NO_SUCH_LEGEND`.
+- `POST /legends/{id}/move` → `LegendOut`: the one free move ("Can't reach it? Move it once."),
+  somewhere else it may live at least 500 m away. 409 `ALREADY_MOVED`, `NOT_AWAKE`, `NOWHERE_ELSE`.
+
+`GET /world/objects` is unchanged: the legend comes from `/legends`.
+
+### Lairs
+
+A world object of kind `LAIR`, at most one live, offered from level 8 (on `GET /world/objects`,
+the quest board, and after a journey) at a park or green place 2 to 6 km from where the
+player usually starts; one a fortnight. Its seven tiles are its own and the six around it;
+entering five of them (on any journeys, not metres inside) within 14 days opens its **great
+chest**, once (`lair:{id}`): 250 coins (`LAIR`, outside the cap), a Rare item, a Rare sealed
+chest, and on the first lair ever the Ingwaz rune. `WorldObject` gains
+
+```json
+"lair": {"cells": [[51.48, -0.08], ...], "visited": [0, 3], "need": 5, "endsAt": "..."}
+```
+
+(`cells` are the tiles' middles; `visited` are indices into them). A lair cannot be claimed by
+hand (409 `OBJECT_NOT_CLAIMABLE`); it leaves the map once its chest is open or it ends.
+
+### Treasure maps
+
+A consumable `TREASURE_MAP` (`Inventory.consumables` now lists six), from every phase broken
+and three tier-3 chests in ten (by hand too: `POST /world/objects/{id}/claim` gains
+`itemsFound`, the drop and the map). Never sold at the stall.
+
+- `POST /inventory/consumables/TREASURE_MAP/use` `{"latitude", "longitude"}` → `ConsumableUse` with
+  `"clue": "Buried by water, in a green place, about 2 km north-east of here."` and `"treasureId"`.
+  It buries a chest (kind `CHEST`, status `HIDDEN`) 1 to 4 km away at a non-sensitive place that has
+  something to say about it (water, high ground, a green place, something old); the clue is made from
+  those facts and never from a name. 409 `ONE_AT_A_TIME` (a clue is open), `NO_PLACE_FOR_TREASURE`
+  (the map is kept), `NEEDS_LOCATION`, `NONE_LEFT`.
+- `GET /inventory/treasure` → `[{"treasureId", "clue", "buriedAt", "fromLatitude", "fromLongitude"}]`, the
+  open clue (one at a time). `from…` is where the map was read, which the clue's "of here" means.
+
+A hidden chest is never in `GET /world/objects` or `GET /world`, and `GET /world/objects/{id}` is 404 for
+it. A journey passing within 40 m opens it, once (`treasure:{id}`): 120 coins (`TREASURE`, outside the cap)
+and an item of a tier-3 chest's rarity, never nothing. Hot and cold is not built.
+
+### The Hard Six
+
+Six more runes can be held and inscribed (`GET /runes` lists them, `six: "HARD"`). They are never
+stones on the map: a legend leaves one when defeated, and the first great chest holds Ingwaz.
+
+| rune | rule | I / II / III / woken | where it acts |
+|---|---|---|---|
+| uruz | `CLIMB_SHARED_M` | 500 / 750 / 1000 / 1250 | the fold: climbing within v m of a creature counts in full against it, before contact too |
+| isa | `WEAKENED_STAYS_DAYS` | 2 / 3 / 4 / 5 | a weakened creature stays v days longer (the week's cap too) |
+| nauthiz | `ENGAGE_M` | 250 / 300 / 350 / 400 | `engageMeters` = max(150, v) |
+| hagalaz | `FIND_RADIUS_M` | 150 / 200 / 250 / 300 | hidden places within v m of the journey are found |
+| thurisaz | `ELDER_CARRIED_SCALE` | 1.5 / 2 / 2.5 / 3 | the opening blow × v against elders, bounties and legends |
+| ingwaz | `PICKUP_REACH_M` | 60 / 80 / 100 / 120 | chests and pieces within v m of the journey are picked up |
+
+### Capstone skills
+
+One per class at class level 20, rank 1, against legends only: Fog Breaker (Explorer,
+exploring +25%), Rune Master (Wizard, a rune shape +25%), Giant Toppler (Warrior, climbing
+and distance +20%), Loremaster (Scribe, a note +25% and reaching a legend from 500 m). The
+sheet is version 5: `vsLegendsPct` (`{"GROUND": 0.25}`, by kind; an effect naming no kind is
+every kind's) and `legendWordRadiusMeters`.
+
+### Act III
+
+`GET /quests/story` gains act 3, "What Holds the Ground": Habits (two ordinary steps), The
+Lair (`LAIR_VISIT`: a lair's great chest opened on the journey; `progressTarget` 5, progress
+the tiles visited), The One That Stayed (`WOUND_BOSS`: 300 damage to the legend on one
+journey; `extra.legendId`), Double Pay (today's bounty defeated). A step that cannot be set
+waits ("Waiting for a lair near you. Lairs come at level 8.").
+
+### On the ride summary
+
+```json
+"legend": {"id": "uuid", "speciesId": "fog-dragon", "name": "The Fog Dragon", "icon": "fogDragon",
+           "phaseBefore": 1, "phaseAfter": 2, "healthLeft": 1000, "healthMax": 1500,
+           "phaseHealthLeft": 500, "phaseHealthMax": 500, "damage": 140, "kinds": {"GROUND": 120, "CARRIED": 20},
+           "phaseBroken": true, "defeated": false, "heldOver": false,
+           "rewards": {"coins": 150, "xp": 300, "items": [ItemFound], "rune": null, "title": null}|null,
+           "line": "Phase broken! The Fog Dragon is down to its second phase."},
+"lair": {"id": "uuid", "name": "The lair at Burgess Park", "visited": 3, "need": 5, "tiles": 7, "newTiles": 2,
+         "done": false, "endsAt": "...", "rewards": null, "line": "3 / 5 of the lair's tiles visited."},
+"treasureFound": {"id": "uuid", "name": "Buried treasure", "clue": "...", "coins": 120, "item": ItemFound,
+                  "line": "You found the buried treasure!"},
+"legendWoke": {"id": "uuid", "speciesId": "fog-dragon", "name": "The Fog Dragon", "icon": "fogDragon",
+               "line": "A legend has woken: the Fog Dragon"}
+```
+
+Each is null when there was none. `legend` is there when the journey came within reach (with
+`damage: 0` and "took no damage this time" when nothing landed); `rewards` is set only on the
+journey that paid. Their coins are in `acBreakdown` (`LEGEND`, `LAIR`, `TREASURE`), the legend's XP
+in `xpBreakdown`, its title in `titlesUnlocked`, and a Hard rune given in `runesFound`. `ItemFound.source`
+may also be `LEGEND`, `LAIR` or `TREASURE`.
+
+## The parish (0.9.0)
+
+### Districts
+
+A **district** is a named OpenStreetMap place node (`place=suburb|neighbourhood|quarter|village|town|hamlet`),
+kept in `regions` (never a Discovery, never a hidden place). The tile import fetches them as a fifth set; a
+tile imported before 0.9.0 fetches only its place nodes, once (tracked on `poi_import_areas` key
+`regions:v1:<row>:<col>`; `TILE_VERSION` is unchanged). A tile belongs to the nearest district node within
+4 km (worked out on the fly, never stored).
+
+**Explored %** counts only a district's tiles with a road or path: `way[highway]` minus motorway, trunk,
+their links and `access=private`, fetched once per district (job `districts_fetch_ways`, after the first
+journey into it; retried an hour after a failure). Until then `percent` is null and the app shows
+`exploredTiles` ("12 tiles explored"). Every tile the player has counts as explored (passed, or shown by
+a skill or a map piece), as on the map.
+
+A district's **title** comes from its places (`backend/app/districts/config/titles.json`, first rule
+that applies): water ≥ 30% "the Riverlands"; ≥ 2 viewpoints or peaks "the Highlands"; historical (not
+sensitive) ≥ 25% "the Old Stones"; nature ≥ 40% "the Greenwood"; pubs the top kind "the Tavern Quarter";
+cafés and food the top kind "the Market Quarter"; trails ≥ 20% "the Back Lanes"; cultural ≥ 15% "the
+Museum Quarter"; fewer than 5 places "the Quiet End"; otherwise none. Under 10% explored (or before the
+%) `title` is null and `displayName` is "Rotherhithe, in the fog".
+
+**Yours**: 50% or more and passed through in the last 30 days (Othala: 45–90); worked out on read, never
+taken away. **Complete** at 90%, once: `REGION_COMPLETED` XP (500, in the journey's XP), 200 coins
+(`DISTRICT`, outside the cap) and the title "Warden of Rotherhithe" (slug `warden:<district id>`,
+`source: DISTRICT`, listed in `GET /character/titles` once earned).
+
+**Weekly pay**: on the first journey of an ISO week on which a district is yours, 5 coins for each one
+that is (Fehu adds 1–4 each), at most 10, doubled from the day before a festival to the day after
+(`DISTRICT_PAY`, outside the cap; once a week, key `district-pay:{week}`).
+
+`DistrictOut`:
+
+```json
+{"id": "uuid", "name": "Rotherhithe", "kind": "suburb", "title": "the Riverlands",
+ "displayName": "Rotherhithe, the Riverlands", "percent": 47.5, "exploredTiles": 60, "wayTiles": 120,
+ "yours": false, "wasYours": false, "completed": false, "weeklyCoins": 5,
+ "latitude": 51.4995, "longitude": -0.0525, "firstPassed": "...", "lastPassed": "..."}
+```
+
+- `GET /districts` → `[DistrictOut]`, every district passed through, last passed first.
+- `GET /districts/here?lat&lon` → `DistrictOut` for the district at a point (passed or not; zeros if
+  never), or `null` where there is none known.
+- `GET /districts/{id}` → `DistrictOut` + `"ledger": {"placesFound", "creaturesDefeated" (legends
+  included), "runesCut", "questsDone" (where their objectives were, or where the quest was set),
+  "firstPassed", "lastPassed"}`, counted within the district's tiles. 404 when there is no such district.
+
+On the ride summary:
+
+```json
+"districts": [{"id": "uuid", "name": "Rotherhithe", "title": "the Riverlands",
+               "displayName": "Rotherhithe, the Riverlands", "percent": 52.0, "exploredTiles": 64,
+               "newTiles": 4, "becameYours": true, "completed": false}],
+"districtPay": {"coins": 10, "districts": ["Rotherhithe", "Bermondsey"], "doubled": false}
+```
+
+`districts` is always there (empty when the journey was in none known); most new tiles first.
+`districtPay` only on the journey that was paid. Their coins are in `acBreakdown` (`DISTRICT` with
+`detail.name`, `DISTRICT_PAY` with `detail.districts`), a completion's XP in `xpBreakdown`
+(`REGION_COMPLETED`) and its title in `titlesUnlocked`.
+
+### The Atlas
+
+- `GET /journal/atlas?year=2026` (default this year) →
+
+```json
+{"traces": [{"rideId": "uuid", "activity": "RIDE", "date": "2026-10-05", "polyline": "encoded, ≤ 200 points"}],
+ "days": [{"date": "2026-10-05", "journeys": 2, "distanceMeters": 23100.0}],
+ "year": {"year": 2026, "journeys": 140, "distanceMeters": 2100000.0, "newTiles": 3200, "creaturesDefeated": 61,
+          "legendsDefeated": 2, "runesCut": 14, "districtsYours": 3, "deedsReached": ["Well Travelled"],
+          "firsts": [{"kind": "FIRST_CREATURE", "date": "2026-03-02", "text": "First creature defeated: Fen Troll."}]}}
+```
+
+Journeys counted (processed or flagged) that began in that year (UTC). `traces` are the newest 1,000
+in date order. `firsts` kinds: `FIRST_CREATURE`, `FIRST_LEGEND`, `FIRST_RUNE` (each the first ever,
+listed when it fell in that year), `LONGEST_JOURNEY`, `HIGHEST_POINT` (that year's), and
+`FIRST_DISTRICT_COMPLETE`. `districtsYours`: districts that became yours that year. `deedsReached`:
+deed titles reached that year.
+
+### Seasons
+
+Four festivals, worked out from the date: Spring Festival (25 March), Midsummer (24 June), Harvest
+(29 September), Midwinter (25 December). South of the equator (where the player usually starts)
+Spring Festival and Harvest swap dates, and so do Midsummer and Midwinter. Each opens a **SEASON**
+arc of three steps (a green place, a chest, a creature) for 14 days from its day; a missed one comes
+back next year, and each year's is new (seeded by year; paid once per festival). `GET /quests/story`
+lists a SEASON arc only while its festival is on, with `"track": "SEASON"`, `"season":
+"SPRING|MIDSUMMER|HARVEST|MIDWINTER"`, `"startsAt"` and `"endsAt"`; its step quests expire at
+`endsAt`. One live step per track, as MAIN and SIDE.
+
+### Act IV, "The Parish"
+
+After Act III: Home Ground (`DISTRICT_TILES`, `extra: {"district": "home", "districtId",
+"districtName"}`: 10 new tiles in the district with most of your tiles, added up over the quest's
+journeys; waits for a first district), Beating the Bounds (`DISTRICT_LOOP`: a journey ending within
+500 m of its start whose tiles touch 60% of a district's edge tiles, an edge tile counting when the
+journey passed it or a tile beside it; `progressTarget` 60, progress the best % of an edge touched),
+The Next District (`DISTRICT_TILES`, `extra.district: "new"`: 25% of a district first passed since the
+quest was taken; `progressTarget` 25), Going Quiet (`COMPLETE_DISTANCE` with `extra.activity: "WALK"`:
+a walk of 2 km; a ride or run does not count).
+
+### Looks
+
+Route **ink** (Terracotta, the default, as the route line has always been; Ink, also free; and Sage,
+Gold, Wizard Blue, Scribe Plum to buy), marker **frames** (Plain, Rope,
+Laurel, Runic) and crest **frames** (Plain, Oak Leaves, Silver, Starry, and one for each deed tier
+reached, `crest:<deed>-<tier>`, named for its deed title). `backend/app/inventory/config/cosmetics.json`.
+Kept as `inventory_items` with ids `ink:…`, `marker:…`, `crest:…` (never in the bag).
+
+- `GET /inventory` gains `"look": {"ink": "ink:terracotta", "markerFrame": "marker:plain", "crestFrame":
+  "crest:plain"}` and `"cosmetics": [{"itemId": "ink:sage", "kind": "INK|MARKER_FRAME|CREST_FRAME",
+  "name": "Sage", "color": "#7A8A5E", "text": "...", "source": "DEFAULT|STALL|DEED"}]` (every look owned).
+- `PUT /inventory/look` `{"ink"?, "markerFrame"?, "crestFrame"?}` → `Inventory`. A field left out stays;
+  null goes back to the default. 409 `LOOK_NOT_OWNED`, `WRONG_LOOK`.
+- The stall's offers gain a fifth: `{"id": "w41-4", "kind": "COSMETIC", "itemId": "ink:sage",
+  "cosmeticKind": "INK", "name": "Sage", "icon": "paintbrush", "color": "#7A8A5E", "text": "...",
+  "price": 200, "bought": false}` (a look not owned, 200–400 coins; none once all are owned). Buying it
+  returns `Inventory`; its `ItemFound` (in the purchase ledger) has `kind: "COSMETIC"`.
+
+### The Trade Six
+
+| rune | rule | I / II / III / woken | where it acts |
+|---|---|---|---|
+| fehu | `DISTRICT_PAY_EXTRA` | 1 / 2 / 3 / 4 | each district that is yours pays v more coins a week (`weeklyCoins`) |
+| gebo | `CHEST_COINS_SCALE` | 1.1 / 1.2 / 1.3 / 1.4 | chests' coins × v (on a journey and by hand; folded into the sheet's `coinPct.CHEST`) |
+| mannaz | `FOOT_XP_SCALE` | 1.1 / 1.15 / 1.2 / 1.25 | on a run or walk, `NEW_ROAD_EXPLORED`, `LONG_DISTANCE_ADVENTURE` and `KNOWN_GROUND` XP × v |
+| tiwaz | `QUARRY_CARRIED_SCALE` | 1.25 / 1.5 / 1.75 / 2 | the fold: against the ride's `quarryId` (a creature, or the legend), `carriedFraction` × v after `CARRIED_SCALE` and `ELDER_CARRIED_SCALE`; `carriedCap` unchanged |
+| perthro | `SEALED_UPGRADE` | 0.1 / 0.15 / 0.2 / 0.25 | a sealed chest opened is one rarity better with chance v (seeded by its ledger key) |
+| othala | `DISTRICT_KEEP_DAYS` | 45 / 60 / 75 / 90 | a district stays yours v days after the last visit |
+
+Given, never found: Act III's chapters (Habits mannaz, The Lair gebo, The One That Stayed tiwaz,
+Double Pay perthro), Act IV's (Home Ground fehu, Beating the Bounds othala, The Next District gebo,
+Going Quiet mannaz) and the festivals' (Spring Festival perthro, Midsummer tiwaz, Harvest gebo,
+Midwinter othala); a rune already held is a stone towards its next rank. The shared fight fixture
+(`tests/fixtures/fight_tracks.json`) carries `quarry: true|false` on Tiwaz's cases.
+
+### Place lore (flag `place_lore`, off)
+
+At tile import, never per journey: places with a `wikidata` tag get Wikidata's English description
+(one batched `wbgetentities` request, at most 50 a tile, 5 s), kept in the place's `tags.lore` only if
+it is at most 120 characters, has no number, no capitalised word that is not in the place's own name
+or tags, and nothing sensitive. The app shows it as "From Wikidata: …".
+
+## Routes
+
+### `POST /routes/rune` (0.7.0)
+
+A rune ride: up to three routes whose waypoints on the road network make a rune's road
+form, starting where the player is.
+
+```json
+{"origin": {"latitude": 51.49, "longitude": -0.04}, "rune": "raido", "activity": "RIDE", "bikeId": null}
+```
+
+→ `{"alternatives": [RouteOption], "rune": "raido", "roadForm": "LOOP", "hint": "Cut Raido here: a loop, about 2.4 km.", "engine": "graphhopper"}`.
+Loops, triangles and squares on a bike, zigzags on foot (409 `RUNE_NOT_FOR_ACTIVITY`); a
+rune with no road form is 409 `RUNE_NOT_A_SHAPE`. Each route's label is the rune's name and
+its `request` carries `rune` and `roadForm`.
 
 ### `POST /routes/generate`
 
@@ -509,6 +1118,10 @@ when no way can be found, `404` for a route that is not the caller's.
 {"route": RouteOption, "quest": Quest|null, "pois": [RoutePOI], "mapRegion": {"minLat":..,"minLon":..,"maxLat":..,"maxLon":..}, "generatedAt": "..."}
 ```
 
+With `effort_combat` on, fetching the package of the route chosen to ride places one creature at a
+real place beside its far half (from halfway to nine tenths of the way), once per route, unless one is
+already waiting there. Fetch the world objects after the package to see it.
+
 ---
 
 ## Rides
@@ -527,11 +1140,20 @@ when no way can be found, `404` for a route that is not the caller's.
   "visibility": "PRIVATE|FRIENDS|PUBLIC",
   "healthKitWorkoutId": null,
   "pointCount": 1800,
-  "createdAt": "..."
+  "createdAt": "...",
+  "loadout": {"version": 1, "characterClass": "EXPLORER", "overallLevel": 8, "classLevel": 6,
+              "damagePct": {"GROUND": 0.3}, "runeThreshold": 0.22, "runeReachMeters": 1000,
+              "coinPct": {}, "xpPct": {}},
+  "quarryId": "uuid|null"
 }
 ```
 
-- `POST /rides` `{"clientRideId": "uuid", "startedAt": "...", "questId": null, "bikeId": null, "routeId": null, "title": null}` → `Ride`. Duplicate `clientRideId` returns the existing ride (idempotent). `title` (≤120 chars) names a custom adventure — a ride planned from a free-text request rather than a quest; quest rides are named by the quest.
+`loadout` (0.6.1) is the character sheet frozen when the ride was created; the
+fight is judged against it (docs/COMBAT.md). `Character.sheet` carries the
+same shape, for an outing started offline. `quarryId` is the world object the
+outing was planned for.
+
+- `POST /rides` `{"clientRideId": "uuid", "startedAt": "...", "localDate": "2026-10-05", "questId": null, "bikeId": null, "routeId": null, "quarryId": null, "title": null}` → `Ride`. `localDate` (0.7.3, optional) is the day the journey began on the phone's calendar: the day whose pledge it keeps. Duplicate `clientRideId` returns the existing ride (idempotent). `title` (≤120 chars) names a custom adventure — a ride planned from a free-text request rather than a quest; quest rides are named by the quest.
 - `POST /rides/{id}/points` — batched during the ride when network allows (optional; the complete call may carry everything):
 
 ```json
@@ -547,7 +1169,7 @@ when no way can be found, `404` for a route that is not the caller's.
   "elevationGainMeters": 340, "activeCalories": 876,
   "points": [...optional remaining points...],
   "cellsVisited": [...optional remaining cells...],
-  "objectiveEvents": [{"objectiveId": "uuid", "occurredAt": "...", "latitude": 51.49, "longitude": -0.04}],
+  "objectiveEvents": [{"objectiveId": "uuid", "occurredAt": "...", "latitude": 51.49, "longitude": -0.04, "note": null}],
   "healthKitWorkoutId": null
 }
 ```
@@ -598,7 +1220,17 @@ What a ride pays:
   `{"arcSlug", "arcTitle", "stepTitle", "stepsDone", "stepsTotal", "arcCompleted", "nextTitle", "reward"}`.
   On the last step `reward` is `{"title", "ac"}`: the title is set on the character and listed in
   `titlesUnlocked`, the purse is the `STORY_ARC` coin line. A title earned this way is kept until a
-  level brings a new one.
+  level brings a new one. Since 0.6.2 the ending is paid once per arc (`story.settle_arc`), on a
+  ride, by a chest opened by hand, or by `POST /quests/{id}/complete`, and `reward` is null on
+  any later completion of the same arc.
+- `entry` (0.6.2): two to five sentences about the outing, composed from its facts by seed
+  (`app/chronicle/compose.py`); null for an outing under 300 m.
+- `weekNotice` (0.6.2): the week's notice when this outing met it and paid it; null otherwise.
+- `codexFirsts` (0.6.2): `[{"speciesId", "name", "metAs"}]`, creatures seen off or loosened for
+  the first time on this outing, for the reckoning's codex stamp.
+- `pledge` and `letters` (0.7.3): a pledge this journey kept (absent otherwise; a missed pledge is
+  never mentioned) and the letters it found again. See **Between rides**.
+- `legend`, `lair`, `treasureFound` and `legendWoke` (0.8.0). See **Legends, lairs and treasure**.
 
 - `GET /rides` paginated, newest first. `GET /rides/{id}`. `GET /rides/{id}/geometry` → `{"coordinates": [...], "encodedPolyline": "..."}`.
 - `PATCH /rides/{id}` `{"visibility": "FRIENDS", "title": "...", "notes": "..."}`
@@ -633,8 +1265,9 @@ What a ride pays:
 
 ## Journal
 
-- `GET /journal/adventures` → paginated `AdventureEntry` (`{ride, quest, xpAwarded, discoveries, newTerritoryMeters, photos, notes}`)
+- `GET /journal/adventures` → paginated `AdventureEntry` (`{ride, quest, xpAwarded, discoveries, newTerritoryMeters, photos, notes, entry}`); `entry` (0.6.2) is the outing's written lines, null before 0.6.2
 - `GET /journal/stats` → same shape as `/world/exploration/stats` plus secondary speed stats.
+- `GET /journal/atlas?year` (0.9.0) → every trace, the calendar and the year; see [The parish](#the-parish-090).
 
 ---
 
@@ -678,4 +1311,4 @@ Parties:
 ## Meta
 
 - `GET /health` → `{"status": "ok", "version": "..."}`
-- `GET /config` → `{"featureFlags": {...}, "h3Resolution": 9, "levels": {"max": 50}}`
+- `GET /config` → `{"featureFlags": {...}, "h3Resolution": 9, "levels": {"max": 50, "maxClass": 50}, "environment": "development", "combat": {...}, "letterMinAgeDays": 90}`. 0.7.3 adds the flags `pledge` (on where `ENVIRONMENT=development`, off elsewhere) and `parchment_map` (off: the World tab's parchment map style), and `letterMinAgeDays`. `combat` (0.6.1) holds the fight's constants from `world_objects.json`; see `docs/COMBAT.md`. Flags added since 0.6.0: `codex` (on), `effort_combat` (off until ridden), `ink_fog` (0.7.0, off: the World tab's fog as one ink wash with a frontier chevron; the Journal's map card draws the wash regardless). 0.9.0 adds `place_lore` (off: Wikidata's line on a place). An objective event may carry `note` (0.7.0): the note written for a `WRITE_NOTE` or an Ansuz `INSCRIBE_RUNE`, which the server judges by.

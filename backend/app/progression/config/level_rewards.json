@@ -1,0 +1,14 @@
+{
+  "_comment": "Every level pays (docs/ROADMAP.md 0.7.2, progression/levels.py). A level that opens a rune slot, a gear slot or the stall, or brings a level title, pays that; every other level from 2 to 50 pays one consumable, taking these in turn. Every tenth level adds a Rare sealed chest. Levels reached before 0.7.2 are paid on the first look at the inventory.",
+  "maxLevel": 50,
+  "rotation": [
+    {"consumable": "LAMP", "count": 2},
+    {"consumable": "MAP_FRAGMENT", "count": 1},
+    {"consumable": "REST_TOKEN", "count": 1},
+    {"consumable": "SEALED_CHEST_COMMON", "count": 1}
+  ],
+  "rareChestEvery": 10,
+  "runeSlotTexts": ["Rune slot opens", "Second rune slot opens", "Third rune slot opens"],
+  "stallText": "The stall opens",
+  "icons": {"RUNE_SLOT": "runeStone", "STALL": "shop", "TITLE": "laurels"}
+}

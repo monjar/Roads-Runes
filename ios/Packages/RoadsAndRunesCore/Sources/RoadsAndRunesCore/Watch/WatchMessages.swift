@@ -42,11 +42,16 @@ public struct WatchRouteSummary: Codable, Hashable, Sendable {
     /// RIDE | RUN | WALK, so the Watch starts the right kind of workout. Optional:
     /// a Watch build from before activities still decodes the summary.
     public var activity: String?
+    /// The game near the route (0.7.2): creatures, chests and rune stones within
+    /// reach of it, at most `WatchWorldMarks.limit`, then each objective's place.
+    /// An older phone sends none and the Watch map shows only the route.
+    public var worldMarks: [WatchWorldMark]?
 
     public init(
         questTitle: String?, instructions: [Instruction], objectives: [WatchObjective], totalDistanceMeters: Double,
-        routeCoordinates: [[Double]] = [], stops: [WatchStop] = [], activity: String? = nil
+        routeCoordinates: [[Double]] = [], stops: [WatchStop] = [], activity: String? = nil, worldMarks: [WatchWorldMark]? = nil
     ) {
+        self.worldMarks = worldMarks
         self.activity = activity
         self.questTitle = questTitle
         self.instructions = instructions
@@ -66,8 +71,12 @@ public struct WatchStop: Codable, Hashable, Sendable, Identifiable {
     public var latitude: Double
     public var longitude: Double
     public var requested: Bool
+    /// What kind of place it is ("PUB", "VIEWPOINT"…), so it draws as its place
+    /// mark (0.7.2). An older phone sends none and the stop is a plain dot.
+    public var category: String?
 
-    public init(id: UUID, name: String, latitude: Double, longitude: Double, requested: Bool) {
+    public init(id: UUID, name: String, latitude: Double, longitude: Double, requested: Bool, category: String? = nil) {
+        self.category = category
         self.id = id
         self.name = name
         self.latitude = latitude
@@ -102,14 +111,33 @@ public struct WatchNavigationUpdate: Codable, Hashable, Sendable {
     public var newTerritoryMeters: Double?
     /// How far is left of the route.
     public var remainingMeters: Double?
+    /// Which way the rider is heading, in degrees from north (CourseTracker), so
+    /// the Watch map's dot points the way they are going. An older phone sends none.
+    public var courseDegrees: Double?
+    /// The fight to draw on the Quest page (0.7.2): the quarry, else the nearest
+    /// creature being fought. Nil when nothing is being fought, or from an older phone.
+    public var fight: WatchFight?
+    /// World marks (and objective places) opened, defeated or done on this ride,
+    /// all of them so far, so the Watch map can take them off. Nil from an older phone.
+    public var goneMarkIds: [UUID]?
+    /// The district the rider is in, with its title (0.9.0): "Rotherhithe, the
+    /// Riverlands" or "Rotherhithe, in the fog". The Watch names each one once a
+    /// journey, at a standstill (`DistrictNaming`, by `speedMps`), never while
+    /// moving. Nil while the phone does not know, and from an older phone.
+    public var districtName: String?
 
     public init(
         state: NavigationState, instruction: Instruction? = nil, distanceToInstructionMeters: Double? = nil,
         nextInstructionText: String? = nil, objectiveTitle: String? = nil, objectiveDistanceMeters: Double? = nil,
         distanceMeters: Double, elapsedSeconds: Double, elevationGainMeters: Double, heartRate: Int? = nil,
         speedMps: Double? = nil, latitude: Double? = nil, longitude: Double? = nil, timestamp: Date = Date(),
-        encounterLine: String? = nil, newTerritoryMeters: Double? = nil, remainingMeters: Double? = nil
+        encounterLine: String? = nil, newTerritoryMeters: Double? = nil, remainingMeters: Double? = nil,
+        courseDegrees: Double? = nil, fight: WatchFight? = nil, goneMarkIds: [UUID]? = nil, districtName: String? = nil
     ) {
+        self.districtName = districtName
+        self.fight = fight
+        self.goneMarkIds = goneMarkIds
+        self.courseDegrees = courseDegrees
         self.encounterLine = encounterLine
         self.newTerritoryMeters = newTerritoryMeters
         self.remainingMeters = remainingMeters
@@ -139,17 +167,34 @@ public struct WatchNavigationUpdate: Codable, Hashable, Sendable {
 public struct WatchObjectiveCompleted: Codable, Hashable, Sendable {
     public var title: String
     public var xp: Int?
-    /// Coins the thing was worth, for "+60 AC" under the title. Optional so an older
+    /// Coins the thing was worth, for "+60 coins" under the title. Optional so an older
     /// Watch build still reads the message.
     public var coins: Int?
-    /// A second line: "Old Runes, 3 of 6".
+    /// A second line: "Road Six, 3 of 6".
     public var detail: String?
+    /// What happened, for the overlay's heading: GONE, OPENED, FOUND or DONE.
+    /// Optional: an older phone sends none and the Watch falls back.
+    public var outcome: String?
+    /// The thing's mark as a `GameIcon` raw name: the creature defeated, or an item
+    /// found (0.7.2). An older phone sends none and the outcome picks the mark.
+    public var icon: String?
+    /// An item found (outcome FOUND): COMMON, RARE or LEGENDARY.
+    public var rarity: String?
 
-    public init(title: String, xp: Int? = nil, coins: Int? = nil, detail: String? = nil) {
+    public init(title: String, xp: Int? = nil, coins: Int? = nil, detail: String? = nil, outcome: String? = nil,
+                icon: String? = nil, rarity: String? = nil) {
         self.title = title
         self.xp = xp
         self.coins = coins
         self.detail = detail
+        self.outcome = outcome
+        self.icon = icon
+        self.rarity = rarity
+    }
+
+    /// An item found on the way ("Tin Bell", a Common bell), for the overlay.
+    public static func found(name: String, icon: String?, rarity: String?, detail: String? = nil) -> WatchObjectiveCompleted {
+        WatchObjectiveCompleted(title: name, detail: detail, outcome: "FOUND", icon: icon, rarity: rarity)
     }
 }
 
@@ -178,11 +223,23 @@ public enum WatchMessageKind: String, Codable, CaseIterable, Hashable, Sendable 
     case objectiveCompleted
     case command
     case heartRate
+    /// A fight beat to feel on the wrist (0.6.1). Older Watch builds ignore it.
+    case encounterBeat
+    /// Journey's end, once the server has counted the journey (0.7.2). Older
+    /// Watch builds ignore it.
+    case journeyEnd
+    /// Watch → iPhone: plan this and start it (0.7.3). An older phone ignores it.
+    case startRequest
+    /// iPhone → Watch: what came of a start request (0.7.3). An older Watch ignores it.
+    case startResult
 
     /// Dictionary key holding the kind's raw value.
     public static let kindKey = "kind"
     /// Dictionary key holding the JSON-encoded payload (`Data`).
     public static let payloadKey = "payload"
+    /// Application-context key holding the JSON-encoded `WatchIdleInfo` (0.7.3),
+    /// beside whatever ride message the context carries. An older Watch never looks.
+    public static let idleInfoKey = "idleInfo"
 }
 
 public enum WatchMessageError: Error, Hashable, Sendable {
@@ -235,6 +292,14 @@ public enum WatchMessages {
         try encode(.heartRate, sample)
     }
 
+    public static func encounterBeat(_ beat: WatchEncounterBeat) throws -> [String: Any] {
+        try encode(.encounterBeat, beat)
+    }
+
+    public static func journeyEnd(_ end: WatchJourneyEnd) throws -> [String: Any] {
+        try encode(.journeyEnd, end)
+    }
+
     public static func routeSummary(from message: [String: Any]) throws -> WatchRouteSummary {
         try decode(WatchRouteSummary.self, as: .routeSummary, from: message)
     }
@@ -253,5 +318,50 @@ public enum WatchMessages {
 
     public static func heartRate(from message: [String: Any]) throws -> WatchHeartRateSample {
         try decode(WatchHeartRateSample.self, as: .heartRate, from: message)
+    }
+
+    public static func encounterBeat(from message: [String: Any]) throws -> WatchEncounterBeat {
+        try decode(WatchEncounterBeat.self, as: .encounterBeat, from: message)
+    }
+
+    public static func journeyEnd(from message: [String: Any]) throws -> WatchJourneyEnd {
+        try decode(WatchJourneyEnd.self, as: .journeyEnd, from: message)
+    }
+
+    public static func startRequest(_ request: WatchStartRequest) throws -> [String: Any] {
+        try encode(.startRequest, request)
+    }
+
+    public static func startRequest(from message: [String: Any]) throws -> WatchStartRequest {
+        try decode(WatchStartRequest.self, as: .startRequest, from: message)
+    }
+
+    public static func startResult(_ result: WatchStartResult) throws -> [String: Any] {
+        try encode(.startResult, result)
+    }
+
+    public static func startResult(from message: [String: Any]) throws -> WatchStartResult {
+        try decode(WatchStartResult.self, as: .startResult, from: message)
+    }
+
+    // MARK: The application context (0.7.3)
+
+    /// The application context to send: the ride's last message, if a journey is
+    /// under way, with Next up beside it. The context is replaced whole on every
+    /// send, so neither may push the other out.
+    public static func context(ride: [String: Any]?, idle: WatchIdleInfo?) throws -> [String: Any] {
+        var context = ride ?? [:]
+        if let idle {
+            context[WatchMessageKind.idleInfoKey] = try JSONCoding.encode(idle)
+        } else {
+            context.removeValue(forKey: WatchMessageKind.idleInfoKey)
+        }
+        return context
+    }
+
+    /// Next up, if the message (an application context) carries it.
+    public static func idleInfo(from message: [String: Any]) -> WatchIdleInfo? {
+        guard let data = message[WatchMessageKind.idleInfoKey] as? Data else { return nil }
+        return try? JSONCoding.decode(WatchIdleInfo.self, from: data)
     }
 }

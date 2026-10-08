@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -8,6 +9,7 @@ import SwiftUI
 /// The map itself is not interactive: it lives inside a scrolling sheet, where a
 /// pan belongs to the page. A tap on a stop is the one gesture it takes.
 struct RouteMapPreview: View {
+    @Environment(AppContainer.self) private var container
     let route: RouteOption
     var camera: MapCamera?
     var focused: RoutePOI?
@@ -23,6 +25,8 @@ struct RouteMapPreview: View {
             zoom: 13,
             route: route.path,
             markers: markers,
+            // The route in the ink worn (0.9.0).
+            routeColor: LookStyle.routeColor(container.session.inventory),
             emphasis: .cycling,
             interactive: false,
             onMarkerTap: { marker in
@@ -63,7 +67,7 @@ struct RouteMapPreview: View {
                 coordinate: poi.coordinate,
                 kind: poi.id == focused?.id ? .stopActive : .stop,
                 title: poi.name,
-                symbol: DiscoveryIcon.symbol(for: poi.category)
+                mark: DiscoveryIcon.mark(for: poi.category)
             )
         }
     }
@@ -79,11 +83,8 @@ struct StopCallout: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: DiscoveryIcon.symbol(for: poi.category))
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(Theme.Colors.cream)
+            MarkView(DiscoveryIcon.mark(for: poi.category))
                 .frame(width: 30, height: 30)
-                .background(DiscoveryIcon.color(for: poi.category), in: Circle())
             VStack(alignment: .leading, spacing: 1) {
                 Text(poi.name)
                     .font(Theme.Typography.text(14, .bold))

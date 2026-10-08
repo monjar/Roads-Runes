@@ -11,7 +11,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.activity import STRAVA_TYPE, normalise
+from app.core.activity import STRAVA_TYPE, normalise, noun
 from app.core.config import Settings
 from app.core.errors import FeatureDisabled, NotFound
 from app.core.feature_flags import require_flag
@@ -27,7 +27,7 @@ STRAVA_UPLOAD = "https://www.strava.com/api/v3/uploads"
 def _check(settings: Settings) -> None:
     require_flag(settings, "strava")
     if not settings.strava_client_id or not settings.strava_client_secret:
-        raise FeatureDisabled("Strava credentials are not configured")
+        raise FeatureDisabled("Strava isn't set up on this server yet. Try again later.")
 
 
 def authorize_url(settings: Settings, state: str) -> str:
@@ -121,10 +121,10 @@ async def upload_ride(
     """
     ride = await db.get(Ride, ride_id)
     if ride is None:
-        raise NotFound("Ride not found")
+        raise NotFound("We couldn't find that journey. Go back and try again.")
     connection = await connection_for(db, ride.user_id)
     if connection is None:
-        raise FeatureDisabled("Strava not connected")
+        raise FeatureDisabled("Strava isn't connected. Connect it in Settings first.")
     try:
         token = await _fresh_token(settings, connection)
         points = list(
@@ -139,7 +139,7 @@ async def upload_ride(
                 headers={"Authorization": f"Bearer {token}"},
                 data={
                     "data_type": "gpx",
-                    "name": ride.title or "Roads & Runes adventure",
+                    "name": ride.title or f"Roads & Runes {noun(ride.activity)}",
                     "activity_type": STRAVA_TYPE.get(normalise(ride.activity), "ride"),
                     "external_id": str(ride.id),
                 },
@@ -179,7 +179,7 @@ def _reason(exc: Exception) -> str:
             body = exc.response.json()
             return str(body.get("message") or body)[:300]
         except ValueError:
-            return f"Strava answered {exc.response.status_code}"[:300]
+            return "Strava didn't accept the upload. Try again later."
     return (str(exc) or exc.__class__.__name__)[:300]
 
 

@@ -137,15 +137,19 @@ async def list_requests(db: AsyncSession, me: User) -> FriendRequests:
 
 async def send_request(db: AsyncSession, me: User, other_id: uuid.UUID) -> Friendship:
     if other_id == me.id:
-        raise Conflict("Cannot befriend yourself")
+        raise Conflict("You can't add yourself as a friend. Pick someone else.")
     other = await db.get(User, other_id)
     if other is None or other.deleted_at is not None:
-        raise NotFound("User not found")
+        raise NotFound("We couldn't find that player. They may have left the game.")
     state = await relationship_state(db, me.id, other_id)
     if state == "BLOCKED":
-        raise Forbidden("Cannot send request")
+        raise Forbidden("You can't send this player a friend request.")
     if state in ("FRIENDS", "REQUEST_SENT"):
-        raise Conflict(f"Relationship already {state}")
+        raise Conflict(
+            "You're already friends."
+            if state == "FRIENDS"
+            else "Your friend request is already waiting. They can accept it from their friends list."
+        )
     if state == "REQUEST_RECEIVED":
         return await accept_request_between(db, me, other_id)
     row = Friendship(requester_id=me.id, addressee_id=other_id, status="PENDING")
@@ -163,7 +167,7 @@ async def accept_request_between(db: AsyncSession, me: User, other_id: uuid.UUID
         )
     )
     if row is None:
-        raise NotFound("Request not found")
+        raise NotFound("We couldn't find that friend request. It may have been answered already.")
     row.status = "ACCEPTED"
     row.responded_at = utcnow()
     await db.flush()
@@ -173,7 +177,7 @@ async def accept_request_between(db: AsyncSession, me: User, other_id: uuid.UUID
 async def respond(db: AsyncSession, me: User, request_id: uuid.UUID, accept: bool) -> Friendship | None:
     row = await db.get(Friendship, request_id)
     if row is None or row.addressee_id != me.id or row.status != "PENDING":
-        raise NotFound("Request not found")
+        raise NotFound("We couldn't find that friend request. It may have been answered already.")
     if accept:
         row.status = "ACCEPTED"
         row.responded_at = utcnow()
@@ -271,6 +275,14 @@ PARTY_TRANSITIONS = {
     "COMPLETED": set(),
     "CANCELLED": set(),
 }
+# Why a party in this state cannot do what was asked, and what to do instead.
+PARTY_REFUSALS = {
+    "FORMING": "The party hasn't started yet. Start it first.",
+    "READY": "The party hasn't started yet. Start it first.",
+    "ACTIVE": "The party is already under way. Finish or cancel it instead.",
+    "COMPLETED": "This party has already finished. Start a new one.",
+    "CANCELLED": "This party was cancelled. Start a new one.",
+}
 
 
 async def party_out(db: AsyncSession, party: Party) -> PartyOut:
@@ -353,7 +365,7 @@ async def create_party(
     require_flag(settings, "party_quests")
     quest = await db.get(QuestInstance, quest_id)
     if quest is None or quest.user_id != me.id:
-        raise NotFound("Quest not found")
+        raise NotFound("We couldn't find that quest. It may have ended, so check the quest board.")
     party = Party(
         owner_id=me.id,
         source_quest_id=quest.id,
@@ -381,17 +393,17 @@ async def create_party(
 async def get_party(db: AsyncSession, me: User, party_id: uuid.UUID) -> Party:
     party = await db.get(Party, party_id)
     if party is None or not any(m.user_id == me.id for m in party.members):
-        raise NotFound("Party not found")
+        raise NotFound("We couldn't find that party. It may have ended.")
     return party
 
 
 async def invite(db: AsyncSession, me: User, party: Party, user_id: uuid.UUID) -> PartyMember:
     if party.owner_id != me.id:
-        raise Forbidden("Only the owner can invite")
+        raise Forbidden("Only the party leader can invite people. Ask them to send the invite.")
     if not await are_friends(db, me.id, user_id):
-        raise Forbidden("Can only invite friends")
+        raise Forbidden("You can only invite friends. Add them as a friend first.")
     if any(m.user_id == user_id for m in party.members):
-        raise Conflict("Already in party")
+        raise Conflict("They're already in this party.")
     member = PartyMember(party_id=party.id, user_id=user_id, role="MEMBER", status="INVITED")
     party.members.append(member)
     await db.flush()
@@ -402,7 +414,7 @@ async def accept_invite(db: AsyncSession, me: User, party_id: uuid.UUID) -> Part
     party = await db.get(Party, party_id)
     member = next((m for m in (party.members if party else []) if m.user_id == me.id), None)
     if party is None or member is None:
-        raise NotFound("Invitation not found")
+        raise NotFound("We couldn't find that invitation. It may have been withdrawn.")
     if member.status == "INVITED":
         member.status = "JOINED"
         source = await db.get(QuestInstance, party.source_quest_id) if party.source_quest_id else None
@@ -433,10 +445,10 @@ async def set_status(db: AsyncSession, me: User, party_id: uuid.UUID, new_status
         await db.flush()
         return party
     if party.owner_id != me.id:
-        raise Forbidden("Only the owner can change party status")
+        raise Forbidden("Only the party leader can start, finish or cancel the party.")
     if new_status not in PARTY_TRANSITIONS[party.status]:
         raise Conflict(
-            f"Party cannot move from {party.status} to {new_status}",
+            PARTY_REFUSALS.get(party.status, "The party can't do that now."),
             code="PARTY_INVALID_TRANSITION",
         )
     party.status = new_status

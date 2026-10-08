@@ -45,12 +45,57 @@ public struct MonsterInfo: Codable, Hashable, Sendable {
     public var hp: Int
     public var flavour: String?
     public var killMethods: [KillMethod]
+    /// Which creature it is and its face; nil from servers before 0.6.0.
+    public var speciesId: String?
+    public var sigil: CreatureSigil?
+    /// Effort is damage (0.6.1, `effort_combat`): its hold, what it wants and shrugs
+    /// at (ROAD, GROUND, CLIMB, RUNE, WORD), and its rune and that rune's road form.
+    public var holdMax: Int?
+    public var holdLeft: Int?
+    public var wants: [String]?
+    public var minds: [String]?
+    public var rune: String?
+    public var roadForm: String?
+    /// Days since the player last passed its place, when it has been a while.
+    public var unpassedDays: Int?
+    /// 0.7.2: Stubborn, Skittish or Mossy; back for a second go; and the name to show
+    /// ("Stubborn Fen Troll"), the plain name staying in `WorldObject.name`.
+    public var variant: CreatureVariant? = nil
+    public var grudge: CreatureGrudge? = nil
+    public var displayName: String? = nil
+    /// 0.8.0: set on a legend fought on a journey (`Legend.foe`), never by the
+    /// server: the phase it is in (1–3) and how many it has. A creature has neither.
+    public var phase: Int?
+    public var phases: Int?
+    /// A phase broke today, so this one cannot until tomorrow: it holds at 1 (one a day).
+    public var phaseHeld: Bool?
 
-    public init(hp: Int, flavour: String? = nil, killMethods: [KillMethod] = []) {
+    public init(hp: Int, flavour: String? = nil, killMethods: [KillMethod] = [], speciesId: String? = nil, sigil: CreatureSigil? = nil,
+                holdMax: Int? = nil, holdLeft: Int? = nil, wants: [String]? = nil, minds: [String]? = nil,
+                rune: String? = nil, roadForm: String? = nil, unpassedDays: Int? = nil,
+                variant: CreatureVariant? = nil, grudge: CreatureGrudge? = nil, displayName: String? = nil,
+                phase: Int? = nil, phases: Int? = nil) {
+        self.variant = variant
+        self.grudge = grudge
+        self.displayName = displayName
+        self.phase = phase
+        self.phases = phases
         self.hp = hp
         self.flavour = flavour
         self.killMethods = killMethods
+        self.speciesId = speciesId
+        self.sigil = sigil
+        self.holdMax = holdMax
+        self.holdLeft = holdLeft
+        self.wants = wants
+        self.minds = minds
+        self.rune = rune
+        self.roadForm = roadForm
+        self.unpassedDays = unpassedDays
     }
+
+    /// Fought by effort: the server sent its hold.
+    public var foughtByEffort: Bool { holdMax != nil }
 }
 
 public struct WorldObject: Codable, Hashable, Identifiable, Sendable {
@@ -77,6 +122,12 @@ public struct WorldObject: Codable, Hashable, Identifiable, Sendable {
     public var setOwned: Int?
     /// The player already holds this very piece: picking it up is coins, not progress.
     public var pieceOwned: Bool?
+    /// The name to show, where the server sends one (0.7.2).
+    public var displayName: String? = nil
+    /// A lair (0.8.0, kind `LAIR` on the wire): its seven tiles and how many are
+    /// visited. The kind reads as `.unknown` on this build, so nothing that does
+    /// not know lairs draws or fights one; `isLair` is how to tell.
+    public var lair: LairInfo?
 
     public init(id: UUID, kind: WorldObjectKind, status: WorldObjectStatus = .spawned, tier: Int = 1, latitude: Double, longitude: Double, name: String, anchorName: String? = nil, bounty: Bool? = nil, rewardAC: Int, expiresAt: Date, claimedAt: Date? = nil, monster: MonsterInfo? = nil, setId: String? = nil, piece: String? = nil, claimRadiusMeters: Double? = nil, setName: String? = nil, setSize: Int? = nil, setOwned: Int? = nil) {
         self.setName = setName
@@ -102,6 +153,17 @@ public struct WorldObject: Codable, Hashable, Identifiable, Sendable {
 
     public var coordinate: Coordinate { Coordinate(latitude: latitude, longitude: longitude) }
     public var isBounty: Bool { bounty ?? false }
+    /// A legend as a journey fights it (`Legend.foe`, 0.8.0): its id is the legend's.
+    public var isLegend: Bool { monster?.phases != nil }
+    /// A lair (0.8.0).
+    public var isLair: Bool { lair != nil }
+
+    /// "Stubborn Fen Troll": the server's display name, or the variant before the plain name.
+    public var shownName: String {
+        if let given = monster?.displayName ?? displayName, !given.isEmpty { return given }
+        if let variant = monster?.variant, !variant.name.isEmpty, !name.hasPrefix(variant.name) { return "\(variant.name) \(name)" }
+        return name
+    }
 
     /// "Old Runes, 3 of 6": where a piece stands in its set, once the player's count is known.
     public var setStanding: SetStanding? {
@@ -183,8 +245,11 @@ public struct WorldObjectClaim: Codable, Hashable, Sendable {
     public var levelUps: [LevelUp]?
     /// The set this piece finished.
     public var setCompleted: CompletedSet?
+    /// What the chest held besides coins (0.7.2).
+    public var itemFound: ItemFound?
 
-    public init(object: WorldObject, acAwarded: Int, walletBalance: Int, questCompleted: Quest? = nil, xpAwarded: Int? = nil, levelUps: [LevelUp]? = nil, setCompleted: CompletedSet? = nil) {
+    public init(object: WorldObject, acAwarded: Int, walletBalance: Int, questCompleted: Quest? = nil, xpAwarded: Int? = nil, levelUps: [LevelUp]? = nil, setCompleted: CompletedSet? = nil, itemFound: ItemFound? = nil) {
+        self.itemFound = itemFound
         self.object = object
         self.acAwarded = acAwarded
         self.walletBalance = walletBalance
@@ -298,11 +363,16 @@ public struct WorldObjectOutcome: Codable, Hashable, Sendable {
     public var claimed: [ClaimedObject]
     public var missed: [MissedObject]
     public var setsCompleted: [CompletedSet]?
+    /// Effort is damage (0.6.1): one report per thing this outing came near.
+    public var fights: [FightReport]?
+    /// Inscribed runes woken on the outing (0.7.0).
+    public var woken: [String]?
 
-    public init(claimed: [ClaimedObject] = [], missed: [MissedObject] = [], setsCompleted: [CompletedSet]? = nil) {
+    public init(claimed: [ClaimedObject] = [], missed: [MissedObject] = [], setsCompleted: [CompletedSet]? = nil, fights: [FightReport]? = nil) {
         self.claimed = claimed
         self.missed = missed
         self.setsCompleted = setsCompleted
+        self.fights = fights
     }
 }
 
@@ -313,13 +383,43 @@ public struct StreakOutcome: Codable, Hashable, Sendable {
     public var extended: Bool
     public var milestone: Int?
     public var bonusAC: Int
+    /// A rest token kept the streak over one missed day (0.7.2).
+    public var restTokenUsed: Bool?
 
-    public init(days: Int, longest: Int, extended: Bool, milestone: Int? = nil, bonusAC: Int = 0) {
+    public init(days: Int, longest: Int, extended: Bool, milestone: Int? = nil, bonusAC: Int = 0, restTokenUsed: Bool? = nil) {
+        self.restTokenUsed = restTokenUsed
         self.days = days
         self.longest = longest
         self.extended = extended
         self.milestone = milestone
         self.bonusAC = bonusAC
+    }
+}
+
+/// `GET /world/objects/lure`: whether a lamp left at a spot would bring
+/// something, and to which place, asked before any coins are spent. A server
+/// from before 0.7.1 has no such check (404).
+public struct LampCheck: Codable, Hashable, Sendable {
+    public var ok: Bool
+    public var cost: Int
+    /// The named place the creature would come to.
+    public var placeName: String?
+    /// Why it would not: NO_PLACE_NEAR, ALREADY_HERE.
+    public var code: String?
+    public var message: String?
+    /// Lamps in the bag (0.7.2): with one there, it is used first and `cost` is 0.
+    public var lampsInBag: Int?
+
+    /// A lamp from the bag will be used rather than coins.
+    public var usesLampFromBag: Bool { (lampsInBag ?? 0) > 0 }
+
+    public init(ok: Bool, cost: Int, placeName: String? = nil, code: String? = nil, message: String? = nil, lampsInBag: Int? = nil) {
+        self.lampsInBag = lampsInBag
+        self.ok = ok
+        self.cost = cost
+        self.placeName = placeName
+        self.code = code
+        self.message = message
     }
 }
 

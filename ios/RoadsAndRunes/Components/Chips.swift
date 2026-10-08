@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -44,13 +45,13 @@ struct SectionHeader: View {
 }
 
 struct EmptyState: View {
-    let icon: String
+    let icon: GameIcon
     let title: String
     let message: String
 
     var body: some View {
         VStack(spacing: Theme.Spacing.sm) {
-            Image(systemName: icon).font(.system(size: 34, weight: .semibold)).foregroundStyle(Theme.Colors.hatch)
+            IconShape(icon).foregroundStyle(Theme.Colors.hatch).frame(width: 40, height: 40)
             Text(title).font(Theme.Typography.cardTitle).foregroundStyle(Theme.Colors.ink)
             Text(message).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).multilineTextAlignment(.center)
         }
@@ -64,21 +65,30 @@ struct SegmentedPill<Option: Hashable>: View {
     let options: [Option]
     let title: (Option) -> String
     @Binding var selection: Option
+    /// An accessibility identifier for a segment, where one is wanted.
+    var identifier: (Option) -> String? = { _ in nil }
 
     var body: some View {
         HStack(spacing: 6) {
             ForEach(options, id: \.self) { option in
-                Button {
+                let button = Button {
                     withAnimation(.snappy) { selection = option }
                 } label: {
                     Text(title(option))
                         .font(Theme.Typography.text(13, .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                         .foregroundStyle(selection == option ? Theme.Colors.cream : Theme.Colors.muted)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                         .background(selection == option ? Theme.Colors.ink : .clear, in: Capsule())
                 }
                 .buttonStyle(.pressable)
+                if let id = identifier(option) {
+                    button.accessibilityIdentifier(id)
+                } else {
+                    button
+                }
             }
         }
         .padding(5)

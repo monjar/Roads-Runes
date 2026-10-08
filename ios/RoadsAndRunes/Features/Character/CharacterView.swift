@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -16,6 +17,7 @@ final class CharacterViewModel {
 
     func load() async {
         await container.session.refreshCharacter()
+        await container.session.refreshInventory()
         bikes = (try? await container.api.bikes()) ?? []
         riderProfile = try? await container.api.riderProfile()
         stats = try? await container.api.explorationStats()
@@ -70,12 +72,27 @@ struct CharacterView: View {
                     if let model {
                         VStack(spacing: 0) {
                             if let character = model.character {
-                                CharacterHeader(character: character)
+                                CharacterHeader(character: character, crestFrame: container.session.inventory?.look?.crestFrame)
                             }
                             sheet(model)
                         }
                     }
                 }
+            }
+            // Settings where a phone keeps them: a gear at the top, not the bottom of a long sheet.
+            .overlay(alignment: .topTrailing) {
+                NavigationLink { SettingsView() } label: {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(Theme.Colors.ink)
+                        .frame(width: 40, height: 40)
+                        .background(Theme.Colors.cream.opacity(0.92), in: Circle())
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel("Settings")
+                .accessibilityIdentifier("character.settings")
+                .padding(.trailing, 18)
+                .padding(.top, 4)
             }
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await model?.load() }
@@ -95,22 +112,65 @@ struct CharacterView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 FactTile(value: exploredArea(model.stats), label: "Explored")
-                FactTile(value: "\(model.stats?.discoveriesFound ?? 0)", label: "Discoveries")
+                FactTile(value: "\(model.stats?.discoveriesFound ?? 0)", label: "Places found")
                 FactTile(value: "\(model.stats?.questsCompleted ?? 0)", label: "Quests")
             }
             if let error = model.error { ErrorLine(text: error) }
 
             let abilities = character?.abilities ?? []
-            SectionHeader(title: "Abilities", subtitle: "\(abilities.filter(\.unlocked).count) of \(abilities.count) unlocked")
-            FlowLayout(spacing: 8) {
-                ForEach(abilities) { state in
-                    AbilityCard(state: state, color: classColor) { Task { await model.unlock(state) } }
-                }
-            }
+            SectionHeader(title: "Skills", subtitle: "\(abilities.filter(\.unlocked).count) of \(abilities.count) learned")
             if let points = character?.unspentAbilityPoints, points > 0 {
-                Text("\(points) ability point\(points == 1 ? "" : "s") to spend · tap an outlined ability")
+                Text(LoreCopy.skillPointsToSpend(points))
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.terracottaDeep)
             }
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(abilities) { state in
+                    SkillRow(state: state, color: classColor, className: ClassStyle.name(character?.characterClass ?? .explorer)) {
+                        Task { await model.unlock(state) }
+                    }
+                }
+            }
+            .card()
+
+            // Each only on a server that has it: a 0.7.0 server's sheet carries `inscribed`,
+            // a 0.6.2 server's character carries `titlePinned`. An older one has neither.
+            if character?.sheet?.inscribed != nil {
+                NavigationLink { RunesScreen() } label: { moreRow("Runes", icon: .runeStone) }
+                    .buttonStyle(.pressable)
+                    .accessibilityIdentifier("character.runes")
+            }
+            // A 0.7.2 server has a bag: the inventory answered, or the sheet names the gear worn.
+            if container.session.inventory != nil || character?.sheet?.gear != nil {
+                NavigationLink { GearScreen() } label: { moreRow("Gear", icon: .tinBell) }
+                    .buttonStyle(.pressable)
+                    .accessibilityIdentifier("character.gear")
+                NavigationLink { StallScreen() } label: { moreRow("The stall", icon: .shop) }
+                    .buttonStyle(.pressable)
+                    .accessibilityIdentifier("character.stall")
+            }
+            // Your route ink, marker frame and crest frame (0.9.0), on a server that has them.
+            if container.session.inventory?.look != nil || container.session.inventory?.cosmetics != nil {
+                NavigationLink { LookScreen() } label: { moreRow("Look", icon: .inkSwirl) }
+                    .buttonStyle(.pressable)
+                    .accessibilityIdentifier("character.look")
+            }
+            if character?.titlePinned != nil {
+                NavigationLink { TitlesScreen() } label: { moreRow("Titles", icon: .laurels) }
+                    .buttonStyle(.pressable)
+                    .accessibilityIdentifier("character.titles")
+            }
+            if character?.sheet?.inscribed != nil {
+                SectionHeader(title: "Deeds", subtitle: "your lifetime records")
+                DeedsCard()
+            }
+            if container.session.isEnabled("codex") {
+                NavigationLink { CodexScreen() } label: { moreRow("Codex", icon: .spellBook) }
+                    .buttonStyle(.pressable)
+                    .accessibilityIdentifier("character.codex")
+            }
+
+            Divider().overlay(Theme.Colors.line).padding(.top, 6)
+            Text("The rider").font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.muted)
 
             cyclingProfile(model)
 
@@ -184,11 +244,7 @@ struct CharacterView: View {
 
     private func bikeRow(_ bike: Bike) -> some View {
         HStack(spacing: 12) {
-            ZStack {
-                Circle().fill(Theme.Colors.cream)
-                Image(systemName: "bicycle").font(.system(size: 15, weight: .bold)).foregroundStyle(Theme.Colors.ink)
-            }
-            .frame(width: 36, height: 36)
+            MarkView(.token(.cycling)).frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 2) {
                 Text(bike.name).font(Theme.Typography.cardTitle).foregroundStyle(Theme.Colors.ink)
                 Text("\(bike.bikeType.rawValue.capitalized)\(bike.isDefault ? " · default" : "")\(bike.allowGravel ? " · gravel ok" : "")")
@@ -202,9 +258,18 @@ struct CharacterView: View {
         .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
     }
 
+    /// A game thing's row: its icon, not a system symbol.
+    private func moreRow(_ title: String, icon: GameIcon) -> some View {
+        moreRow(title) { IconShape(icon).foregroundStyle(Theme.Colors.ink).frame(width: 22, height: 22) }
+    }
+
     private func moreRow(_ title: String, symbol: String) -> some View {
+        moreRow(title) { Image(systemName: symbol).font(.system(size: 15, weight: .bold)).foregroundStyle(Theme.Colors.ink) }
+    }
+
+    private func moreRow(_ title: String, @ViewBuilder leading: () -> some View) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: symbol).font(.system(size: 15, weight: .bold)).foregroundStyle(Theme.Colors.ink).frame(width: 24)
+            leading().frame(width: 24)
             Text(title).font(Theme.Typography.text(15, .semibold)).foregroundStyle(Theme.Colors.ink)
             Spacer()
             Image(systemName: "chevron.right").font(.system(size: 13, weight: .bold)).foregroundStyle(Theme.Colors.muted)

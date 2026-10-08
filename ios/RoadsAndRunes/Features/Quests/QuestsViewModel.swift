@@ -11,6 +11,10 @@ final class QuestsViewModel {
     private(set) var completed: [Quest] = []
     /// Today's bounty, if the world has been looked at today.
     private(set) var bounty: WorldObject?
+    /// This week's notice (0.6.2); nil from a server before it.
+    private(set) var weekNotice: WeekNotice?
+    /// The festival's arc while its window is open (0.9.0); nil between festivals.
+    private(set) var seasonArc: StoryArc?
     private(set) var isLoading = false
     var error: String?
 
@@ -30,6 +34,8 @@ final class QuestsViewModel {
             async let acceptedTask = container.api.quests(near: origin ?? SampleData.origin, status: .accepted, limit: 10, cursor: nil)
             async let completedTask = container.api.quests(near: origin ?? SampleData.origin, status: .completed, limit: 20, cursor: nil)
             async let bountyTask = try? container.api.bounty()
+            async let weekTask = try? container.api.weekNotice()
+            async let arcsTask = try? container.api.storyArcs()
             let (act, acc, comp) = try await (activeTask, acceptedTask, completedTask)
             active = act.items + acc.items
             completed = comp.items
@@ -40,6 +46,8 @@ final class QuestsViewModel {
             }
             container.persistence.cache(quests: available)
             bounty = await bountyTask
+            weekNotice = await weekTask
+            seasonArc = (await arcsTask)?.first { $0.isSeason && $0.unlocked && ($0.endsAt.map { $0 > Date() } ?? true) }
             error = nil
         } catch {
             self.error = error.localizedDescription

@@ -1,0 +1,112 @@
+{
+  "_comment": "Legends, the old ones (docs/ROADMAP.md 0.8.0 and Appendix I; on screen 'legends'). Read by app/legends/catalog.py, which asserts the shape. One is awake at a time; it wakes when the player has defeated `wakeAfterDefeats` creatures since the last one woke, in this order, skipping the defeated; after all five, round two ('the Fog Dragon II') with health × (1 + roundHealthScale × (round - 1)). Health is `phases` phases of `phaseHealth`; a journey's effort is folded with the fight model (world_objects/fight.py) against the current phase's weakTo/resists. A phase's `rune` says what rune lands on it: ANY (any rune shape cut near it, or a woken rune), WOKEN (only a rune woken on a rune ride), or a rune id (only that rune's shape). `stopIsWord`: a stop of `stopSeconds` within the note's reach is a note. A waking tests at most `anchorTries` spots for each legend and `wakeReachTests` in all. Healing is `healPerWeek` of a phase per full week left alone; asleep after `sleepAfterDays`. Text is placeholder for the author.",
+  "phases": 3,
+  "phaseHealth": 500,
+  "groundMeters": 1000,
+  "ringMeters": [2000, 8000],
+  "anchorTries": 6,
+  "wakeReachTests": 12,
+  "routeEndMeters": 300,
+  "wakeAfterDefeats": 3,
+  "roundHealthScale": 0.25,
+  "healPerWeek": 0.1,
+  "sleepAfterDays": 28,
+  "stopSeconds": 180,
+  "pay": {
+    "phase": {"coins": 150, "xp": 300, "rarity": "RARE"},
+    "defeat": {"coins": 400, "xp": 800, "rarity": "LEGENDARY"}
+  },
+  "legends": [
+    {
+      "id": "fog-dragon",
+      "name": "The Fog Dragon",
+      "icon": "fogDragon",
+      "rune": "hagalaz",
+      "livesAt": "the biggest stretch of unexplored tiles near you",
+      "home": {"rule": "FOG"},
+      "flavour": "A big grey dragon that naps wherever the map is still unexplored.",
+      "page": "The Fog Dragon loves the fog and curls up in the middle of it. Explore the tiles around it and it soon has nowhere comfy left to lie.",
+      "phases": [
+        {"weakTo": ["GROUND"], "resists": ["WORD"]},
+        {"weakTo": ["GROUND", "ROAD"], "resists": ["WORD"]},
+        {"weakTo": ["RUNE"], "resists": ["WORD"], "rune": "ANY"}
+      ]
+    },
+    {
+      "id": "water-wyrm",
+      "name": "The Water Wyrm",
+      "icon": "waterWyrm",
+      "rune": "isa",
+      "livesAt": "water with a path beside it",
+      "home": {
+        "rule": "PLACE",
+        "categories": ["NATURE"],
+        "tags": {"natural": ["water", "wetland"], "water": ["*"], "waterway": ["*"], "leisure": ["marina"]},
+        "near": {"categories": ["TRAIL"], "meters": 200}
+      },
+      "flavour": "A long green wyrm that lazes in the water beside a path.",
+      "page": "The Water Wyrm likes company and a bit of a chat. Stop beside it, leave it a note, and it will happily move along.",
+      "phases": [
+        {"weakTo": ["WORD"], "resists": ["CLIMB"]},
+        {"weakTo": ["WORD"], "resists": ["CLIMB"], "stopIsWord": true},
+        {"weakTo": ["ROAD"], "resists": ["CLIMB"]}
+      ]
+    },
+    {
+      "id": "hill-king",
+      "name": "The Hill King",
+      "icon": "hillKing",
+      "rune": "uruz",
+      "livesAt": "the highest hill or viewpoint you can reach",
+      "home": {
+        "rule": "PLACE",
+        "categories": ["VIEWPOINT"],
+        "highestTag": "ele"
+      },
+      "flavour": "A stout old king who sits on the highest hill around and will not come down.",
+      "page": "The Hill King thinks the top of his hill is the best seat in the land. Climb up to see him, and leave him a note when you get there.",
+      "phases": [
+        {"weakTo": ["CLIMB"], "resists": ["GROUND"]},
+        {"weakTo": ["CLIMB", "ROAD"], "resists": ["GROUND"]},
+        {"weakTo": ["WORD"], "resists": ["GROUND"]}
+      ]
+    },
+    {
+      "id": "trail-wyrm",
+      "name": "The Trail Wyrm",
+      "icon": "trailWyrm",
+      "rune": "nauthiz",
+      "livesAt": "a long trail or cycle route",
+      "home": {
+        "rule": "PLACE",
+        "categories": ["TRAIL"],
+        "preferTags": {"route": ["*"]}
+      },
+      "flavour": "A wyrm as long as a trail, stretched out along it from end to end.",
+      "page": "The Trail Wyrm only shifts for someone who goes a good way along its trail. Keep going past it and it moves over, a bit at a time.",
+      "phases": [
+        {"weakTo": ["ROAD"], "resists": ["WORD"]},
+        {"weakTo": ["GROUND"], "resists": ["WORD"]},
+        {"weakTo": ["ROAD"], "resists": ["WORD"]}
+      ]
+    },
+    {
+      "id": "rune-golem",
+      "name": "The Rune Golem",
+      "icon": "runeGolem",
+      "rune": "thurisaz",
+      "livesAt": "an old place",
+      "home": {
+        "rule": "PLACE",
+        "categories": ["HISTORICAL", "CULTURAL"]
+      },
+      "flavour": "A friendly stone giant at an old place, covered in worn-down runes.",
+      "page": "The Rune Golem was carved a long time ago and only listens to runes. Ride any rune shape beside it, then its own rune, Dagaz, then a rune you have woken.",
+      "phases": [
+        {"weakTo": ["RUNE"], "resists": ["ROAD"], "rune": "ANY"},
+        {"weakTo": ["RUNE"], "resists": ["ROAD"], "rune": "dagaz"},
+        {"weakTo": ["RUNE"], "resists": ["ROAD"], "rune": "WOKEN"}
+      ]
+    }
+  ]
+}

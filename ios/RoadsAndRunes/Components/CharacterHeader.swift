@@ -1,8 +1,10 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
 struct XPBar: View {
-    let title: String
+    /// A class name for a class level ("Explorer level 8"); nil for the overall level.
+    let title: String?
     let level: Int
     let xp: Int
     let floorXP: Int
@@ -20,7 +22,7 @@ struct XPBar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("\(title) \(level)").font(Theme.Typography.captionStrong).foregroundStyle(foreground)
+                Text(title.map { LoreCopy.classLevel($0, level) } ?? "Level \(level)").font(Theme.Typography.captionStrong).foregroundStyle(foreground)
                 Spacer()
                 Text(nextXP.map { "\(xp.formatted()) / \($0.formatted()) XP" } ?? "\(xp.formatted()) XP · max")
                     .font(Theme.Typography.captionStrong.monospacedDigit()).foregroundStyle(secondary)
@@ -34,33 +36,47 @@ struct XPBar: View {
 /// heraldic mark on cream, name, class and level, title, class XP.
 struct CharacterHeader: View {
     let character: Character
+    /// The crest frame worn (0.9.0); nil is the crest alone.
+    var crestFrame: String?
 
     private var color: Color { ClassStyle.color(character.characterClass) }
+
+    /// "Explorer level 6": the class and its level. Guild names belong to the Codex.
+    private var classLine: String {
+        LoreCopy.classLevel(ClassStyle.name(character.characterClass), character.classLevel)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(spacing: 16) {
-                ClassEmblem(characterClass: character.characterClass, size: 84, inverted: true)
+                FramedCrest(characterClass: character.characterClass, size: crestFrame == nil ? 84 : 76, frameId: crestFrame)
+                    .accessibilityIdentifier("character.crest")
                 VStack(alignment: .leading, spacing: 4) {
                     Text(character.name).font(Theme.Typography.voice(30, relativeTo: .largeTitle)).lineLimit(1).minimumScaleFactor(0.7)
-                    Text("\(ClassStyle.name(character.characterClass)) — Level \(character.classLevel)").font(Theme.Typography.text(14, .semibold))
+                    Text(classLine).font(Theme.Typography.text(14, .semibold))
                     if let title = character.title {
-                        Text("“\(title)”").font(Theme.Typography.caption).opacity(0.85)
+                        TitleRibbon(title: title)
+                            .accessibilityIdentifier("character.title")
                     }
                     HStack(spacing: 8) {
                         if let coins = character.activeCoins {
-                            CoinPill(coins: coins, foreground: Theme.Colors.cream)
-                                .accessibilityIdentifier("character.coins")
+                            // The purse opens its coin history (0.7.2).
+                            NavigationLink { CoinHistoryScreen() } label: {
+                                CoinPill(coins: coins, foreground: Theme.Colors.cream)
+                            }
+                            .buttonStyle(.pressable)
+                            .accessibilityHint("Shows your coin history")
+                            .accessibilityIdentifier("character.coins")
                         }
                         if let days = character.streakDays, days > 0 {
                             HStack(spacing: 4) {
-                                Image(systemName: "flame.fill").font(.system(size: 11, weight: .bold))
-                                Text("\(days) day\(days == 1 ? "" : "s")").font(Theme.Typography.text(12, .semibold))
+                                MarkView(.icon(.campfire, spot: .paper)).frame(width: 13, height: 13)
+                                Text(LoreCopy.streak(days)).font(Theme.Typography.text(12, .semibold))
                             }
                             .foregroundStyle(Theme.Colors.cream)
                             .padding(.horizontal, 10).padding(.vertical, 5)
                             .overlay(Capsule().stroke(Theme.Colors.cream.opacity(0.35), lineWidth: 1))
-                            .accessibilityLabel("\(days) days in a row")
+                            .accessibilityLabel(LoreCopy.streak(days))
                             .accessibilityIdentifier("character.streak")
                         }
                     }
@@ -78,17 +94,30 @@ struct CharacterHeader: View {
                 foreground: Theme.Colors.cream,
                 secondary: Theme.Colors.cream
             )
-            XPBar(
-                title: "Overall",
-                level: character.overallLevel,
-                xp: character.overallXP,
-                floorXP: character.overallLevelFloorXP,
-                nextXP: character.nextOverallLevelXP,
-                fill: Theme.Colors.cream.opacity(0.7),
-                track: Theme.Colors.ink.opacity(0.25),
-                foreground: Theme.Colors.cream.opacity(0.9),
-                secondary: Theme.Colors.cream.opacity(0.9)
-            )
+            // The level opens what each level gives (0.7.2).
+            NavigationLink { LevelsScreen() } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    XPBar(
+                        title: nil,
+                        level: character.overallLevel,
+                        xp: character.overallXP,
+                        floorXP: character.overallLevelFloorXP,
+                        nextXP: character.nextOverallLevelXP,
+                        fill: Theme.Colors.cream.opacity(0.7),
+                        track: Theme.Colors.ink.opacity(0.25),
+                        foreground: Theme.Colors.cream.opacity(0.9),
+                        secondary: Theme.Colors.cream.opacity(0.9)
+                    )
+                    HStack(spacing: 4) {
+                        Text("What each level gives")
+                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
+                    }
+                    .font(Theme.Typography.captionStrong)
+                    .foregroundStyle(Theme.Colors.cream.opacity(0.9))
+                }
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("character.levels")
         }
         .foregroundStyle(Theme.Colors.cream)
         .padding(.horizontal, 22)
@@ -104,7 +133,7 @@ struct CharacterHeader: View {
     }
 }
 
-/// Compact character chip for the World (design 9a): emblem, "Name · Explorer 8", XP bar.
+/// Compact character chip for the World (design 9a): emblem, "Name · Explorer level 8", XP bar.
 struct CharacterChip: View {
     let character: Character
 
@@ -112,7 +141,7 @@ struct CharacterChip: View {
         HStack(spacing: 10) {
             ClassEmblem(characterClass: character.characterClass, size: 32)
             VStack(alignment: .leading, spacing: 4) {
-                Text("\(character.name) · \(ClassStyle.name(character.characterClass)) \(character.classLevel)")
+                Text("\(character.name) · \(LoreCopy.classLevel(ClassStyle.name(character.characterClass), character.classLevel))")
                     .font(Theme.Typography.text(13, .bold))
                     .foregroundStyle(Theme.Colors.cream)
                     .lineLimit(1)
@@ -128,7 +157,93 @@ struct CharacterChip: View {
     }
 }
 
-/// Ability as a pill: filled in class colour when unlocked, dashed with the
+/// What the board calls you, on a ribbon with cut ends.
+struct TitleRibbon: View {
+    let title: String
+    var ink: Color = Theme.Colors.ink
+    var paper: Color = Theme.Colors.cream
+
+    var body: some View {
+        Text(title)
+            .font(Theme.Typography.text(12.5, .semibold))
+            .foregroundStyle(ink)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
+            .background(RibbonShape().fill(paper))
+            .accessibilityLabel("Title: \(title)")
+    }
+}
+
+/// A banner with a swallow-tail notch at each end.
+struct RibbonShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let notch = min(8, rect.height * 0.45)
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX - notch, y: rect.midY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX + notch, y: rect.midY))
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// A skill as a row you can read: its name, its ranks, what it does, and plainly
+/// whether the server acts on it yet. Most were promised before they did
+/// anything (docs/ROADMAP.md, 0.6.2); the sheet says "Coming soon" rather than
+/// advertise them.
+struct SkillRow: View {
+    let state: AbilityState
+    var color: Color = Theme.Colors.sage
+    /// "Wizard", for "Unlocks at Wizard level 3".
+    var className = "class"
+    let learn: () -> Void
+
+    /// The server says whether it acts on a skill; one from before 0.6.0 does not, and
+    /// read only these two effects.
+    private var working: Bool {
+        state.ability.working ?? state.ability.effects.contains { ["QUEST_POI_VISIBILITY", "UNLOCK_TEMPLATE"].contains($0.type) }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Circle()
+                .fill(state.unlocked ? color : Color.clear)
+                .overlay(Circle().strokeBorder(state.unlocked ? .clear : Theme.Colors.hatch, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2])))
+                .frame(width: 14, height: 14)
+                .padding(.top, 3)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(state.ability.name).font(Theme.Typography.bodyStrong).foregroundStyle(Theme.Colors.ink)
+                    if state.ability.maxRank > 1 {
+                        Text("\(state.rank) of \(state.ability.maxRank)").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                    }
+                    if !working {
+                        Text("Coming soon").font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.muted)
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .overlay(Capsule().stroke(Theme.Colors.hatch, lineWidth: 1))
+                    }
+                }
+                Text(state.ability.description).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !state.unlocked, !state.canUnlock {
+                    Text("Unlocks at \(LoreCopy.classLevel(className, state.ability.requiredClassLevel))").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+                }
+            }
+            Spacer(minLength: 8)
+            if state.canUnlock {
+                Button("Learn skill", action: learn).buttonStyle(.surfacePill)
+                    .accessibilityLabel("Learn \(state.ability.name)")
+                    .accessibilityIdentifier("skill.\(state.ability.id).learn")
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// A skill as a pill: filled in class colour when unlocked, dashed with the
 /// unlock level otherwise. Tapping an unlockable one spends the point.
 struct AbilityCard: View {
     let state: AbilityState
@@ -142,7 +257,7 @@ struct AbilityCard: View {
                     Text(state.ability.name)
                     if state.ability.maxRank > 1 { Text("\(state.rank)/\(state.ability.maxRank)").opacity(0.8) }
                 } else {
-                    Text("\(state.ability.name) · Lv \(state.ability.requiredClassLevel)")
+                    Text("\(state.ability.name) · level \(state.ability.requiredClassLevel)")
                 }
             }
             .font(Theme.Typography.captionStrong)
@@ -164,19 +279,19 @@ struct AbilityCard: View {
 }
 
 
-/// "◎ 120 AC": the purse, wherever the character is shown.
+/// "◎ 120": the purse, wherever the character is shown.
 struct CoinPill: View {
     let coins: Int
     var foreground: Color = Theme.Colors.ink
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: "circlebadge.2.fill").font(.system(size: 11, weight: .bold))
-            Text("\(coins.formatted()) AC").font(Theme.Typography.text(12, .semibold))
+            MarkView(.coin).frame(width: 14, height: 14)
+            Text(coins.formatted()).font(Theme.Typography.text(12, .semibold))
         }
         .foregroundStyle(foreground)
         .padding(.horizontal, 10).padding(.vertical, 5)
         .overlay(Capsule().stroke(foreground.opacity(0.35), lineWidth: 1))
-        .accessibilityLabel("\(coins) Active Coins")
+        .accessibilityLabel(LoreCopy.purse(coins))
     }
 }

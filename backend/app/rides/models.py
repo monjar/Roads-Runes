@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import Float, ForeignKey, Index, Integer, String, UniqueConstraint, Uuid
+from sqlalchemy import Date, Float, ForeignKey, Index, Integer, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, JSONType, TimestampMixin, TZDateTime, UUIDPrimaryKeyMixin
@@ -25,6 +25,9 @@ class Ride(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     title: Mapped[str | None] = mapped_column(String(120), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(4000), nullable=True)
     started_at: Mapped[datetime] = mapped_column(TZDateTime, nullable=False)
+    # The day it began on the phone's own calendar (0.7.3), when the phone said: the
+    # pledge it may keep is that day's. Without it, the day is read from started_at.
+    local_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     ended_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
     distance_meters: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     duration_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -45,6 +48,11 @@ class Ride(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # What the phone thinks it beat or opened on the way (world_objects); the server decides.
     encounter_events: Mapped[list[Any]] = mapped_column(JSONType, default=list, nullable=False)
     processing_result: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
+    # The character sheet as it was when the ride started (characters/sheet.py).
+    loadout_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
+    # The world object this outing was planned for ("Plan a route here"): the one
+    # that speaks on the ride, and leads the reckoning.
+    quarry_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     flags: Mapped[list[Any]] = mapped_column(JSONType, default=list, nullable=False)
     processed_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
     strava_activity_id: Mapped[str | None] = mapped_column(String(40), nullable=True)

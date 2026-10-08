@@ -10,7 +10,7 @@ BUILD ?= $(shell date -u +%Y%m%d.%H%M)
 ASC_KEY_ID ?=
 ASC_ISSUER_ID ?=
 
-.PHONY: up down logs migrate api worker seed test lint format ios-generate osm routing ios-ui-test ios-testflight
+.PHONY: up down logs migrate api worker seed test backend-test-pg lint format ios-generate osm routing ios-ui-test ios-testflight
 
 up:            ## start db + redis
 	$(COMPOSE) up -d db redis
@@ -35,6 +35,9 @@ seed:          ## dev rider, curated discoveries and quests around Rotherhithe
 
 test:
 	cd backend && pytest -m "not integration" -q
+
+backend-test-pg:  ## the deploy's PostGIS job, locally: migrations up/down/up, then the full suite
+	cd backend && scripts/test_postgis.sh
 
 lint:
 	cd backend && ruff check . && ruff format --check .

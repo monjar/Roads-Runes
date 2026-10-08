@@ -379,6 +379,47 @@ def match_rune(
     return best
 
 
+def match_anywhere(
+    coords: Sequence[Point],
+    form: str,
+    *,
+    threshold: float = 0.22,
+    min_length_m: float = 300.0,
+    max_length_m: float = 4000.0,
+    step_m: float = 1200.0,
+    radius_m: float = 1600.0,
+) -> tuple[float, float, int] | None:
+    """A rune of this road form cut anywhere on the track, not only near a thing:
+    looked for round points every `step_m` along it. Returns where it was cut (the
+    middle of the shape) and the fix it ended on."""
+    if len(coords) < 4:
+        return None
+    walked = 0.0
+    last: Point | None = None
+    next_at = 0.0
+    for lat, lon in coords:
+        if last is not None:
+            walked += haversine_m(last[0], last[1], lat, lon)
+        last = (lat, lon)
+        if walked < next_at:
+            continue
+        next_at = walked + step_m
+        match = match_rune(
+            coords,
+            (lat, lon),
+            threshold=threshold,
+            search_radius_m=radius_m,
+            min_length_m=min_length_m,
+            max_length_m=max_length_m,
+        )
+        if match is not None and match.shape == form:
+            shape = coords[match.start : match.end + 1]
+            mid_lat = sum(p[0] for p in shape) / len(shape)
+            mid_lon = sum(p[1] for p in shape) / len(shape)
+            return mid_lat, mid_lon, match.end
+    return None
+
+
 # --- climbs ------------------------------------------------------------------
 
 

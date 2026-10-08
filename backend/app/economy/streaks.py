@@ -1,4 +1,5 @@
-"""Days in a row with an outing that counted. Coins for keeping it up."""
+"""Days in a row with an outing that counted. Coins for keeping it up. One missed
+day is forgiven by a rest token from the bag (0.7.2), spent here automatically."""
 
 from __future__ import annotations
 
@@ -21,6 +22,8 @@ class StreakOutcome:
     extended: bool
     milestone: int | None = None
     bonus_ac: int = 0
+    # A rest token carried the streak over one missed day (0.7.2).
+    rest_token_used: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -29,6 +32,7 @@ class StreakOutcome:
             "extended": self.extended,
             "milestone": self.milestone,
             "bonusAC": self.bonus_ac,
+            "restTokenUsed": self.rest_token_used,
         }
 
 
@@ -47,15 +51,33 @@ async def update_streak(db: AsyncSession, user_id: uuid.UUID, day: date, distanc
         return StreakOutcome(streak.current_days, streak.longest_days, extended=False)
     if streak.last_activity_date == day:
         return StreakOutcome(streak.current_days, streak.longest_days, extended=False)
+    rested = False
     if streak.last_activity_date == day - timedelta(days=1):
         streak.current_days += 1
+    elif streak.last_activity_date == day - timedelta(days=2) and await _spend_rest_token(db, user_id, day):
+        # One day missed and a rest token in the bag: the streak carries on.
+        streak.current_days += 1
+        rested = True
     else:
         streak.current_days = 1
     streak.last_activity_date = day
     streak.longest_days = max(streak.longest_days, streak.current_days)
     await db.flush()
     milestone = streak.current_days if str(streak.current_days) in rules["milestones"] else None
-    return StreakOutcome(streak.current_days, streak.longest_days, extended=True, milestone=milestone)
+    return StreakOutcome(
+        streak.current_days, streak.longest_days, extended=True, milestone=milestone, rest_token_used=rested
+    )
+
+
+async def _spend_rest_token(db: AsyncSession, user_id: uuid.UUID, day: date) -> bool:
+    """Spends a rest token, if the player holds one (inventory.service is the writer)."""
+    from app.characters.models import Character
+    from app.inventory import service as inventory
+
+    character = await db.scalar(select(Character).where(Character.user_id == user_id))
+    if character is None:
+        return False
+    return await inventory.take_consumable(db, character, "REST_TOKEN", why=f"streak:{day.isoformat()}")
 
 
 def streak_lines(outcome: StreakOutcome) -> list[ACLine]:

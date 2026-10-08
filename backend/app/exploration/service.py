@@ -46,6 +46,18 @@ async def known_cells(db: AsyncSession, user_id: uuid.UUID) -> dict[str, str]:
     return {h: s for h, s in rows}
 
 
+async def cells_last_passed(db: AsyncSession, user_id: uuid.UUID) -> dict[str, datetime]:
+    """When the player last passed through each cell they have ever been in."""
+    rows = (
+        await db.execute(
+            select(UserExplorationCell.h3_index, UserExplorationCell.last_visited_at).where(
+                UserExplorationCell.user_id == user_id, UserExplorationCell.last_visited_at.is_not(None)
+            )
+        )
+    ).all()
+    return {h: when for h, when in rows}
+
+
 async def record_traversal(
     db: AsyncSession,
     user_id: uuid.UUID,

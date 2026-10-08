@@ -34,6 +34,13 @@ enum Config {
         return URL(string: raw) ?? URL(string: "https://tiles.openfreemap.org/styles/bright")!
     }
 
+    /// The parchment map (0.7.3): OpenFreeMap's positron recoloured as ink on paper,
+    /// bundled, with the `openmaptiles` source and its layer ids kept so POI taps work.
+    static var parchmentStyleURL: URL? {
+        Bundle.main.url(forResource: "parchment", withExtension: "json", subdirectory: "MapStyles")
+            ?? Bundle.main.url(forResource: "parchment", withExtension: "json")
+    }
+
     enum MapStyleKey: String {
         case minimal = "MINIMAL"
         case cycling = "CYCLING"

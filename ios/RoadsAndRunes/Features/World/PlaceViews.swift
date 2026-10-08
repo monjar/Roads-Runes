@@ -1,4 +1,5 @@
 import MapKit
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -22,17 +23,15 @@ struct WorldSearchBar: View {
             .buttonStyle(.pressable)
             .accessibilityLabel("Search places")
             if let character {
+                // The level in words beside the crest: a bare number on it read as
+                // a count of something unread.
                 Button(action: onCharacter) {
-                    ClassEmblem(characterClass: character.characterClass, size: 36)
-                        .overlay(alignment: .bottomTrailing) {
-                            Text("\(character.overallLevel)")
-                                .font(Theme.Typography.text(10, .bold))
-                                .foregroundStyle(Theme.Colors.cream)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .background(Theme.Colors.ink, in: Capsule())
-                                .offset(x: 4, y: 3)
-                        }
+                    HStack(spacing: 6) {
+                        Text("Lv \(character.overallLevel)")
+                            .font(Theme.Typography.text(12, .bold))
+                            .foregroundStyle(Theme.Colors.inkSoft)
+                        ClassEmblem(characterClass: character.characterClass, size: 34)
+                    }
                 }
                 .buttonStyle(.pressable)
                 .accessibilityLabel("\(character.name), level \(character.overallLevel)")
@@ -56,7 +55,10 @@ struct PlaceShortcutChips: View {
             HStack(spacing: 8) {
                 ForEach(PlaceShortcut.allCases) { shortcut in
                     Button { onSelect(shortcut) } label: {
-                        Label(shortcut.title, systemImage: shortcut.symbol)
+                        HStack(spacing: 6) {
+                            IconShape(shortcut.icon).frame(width: 16, height: 16)
+                            Text(shortcut.title)
+                        }
                             .font(Theme.Typography.text(13, .semibold))
                             .foregroundStyle(active == shortcut ? Theme.Colors.cream : Theme.Colors.ink)
                             .padding(.horizontal, 12)
@@ -81,11 +83,22 @@ struct PlaceCard: View {
     let units: Units
     let onDirections: () -> Void
     let onClose: () -> Void
+    /// A lamp here: what it costs, what the server says it would do, what is in
+    /// the purse, and what happened last time.
+    var lampCost: Int?
+    var lampCheck: LampCheck?
+    var leavingLamp = false
+    var lampError: String?
+    var onLamp: () -> Void = {}
+    /// A letter to your future self, left here (0.7.3).
+    @State private var writingLetter = false
+    /// Place lore (0.9.0): Wikidata's line on one of the game's places, with its credit.
+    @State private var lore: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
-                PlaceIcon(symbol: place.symbol, size: 48)
+                PlaceIcon(mark: place.mark, size: 48)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(place.name).font(Theme.Typography.voice(20, relativeTo: .title3)).foregroundStyle(Theme.Colors.ink).lineLimit(2)
                     if !facts.isEmpty {
@@ -94,23 +107,48 @@ struct PlaceCard: View {
                     if let address = place.address {
                         Text(address).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).lineLimit(2)
                     }
+                    if let lore {
+                        Text(lore).font(Theme.Typography.caption).italic().foregroundStyle(Theme.Colors.inkSoft)
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("place.lore")
+                    }
                 }
                 Spacer(minLength: 0)
                 IconCircleButton(symbol: "xmark", background: Theme.Colors.surface, size: 34, action: onClose)
                     .accessibilityLabel("Close")
             }
-            Button(action: onDirections) {
-                let activity = container.session.defaultActivity
-                HStack(spacing: 10) {
-                    Image(systemName: activity.symbol)
-                    Text("\(activity.verb) here")
+            HStack(spacing: 10) {
+                Button(action: onDirections) {
+                    let activity = container.session.defaultActivity
+                    HStack(spacing: 10) {
+                        Image(systemName: activity.symbol)
+                        Text("\(activity.verb) here")
+                    }
                 }
+                .buttonStyle(.primary)
+                .accessibilityIdentifier("place.directions")
+                Button { writingLetter = true } label: {
+                    Label("Leave a letter", systemImage: "envelope")
+                }
+                .buttonStyle(.secondary)
+                .accessibilityIdentifier("place.leaveLetter")
             }
-            .buttonStyle(.primary)
+            .sheet(isPresented: $writingLetter) {
+                LetterSheet(coordinate: place.coordinate, placeName: place.name).presentationDetents([.medium, .large])
+            }
+            if let lampCost {
+                lampSection(cost: lampCost)
+            }
         }
         .padding(18)
         .background(Theme.Colors.cream, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
         .shadow(color: Theme.Colors.ink.opacity(0.18), radius: 12, y: 4)
+        .task(id: place.id) {
+            lore = nil
+            guard case .discovery(let id) = place.source else { return }
+            lore = (try? await container.api.discovery(id: id))?.loreLine
+        }
     }
 
     private var facts: String {
@@ -170,7 +208,7 @@ struct PlaceRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            PlaceIcon(symbol: place.symbol, size: 36)
+            PlaceIcon(mark: place.mark, size: 36)
             VStack(alignment: .leading, spacing: 2) {
                 Text(place.name).font(Theme.Typography.text(15, .semibold)).foregroundStyle(Theme.Colors.ink).lineLimit(1)
                 if let detail = place.address ?? place.category {
@@ -188,16 +226,68 @@ struct PlaceRow: View {
     }
 }
 
+extension PlaceCard {
+    /// Light a lamp: a creature comes to a named place near here. The card says
+    /// what will happen before anything is spent, so a lamp that cannot work is
+    /// never a button that takes a tap and then refuses.
+    @ViewBuilder
+    func lampSection(cost: Int) -> some View {
+        let purse = container.session.character?.activeCoins ?? 0
+        let refused = lampCheck.map { !$0.ok } ?? false
+        // A lamp in the bag is used before coins (0.7.2): no price, and the purse does not matter.
+        let fromBag = lampCheck?.usesLampFromBag == true
+        let cannotPay = !fromBag && purse < cost
+        Divider().overlay(Theme.Colors.line)
+        HStack(alignment: .top, spacing: 10) {
+            MarkView(.lamp).frame(width: 34, height: 34)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Light a lamp").font(Theme.Typography.text(15, .semibold)).foregroundStyle(Theme.Colors.ink)
+                Text(lampLine(cost: cost, purse: purse, fromBag: fromBag))
+                    .font(Theme.Typography.caption).foregroundStyle(refused ? Theme.Colors.terracottaDeep : Theme.Colors.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("place.lampLine")
+            }
+        }
+        Button(action: onLamp) {
+            HStack(spacing: 8) {
+                if leavingLamp { ProgressView().tint(Theme.Colors.ink) } else { IconShape(.lantern).frame(width: 18, height: 18) }
+                Text(fromBag ? "Light a lamp" : "Light a lamp · \(LoreCopy.purse(cost))")
+            }
+            .font(Theme.Typography.text(14, .semibold)).foregroundStyle(Theme.Colors.ink)
+            .frame(maxWidth: .infinity).frame(height: 40)
+            .background(Theme.Colors.surface, in: Capsule())
+        }
+        .buttonStyle(.pressable)
+        .disabled(leavingLamp || cannotPay || refused)
+        .opacity(cannotPay || refused ? 0.5 : 1)
+        .accessibilityIdentifier("place.lamp")
+        if let lampError { ErrorLine(text: lampError) }
+    }
+
+    private func lampLine(cost: Int, purse: Int, fromBag: Bool) -> String {
+        if let lampCheck, !lampCheck.ok {
+            return lampCheck.message ?? "A lamp won't work here. Try a park, a pub or a landmark."
+        }
+        if fromBag {
+            let place = lampCheck?.placeName.map { " A creature will come to \($0)." } ?? ""
+            return "Uses a lamp from your bag.\(place)"
+        }
+        if purse < cost {
+            return "A lamp costs \(cost) coins and you have \(purse). Open chests and defeat creatures to earn more."
+        }
+        if let place = lampCheck?.placeName {
+            return "A creature will come to \(place). You only pay if one comes."
+        }
+        return "Calls a creature to a named place within 250 m. You only pay if one comes."
+    }
+}
+
 struct PlaceIcon: View {
-    let symbol: String
+    let mark: Mark
     var size: CGFloat = 40
 
     var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: size * 0.42, weight: .bold))
-            .foregroundStyle(Theme.Colors.terracottaDeep)
-            .frame(width: size, height: size)
-            .background(Theme.Colors.terracottaTint, in: RoundedRectangle(cornerRadius: size * 0.3, style: .continuous))
+        MarkView(mark).frame(width: size, height: size)
     }
 }
 
@@ -248,12 +338,12 @@ struct PlaceSearchScreen: View {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if search.query.isEmpty {
                         ForEach(PlaceShortcut.allCases) { shortcut in
-                            Button { onShortcut(shortcut) } label: { row(symbol: shortcut.symbol, title: shortcut.title, subtitle: "Near the map") }
+                            Button { onShortcut(shortcut) } label: { row(icon: shortcut.icon, title: shortcut.title, subtitle: "Near the map") }
                                 .buttonStyle(.pressable)
                         }
                     } else {
                         ForEach(search.suggestions, id: \.self) { suggestion in
-                            Button { onPick(suggestion) } label: { row(symbol: "mappin", title: suggestion.title, subtitle: suggestion.subtitle) }
+                            Button { onPick(suggestion) } label: { row(icon: .pin, title: suggestion.title, subtitle: suggestion.subtitle) }
                                 .buttonStyle(.pressable)
                         }
                     }
@@ -267,13 +357,9 @@ struct PlaceSearchScreen: View {
         .onAppear { focused = true }
     }
 
-    private func row(symbol: String, title: String, subtitle: String) -> some View {
+    private func row(icon: GameIcon, title: String, subtitle: String) -> some View {
         HStack(spacing: 14) {
-            Image(systemName: symbol)
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(Theme.Colors.inkSoft)
-                .frame(width: 36, height: 36)
-                .background(Theme.Colors.surface, in: Circle())
+            MarkView(.token(icon)).frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(Theme.Typography.text(15, .semibold)).foregroundStyle(Theme.Colors.ink).lineLimit(1)
                 if !subtitle.isEmpty {

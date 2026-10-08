@@ -26,6 +26,27 @@ final class RideStoreTests: XCTestCase {
         XCTAssertEqual(decoded.heartRate, 132)
     }
 
+    func testTheRiderDotPointsTheWayTheRiderIsGoing() throws {
+        // An older phone sends positions and no course: the Watch works it out.
+        let store = RideStore()
+        XCTAssertNil(store.riderCourse)
+        var moving = update(instruction: instruction(1))
+        moving.latitude = 51.4900
+        moving.longitude = -0.0400
+        store.apply(update: moving)
+        XCTAssertNil(store.riderCourse, "no direction before the rider has moved")
+        moving.latitude = 51.4902 // about 22 m north
+        store.apply(update: moving)
+        XCTAssertEqual(try XCTUnwrap(store.riderCourse), 0, accuracy: 2)
+        // A phone that sends its course is believed over the guess.
+        moving.courseDegrees = 270
+        store.apply(update: moving)
+        XCTAssertEqual(store.riderCourse, 270)
+        // And the course survives the trip through the Watch messages.
+        let decoded = try WatchMessages.navigationUpdate(from: WatchMessages.navigationUpdate(moving))
+        XCTAssertEqual(decoded.courseDegrees, 270)
+    }
+
     func testStalenessGrowsWithoutMessages() {
         let store = RideStore()
         XCTAssertTrue(store.isStale())
@@ -92,5 +113,420 @@ final class RideStoreTests: XCTestCase {
         XCTAssertEqual(store.pendingObjective?.coins, 10)
         XCTAssertEqual(store.pendingObjective?.detail, "Old Runes, 3 of 6")
         XCTAssertEqual(store.objectiveToken, 1)
+    }
+
+    // MARK: - The game on the wrist (0.7.2)
+
+    private let troll = UUID(uuidString: "8A1F0B2C-0000-4000-8000-0000000000F1")!
+    private let chest = UUID(uuidString: "8A1F0B2C-0000-4000-8000-0000000000C1")!
+    private let flag = UUID(uuidString: "8A1F0B2C-0000-4000-8000-0000000000B1")!
+
+    private func summary(marks: [WatchWorldMark]? = nil, stops: [WatchStop] = []) -> WatchRouteSummary {
+        WatchRouteSummary(questTitle: "The Forgotten Railway", instructions: [instruction(0)], objectives: [], totalDistanceMeters: 30_000,
+                          stops: stops, activity: "RIDE", worldMarks: marks)
+    }
+
+    private var marks: [WatchWorldMark] {
+        [
+            WatchWorldMark(id: troll, kind: WatchWorldMark.monster, name: "Fen Troll", latitude: 51.49, longitude: -0.03, icon: "troll",
+                           speciesId: "fen-troll", tier: 1, quarry: true),
+            WatchWorldMark(id: chest, kind: WatchWorldMark.chest, name: "Old chest", latitude: 51.48, longitude: -0.02, icon: "chest", tier: 2),
+            WatchWorldMark(id: flag, kind: WatchWorldMark.objective, name: "Reach Old Station", latitude: 51.50, longitude: -0.01, icon: "flag"),
+        ]
+    }
+
+    private func gone(_ ids: [UUID]?, state: NavigationState = .active, fight: WatchFight? = nil) -> WatchNavigationUpdate {
+        var next = update(state: state, instruction: instruction(1))
+        next.goneMarkIds = ids
+        next.fight = fight
+        return next
+    }
+
+    func testWorldMarksComeWithTheRouteAndComeOffWhenTaken() throws {
+        let store = RideStore()
+        store.apply(summary: try WatchMessages.routeSummary(from: WatchMessages.routeSummary(summary(marks: marks))))
+        XCTAssertEqual(store.worldMarks.map(\.id), [troll, chest, flag])
+
+        store.apply(update: try WatchMessages.navigationUpdate(from: WatchMessages.navigationUpdate(gone([chest]))))
+        XCTAssertEqual(store.worldMarks.map(\.id), [troll, flag])
+        store.apply(update: gone(nil))
+        XCTAssertEqual(store.worldMarks.map(\.id), [troll, flag], "an update that says nothing brings nothing back")
+        store.apply(update: gone([chest, flag]))
+        XCTAssertEqual(store.worldMarks.map(\.id), [troll])
+
+        // A reroute is the same journey: what is gone stays gone.
+        store.apply(summary: summary(marks: marks))
+        XCTAssertEqual(store.worldMarks.map(\.id), [troll])
+
+        store.apply(update: gone(nil, state: .completed))
+        XCTAssertTrue(store.worldMarks.isEmpty)
+        XCTAssertTrue(store.goneMarkIds.isEmpty)
+        // The next journey starts with all of its marks.
+        store.apply(summary: summary(marks: marks))
+        XCTAssertEqual(store.worldMarks.count, 3)
+    }
+
+    func testTheQuarryAndBountiesAreMarkedAndUnknownIconsFallBack() throws {
+        let quarry = try XCTUnwrap(marks.first)
+        XCTAssertEqual(WristMarks.size(quarry), 24)
+        XCTAssertEqual(WristMarks.size(marks[1]), 16)
+        XCTAssertEqual(WristMarks.size(marks[2]), 20)
+        XCTAssertEqual(WristMarks.icon("troll", species: "bog-wraith", otherwise: .dragonHead).rawValue, "troll")
+        // A newer phone may name an icon this Watch has not got: the species, then the kind, stand in.
+        XCTAssertEqual(WristMarks.icon("hedgeDragonOfTheFuture", species: "fen-troll", otherwise: .dragonHead).rawValue, "troll")
+        XCTAssertEqual(WristMarks.icon("hedgeDragonOfTheFuture", species: nil, otherwise: .runeStone).rawValue, "runeStone")
+        XCTAssertEqual(WristMarks.rarityWord("LEGENDARY"), "Legendary")
+        XCTAssertNil(WristMarks.rarityWord(nil))
+    }
+
+    func testStopsWithAKindDrawAsPlacesAndAnOlderPhonesAsDots() throws {
+        let pub = WatchStop(id: UUID(), name: "The Crown", latitude: 51.49, longitude: -0.03, requested: true, category: "PUB")
+        let plain = WatchStop(id: UUID(), name: "The Mill", latitude: 51.49, longitude: -0.03, requested: false)
+        let store = RideStore()
+        store.apply(summary: try WatchMessages.routeSummary(from: WatchMessages.routeSummary(summary(stops: [pub, plain]))))
+        XCTAssertEqual(store.stops.map(\.category), ["PUB", nil])
+        XCTAssertNotNil(WristMarks.stop(store.stops[0]))
+        XCTAssertNil(WristMarks.stop(store.stops[1]), "no kind from an older phone: the old dot")
+        XCTAssertTrue(store.worldMarks.isEmpty, "an older phone sends no world marks")
+    }
+
+    func testTheFightComesWithEachUpdateInTenths() throws {
+        let store = RideStore()
+        XCTAssertNil(store.fight)
+        let fight = WatchFight(speciesId: "fen-troll", name: "Fen Troll", icon: "troll", tenthsLeft: 6, quarry: true, defeated: false)
+        store.apply(update: try WatchMessages.navigationUpdate(from: WatchMessages.navigationUpdate(gone(nil, fight: fight))))
+        XCTAssertEqual(store.fight, fight)
+        store.apply(update: gone(nil))
+        XCTAssertNil(store.fight, "an older phone, or nothing being fought")
+        // The ring lands on whole tenths, never a tick more or less.
+        for tenths in 0...10 {
+            XCTAssertEqual(WatchFight.tenths(FightRing.fraction(tenths: tenths)), tenths)
+        }
+    }
+
+    func testADropComesToTheOverlayWithItsMarkAndRarity() throws {
+        let store = RideStore()
+        let drop = WatchObjectiveCompleted.found(name: "Tin Bell", icon: "tinBell", rarity: "RARE")
+        store.apply(objective: try WatchMessages.objectiveCompleted(from: WatchMessages.objectiveCompleted(drop)))
+        XCTAssertEqual(store.pendingObjective?.outcome, "FOUND")
+        XCTAssertEqual(store.pendingObjective?.icon, "tinBell")
+        XCTAssertEqual(WristMarks.rarityWord(store.pendingObjective?.rarity), "Rare")
+    }
+
+    private func end(endedAt: Date?, coins: Int = 120) -> WatchJourneyEnd {
+        WatchJourneyEnd(activity: "RIDE", creaturesDefeated: 2, chestsOpened: 1, coins: coins, xp: 340, levelReached: 8,
+                        finds: [WatchFind(name: "Tin Bell", icon: "tinBell", rarity: "COMMON")], endedAt: endedAt)
+    }
+
+    func testJourneysEndShowsAfterTheJourneyUntilDone() throws {
+        let store = RideStore()
+        let now = Date(timeIntervalSince1970: 100_000)
+        store.apply(summary: summary(), receivedAt: now.addingTimeInterval(-1_200))
+        store.apply(update: update(state: .active, instruction: instruction(1), elapsed: 1_190), receivedAt: now.addingTimeInterval(-10))
+        // It can overtake the phone's last update: it is kept, and shows once the journey is over.
+        let message = try WatchMessages.journeyEnd(end(endedAt: now.addingTimeInterval(-5)))
+        store.apply(journeyEnd: try WatchMessages.journeyEnd(from: message), receivedAt: now)
+        XCTAssertEqual(store.journeyEnd?.coins, 120)
+        XCTAssertEqual(store.journeyEndToken, 1)
+        store.apply(update: update(state: .completed, instruction: nil, elapsed: 1_200), receivedAt: now)
+        XCTAssertFalse(store.hasRoute)
+        XCTAssertFalse(store.isRiding)
+        XCTAssertNotNil(store.journeyEnd)
+        store.dismissJourneyEnd()
+        XCTAssertNil(store.journeyEnd, "Done: back to idle")
+    }
+
+    func testAJourneysEndHeardOfTooLateIsLetGo() {
+        let store = RideStore()
+        let now = Date(timeIntervalSince1970: 100_000)
+        store.apply(journeyEnd: end(endedAt: now.addingTimeInterval(-2 * 3_600)), receivedAt: now)
+        XCTAssertNil(store.journeyEnd, "hours later, it is old news")
+        // The last journey's end, arriving five minutes into the next one.
+        store.apply(summary: summary(), receivedAt: now.addingTimeInterval(-300))
+        store.apply(update: update(state: .active, instruction: instruction(1), elapsed: 300), receivedAt: now)
+        store.apply(journeyEnd: end(endedAt: now.addingTimeInterval(-900)), receivedAt: now)
+        XCTAssertNil(store.journeyEnd)
+        // A phone that sends no time is believed.
+        let idle = RideStore()
+        idle.apply(journeyEnd: end(endedAt: nil), receivedAt: now)
+        XCTAssertNotNil(idle.journeyEnd)
+        // A new journey makes an unread one old news.
+        idle.apply(summary: summary(), receivedAt: now)
+        XCTAssertNil(idle.journeyEnd)
+    }
+
+    func testJourneysEndSaysWhatTheJourneyCameTo() {
+        var full = end(endedAt: nil)
+        full.finds += (1...7).map { WatchFind(name: "Place \($0)", icon: "tavern") }
+        let lines = JourneyEndCard.lines(for: full).map(\.text)
+        XCTAssertEqual(Array(lines.prefix(5)), ["Level up!", "2 creatures defeated", "1 chest opened", "+120 coins", "+340 XP"])
+        XCTAssertEqual(lines[5], "Tin Bell")
+        XCTAssertEqual(JourneyEndCard.lines(for: full)[5].detail, "Common")
+        XCTAssertEqual(lines.count, 5 + JourneyEndCard.findsShown + 1)
+        XCTAssertEqual(lines.last, "2 more on your iPhone")
+
+        let one = WatchJourneyEnd(creaturesDefeated: 1, chestsOpened: 3)
+        XCTAssertEqual(JourneyEndCard.lines(for: one).map(\.text), ["1 creature defeated", "3 chests opened"])
+        XCTAssertEqual(JourneyEndCard.lines(for: WatchJourneyEnd()).map(\.text), ["Saved to your Journal"])
+    }
+
+    // MARK: Between rides (0.7.3)
+
+    func testNextUpIsKeptAndALateOneDoesNotReplaceANewer() {
+        let store = RideStore()
+        var faces = 0
+        store.onFaceChanged = { faces += 1 }
+        let now = Date(timeIntervalSince1970: 200_000)
+        let newer = WatchIdleInfo(streakDays: 4, bounty: .init(name: "Fen Troll"), units: "IMPERIAL", updatedAt: now)
+        store.apply(idle: newer)
+        XCTAssertEqual(store.idle, newer)
+        XCTAssertEqual(store.units, .imperial, "Next up carries the units for the complication")
+        XCTAssertEqual(faces, 1)
+        store.apply(idle: WatchIdleInfo(streakDays: 3, updatedAt: now.addingTimeInterval(-60)))
+        XCTAssertEqual(store.idle?.streakDays, 4, "heard late, made earlier: let go")
+        // What the app group kept shows until the phone speaks, and never over what it said.
+        let fresh = RideStore()
+        fresh.restore(idle: WatchIdleInfo(streakDays: 2, updatedAt: now))
+        XCTAssertEqual(fresh.idle?.streakDays, 2)
+        store.restore(idle: WatchIdleInfo(streakDays: 1, updatedAt: now))
+        XCTAssertEqual(store.idle?.streakDays, 4)
+    }
+
+    func testPlanningLastsUntilTheRideComes() {
+        let store = RideStore()
+        let now = Date(timeIntervalSince1970: 300_000)
+        let request = WatchStartRequest.loop(minutes: 40, activity: .ride)
+        store.beginPlanning(request, at: now)
+        XCTAssertTrue(store.isPlanning)
+        // "It started" changes nothing on its own: the route summary is the answer.
+        store.apply(startResult: WatchStartResult(requestId: request.id, started: true))
+        XCTAssertTrue(store.isPlanning)
+        store.expirePlanning(at: now.addingTimeInterval(RideStore.planningTimeout - 1))
+        XCTAssertTrue(store.isPlanning)
+        store.apply(summary: summary(), receivedAt: now.addingTimeInterval(20))
+        XCTAssertNil(store.planning, "the ride came")
+        XCTAssertTrue(store.hasRoute)
+    }
+
+    func testPlanningFailsWhenThePhoneSaysSoOrTakesTooLong() {
+        let store = RideStore()
+        let now = Date(timeIntervalSince1970: 300_000)
+        let first = WatchStartRequest.bounty(activity: .run)
+        store.beginPlanning(first, at: now)
+        store.apply(startResult: WatchStartResult(requestId: UUID(), started: false))
+        XCTAssertTrue(store.isPlanning, "an answer to another question")
+        store.apply(startResult: WatchStartResult(requestId: first.id, started: false))
+        XCTAssertTrue(store.planningFailed)
+        store.dismissPlanning()
+        XCTAssertNil(store.planning)
+
+        let second = WatchStartRequest.quest(id: UUID())
+        store.beginPlanning(second, at: now)
+        store.failPlanning(id: first.id)
+        XCTAssertTrue(store.isPlanning, "the old request's failure is not this one's")
+        store.expirePlanning(at: now.addingTimeInterval(RideStore.planningTimeout))
+        XCTAssertTrue(store.planningFailed)
+    }
+
+    func testTheQuarryIsForTheComplicationWhileTheJourneyLasts() {
+        let store = RideStore()
+        XCTAssertNil(store.quarry)
+        var faces = 0
+        store.onFaceChanged = { faces += 1 }
+        store.apply(summary: summary(marks: marks))
+        XCTAssertEqual(store.quarry, WatchQuarry(name: "Fen Troll", icon: "troll", speciesId: "fen-troll"))
+        XCTAssertEqual(faces, 1)
+        var gone = update(instruction: instruction(1))
+        gone.goneMarkIds = [troll]
+        store.apply(update: gone)
+        XCTAssertNil(store.quarry, "defeated: the bounty or the streak takes the face again")
+        store.apply(summary: summary(marks: marks))
+        store.markEnded()
+        XCTAssertNil(store.quarry)
+        XCTAssertEqual(faces, 4)
+    }
+
+    // MARK: Legends (0.8.0)
+
+    private let dragon = UUID(uuidString: "8A1F0B2C-0000-4000-8000-0000000000D1")!
+    private let lair = UUID(uuidString: "8A1F0B2C-0000-4000-8000-0000000000A2")!
+
+    private var legendMarks: [WatchWorldMark] {
+        [
+            WatchWorldMark(id: dragon, kind: WatchWorldMark.legend, name: "The Fog Dragon", latitude: 51.49, longitude: -0.03,
+                           icon: "fogDragon", speciesId: "fog-dragon", quarry: true),
+            WatchWorldMark(id: lair, kind: WatchWorldMark.lair, name: "Southwark Park", latitude: 51.495, longitude: -0.05, icon: "lair"),
+        ] + marks.dropFirst()
+    }
+
+    private func legendFight(phase: Int = 2, tenths: Int = 6, defeated: Bool = false, quarry: Bool = true) -> WatchFight {
+        WatchFight(speciesId: "fog-dragon", name: "The Fog Dragon", icon: "fogDragon", tenthsLeft: tenths, quarry: quarry,
+                   defeated: defeated, phase: phase, phases: 3)
+    }
+
+    func testTheLegendIsOnTheMapLargerAndGoldAndTheLairAsItsMiddle() throws {
+        let store = RideStore()
+        store.apply(summary: try WatchMessages.routeSummary(from: WatchMessages.routeSummary(summary(marks: legendMarks))))
+        XCTAssertEqual(store.worldMarks.map(\.kind), [WatchWorldMark.legend, WatchWorldMark.lair, WatchWorldMark.chest, WatchWorldMark.objective])
+        let legend = store.worldMarks[0]
+        XCTAssertGreaterThan(WristMarks.size(legend), WristMarks.size(marks[0]), "larger than a creature quarry")
+        XCTAssertEqual(WristMarks.mark(legend), .token(.fogDragon, ring: .gold))
+        // Its species stands in for a mark this Watch has not got.
+        var unknown = legend
+        unknown.icon = "frostDragonOfTheFuture"
+        XCTAssertEqual(WristMarks.mark(unknown), .token(.fogDragon, ring: .gold))
+        // The lair's tiles are too small for the wrist: one mark at its middle.
+        XCTAssertEqual(WristMarks.mark(store.worldMarks[1]), .token(.lair, ring: .sage))
+        XCTAssertEqual(WristMarks.size(store.worldMarks[1]), 20)
+        // The complication shows the legend while it is the quarry.
+        XCTAssertEqual(store.quarry, WatchQuarry(name: "The Fog Dragon", icon: "fogDragon", speciesId: "fog-dragon", legend: true))
+        // A phase broken is not gone: the phone sends its id only once it is defeated.
+        store.apply(update: gone([dragon]))
+        XCTAssertNil(store.quarry)
+        XCTAssertFalse(store.worldMarks.contains { $0.isLegend })
+    }
+
+    func testALegendsFightIsDrawnInItsThreePhases() throws {
+        let store = RideStore()
+        store.apply(update: try WatchMessages.navigationUpdate(from: WatchMessages.navigationUpdate(gone(nil, fight: legendFight()))))
+        let fight = try XCTUnwrap(store.fight)
+        XCTAssertTrue(fight.isLegend)
+        XCTAssertEqual(PhaseRing.arcs(for: fight), [.broken, .current(tenths: 6), .whole], "broken filled, this one in tenths, the next whole")
+        XCTAssertEqual(PhaseRing.arcs(for: legendFight(phase: 1, tenths: 10)), [.current(tenths: 10), .whole, .whole])
+        XCTAssertEqual(PhaseRing.arcs(for: legendFight(phase: 3, tenths: 1)), [.broken, .broken, .current(tenths: 1)])
+        XCTAssertEqual(PhaseRing.arcs(for: legendFight(phase: 3, tenths: 0, defeated: true)), [.broken, .broken, .broken])
+        XCTAssertEqual(PhaseRing.label(for: fight), "The Fog Dragon, phase 2 of 3, health 6 of 10")
+        // Its phases ring it, so its mark goes bare: no quarry ring inside the arcs.
+        XCTAssertEqual(WristMarks.fight(fight), .token(.fogDragon))
+        // A creature's fight is as it was.
+        let troll = WatchFight(speciesId: "fen-troll", name: "Fen Troll", icon: "troll", tenthsLeft: 4, quarry: true, defeated: false)
+        XCTAssertFalse(troll.isLegend)
+        XCTAssertEqual(WristMarks.fight(troll), .token(.troll, ring: .terracotta))
+    }
+
+    func testAPhaseBrokenIsOneFightTapAndTheOverlayWithItsMark() throws {
+        let store = RideStore()
+        let broken = WatchObjectiveCompleted.phaseBroken(name: "The Fog Dragon", icon: "fogDragon", broken: 1, of: 3)
+        store.apply(objective: try WatchMessages.objectiveCompleted(from: WatchMessages.objectiveCompleted(broken)))
+        let event = try XCTUnwrap(store.pendingObjective)
+        XCTAssertEqual(store.objectiveToken, 1, "one overlay")
+        XCTAssertEqual(event.outcome, "PHASE")
+        XCTAssertEqual(WristMarks.heading(event), "PHASE BROKEN!")
+        XCTAssertEqual(WristMarks.claim(event), .token(.fogDragon, ring: .gold))
+        XCTAssertEqual(event.detail, "2 phases left")
+        XCTAssertEqual(event.tap, .success)
+        XCTAssertTrue(WristTap.fight.contains(event.tap))
+        XCTAssertFalse(WristTap.turns.contains(event.tap), "never mistaken for a turn")
+        // The headings the older outcomes always had.
+        XCTAssertEqual(WristMarks.heading(WatchObjectiveCompleted(title: "Fen Troll", outcome: "GONE")), "DEFEATED")
+        XCTAssertEqual(WristMarks.heading(WatchObjectiveCompleted(title: "Old chest", outcome: "OPENED")), "OPENED")
+        XCTAssertEqual(WristMarks.heading(WatchObjectiveCompleted(title: "Reach Old Station")), "DONE")
+    }
+
+    func testJourneysEndListsTheLegendTheLairAndTreasure() {
+        var full = end(endedAt: nil)
+        full.legend = WatchEndLine(text: "Phase broken! The Fog Dragon is down to its last phase.", icon: "fogDragon")
+        full.lair = WatchEndLine.lair(name: "Southwark Park", visited: 5, need: 5, done: true)
+        full.treasureFound = WatchEndLine.treasure(coins: 120)
+        let lines = JourneyEndCard.lines(for: full)
+        XCTAssertEqual(lines.map(\.text), [
+            "Level up!", "Phase broken! The Fog Dragon is down to its last phase.", "2 creatures defeated", "1 chest opened",
+            "Great chest opened", "+120 coins", "+340 XP", "Buried treasure found", "Tin Bell",
+        ])
+        XCTAssertEqual(lines[1].mark, .token(.fogDragon, ring: .gold))
+        XCTAssertEqual(lines[4].mark, .token(.greatChest, ring: .gold))
+        XCTAssertEqual(lines[4].detail, "Southwark Park")
+        XCTAssertEqual(lines[7].detail, "+120 coins")
+        let visiting = WatchJourneyEnd(lair: WatchEndLine.lair(name: "Southwark Park", visited: 3, need: 5, done: false))
+        XCTAssertEqual(JourneyEndCard.lines(for: visiting).map(\.text), ["Lair: 3 of 5 tiles"])
+        XCTAssertEqual(JourneyEndCard.lines(for: visiting).first?.mark, .token(.lair, ring: .sage))
+    }
+
+    // MARK: Districts (0.9.0)
+
+    private func moving(_ speed: Double?, district: String?, state: NavigationState = .active) -> WatchNavigationUpdate {
+        WatchNavigationUpdate(state: state, instruction: instruction(1), distanceToInstructionMeters: 400, distanceMeters: 4_000,
+                              elapsedSeconds: 900, elevationGainMeters: 40, speedMps: speed, timestamp: Date(), districtName: district)
+    }
+
+    func testADistrictIsNamedOnceAtTheNextStandstillNeverWhileMoving() throws {
+        let store = RideStore()
+        let t0 = Date(timeIntervalSince1970: 200_000)
+        store.apply(summary: summary(), receivedAt: t0)
+        let riverlands = "Rotherhithe, the Riverlands"
+        // Riding into Rotherhithe: nothing to read while moving.
+        store.apply(update: moving(6.2, district: riverlands), receivedAt: t0.addingTimeInterval(10))
+        XCTAssertNil(store.districtLine(at: t0.addingTimeInterval(11)))
+        store.apply(update: moving(5.8, district: riverlands), receivedAt: t0.addingTimeInterval(20))
+        XCTAssertNil(store.districtLine(at: t0.addingTimeInterval(40)))
+
+        // Stopping: once still for five seconds it is named, even though the phone,
+        // with nothing new to say, sends no more updates.
+        let stop = try WatchMessages.navigationUpdate(from: WatchMessages.navigationUpdate(moving(0.3, district: riverlands)))
+        store.apply(update: stop, receivedAt: t0.addingTimeInterval(60))
+        XCTAssertNil(store.districtLine(at: t0.addingTimeInterval(63)), "not still for long enough")
+        XCTAssertEqual(store.districtLine(at: t0.addingTimeInterval(65)), riverlands)
+        store.apply(update: moving(0, district: riverlands), receivedAt: t0.addingTimeInterval(70))
+        XCTAssertEqual(store.districtLine(at: t0.addingTimeInterval(75)), riverlands, "it stays while the rider stands")
+        // Old news is not shown: the phone has been quiet too long to know.
+        XCTAssertNil(store.districtLine(at: t0.addingTimeInterval(70 + RideStore.staleAfter + 1)))
+
+        // Moving off: it goes, and this journey does not name it again.
+        store.apply(update: moving(4.5, district: riverlands), receivedAt: t0.addingTimeInterval(90))
+        XCTAssertNil(store.districtLine(at: t0.addingTimeInterval(90)))
+        store.apply(update: moving(0, district: riverlands), receivedAt: t0.addingTimeInterval(200))
+        XCTAssertNil(store.districtLine(at: t0.addingTimeInterval(210)), "once per district per journey")
+
+        // The next district is named at its own standstill.
+        let fog = "Bermondsey, in the fog"
+        store.apply(update: moving(6, district: fog), receivedAt: t0.addingTimeInterval(300))
+        store.apply(update: moving(0.2, district: fog), receivedAt: t0.addingTimeInterval(310))
+        XCTAssertEqual(store.districtLine(at: t0.addingTimeInterval(316)), fog)
+    }
+
+    func testANewJourneyNamesTheDistrictsAgainAndAnOlderPhoneNamesNone() {
+        let store = RideStore()
+        let t0 = Date(timeIntervalSince1970: 300_000)
+        let riverlands = "Rotherhithe, the Riverlands"
+        store.apply(summary: summary(), receivedAt: t0)
+        store.apply(update: moving(0, district: riverlands), receivedAt: t0)
+        store.apply(update: moving(0, district: riverlands), receivedAt: t0.addingTimeInterval(6))
+        XCTAssertEqual(store.districtLine(at: t0.addingTimeInterval(6)), riverlands)
+        // Paused: the footer says so instead, and the line waits.
+        store.apply(update: moving(0, district: riverlands, state: .paused), receivedAt: t0.addingTimeInterval(8))
+        XCTAssertTrue(store.isPaused)
+        store.apply(update: moving(5, district: riverlands), receivedAt: t0.addingTimeInterval(20))
+        store.apply(update: moving(nil, district: nil, state: .completed), receivedAt: t0.addingTimeInterval(30))
+        XCTAssertNil(store.districtLine(at: t0.addingTimeInterval(40)), "no journey, no district")
+
+        // The next journey through the same district names it again.
+        store.apply(summary: summary(), receivedAt: t0.addingTimeInterval(1_000))
+        store.apply(update: moving(0.1, district: riverlands), receivedAt: t0.addingTimeInterval(1_010))
+        XCTAssertEqual(store.districtLine(at: t0.addingTimeInterval(1_016)), riverlands)
+
+        // An older phone sends no district: nothing is named.
+        let older = RideStore()
+        older.apply(summary: summary(), receivedAt: t0)
+        older.apply(update: moving(0, district: nil), receivedAt: t0)
+        older.apply(update: moving(0, district: nil), receivedAt: t0.addingTimeInterval(10))
+        XCTAssertNil(older.districtLine(at: t0.addingTimeInterval(20)))
+    }
+
+    func testJourneysEndSaysWhichDistrictsBecameYoursAndWhichAreComplete() throws {
+        var full = end(endedAt: nil)
+        full.districts = ["Rotherhithe", "Bermondsey"]
+        full.completedDistricts = ["Rotherhithe"]
+        let decoded = try WatchMessages.journeyEnd(from: WatchMessages.journeyEnd(full))
+        let lines = JourneyEndCard.lines(for: decoded)
+        XCTAssertEqual(Array(lines.map(\.text).prefix(4)), ["Level up!", "District complete!", "Yours: Rotherhithe, Bermondsey", "2 creatures defeated"])
+        XCTAssertEqual(lines[1].detail, "Rotherhithe")
+        XCTAssertEqual(lines[1].mark, .token(.laurels, ring: .gold))
+        XCTAssertEqual(lines[2].mark, .token(.flag, ring: .sage))
+
+        let two = WatchJourneyEnd(completedDistricts: ["Rotherhithe", "Deptford"])
+        XCTAssertEqual(JourneyEndCard.lines(for: two).map(\.text), ["2 districts complete!"])
+        XCTAssertEqual(JourneyEndCard.lines(for: two).first?.detail, "Rotherhithe, Deptford")
+        // None, or an older phone: no district lines.
+        XCTAssertEqual(JourneyEndCard.lines(for: WatchJourneyEnd(districts: [], completedDistricts: nil)).map(\.text), ["Saved to your Journal"])
     }
 }

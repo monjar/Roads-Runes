@@ -64,6 +64,17 @@ extension MockAPI {
             var summary = SampleData.sampleAdventureSummary
             summary.ride = ride
             summary.quest = ride.questId.flatMap { self.storedQuests[$0] }
+            // What 0.7.2 adds to Journey's end: finds, what the level gave, a rest token.
+            summary.itemsFound = SampleData.sampleItemsFound
+            summary.levelUps = summary.levelUps.map { levelUp in
+                var levelUp = levelUp
+                if levelUp.kind == .overall { levelUp.rewards = SampleData.sampleLevelSteps.first { $0.level == levelUp.to }?.rewards }
+                return levelUp
+            }
+            summary.streak = StreakOutcome(days: 4, longest: 6, extended: true, restTokenUsed: true)
+            // The parish (0.9.0): the districts passed through, and the week's pay.
+            summary.districts = SampleData.sampleDistrictOutcomes
+            summary.districtPay = SampleData.sampleDistrictPay
             return summary
         }
     }
@@ -96,9 +107,13 @@ extension MockAPI {
                 .filter { $0.status == .processed || $0.status == .flagged }
                 .sorted { $0.startedAt > $1.startedAt }
                 .map { ride in
-                    AdventureEntry(ride: ride, quest: ride.questId.flatMap { self.storedQuests[$0] }, xpAwarded: 420,
-                                   discoveries: SampleData.sampleDiscoveries, newTerritoryMeters: 12600, newCells: 34,
-                                   levelUps: [], notes: self.rideNotes[ride.id], photos: [])
+                    var entry = AdventureEntry(ride: ride, quest: ride.questId.flatMap { self.storedQuests[$0] }, xpAwarded: 420,
+                                               discoveries: SampleData.sampleDiscoveries, newTerritoryMeters: 12600, newCells: 34,
+                                               levelUps: [], notes: self.rideNotes[ride.id], photos: [],
+                                               entry: "Out past the water and back by the long way. One chest, and the troll stayed asleep.")
+                    entry.entryWritten = EntryWritten(lines: ["You went the long way round by the water.",
+                                                              "A chest gave up its coins, and the troll never woke."], by: "model")
+                    return entry
                 }
             return Page(items: Array(entries.prefix(limit ?? 25)))
         }
@@ -151,7 +166,42 @@ extension MockAPI {
 
     // MARK: Friends & feed
 
-    public func storyArcs() async throws -> [StoryArc] { try await run { SampleData.sampleStoryArcs } }
+    /// The authored arcs, and (0.9.0) Midsummer's arc, open for another nine days.
+    public func storyArcs() async throws -> [StoryArc] {
+        try await run { SampleData.sampleStoryArcs + [SampleData.sampleSeasonArc(endsAt: Date().addingTimeInterval(9 * 86_400))] }
+    }
+    public func weekNotice() async throws -> WeekNotice { try await run { SampleData.sampleWeekNotice } }
+    public func runes() async throws -> RunesState { try await run { self.storedRunes } }
+    public func raiseRune(id: String) async throws -> RunesState {
+        try await run {
+            guard let index = self.storedRunes.runes.firstIndex(where: { $0.id == id }), self.storedRunes.runes[index].canRaise else {
+                throw APIError.server(code: APIErrorCode.conflict, message: "Raising it needs more stones of it", status: 409)
+            }
+            self.storedRunes.runes[index].rank += 1
+            self.storedRunes.runes[index].shards -= self.storedRunes.runes[index].nextRank?.shards ?? 2
+            return self.storedRunes
+        }
+    }
+    public func inscribe(runes: [String]) async throws -> RunesState {
+        try await run {
+            guard runes.count <= self.storedRunes.slots else {
+                throw APIError.server(code: APIErrorCode.conflict, message: "No slot open for it", status: 409)
+            }
+            self.storedRunes.inscribed = runes
+            for index in self.storedRunes.runes.indices {
+                self.storedRunes.runes[index].inscribed = runes.contains(self.storedRunes.runes[index].id)
+            }
+            return self.storedRunes
+        }
+    }
+    public func runeCuts() async throws -> [RuneCutInfo] { try await run { SampleData.sampleRuneCuts } }
+    public func deeds() async throws -> DeedsState { try await run { SampleData.sampleDeeds } }
+    public func runeRide(_ request: RuneRideRequest) async throws -> RuneRideResponse {
+        try await run {
+            RuneRideResponse(alternatives: [SampleData.sampleRoute], rune: request.rune, roadForm: "LOOP",
+                             hint: "Cut Raido here: a loop, about 2.4 km.", engine: "mock")
+        }
+    }
 
     public func friends() async throws -> [FriendSummary] { try await run { self.storedFriends } }
     public func searchUsers(query: String) async throws -> [FriendSummary] {

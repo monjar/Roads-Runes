@@ -25,6 +25,13 @@ ALL_FEATURE_FLAGS: tuple[str, ...] = (
     "strava",
     "llm_narrative",
     "nl_route_requests",
+    "codex",
+    "effort_combat",
+    "ink_fog",
+    "chronicle_llm",
+    "pledge",
+    "parchment_map",
+    "place_lore",
 )
 
 DEFAULT_FLAGS: dict[str, bool] = {
@@ -37,7 +44,30 @@ DEFAULT_FLAGS: dict[str, bool] = {
     "strava": False,
     "llm_narrative": False,
     "nl_route_requests": True,
+    # The Journal's codex: what the world is, and what this player has met (0.6.0).
+    "codex": True,
+    # Fights decided by effort over an outing instead of one pass/fail check (0.6.1).
+    # Off until the build that understands it is on the phone; see docs/ROADMAP.md.
+    "effort_combat": False,
+    # The fog as one ink wash on the World tab, with a frontier chevron (0.7.0). The
+    # Journal's map card draws it whatever this says.
+    "ink_fog": False,
+    # The journal entry written by a model after the summary is committed (0.7.2,
+    # app/chronicle/written.py). The composed entry stays either way.
+    "chronicle_llm": False,
+    # The pledge (0.7.3): promise a creature or a quest for today or tomorrow, kept
+    # or never mentioned. On where the game is made (DEVELOPMENT_FLAGS), off elsewhere.
+    "pledge": False,
+    # The World tab's map as a bundled parchment style (0.7.3). Other tabs keep theirs.
+    "parchment_map": False,
+    # Place lore from Wikidata (0.9.0, discoveries/place_lore.py): a checked one-line
+    # description kept on a place at tile import. Off until it has been read over.
+    "place_lore": False,
 }
+
+# Flags on wherever ENVIRONMENT is development (the local stack and the Fly backend)
+# until FEATURE_FLAGS says otherwise; tests and production keep DEFAULT_FLAGS.
+DEVELOPMENT_FLAGS: dict[str, bool] = {"pledge": True}
 
 
 class Settings(BaseSettings):
@@ -99,6 +129,9 @@ class Settings(BaseSettings):
     feature_flags: str = ""
     job_queue: Literal["inline", "redis"] = "inline"
     rate_limit_per_minute: int = 240
+    # A letter is shown again only on a journey this many days after it was written
+    # (0.7.3, between/letters.py): "a season or more later".
+    letter_min_age_days: int = 90
 
     @field_validator("h3_resolution")
     @classmethod
@@ -118,6 +151,8 @@ class Settings(BaseSettings):
         FEATURE_FLAGS is a comma separated list; `name` enables, `!name` disables.
         """
         resolved = dict(DEFAULT_FLAGS)
+        if self.environment == "development":
+            resolved.update(DEVELOPMENT_FLAGS)
         for raw in self.feature_flags.split(","):
             token = raw.strip()
             if not token:

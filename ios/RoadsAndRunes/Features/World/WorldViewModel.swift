@@ -1,6 +1,7 @@
 import Foundation
 import MapKit
 import Observation
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import UIKit
 
@@ -17,8 +18,18 @@ final class WorldViewModel {
     private(set) var visibleBox: BoundingBox?
 
     var selectedPlace: Place?
-    /// A chest, piece or monster the rider tapped; the card says how to beat it.
-    var selectedObject: WorldObject?
+    /// A chest, piece or monster the rider tapped; the card says what it wants.
+    var selectedObject: WorldObject? {
+        didSet { if selectedObject?.id != oldValue?.id { readGround(round: selectedObject) } }
+    }
+    /// How much of the ground round the selected creature is new to the player, for its card.
+    private(set) var groundRound: GroundRound?
+
+    struct GroundRound: Equatable {
+        let objectId: UUID
+        let unread: Int
+        let of: Int
+    }
     private(set) var results: [Place] = []
     private(set) var resultsTitle: String?
     private(set) var activeShortcut: PlaceShortcut?
@@ -36,6 +47,8 @@ final class WorldViewModel {
     private(set) var recentClaimDetail: String?
     /// The quest whose marker was tapped, to be opened where quests live.
     var openedQuestMarker: UUID?
+    /// The legend whose mark was tapped (0.8.0): its page opens.
+    var openedLegend: Legend?
     private var claimToast: Task<Void, Never>?
     /// What has already been pointed out for being within reach, so its card opens once.
     private var announced: Set<UUID> = []
@@ -75,11 +88,105 @@ final class WorldViewModel {
     /// With the fog switched off on the server, a ride must not paint hexes either:
     /// they were a readout nobody could act on, so the map is plain until they are a game.
     func rebuildCells() {
+        // The fog as ink (0.7.0, `ink_fog`): the hexagons give way to one wash.
+        if container.session.isEnabled("ink_fog") {
+            cells = []
+            Task { await loadInk() }
+            return
+        }
         guard let snapshot, snapshot.isEnabled(FeatureFlag.fogOfWar) else {
             cells = []
             return
         }
         cells = fogGrid.render(serverCells: snapshot.cells, localStates: container.rideRecorder.localCellStates)
+    }
+
+    // MARK: The fog as ink (0.7.0)
+
+    private(set) var inkWash: [[Coordinate]] = []
+    /// Where the nearest unread ground is, for the frontier chevron.
+    private(set) var frontier: Coordinate?
+    private(set) var cuts: [RuneCutInfo] = []
+    private var inkCentre: Coordinate?
+
+    private func loadInk() async {
+        guard let here = center ?? position else { return }
+        if let last = inkCentre, GeoMath.distance(last, here) < 1500, !inkWash.isEmpty { return }
+        inkCentre = here
+        let dLat = 6000 / 111_195.0, dLon = 6000 / (111_195.0 * max(0.2, cos(here.latitude * .pi / 180)))
+        let box = BoundingBox(minLat: here.latitude - dLat, minLon: here.longitude - dLon,
+                              maxLat: here.latitude + dLat, maxLon: here.longitude + dLon)
+        guard let read = try? await container.api.exploration(in: box) else { return }
+        let ridden = Set(container.rideRecorder.localCellStates.keys)
+        let cellsRead = Set(read.cells.map(\.h3)).union(ridden)
+        inkWash = InkFog.wash(bounds: InkFog.padded(box), outlines: container.cellIndexing.outlines(of: Array(cellsRead)))
+        if let position {
+            frontier = InkFog.nearestUnread(from: position, read: cellsRead, indexing: container.cellIndexing)
+        }
+        if cuts.isEmpty { cuts = (try? await container.api.runeCuts()) ?? [] }
+    }
+
+    /// Where rune rides were made: "Raido rune ride, by the pond".
+    /// What to do next, for the card under the map (NextUp).
+    var nextUp: NextUp {
+        NextUp.choose(character: container.session.character, objects: worldObjects, position: position, legend: legend,
+                      inReach: isWithinReach)
+    }
+
+    // MARK: Legends and lairs (0.8.0)
+
+    /// The legend awake, from `/legends`.
+    var legend: Legend? { container.legends.awake }
+
+    /// The lairs on the map: a kind of their own, never among the things to pass or fight.
+    var lairs: [WorldObject] {
+        let known = Dictionary((placedObjects + (snapshot?.worldObjects ?? [])).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return known.values.filter { $0.isLair && $0.status == .spawned }.sorted { $0.id.uuidString < $1.id.uuidString }
+    }
+
+    /// Each lair's seven tiles, outlined, the visited ones filled.
+    var lairTiles: [LairTile] {
+        let resolution = container.session.config?.h3Resolution ?? ExplorationDefaults.h3Resolution
+        return lairs.flatMap { $0.lair?.tiles(indexing: container.cellIndexing, resolution: resolution) ?? [] }
+    }
+
+    /// The legend as somewhere to go: the planner plans to it, and the journey is for it.
+    static func place(for legend: Legend) -> Place {
+        Place(id: "legend-\(legend.id.uuidString)", name: legend.name, category: legend.anchorName, address: nil, mark: .of(legend),
+              coordinate: legend.coordinate, source: .quarry(legend.id))
+    }
+
+    /// A rune shape the player rode, said when its mark is tapped; it clears itself.
+    private(set) var cutNote: String?
+
+    func showCut(_ title: String) {
+        cutNote = title
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            if cutNote == title { cutNote = nil }
+        }
+    }
+
+    /// The rune shapes ridden, drawn smaller than a rune stone to pick up so the
+    /// two are not mistaken for each other.
+    var cutMarkers: [MapMarker] {
+        cuts.map { cut in
+            MapMarker(id: "cut-\(cut.id)", coordinate: cut.coordinate, kind: .poi,
+                      title: cut.placeName.map { "\(cut.name) rune ride, by \($0)" } ?? "\(cut.name) rune ride",
+                      mark: .rune(cut.runeId))
+        }
+    }
+
+    /// Takes the map to the nearest unread ground.
+    func goToFrontier() {
+        guard let frontier else { return }
+        camera = MapCamera(center: frontier, zoom: 15)
+    }
+
+    /// The bearing from here to the nearest unread ground, in degrees, for the chevron.
+    var frontierBearing: Double? {
+        guard let frontier, let position else { return nil }
+        return GeoMath.bearing(from: position, to: frontier)
     }
 
     func regionChanged(_ box: BoundingBox) {
@@ -112,8 +219,16 @@ final class WorldViewModel {
         out += objects.map { object in
             MapMarker(
                 id: "object-\(object.id.uuidString)", coordinate: object.coordinate, kind: Self.markerKind(for: object),
-                title: object.name, inReach: isWithinReach(object)
+                title: object.shownName, inReach: isWithinReach(object), mark: .of(object)
             )
+        }
+        // A lair's middle, and the legend awake, larger than anything else (0.8.0).
+        out += lairs.map { lair in
+            MapMarker(id: "object-\(lair.id.uuidString)", coordinate: lair.coordinate, kind: .lair, title: lair.shownName, mark: .lair)
+        }
+        if let legend {
+            out.append(MapMarker(id: "legend-\(legend.id.uuidString)", coordinate: legend.coordinate, kind: .legend, title: legend.name,
+                                 mark: .of(legend)))
         }
         return out
     }
@@ -157,7 +272,7 @@ final class WorldViewModel {
     func claim(_ object: WorldObject) async {
         guard claiming == nil else { return }
         guard let fix = container.location.lastFix else {
-            claimError = "Waiting for your location"
+            claimError = "Can't find your location yet. Try again in a moment."
             return
         }
         claiming = object.id
@@ -170,10 +285,18 @@ final class WorldViewModel {
             )
             take(result.object)
             selectedObject = nil
-            let detail = result.setCompleted.map { "\($0.name) complete · +\($0.bonusAC) AC" } ?? result.object.setStanding?.line
-            show(claimed: result.object, quest: result.questCompleted?.title, detail: detail)
+            var detail = result.setCompleted.map { "\($0.name) complete · \(LoreCopy.earned($0.bonusAC))" } ?? result.object.setStanding?.line
+            // What the chest held besides coins (0.7.2).
+            if let found = result.itemFound { detail = [detail, Self.findLine(found)].compactMap { $0 }.joined(separator: " · ") }
+            show(claimed: result.object, quest: result.questCompleted?.title, detail: detail, find: result.itemFound)
+            // Opened mid-journey: the wrist shows the find in its overlay too.
+            if container.rideRecorder.isActive, let found = result.itemFound {
+                container.watch.send(objectiveCompleted: .found(name: found.name, icon: found.icon, rarity: found.rarity,
+                                                                       detail: found.soldOnTheSpot ? "Sold: your bag was full" : nil))
+            }
             container.analytics.track(.worldObjectClaimed, properties: ["kind": object.kind.rawValue, "name": object.name, "method": "TAP"])
             await container.session.refreshCharacter()
+            if result.itemFound != nil { await container.session.refreshInventory() }
         } catch let error as APIError where error.errorCode == APIErrorCode.objectGone {
             // Already opened, on a ride or another phone: it should not still be on the map.
             var gone = object
@@ -185,17 +308,74 @@ final class WorldViewModel {
         }
     }
 
+    /// A lamp (docs/COMBAT.md): a creature comes to the nearest named place within
+    /// 250 m of the spot, and the coins go only if one comes.
+    static let lampCost = 50
+    private(set) var leavingLamp = false
+    var lampError: String?
+    /// What the server says a lamp would do at the open place, asked before any
+    /// coins are spent; nil while asking, or on a server without the check.
+    private(set) var lampCheck: LampCheck?
+
+    /// Ask, for free, whether a lamp at this place would bring a creature and where.
+    func checkLamp(at place: Place) async {
+        lampCheck = nil
+        lampCheck = try? await container.api.lampCheck(at: place.coordinate)
+    }
+
+    func leaveLamp(at place: Place) async {
+        guard !leavingLamp else { return }
+        leavingLamp = true
+        lampError = nil
+        defer { leavingLamp = false }
+        do {
+            let came = try await container.api.lure(at: place.coordinate)
+            for object in came { take(object) }
+            guard let first = came.first else {
+                // An older server could take nothing and place nothing; say so.
+                lampError = "No creature came this time, so no coins were spent."
+                return
+            }
+            selectedPlace = nil
+            open(first)
+            container.analytics.track(.worldObjectClaimed, properties: ["kind": "LAMP", "name": place.name, "method": "LAMP"])
+            await container.session.refreshCharacter()
+            // A lamp from the bag may have gone instead of coins.
+            if lampCheck?.usesLampFromBag == true { await container.session.refreshInventory() }
+        } catch {
+            lampError = error.localizedDescription
+        }
+    }
+
+    /// "Found: Candle Stub", or the line for a find a full bag could not hold.
+    static func findLine(_ found: ItemFound) -> String {
+        found.soldOnTheSpot
+            ? "\(found.name) sold on the spot: your bag was full. \(LoreCopy.earned(found.soldFor ?? 0))"
+            : "Found: \(found.name)"
+    }
+
     /// The object as the server now has it replaces whatever the map was holding.
     private func take(_ object: WorldObject) {
         placedObjects.removeAll { $0.id == object.id }
         placedObjects.append(object)
     }
 
-    private func show(claimed object: WorldObject, quest: String?, detail: String?) {
+    private func show(claimed object: WorldObject, quest: String?, detail: String?, find: ItemFound? = nil) {
         recentClaim = object
         recentQuestTitle = quest
         recentClaimDetail = detail
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        // Signature haptics at rest (0.8.0): a chest knocks and rattles; a Rare find shimmers after it.
+        if object.kind == .chest {
+            SignatureHapticsPlayer.shared.play(.chest)
+        } else {
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        }
+        if SignatureHaptic.forFind(rarity: find?.rarity) != nil {
+            Task {
+                try? await Task.sleep(for: .milliseconds(900))
+                SignatureHapticsPlayer.shared.play(find: find?.rarity)
+            }
+        }
         claimToast?.cancel()
         claimToast = Task { [weak self] in
             try? await Task.sleep(for: .seconds(6))
@@ -219,6 +399,21 @@ final class WorldViewModel {
         if let objects = try? await container.api.worldObjects(near: here, radiusMeters: 6000) {
             placedObjects = objects
             container.nudges.note(objects: objects, around: here)
+            // The last world loaded, for a ride started where there is no signal (0.7.2).
+            let combat = container.session.config?.combat
+            let sheet = container.session.character?.sheet
+            try? container.worldCache.update { world in
+                world.center = here
+                world.radiusMeters = 6000
+                world.objects = objects
+                if let combat { world.combat = combat }
+                if let sheet { world.sheet = sheet }
+            }
+            // Next up on the Watch (0.7.3).
+            let known = worldObjects
+            Task { await container.publishWatchIdle(objects: known, around: here) }
+            // The bounty and how far, for the widgets (0.7.3).
+            WidgetSnapshotWriter.shared.worldLoaded()
         } else {
             objectsLoadedAt = nil
         }
@@ -226,7 +421,7 @@ final class WorldViewModel {
 
     var worldObjects: [WorldObject] {
         let known = Dictionary((placedObjects + (snapshot?.worldObjects ?? [])).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        return known.values.filter { $0.status == .spawned }.sorted { $0.id.uuidString < $1.id.uuidString }
+        return known.values.filter { $0.status == .spawned && !$0.isLair }.sorted { $0.id.uuidString < $1.id.uuidString }
     }
 
     /// The "?" rings: off when the rider says so, and never more than the nearest
@@ -261,13 +456,18 @@ final class WorldViewModel {
     }
 
     func tapMarker(_ marker: MapMarker) {
-        if let object = worldObjects.first(where: { "object-\($0.id.uuidString)" == marker.id }) {
+        if let legend, marker.id == "legend-\(legend.id.uuidString)" {
+            selectedPlace = nil
+            openedLegend = legend
+        } else if let object = (worldObjects + lairs).first(where: { "object-\($0.id.uuidString)" == marker.id }) {
             selectedPlace = nil
             claimError = nil
             selectedObject = object
             camera = MapCamera(center: object.coordinate)
         } else if marker.id.hasPrefix("quest-"), let questId = UUID(uuidString: String(marker.id.dropFirst(6))) {
             openedQuestMarker = questId
+        } else if marker.id.hasPrefix("cut-") {
+            showCut("You rode \(marker.title).")
         } else if let place = results.first(where: { "result-\($0.id)" == marker.id }) {
             select(place, moveCamera: false)
         } else if let discovery = snapshot?.discoveries.first(where: { "discovery-\($0.id.uuidString)" == marker.id }) {
@@ -280,6 +480,8 @@ final class WorldViewModel {
     func select(_ place: Place, moveCamera: Bool = true) {
         selectedObject = nil
         selectedPlace = place
+        lampError = nil
+        lampCheck = nil
         if moveCamera { camera = MapCamera(center: place.coordinate) }
         if place.address == nil { Task { await fillAddress(for: place) } }
     }
@@ -297,7 +499,7 @@ final class WorldViewModel {
     func dropPin(at coordinate: Coordinate) {
         let pin = Place(
             id: String(format: "pin-%.5f,%.5f", coordinate.latitude, coordinate.longitude),
-            name: "Dropped pin", category: nil, address: nil, symbol: "mappin",
+            name: "Dropped pin", category: nil, address: nil, mark: .pin,
             coordinate: coordinate, source: .pin
         )
         select(pin, moveCamera: false)
@@ -313,9 +515,48 @@ final class WorldViewModel {
     static func place(for object: WorldObject) -> Place {
         Place(
             id: "object-\(object.id.uuidString)", name: object.name, category: object.anchorName, address: nil,
-            symbol: object.kind == .monster ? "flame.fill" : (object.kind == .chest ? "shippingbox.fill" : "sparkles"),
-            coordinate: object.coordinate, source: .pin
+            mark: Mark.of(object),
+            coordinate: object.coordinate, source: object.kind == .monster ? .quarry(object.id) : .pin
         )
+    }
+
+    /// New ground counts against a creature inside its ground: the card says how
+    /// much of the ground round it is still unread. Asked of the server each time,
+    /// whether or not the fog is drawn.
+    private func readGround(round object: WorldObject?) {
+        groundRound = nil
+        guard let object, object.monster?.foughtByEffort == true else { return }
+        let reach = container.session.config?.combat?.groundMeters ?? 1000
+        let resolution = container.session.config?.h3Resolution ?? ExplorationDefaults.h3Resolution
+        let indexing = container.cellIndexing
+        Task { [weak self] in
+            let dLat = reach / 111_195, dLon = reach / (111_195 * max(0.2, cos(object.latitude * .pi / 180)))
+            let box = BoundingBox(minLat: object.latitude - dLat, minLon: object.longitude - dLon,
+                                  maxLat: object.latitude + dLat, maxLon: object.longitude + dLon)
+            guard let self, let read = try? await self.container.api.exploration(in: box), read.h3Resolution == resolution else { return }
+            let known = Set(read.cells.filter { $0.state == .visited || $0.state == .explored }.map(\.h3))
+            let round = Self.cells(round: object.coordinate, within: reach, resolution: resolution, indexing: indexing)
+            guard !round.isEmpty, self.selectedObject?.id == object.id else { return }
+            self.groundRound = GroundRound(objectId: object.id, unread: round.subtracting(known).count, of: round.count)
+        }
+    }
+
+    /// The cells whose centres lie within `meters` of a point, grown ring by ring.
+    static func cells(round centre: Coordinate, within meters: Double, resolution: Int, indexing: any CellIndexing) -> Set<String> {
+        let first = indexing.cell(latitude: centre.latitude, longitude: centre.longitude, resolution: resolution)
+        var inside: Set<String> = [first]
+        var frontier = [first]
+        while !frontier.isEmpty, inside.count < 2000 {
+            var next: [String] = []
+            for cell in frontier {
+                for n in indexing.neighbours(of: cell) where !inside.contains(n) && GeoMath.distance(indexing.center(of: n), centre) <= meters {
+                    inside.insert(n)
+                    next.append(n)
+                }
+            }
+            frontier = next
+        }
+        return inside
     }
 
     func locateMe() {
@@ -380,13 +621,13 @@ final class WorldViewModel {
     }
 
     static func place(from discovery: DiscoverySummary) -> Place {
-        let kind = discovery.category == .unknown ? "Discovery" : discovery.category.rawValue.capitalized
+        let kind = discovery.category == .unknown ? "Place" : discovery.category.rawValue.capitalized
         return Place(
             id: "discovery-\(discovery.id.uuidString)",
             name: discovery.name,
-            category: "\(kind) · \(discovery.discoveredByUser ? "discovered" : "a mystery")",
+            category: "\(kind) · \(discovery.discoveredByUser ? "found" : "hidden place")",
             address: nil,
-            symbol: DiscoveryIcon.symbol(for: discovery.category),
+            mark: .place(discovery.category.rawValue),
             coordinate: discovery.coordinate,
             source: .discovery(discovery.id)
         )

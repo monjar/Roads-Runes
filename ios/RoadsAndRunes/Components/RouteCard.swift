@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -201,10 +202,7 @@ struct RouteStopRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack {
-                Circle().fill(DiscoveryIcon.color(for: poi.category))
-                Image(systemName: DiscoveryIcon.symbol(for: poi.category)).font(.system(size: 16, weight: .bold)).foregroundStyle(Theme.Colors.cream)
-            }
+            MarkView(DiscoveryIcon.mark(for: poi.category))
             .frame(width: 40, height: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(poi.name) · \(poi.category.rawValue.lowercased())").font(Theme.Typography.text(14, .semibold)).foregroundStyle(Theme.Colors.ink).lineLimit(1)

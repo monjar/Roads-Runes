@@ -66,6 +66,7 @@ public enum Endpoints {
 
     // MARK: Character
     public static func classes() -> Endpoint { Endpoint(method: .get, path: "/character/classes") }
+    public static func codex() -> Endpoint { Endpoint(method: .get, path: "/codex") }
     public static func createCharacter(_ body: CharacterCreate) throws -> Endpoint { try .json(.post, "/character", body: body) }
     public static func character() -> Endpoint { Endpoint(method: .get, path: "/character") }
     public static func changeClass(_ body: CharacterClassChange) throws -> Endpoint { try .json(.patch, "/character", body: body) }
@@ -83,6 +84,11 @@ public enum Endpoints {
         try .json(.post, "/world/objects/\(id.uuidString)/claim", body: body, timeout: 20)
     }
     public static func lure(_ body: LureRequest) throws -> Endpoint { try .json(.post, "/world/objects/lure", body: body) }
+    public static func lampCheck(at center: Coordinate) -> Endpoint {
+        Endpoint(method: .get, path: "/world/objects/lure", query: [
+            QueryItem("latitude", String(center.latitude)), QueryItem("longitude", String(center.longitude)),
+        ])
+    }
     public static func walletTransactions(limit: Int?, cursor: String?) -> Endpoint {
         var query: [QueryItem] = []
         if let limit { query.append(QueryItem("limit", String(limit))) }
@@ -91,12 +97,56 @@ public enum Endpoints {
     }
     public static func abilities() -> Endpoint { Endpoint(method: .get, path: "/character/abilities") }
     public static func unlockAbility(id: String) -> Endpoint { Endpoint(method: .post, path: "/character/abilities/\(id)/unlock") }
+    public static func titles() -> Endpoint { Endpoint(method: .get, path: "/character/titles") }
+    public static func wearTitle(_ body: TitleChoice) throws -> Endpoint { try .json(.put, "/character/title", body: body) }
     public static func bikes() -> Endpoint { Endpoint(method: .get, path: "/character/bikes") }
     public static func createBike(_ body: BikeIn) throws -> Endpoint { try .json(.post, "/character/bikes", body: body) }
     public static func updateBike(id: UUID, _ body: BikeIn) throws -> Endpoint { try .json(.patch, "/character/bikes/\(id.uuidString)", body: body) }
     public static func deleteBike(id: UUID) -> Endpoint { Endpoint(method: .delete, path: "/character/bikes/\(id.uuidString)") }
     public static func riderProfile() -> Endpoint { Endpoint(method: .get, path: "/character/rider-profile") }
     public static func updateRiderProfile(_ body: RiderProfile) throws -> Endpoint { try .json(.put, "/character/rider-profile", body: body) }
+
+    // MARK: What you carry (0.7.2)
+    public static func inventory() -> Endpoint { Endpoint(method: .get, path: "/inventory") }
+    public static func wearGear(_ body: GearChoice) throws -> Endpoint { try .json(.put, "/inventory/gear", body: body) }
+    public static func sellItem(id: UUID) -> Endpoint { Endpoint(method: .post, path: "/inventory/items/\(id.uuidString)/sell") }
+    public static func useConsumable(id: String, _ body: ConsumableUseRequest) throws -> Endpoint {
+        try .json(.post, "/inventory/consumables/\(id)/use", body: body)
+    }
+    public static func stall() -> Endpoint { Endpoint(method: .get, path: "/inventory/stall") }
+    public static func buyOffer(id: String) -> Endpoint { Endpoint(method: .post, path: "/inventory/stall/\(id)/buy") }
+    public static func levelRewards() -> Endpoint { Endpoint(method: .get, path: "/inventory/levels") }
+
+    // MARK: Legends, lairs and treasure (0.8.0)
+    public static func legends() -> Endpoint { Endpoint(method: .get, path: "/legends") }
+    public static func legend(id: UUID) -> Endpoint { Endpoint(method: .get, path: "/legends/\(id.uuidString)") }
+    public static func moveLegend(id: UUID) -> Endpoint { Endpoint(method: .post, path: "/legends/\(id.uuidString)/move", timeout: 60) }
+    public static func treasureClues() -> Endpoint { Endpoint(method: .get, path: "/inventory/treasure") }
+
+    // MARK: The parish (0.9.0)
+    public static func districts() -> Endpoint { Endpoint(method: .get, path: "/districts") }
+    public static func district(id: String) -> Endpoint {
+        let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        return Endpoint(method: .get, path: "/districts/\(escaped)")
+    }
+    public static func districtHere(at point: Coordinate) -> Endpoint {
+        Endpoint(method: .get, path: "/districts/here", query: [QueryItem("lat", String(point.latitude)), QueryItem("lon", String(point.longitude))])
+    }
+    public static func atlas(year: Int) -> Endpoint {
+        Endpoint(method: .get, path: "/journal/atlas", query: [QueryItem("year", String(year))], timeout: 60)
+    }
+    public static func setLook(_ body: LookChoice) throws -> Endpoint { try .json(.put, "/inventory/look", body: body) }
+
+    // MARK: Between rides (0.7.3)
+    /// `today` is the phone's own date ("2026-10-05"): the server's day is UTC's.
+    public static func pledges(today: String) -> Endpoint { Endpoint(method: .get, path: "/pledge", query: [QueryItem("today", today)]) }
+    public static func pledge(_ body: PledgeRequest) throws -> Endpoint { try .json(.put, "/pledge", body: body) }
+    public static func cancelPledge(day: String) -> Endpoint { Endpoint(method: .delete, path: "/pledge/\(day)") }
+    public static func letters() -> Endpoint { Endpoint(method: .get, path: "/letters") }
+    public static func writeLetter(_ body: LetterCreate) throws -> Endpoint { try .json(.post, "/letters", body: body) }
+    public static func deleteLetter(id: UUID) -> Endpoint { Endpoint(method: .delete, path: "/letters/\(id.uuidString)") }
+    /// The board picks a destination and draws the route there and back: a plan, so it waits as long as one.
+    public static func sealedQuest(_ body: SealedQuestRequest) throws -> Endpoint { try .json(.post, "/quests/sealed", body: body, timeout: 120) }
 
     // MARK: World
     public static func world(center: Coordinate, radiusMeters: Double) -> Endpoint {
@@ -196,6 +246,13 @@ public enum Endpoints {
         Endpoint(method: .get, path: "/users/search", query: [QueryItem("q", query), QueryItem("limit", String(limit))])
     }
     public static func storyArcs() -> Endpoint { Endpoint(method: .get, path: "/quests/story") }
+    public static func weekNotice() -> Endpoint { Endpoint(method: .get, path: "/quests/week") }
+    public static func runes() -> Endpoint { Endpoint(method: .get, path: "/runes") }
+    public static func raiseRune(id: String) -> Endpoint { Endpoint(method: .post, path: "/runes/\(id)/rank") }
+    public static func inscribe(_ body: InscribeRequest) throws -> Endpoint { try .json(.put, "/runes/inscribed", body: body) }
+    public static func runeCuts() -> Endpoint { Endpoint(method: .get, path: "/runes/cuts") }
+    public static func deeds() -> Endpoint { Endpoint(method: .get, path: "/character/deeds") }
+    public static func runeRide(_ body: RuneRideRequest) throws -> Endpoint { try .json(.post, "/routes/rune", body: body, timeout: 60) }
     public static func friends() -> Endpoint { Endpoint(method: .get, path: "/friends") }
     public static func friendRequests() -> Endpoint { Endpoint(method: .get, path: "/friends/requests") }
     public static func sendFriendRequest(userId: UUID) throws -> Endpoint {

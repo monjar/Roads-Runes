@@ -43,7 +43,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "New roads, read and on the map. The edge moved while you were out."
     },
     {
       "id": "EXPLORER_THREE_REGIONS",
@@ -84,7 +85,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "Three patches of fog, three first visits. The map has fewer holes in it."
     },
     {
       "id": "EXPLORER_UNVISITED_PARK",
@@ -122,7 +124,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "{poiName}, reached at last. It had been green all along."
     },
     {
       "id": "EXPLORER_NEW_LOOP",
@@ -165,7 +168,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "A loop, mostly new, and you came out where you went in."
     },
     {
       "id": "EXPLORER_LANDMARK",
@@ -199,7 +203,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "{poiName}, reached. It is on your map now, not only on everyone else's."
     },
     {
       "id": "EXPLORER_CONNECT_REGIONS",
@@ -242,7 +247,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "Two places you knew, and the way between them you did not. Now you know that too."
     },
     {
       "id": "EXPLORER_OUT_AND_BACK",
@@ -289,7 +295,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "Out one way, back another. Twice the map for one outing."
     },
     {
       "id": "EXPLORER_VIEWPOINT",
@@ -331,7 +338,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "{poiName}, and the height to get there. The view was paid for."
     },
     {
       "id": "EXPLORER_TRAIL",
@@ -368,7 +376,8 @@
       ],
       "activities": [
         "RIDE"
-      ]
+      ],
+      "completion": "Off the tarmac and along the trail. It went where it said it would."
     },
     {
       "id": "EXPLORER_FAR_WANDER",
@@ -409,7 +418,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "Further than your map went. It goes further now."
     },
     {
       "id": "EXPLORER_WATERSIDE",
@@ -459,7 +469,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "To the water and back, with new roads on the way."
     },
     {
       "id": "EXPLORER_CAFE_FRONTIER",
@@ -499,7 +510,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "A café at the edge of the map. The edge has moved; the café has not."
     },
     {
       "id": "EXPLORER_FRONTIER_PATROL",
@@ -533,7 +545,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "Four places on the frontier, pushed. The fog has less to work with."
     },
     {
       "id": "EXPLORER_LONG_DISCOVERY",
@@ -573,7 +586,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "A long way, most of it unknown. Less of it is unknown now."
     },
     {
       "id": "WIZARD_HIDDEN_LANDMARK",
@@ -606,7 +620,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "{poiName}, found. Somebody meant something by it, and you were there."
     },
     {
       "id": "WARRIOR_SUMMIT",
@@ -644,7 +659,8 @@
       ],
       "activities": [
         "RIDE"
-      ]
+      ],
+      "completion": "Climbed. The top was where it said it was."
     },
     {
       "id": "SCRIBE_DOCUMENT_PLACE",
@@ -687,7 +703,9 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "Photographed and written down. One place, on the record.",
+      "waitingReason": "Waiting for a landmark within reach."
     },
     {
       "id": "WIZARD_RIDDLE_VIEWPOINT",
@@ -726,7 +744,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "The riddle had a place in it. You found the place."
     },
     {
       "id": "WIZARD_WATER_CIPHER",
@@ -767,7 +786,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "The water the riddle meant. It kept whatever it was keeping."
     },
     {
       "id": "WIZARD_STRANGE_MARKER",
@@ -805,7 +825,9 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "Stood at, looked at, written about. It still explains nothing.",
+      "waitingReason": "Waiting for a marker within reach."
     },
     {
       "id": "WIZARD_LEY_LINE",
@@ -839,7 +861,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "Three points, one line. The line was there before you; it is yours as well now."
     },
     {
       "id": "WIZARD_OLD_GROUND",
@@ -883,7 +906,9 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "The old ground, reached by new roads. It did not seem to mind.",
+      "waitingReason": "Waiting for old ground within reach."
     },
     {
       "id": "WARRIOR_LONG_HAUL",
@@ -923,10 +948,13 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "The distance, covered. Nothing clever about it, which is the point."
     },
     {
       "id": "WARRIOR_STEADY_TEMPO",
+      "_retired": "0.6.1: it asked for an average speed, and speed is never asked for (docs/PRODUCT_SPEC.md). Kept so quests already issued still resolve; never offered again.",
+      "retired": true,
       "characterClass": "WARRIOR",
       "questType": "COMPLETE_DISTANCE",
       "minLevel": 1,
@@ -973,7 +1001,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "Done. This one is not posted any more."
     },
     {
       "id": "WARRIOR_HOUR_OF_IRON",
@@ -1011,7 +1040,8 @@
       ],
       "activities": [
         "RIDE"
-      ]
+      ],
+      "completion": "The hours, kept. Out long enough to stop counting them."
     },
     {
       "id": "WARRIOR_HILL_TOLL",
@@ -1055,7 +1085,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "The toll is paid. The hill keeps no change."
     },
     {
       "id": "SCRIBE_THREE_ENTRIES",
@@ -1098,7 +1129,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "The photograph and what it missed. Two kinds of record, one place."
     },
     {
       "id": "SCRIBE_WATERSIDE_RECORD",
@@ -1148,7 +1180,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "The water, photographed and listened to. The book has a sound in it now."
     },
     {
       "id": "SCRIBE_CAFE_LOG",
@@ -1191,7 +1224,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "The stop is logged. Somebody will want to know what it cost."
     },
     {
       "id": "SCRIBE_ROUTE_SURVEY",
@@ -1236,7 +1270,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "Surveyed. The road has a record now, and an opinion."
     },
     {
       "id": "SCRIBE_THREE_CORNERS",
@@ -1278,7 +1313,8 @@
         "RIDE",
         "RUN",
         "WALK"
-      ]
+      ],
+      "completion": "Three corners, recorded. The best one has a line to itself."
     },
     {
       "id": "ANY_FIRST_FIVE",
@@ -1323,7 +1359,8 @@
           "title": "A Good Stretch",
           "description": "No target but the road. {distanceKm} km, any way you like, and it counts."
         }
-      ]
+      ],
+      "completion": "Out and back. The rest of the day is yours."
     },
     {
       "id": "ANY_GREEN_HOUR",
@@ -1366,7 +1403,9 @@
           "title": "Somewhere Leafy",
           "description": "An hour with more trees than traffic. {poiName} will do."
         }
-      ]
+      ],
+      "completion": "{poiName}, and home a different way. The green was there all along.",
+      "waitingReason": "Waiting for a green place within reach."
     },
     {
       "id": "ANY_HIGH_GROUND",
@@ -1412,7 +1451,9 @@
           "title": "The Long Look",
           "description": "Somewhere above the rooftops there is a place to see it all. {poiName}, today."
         }
-      ]
+      ],
+      "completion": "{poiName}, reached. Everything below looks as if it was meant to.",
+      "waitingReason": "Waiting for high ground within reach."
     },
     {
       "id": "ANY_NEW_GROUND",
@@ -1457,7 +1498,8 @@
           "title": "Off the Usual",
           "description": "The usual way is the usual way. Find {newTerritoryKm} km that is not."
         }
-      ]
+      ],
+      "completion": "New ground, read. It is yours to come back to."
     },
     {
       "id": "ANY_COFFEE_LOOP",
@@ -1499,7 +1541,8 @@
           "title": "A Cup Away",
           "description": "{poiName} is a {activityNoun} away. So is the way back."
         }
-      ]
+      ],
+      "completion": "A stop at {poiName} and home again. A good outing has a middle."
     },
     {
       "id": "ANY_UNLOCK_CHEST",
@@ -1535,7 +1578,9 @@
           "title": "Finders Keepers",
           "description": "Somebody hid a {objectName} at {objectPlace} and never came back. You could."
         }
-      ]
+      ],
+      "completion": "Opened. Whatever it held is in the book.",
+      "waitingReason": "Waiting for a box to be buried near you."
     },
     {
       "id": "ANY_SLAY_NEARBY",
@@ -1556,7 +1601,7 @@
       "objectives": [
         {
           "type": "SLAY_MONSTER",
-          "title": "Beat the {objectName} at {objectPlace}",
+          "title": "See off the {objectName} at {objectPlace}",
           "required": true,
           "radiusMeters": 150
         },
@@ -1570,13 +1615,15 @@
       "narrative": [
         {
           "title": "The {objectName}",
-          "description": "A {objectName} has settled at {objectPlace}. It has a weakness; the map will tell you which."
+          "description": "A {objectName} has settled at {objectPlace}. It wants something done about it; the map will tell you what."
         },
         {
           "title": "Trouble at {objectPlace}",
           "description": "Something is at {objectPlace} that should not be. Go and see it off."
         }
-      ]
+      ],
+      "completion": "Seen off. {objectPlace} reads plainly again.",
+      "waitingReason": "Waiting for something to settle near you."
     },
     {
       "id": "ANY_GATHER_THREE",
@@ -1612,7 +1659,613 @@
           "title": "Odds and Ends",
           "description": "The map is littered with pieces. Three of them, one outing."
         }
-      ]
+      ],
+      "completion": "Three pieces, one outing. They fit together better than expected."
+    },
+    {
+      "id": "ANY_THREE_PATCHES",
+      "characterClass": "ANY",
+      "questType": "EXPLORE_REGION",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "regionCount": 3,
+        "regionDistanceKm": [
+          2,
+          8
+        ],
+        "distanceKm": [
+          8,
+          25
+        ]
+      },
+      "objectives": [
+        {
+          "type": "VISIT_MULTIPLE_LOCATIONS",
+          "title": "Go into three patches of unread ground",
+          "required": true,
+          "count": 3
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Three Patches",
+          "description": "Three patches of unread ground within reach. Go into each."
+        }
+      ],
+      "completion": "Three patches read. Something had been settling in the middle one.",
+      "waitingReason": "Waiting for unread ground within reach."
+    },
+    {
+      "id": "ANY_OLD_STONE",
+      "characterClass": "ANY",
+      "questType": "VISIT_POI",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "poiCategory": [
+          "HISTORICAL",
+          "CULTURAL",
+          "LANDMARK"
+        ],
+        "poiDistanceKm": [
+          1.5,
+          10
+        ]
+      },
+      "objectives": [
+        {
+          "type": "VISIT_POI",
+          "title": "Stand at {poiName}",
+          "required": true,
+          "radiusMeters": 70
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Where Two Ways Met",
+          "description": "{poiName}. {poiFact} Go and stand at it."
+        }
+      ],
+      "completion": "You stood where they stood.",
+      "waitingReason": "Waiting for an old place within reach."
+    },
+    {
+      "id": "ANY_WRITE_IT_DOWN",
+      "characterClass": "ANY",
+      "questType": "WRITE_NOTE",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "poiCategory": [
+          "HISTORICAL",
+          "CULTURAL",
+          "LANDMARK",
+          "NATURE"
+        ],
+        "poiDistanceKm": [
+          1,
+          8
+        ]
+      },
+      "objectives": [
+        {
+          "type": "VISIT_POI",
+          "title": "Reach {poiName}",
+          "required": true,
+          "radiusMeters": 70
+        },
+        {
+          "type": "WRITE_NOTE",
+          "title": "Stop, and write down what is there",
+          "required": true
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Write It Down",
+          "description": "Go to {poiName}, stop, and write down what is there in a few words."
+        }
+      ],
+      "completion": "Written down. A copy has been asked for.",
+      "waitingReason": "Waiting for a place worth writing down within reach."
+    },
+    {
+      "id": "ANY_THE_ELDER",
+      "characterClass": "ANY",
+      "questType": "SLAY_MONSTER",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "worldObject": {
+          "kind": "MONSTER"
+        },
+        "elder": {
+          "tier": 3,
+          "roadForm": "LOOP",
+          "distanceKm": [
+            1.5,
+            4
+          ],
+          "lifeDays": 21
+        }
+      },
+      "objectives": [
+        {
+          "type": "SLAY_MONSTER",
+          "title": "See off the {objectName} at {objectPlace}",
+          "required": true,
+          "radiusMeters": 150
+        }
+      ],
+      "narrative": [
+        {
+          "title": "The One at the Crossing",
+          "description": "The {objectName} has sat at {objectPlace} long enough to think it owns it."
+        }
+      ],
+      "completion": "Seen off. The crossing reads plainly again.",
+      "waitingReason": "Waiting for somewhere for it to have settled."
+    },
+    {
+      "id": "ANY_FETCH",
+      "characterClass": "ANY",
+      "questType": "CARRY",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "poiCategory": [
+          "HISTORICAL",
+          "CULTURAL",
+          "LANDMARK",
+          "NATURE",
+          "VIEWPOINT"
+        ],
+        "poiDistanceKm": [
+          1,
+          6
+        ],
+        "carryTo": {
+          "poiCategory": [
+            "NATURE",
+            "CULTURAL",
+            "LANDMARK",
+            "HISTORICAL"
+          ],
+          "distanceKm": [
+            1,
+            4
+          ]
+        }
+      },
+      "objectives": [
+        {
+          "type": "CARRY",
+          "title": "From {poiName} to {carryToName}",
+          "required": true
+        },
+        {
+          "type": "RETURN_TO_START",
+          "title": "Come home the other way",
+          "required": false,
+          "radiusMeters": 300
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Fetch and Carry",
+          "description": "Something to be taken from {poiName} to {carryToName}. What it is does not matter; that it went from one to the other does."
+        }
+      ],
+      "completion": "Carried. It is where it was meant to be, which is more than most things.",
+      "waitingReason": "Waiting for two places a walk or a ride apart."
+    },
+    {
+      "id": "ANY_CUT_TRIANGLE",
+      "characterClass": "ANY",
+      "questType": "INSCRIBE_RUNE",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "poiCategory": [
+          "NATURE",
+          "LANDMARK",
+          "VIEWPOINT"
+        ],
+        "poiDistanceKm": [
+          1,
+          6
+        ]
+      },
+      "objectives": [
+        {
+          "type": "INSCRIBE_RUNE",
+          "title": "Cut Kenaz round {poiName}: a triangle",
+          "required": true,
+          "roadForm": "TRIANGLE",
+          "rune": "kenaz"
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Cut Kenaz round {poiName}",
+          "description": "A triangle with your track, somewhere near {poiName}. Three corners, and back to the first."
+        }
+      ],
+      "completion": "Kenaz, cut. It shows what is there, which is not always welcome.",
+      "waitingReason": "Waiting for somewhere to cut a triangle near you."
+    },
+    {
+      "id": "ANY_CUT_NOTE",
+      "characterClass": "ANY",
+      "questType": "INSCRIBE_RUNE",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "poiCategory": [
+          "HISTORICAL",
+          "CULTURAL",
+          "LANDMARK",
+          "NATURE",
+          "VIEWPOINT"
+        ],
+        "poiDistanceKm": [
+          1,
+          6
+        ]
+      },
+      "objectives": [
+        {
+          "type": "INSCRIBE_RUNE",
+          "title": "Write Ansuz at {poiName}: a few words, standing still",
+          "required": true,
+          "roadForm": "NOTE",
+          "rune": "ansuz"
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Write Ansuz at {poiName}",
+          "description": "Go to {poiName}, stop, and write down what it is in a few words. A place named is a place kept."
+        }
+      ],
+      "completion": "Ansuz, written. The place is kept.",
+      "waitingReason": "Waiting for a place worth naming near you."
+    },
+    {
+      "id": "ANY_CUT_STOP",
+      "characterClass": "ANY",
+      "questType": "INSCRIBE_RUNE",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "poiCategory": [
+          "CAFE",
+          "PUB",
+          "NATURE"
+        ],
+        "poiDistanceKm": [
+          1,
+          6
+        ]
+      },
+      "objectives": [
+        {
+          "type": "INSCRIBE_RUNE",
+          "title": "Stop at {poiName} for five minutes",
+          "required": true,
+          "roadForm": "STOP",
+          "rune": "wunjo",
+          "stopSeconds": 300
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Stop at {poiName} for five minutes",
+          "description": "Stop at {poiName} for five minutes and do nothing in particular. Roads were also for going somewhere pleasant."
+        }
+      ],
+      "completion": "Wunjo, kept. Five minutes, and nothing came of it, which was the point.",
+      "waitingReason": "Waiting for somewhere pleasant to stop near you."
+    },
+    {
+      "id": "ANY_CUT_ZIGZAG",
+      "characterClass": "ANY",
+      "questType": "INSCRIBE_RUNE",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "poiCategory": [
+          "NATURE",
+          "LANDMARK",
+          "VIEWPOINT"
+        ],
+        "poiDistanceKm": [
+          1,
+          6
+        ]
+      },
+      "objectives": [
+        {
+          "type": "INSCRIBE_RUNE",
+          "title": "Cut Sowilo near {poiName}: a zigzag",
+          "required": true,
+          "roadForm": "ZIGZAG",
+          "rune": "sowilo"
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Cut Sowilo near {poiName}",
+          "description": "Four legs near {poiName}, each turning back across the last. Easiest on foot, where a sharp turn is only a step."
+        }
+      ],
+      "completion": "Sowilo, cut. The road goes somewhere; this was the somewhere.",
+      "waitingReason": "Waiting for room to cut a zigzag near you."
+    },
+    {
+      "id": "ANY_CUT_SQUARE",
+      "characterClass": "ANY",
+      "questType": "INSCRIBE_RUNE",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "poiCategory": [
+          "NATURE",
+          "LANDMARK",
+          "VIEWPOINT"
+        ],
+        "poiDistanceKm": [
+          1,
+          6
+        ]
+      },
+      "objectives": [
+        {
+          "type": "INSCRIBE_RUNE",
+          "title": "Cut Dagaz round {poiName}: a square",
+          "required": true,
+          "roadForm": "SQUARE",
+          "rune": "dagaz"
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Cut Dagaz round {poiName}",
+          "description": "A square with your track near {poiName}: four sides, four turns the same way, back where you began."
+        }
+      ],
+      "completion": "Dagaz, cut. The day has two sides; you have been round both.",
+      "waitingReason": "Waiting for somewhere to cut a square near you."
+    },
+    {
+      "id": "ANY_LAIR_VISIT",
+      "characterClass": "ANY",
+      "questType": "LAIR_VISIT",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "worldObject": {
+          "kind": "LAIR"
+        },
+        "lairNeed": 5
+      },
+      "objectives": [
+        {
+          "type": "LAIR_VISIT",
+          "title": "Visit 5 of the 7 tiles of the lair at {objectPlace}",
+          "required": true
+        }
+      ],
+      "narrative": [
+        {
+          "title": "{objectName}",
+          "description": "There's a lair at {objectPlace}. Visit 5 of its 7 tiles before it ends and its great chest is yours."
+        }
+      ],
+      "completion": "The lair is yours, and so is its great chest!",
+      "waitingReason": "Waiting for a lair near you. Lairs come at level 8."
+    },
+    {
+      "id": "ANY_WOUND_BOSS",
+      "characterClass": "ANY",
+      "questType": "WOUND_BOSS",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "legendDamage": 300
+      },
+      "objectives": [
+        {
+          "type": "WOUND_BOSS",
+          "title": "Do {legendDamage} damage to {legendName} on one journey",
+          "required": true
+        }
+      ],
+      "narrative": [
+        {
+          "title": "{legendName}",
+          "description": "{legendName} has settled in near you. Do {legendDamage} damage to it on one journey and show it who's in charge."
+        }
+      ],
+      "completion": "That got its attention!",
+      "waitingReason": "Waiting for a legend to wake. Defeat three creatures to wake one."
+    },
+    {
+      "id": "ANY_DOUBLE_PAY",
+      "characterClass": "ANY",
+      "questType": "SLAY_MONSTER",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": [
+        "RIDE",
+        "RUN",
+        "WALK"
+      ],
+      "objectiveRules": {
+        "worldObject": {
+          "kind": "MONSTER",
+          "bounty": true
+        }
+      },
+      "objectives": [
+        {
+          "type": "SLAY_MONSTER",
+          "title": "Defeat today's bounty, the {objectName} at {objectPlace}",
+          "required": true,
+          "radiusMeters": 150
+        }
+      ],
+      "narrative": [
+        {
+          "title": "Double Pay",
+          "description": "Today's bounty is the {objectName} at {objectPlace}, and it pays double. Go and collect."
+        }
+      ],
+      "completion": "Bounty defeated, and paid twice over!",
+      "waitingReason": "Waiting for today's bounty. Open the map to find it."
+    },
+    {
+      "id": "ANY_HOME_GROUND",
+      "characterClass": "ANY",
+      "questType": "DISTRICT_TILES",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": ["RIDE", "RUN", "WALK"],
+      "objectiveRules": {"district": "home", "districtTiles": 10},
+      "objectives": [
+        {"type": "DISTRICT_TILES", "title": "Explore {districtTiles} new tiles in {districtName}", "required": true}
+      ],
+      "narrative": [
+        {"title": "Home Ground", "description": "{districtName} is where you ride the most. Explore {districtTiles} tiles of it you've never been on."}
+      ],
+      "completion": "{districtName} knows you a little better now!",
+      "waitingReason": "Waiting for your first district. Go on a journey to find one."
+    },
+    {
+      "id": "ANY_BEATING_THE_BOUNDS",
+      "characterClass": "ANY",
+      "questType": "DISTRICT_LOOP",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": ["RIDE", "RUN", "WALK"],
+      "objectiveRules": {"edgeShare": 0.6},
+      "objectives": [
+        {"type": "DISTRICT_LOOP", "title": "Go round the edge of a district and back to where you started", "required": true}
+      ],
+      "narrative": [
+        {"title": "Beating the Bounds", "description": "Pick a district and go all the way round its edge in one loop, ending where you began."}
+      ],
+      "completion": "All the way round! Now you know where it starts and stops."
+    },
+    {
+      "id": "ANY_NEXT_DISTRICT",
+      "characterClass": "ANY",
+      "questType": "DISTRICT_TILES",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": ["RIDE", "RUN", "WALK"],
+      "objectiveRules": {"district": "new", "districtPercent": 25},
+      "objectives": [
+        {"type": "DISTRICT_TILES", "title": "Explore {districtPercent}% of a district you've never been to", "required": true}
+      ],
+      "narrative": [
+        {"title": "The Next District", "description": "Somewhere next door is a district you've never been to. Go and explore {districtPercent}% of it."}
+      ],
+      "completion": "A whole new district on your map!"
+    },
+    {
+      "id": "ANY_GOING_QUIET",
+      "characterClass": "ANY",
+      "questType": "COMPLETE_DISTANCE",
+      "minLevel": 1,
+      "weight": 1,
+      "storyOnly": true,
+      "activities": ["RIDE", "RUN", "WALK"],
+      "objectiveRules": {"walkKm": 2},
+      "objectives": [
+        {"type": "COMPLETE_DISTANCE", "title": "Walk {walkKm} km", "required": true, "activity": "WALK"}
+      ],
+      "narrative": [
+        {"title": "Going Quiet", "description": "A rest day. Walk {walkKm} km, nice and slow, and look around."}
+      ],
+      "completion": "A good, slow walk. Rest days count too."
     }
   ]
 }

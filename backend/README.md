@@ -79,14 +79,18 @@ app/
                 natural-language preference parsing
   rides/        recording, validation (anti-cheat), post-ride processing job,
                 journal, GPX/TCX export
-  discoveries/  POIs and user discoveries
+  discoveries/  POIs and user discoveries, Overpass import per tile
+  economy/      coins: wallet, ledger, rules (JSON), days kept
+  world_objects/ creatures, chests and pieces placed per player; claims and fights
   social/       friends, feed, parties
   integrations/ Strava OAuth + upload
   notifications/device tokens, push (APNs behind a flag)
-  jobs/         queue abstraction (inline / Redis) and worker
+  jobs/         queue abstraction (inline / Redis), worker, and reprocess (rerun a
+                ride whose processing failed)
   api/v1/       router assembly
 alembic/        migrations (PostGIS columns + indexes live here)
-scripts/        gen_levels.py, seed_discoveries.py, seed_dev.py
+scripts/        gen_levels.py, seed_discoveries.py, seed_dev.py, eval_requests.py,
+                gen_rune_fixtures.py, play_report.py
 ```
 
 ## Environment variables

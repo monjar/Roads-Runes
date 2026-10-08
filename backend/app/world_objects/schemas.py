@@ -19,6 +19,34 @@ class MonsterOut(APIModel):
     hp: int
     flavour: str | None = None
     killMethods: list[KillMethodOut] = []
+    # Which creature this is, and its face (docs/WORLD.md): set from 0.6.0, and
+    # found by name for anything placed before species had ids.
+    speciesId: str | None = None
+    # {"body", "feature", "mark", "icon"}; `icon` is the app's GameIcon name (0.7.2).
+    sigil: dict[str, str] | None = None
+    # Effort is damage (0.6.1, flag effort_combat): its hold, what it wants and
+    # shrugs at (ROAD, GROUND, CLIMB, RUNE, WORD), and its rune and road form.
+    holdMax: int | None = None
+    holdLeft: int | None = None
+    wants: list[str] | None = None
+    minds: list[str] | None = None
+    rune: str | None = None
+    roadForm: str | None = None
+    # Days since the player last passed its place, when they have and it was a while.
+    unpassedDays: int | None = None
+    # 0.7.2: a variant ({"id": "STUBBORN", "name": "Stubborn", "text": "30% more health
+    # and 30% more coins."}), the name to show ("Stubborn Fen Troll"; `name` stays
+    # plain), and a grudge ({"epithet": "Grumpy", "line": "It got away twice. ..."}).
+    variant: dict[str, str] | None = None
+    displayName: str | None = None
+    grudge: dict[str, str] | None = None
+
+
+class LairOut(APIModel):
+    cells: list[list[float]]
+    visited: list[int]
+    need: int
+    endsAt: datetime
 
 
 class WorldObjectOut(APIModel):
@@ -46,6 +74,11 @@ class WorldObjectOut(APIModel):
     pieceOwned: bool | None = None
     # How close the player must be to open or pick it up; nothing for a monster.
     claimRadiusMeters: float | None = None
+    # The name to show: a variant in front of a creature's ("Stubborn Fen Troll"), 0.7.2.
+    displayName: str | None = None
+    # A lair (kind LAIR, 0.8.0): its seven tiles' middles as [lat, lon], which are
+    # visited (indices into `cells`), how many it needs and when it ends.
+    lair: LairOut | None = None
 
 
 class ClaimIn(APIModel):
@@ -66,6 +99,11 @@ class ClaimResultOut(APIModel):
     levelUps: list[dict[str, Any]] = []
     # The set this piece finished: {"id", "name", "bonusAC"}.
     setCompleted: dict[str, Any] | None = None
+    # What the chest held besides coins, if anything (ItemFoundOut), 0.7.2.
+    itemFound: dict[str, Any] | None = None
+    # 0.8.0: everything it held, `itemFound` and a treasure map (a tier-3 chest,
+    # sometimes) alike.
+    itemsFound: list[dict[str, Any]] = []
 
 
 class ClaimedOut(APIModel):

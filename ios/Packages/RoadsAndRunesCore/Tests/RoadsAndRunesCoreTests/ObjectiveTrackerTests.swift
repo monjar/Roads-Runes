@@ -114,4 +114,18 @@ final class ObjectiveTrackerTests: XCTestCase {
         XCTAssertEqual(events.map { $0.objectiveId }, [SampleData.objectiveReturnId])
         XCTAssertEqual(tracker.pendingObjectives.count, 1)
     }
+
+    func testCarryIsTheFirstPlaceThenTheSecond() {
+        let from = GeoMath.destination(from: start, bearingDegrees: 90, distanceMeters: 500)
+        let to = GeoMath.destination(from: start, bearingDegrees: 90, distanceMeters: 1500)
+        let carry = Objective(
+            id: UUID(), objectiveType: .carry, title: "From A to B", latitude: from.latitude, longitude: from.longitude, radiusMeters: 80,
+            required: true, order: 1, progress: ObjectiveProgress(current: 0, target: 2),
+            extra: ["to": .object(["latitude": .number(to.latitude), "longitude": .number(to.longitude), "name": .string("B")])]
+        )
+        var tracker = ObjectiveTracker(objectives: [carry], start: start)
+        XCTAssertTrue(update(&tracker, at: to, distance: 1500).isEmpty, "B first counts for nothing")
+        XCTAssertTrue(update(&tracker, at: from, distance: 2500).isEmpty)
+        XCTAssertEqual(update(&tracker, at: to, distance: 3500).map(\.objectiveId), [carry.id])
+    }
 }

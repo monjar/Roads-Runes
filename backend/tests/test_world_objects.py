@@ -204,19 +204,98 @@ async def test_a_slay_quest_completes_on_the_kill(explorer_client, monkeypatch):
 
 
 async def test_a_lure_costs_coins_and_brings_company(explorer_client):
+    """A lamp left out at a place brings one thing there, and costs only if it does."""
     c = explorer_client
     await seed_discoveries()
     world_objects.forget_checks()
-    r = await c.post("/world/objects/lure", json={"latitude": ORIGIN[0], "longitude": ORIGIN[1]})
+    # Nowhere with a name near the middle of the river: nothing comes, nothing is taken.
+    r = await c.post("/world/objects/lure", json={"latitude": 51.5072, "longitude": -0.0400})
+    assert r.status_code == 409 and r.json()["error"]["code"] == "NO_PLACE_NEAR"
+    assert "named place" in r.json()["error"]["message"]
+    stave_hill = (51.4990, -0.0480)
+    r = await c.post("/world/objects/lure", json={"latitude": stave_hill[0], "longitude": stave_hill[1]})
     assert r.status_code == 409 and r.json()["error"]["code"] == "INSUFFICIENT_AC"
+    # A lamp that could not be paid for leaves nothing behind.
+    async with get_session_factory()() as db:
+        left = (await db.execute(select(WorldObject))).scalars().all()
+        assert not left, [(o.seed, o.kind, o.payload.get("anchorName")) for o in left]
     me = (await c.get("/users/me")).json()
     async with get_session_factory()() as db:
         await economy.credit(db, uuid.UUID(me["id"]), 60, "ADJUSTMENT")
         await db.commit()
-    r = await c.post("/world/objects/lure", json={"latitude": ORIGIN[0], "longitude": ORIGIN[1]})
+    r = await c.post("/world/objects/lure", json={"latitude": stave_hill[0], "longitude": stave_hill[1]})
     assert r.status_code == 200, r.text
-    assert r.json(), "the lure brought nothing"
+    came = r.json()
+    assert len(came) == 1 and came[0]["kind"] == "MONSTER"
+    assert came[0]["anchorName"] == "Stave Hill"
     assert (await c.get("/wallet")).json()["balance"] == 10
+
+
+async def test_a_lamp_works_on_a_full_day_and_says_why_when_it_will_not(explorer_client):
+    """On an ordinary day the world has put something on nearly every named place
+    near the player. A chest or a piece there does not stop a lamp; a creature
+    already there is named, and nothing is charged."""
+    c = explorer_client
+    await seed_discoveries()
+    world_objects.forget_checks()
+    me = (await c.get("/users/me")).json()
+    async with get_session_factory()() as db:
+        await economy.credit(db, uuid.UUID(me["id"]), 200, "ADJUSTMENT")
+        await db.commit()
+    live = await spawned(c)
+
+    def apart(a: dict, b: dict) -> float:
+        return world_objects.haversine_m(a["latitude"], a["longitude"], b["latitude"], b["longitude"])
+
+    creatures = [o for o in live if o["kind"] == "MONSTER"]
+    others = [o for o in live if o["kind"] != "MONSTER" and all(apart(o, m) >= 90 for m in creatures)]
+    assert creatures and others, [(o["kind"], o["anchorName"]) for o in live]
+    creature, other = creatures[0], others[0]
+
+    # Asking first costs nothing and says what would happen.
+    at = {"latitude": creature["latitude"], "longitude": creature["longitude"]}
+    check = (await c.get("/world/objects/lure", params=at)).json()
+    assert check["ok"] is False and check["code"] == "ALREADY_HERE" and check["cost"] == 50
+    assert creature["name"] in check["message"] and creature["anchorName"] in check["message"]
+    r = await c.post("/world/objects/lure", json=at)
+    assert r.status_code == 409 and r.json()["error"]["code"] == "ALREADY_HERE"
+    assert (await c.get("/wallet")).json()["balance"] == 200
+
+    at = {"latitude": other["latitude"], "longitude": other["longitude"]}
+    check = (await c.get("/world/objects/lure", params=at)).json()
+    assert check == {
+        "ok": True,
+        "cost": 50,
+        "placeName": other["anchorName"],
+        "code": None,
+        "message": None,
+        "lampsInBag": 0,
+    }
+    r = await c.post("/world/objects/lure", json=at)
+    assert r.status_code == 200, r.text
+    came = r.json()
+    assert len(came) == 1 and came[0]["kind"] == "MONSTER" and came[0]["anchorName"] == other["anchorName"]
+    assert (await c.get("/wallet")).json()["balance"] == 150
+    # Its creature stands there now.
+    r = await c.post("/world/objects/lure", json=at)
+    assert r.status_code == 409 and r.json()["error"]["code"] == "ALREADY_HERE"
+    assert (await c.get("/wallet")).json()["balance"] == 150
+
+
+async def test_two_lamps_in_the_same_second_each_bring_their_own(explorer_client, monkeypatch):
+    """Lamps were seeded to the second: the second of two took its coins and placed nothing."""
+    c = explorer_client
+    await seed_discoveries()
+    me = (await c.get("/users/me")).json()
+    async with get_session_factory()() as db:
+        await economy.credit(db, uuid.UUID(me["id"]), 100, "ADJUSTMENT")
+        await db.commit()
+    moment = datetime.now(UTC)
+    monkeypatch.setattr(world_objects, "utcnow", lambda: moment)
+    for place in ((51.4990, -0.0480), (51.4950, -0.0450)):  # Stave Hill, The Crown: one tile
+        r = await c.post("/world/objects/lure", json={"latitude": place[0], "longitude": place[1]})
+        assert r.status_code == 200 and len(r.json()) == 1, r.text
+    assert (await c.get("/wallet")).json()["balance"] == 0
 
 
 async def test_starting_over_clears_the_world(explorer_client):
@@ -436,10 +515,10 @@ async def test_pieces_make_a_set_and_the_last_one_pays(explorer_client):
             bounty=False,
             tier=1,
             reward_ac=10,
-            payload={"name": f"{piece} (Milled Coins)", "setId": "COINS", "piece": piece},
+            payload={"name": f"{piece} (Odd Coins)", "setId": "COINS", "piece": piece},
         )
     listed = {o["id"]: o for o in await spawned(c)}
-    assert listed[objects[0]["id"]]["setName"] == "Milled Coins"
+    assert listed[objects[0]["id"]]["setName"] == "Odd Coins"
     assert (listed[objects[0]["id"]]["setSize"], listed[objects[0]["id"]]["setOwned"]) == (4, 0)
 
     async def pick(obj: dict) -> dict:
@@ -462,7 +541,7 @@ async def test_pieces_make_a_set_and_the_last_one_pays(explorer_client):
 
     last = await pick(objects[4])
     assert last["object"]["setOwned"] == 4
-    assert last["setCompleted"] == {"id": "COINS", "name": "Milled Coins", "bonusAC": 50}
+    assert last["setCompleted"] == {"id": "COINS", "name": "Odd Coins", "bonusAC": 50}
     assert last["acAwarded"] == 60 and last["xpAwarded"] == 8 + 150
     kinds = [t["kind"] for t in (await c.get("/wallet/transactions")).json()["items"]]
     assert kinds.count("SET_COMPLETED") == 1 and kinds.count("COLLECTABLE") == 5
@@ -479,12 +558,12 @@ async def test_a_piece_passed_on_a_ride_says_its_set(explorer_client):
         bounty=False,
         tier=1,
         reward_ac=10,
-        payload={"name": "Raido (Old Runes)", "setId": "RUNES", "piece": "Raido"},
+        payload={"name": "Raido (Road Six)", "setId": "RUNES", "piece": "Raido"},
     )
     here = (obj["latitude"], obj["longitude"])
     summary = await ride(c, line_trace(destination_point(*here, 180, 600), here, 5.0))
     found = next(o for o in summary["worldObjects"]["claimed"] if o["id"] == obj["id"])
-    assert (found["setName"], found["piece"], found["setOwned"], found["setSize"]) == ("Old Runes", "Raido", 1, 6)
+    assert (found["setName"], found["piece"], found["setOwned"], found["setSize"]) == ("Road Six", "Raido", 1, 6)
     assert summary["worldObjects"]["setsCompleted"] == []
     assert any(line["source"] == "COLLECTABLE_FOUND" for line in summary["xpBreakdown"])
 
@@ -533,3 +612,81 @@ async def test_a_run_is_paid_as_a_run(explorer_client):
     distance = next(line for line in summary["acBreakdown"] if line["kind"] == "RIDE_DISTANCE")
     assert distance["detail"]["perKm"] == world_objects.load_ac_rules()["perKm"]["RUN"] == 5
     assert distance["ac"] == int(distance["detail"]["km"] * 5)
+
+
+async def test_every_creature_comes_with_its_species_and_its_face(explorer_client):
+    await seed_discoveries()
+    monsters = [o for o in await spawned(explorer_client) if o["kind"] == "MONSTER"]
+    assert monsters
+    from app.lore import catalog
+
+    for m in monsters:
+        species = catalog.species_by_id()[m["monster"]["speciesId"]]
+        assert m["monster"]["sigil"] == species["sigil"]
+        # Tier 1 is the thing itself; tiers 2 and 3 are its elders, by name.
+        assert m["name"] == catalog.name_at_tier(species, m["tier"])
+
+
+def test_a_creature_is_chosen_to_suit_its_place():
+    import random
+
+    from app.world_objects.spawner import Anchor, pick_species
+
+    monsters = load_config_monsters()
+    pond = Anchor("1", "Greenland Dock", "NATURE", 51.49, -0.04, None, tags={"natural": "water", "water": "dock"})
+    pub = Anchor("2", "The Ship", "PUB", 51.49, -0.04, None, tags={"amenity": "pub"})
+    rng = random.Random(1)
+    at_water = [pick_species(rng, pond, monsters)["family"] for _ in range(200)]
+    at_pub = [pick_species(rng, pub, monsters)["family"] for _ in range(200)]
+    assert at_water.count("WATER") > 120
+    assert at_pub.count("STREET") > 120
+
+
+def load_config_monsters():
+    return world_objects.load_config()["monsters"]
+
+
+def test_nothing_is_placed_at_a_memorial_a_church_or_anywhere_private():
+    from app.discoveries.sensitivity import is_sensitive
+
+    assert is_sensitive("Cenotaph", {"historic": "memorial"})
+    assert is_sensitive("St Mary's", {"amenity": "place_of_worship"})
+    assert is_sensitive("Nunhead Cemetery", {"leisure": "nature_reserve"})
+    assert is_sensitive("A garden", {"leisure": "garden", "access": "private"})
+    assert not is_sensitive("Southwark Park", {"leisure": "park"})
+
+
+async def test_the_spawner_leaves_sensitive_places_alone(explorer_client):
+    from app.discoveries.models import Discovery
+
+    await seed_discoveries()
+    async with get_session_factory()() as db:
+        db.add(
+            Discovery(
+                name="Rotherhithe War Memorial",
+                category="HISTORICAL",
+                latitude=ORIGIN[0] + 0.0004,
+                longitude=ORIGIN[1],
+                h3_index=None,
+                source="OSM",
+                osm_id="node/999",
+                moderation_status="APPROVED",
+                cycling_accessible=True,
+                tags={"historic": "memorial"},
+            )
+        )
+        await db.commit()
+    for o in await spawned(explorer_client):
+        assert o["anchorName"] != "Rotherhithe War Memorial"
+
+
+async def test_pace_is_never_dealt_and_new_monsters_carry_their_species(explorer_client):
+    await seed_discoveries()
+    for o in await spawned(explorer_client):
+        if o["kind"] != "MONSTER":
+            continue
+        assert all(m["method"] != "PACE" for m in o["monster"]["killMethods"])
+        async with get_session_factory()() as db:
+            row = await db.get(WorldObject, uuid.UUID(o["id"]))
+            species = row.payload["species"]
+        assert species["wants"] and species["minds"]

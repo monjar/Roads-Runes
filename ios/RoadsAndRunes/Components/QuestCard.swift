@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -13,13 +14,8 @@ struct QuestCard: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(ClassStyle.color(quest.characterClass))
-                Image(systemName: ClassStyle.symbol(quest.characterClass))
-                    .font(.system(size: compact ? 18 : 26, weight: .bold))
-                    .foregroundStyle(Theme.Colors.cream)
-            }
-            .frame(width: compact ? 44 : 64, height: compact ? 44 : 64)
+            // The quest's class, as the same crest the character wears.
+            ClassEmblem(characterClass: quest.characterClass, size: compact ? 44 : 64)
             VStack(alignment: .leading, spacing: 2) {
                 Eyebrow(text: eyebrow, color: ClassStyle.textColor(quest.characterClass))
                 Text(quest.title)
@@ -34,7 +30,19 @@ struct QuestCard: View {
                         .lineSpacing(1.5)
                         .padding(.vertical, 1)
                 }
+                if !compact, let poster = quest.narrative.poster {
+                    PosterLine(poster: poster)
+                }
+                // A sealed quest keeps its goal shut until halfway along its route (0.7.3).
+                if SealedQuest.isSealed(quest) {
+                    Text(SealedQuest.isOpen(quest, routeFraction: nil) ? SealedQuest.goal(of: quest)?.title ?? SealedQuest.shutLine : SealedQuest.shutLine)
+                        .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.terracottaDeep).lineLimit(1)
+                        .accessibilityIdentifier("quest.sealedGoal")
+                }
                 Text(facts).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).lineLimit(1)
+                if let reward = quest.rewards.rewardItems.first {
+                    QuestItemRewardLine(item: reward)
+                }
             }
             Spacer(minLength: 0)
             Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundStyle(Theme.Colors.muted)
@@ -67,6 +75,35 @@ struct QuestCard: View {
     }
 }
 
+/// The item a quest gives when it is done (0.7.2), with its mark: "Reward: Pedlar's Road-book · Rare".
+struct QuestItemRewardLine: View {
+    let item: QuestRewardItem
+
+    var body: some View {
+        HStack(spacing: 6) {
+            MarkView(.of(item)).frame(width: 20, height: 20)
+            Text("Reward: \(item.name)").font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.ink).lineLimit(1)
+            RarityTag(rarity: item.rarity)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("quest.itemReward")
+    }
+}
+
+/// Who put the notice up, and one of their lines (docs/WORLD.md): "By the pond.
+/// Not there at lamp-lighting." — Nell Foss. Never more than one name per card.
+struct PosterLine: View {
+    let poster: QuestPoster
+
+    var body: some View {
+        (Text("\u{201C}\(poster.line)\u{201D} ").italic().foregroundStyle(Theme.Colors.inkSoft)
+            + Text(poster.name).font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.muted))
+            .font(Theme.Typography.caption)
+            .lineLimit(2)
+            .accessibilityIdentifier("quest.poster")
+    }
+}
+
 /// Objective as a numbered diamond (design 10a). Exploration objectives use
 /// terracotta, optional ones a dashed outline, completed ones a check.
 struct ObjectiveRow: View {
@@ -96,7 +133,7 @@ struct ObjectiveRow: View {
                 Text(trailing).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted).lineLimit(1)
             }
             if objective.provisional == true {
-                Image(systemName: "hourglass").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.Colors.muted)
+                IconShape(.hourglass).foregroundStyle(Theme.Colors.muted).frame(width: 12, height: 12)
             }
         }
     }
@@ -163,7 +200,7 @@ struct CurrentQuestCard: View {
             HStack(spacing: 8) {
                 // The pill is the label: styled from outside, only the word itself took taps.
                 Button(action: onContinue) {
-                    Text("Continue")
+                    Text("Continue quest")
                         .font(Theme.Typography.buttonSmall)
                         .foregroundStyle(Theme.Colors.cream)
                         .frame(maxWidth: .infinity)
@@ -173,7 +210,7 @@ struct CurrentQuestCard: View {
                 .buttonStyle(.pressable)
                 .accessibilityIdentifier("currentQuest.continue")
                 Button(action: onDetails) {
-                    Text("Details")
+                    Text("See details")
                         .font(Theme.Typography.text(13, .semibold))
                         .foregroundStyle(Theme.Colors.cream)
                         .padding(.horizontal, 18)

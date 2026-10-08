@@ -77,14 +77,22 @@ public enum SampleData {
         id: characterId, name: "Rowan", characterClass: .explorer,
         overallLevel: 8, overallXP: 1820, nextOverallLevelXP: 2200, overallLevelFloorXP: 1500,
         classLevel: 6, classXP: 900, nextClassLevelXP: 1200, classLevelFloorXP: 700,
-        title: "Wanderer", abilities: sampleAbilities, unspentAbilityPoints: 1, createdAt: referenceDate
+        title: "Familiar Face", abilities: sampleAbilities, unspentAbilityPoints: 1, createdAt: referenceDate
     )
 
     public static let sampleClasses: [ClassInfo] = [
-        ClassInfo(id: "EXPLORER", name: "Explorer", tagline: "Go where you have never been.", description: "Rewards new territory and discoveries.", enabled: true),
-        ClassInfo(id: "WIZARD", name: "Wizard", tagline: "Seek the hidden.", description: "Coming later.", enabled: false),
-        ClassInfo(id: "WARRIOR", name: "Warrior", tagline: "Conquer the climbs.", description: "Coming later.", enabled: false),
-        ClassInfo(id: "SCRIBE", name: "Scribe", tagline: "Record the world.", description: "Coming later.", enabled: false),
+        ClassInfo(id: "EXPLORER", name: "Explorer", tagline: "Goes first. Moves the edge of the map.",
+                  description: "The Wayfinders went ahead and decided where the road would go. New roads, new ground and places nobody pointed you at pay best.",
+                  enabled: true, guild: "the Wayfinders", saying: "The edge moves.", crest: "explorer"),
+        ClassInfo(id: "WIZARD", name: "Wizard", tagline: "Cuts the runes again. Looks twice.",
+                  description: "The Cutters kept the runes legible. Old stones, odd markers and shapes drawn with your own track pay best.",
+                  enabled: true, guild: "the Cutters", saying: "Look twice, then once more.", crest: "wizard"),
+        ClassInfo(id: "WARRIOR", name: "Warrior", tagline: "Keeps the road with the legs. Pays the hill.",
+                  description: "The Menders carried the stone. Distance, height and long hours out pay best, measured against yourself.",
+                  enabled: true, guild: "the Menders", saying: "The hill does not negotiate.", crest: "warrior"),
+        ClassInfo(id: "SCRIBE", name: "Scribe", tagline: "Stops, looks, writes it down.",
+                  description: "The Clerks kept the toll-book and everything else. Notes, photographs and places looked at properly pay best.",
+                  enabled: true, guild: "the Clerks", saying: "It may as well be you.", crest: "scribe"),
     ]
 
     public static let sampleBike = Bike(
@@ -212,9 +220,9 @@ public enum SampleData {
 
     public static let sampleMonster = WorldObject(
         id: UUID(uuidString: "8A1F0B2C-0000-4000-8000-00000000A001")!, kind: .monster, tier: 2,
-        latitude: 51.4952, longitude: -0.0265, name: "Bog Wraith", anchorName: "Southwark Park", bounty: true, rewardAC: 300,
+        latitude: 51.4952, longitude: -0.0265, name: "Lock Wraith", anchorName: "Southwark Park", bounty: true, rewardAC: 300,
         expiresAt: referenceDate.addingTimeInterval(3 * 86_400),
-        monster: MonsterInfo(hp: 200, flavour: "A cold patch of air that follows the towpath.", killMethods: [
+        monster: MonsterInfo(hp: 200, flavour: "Colder, and it has learned to wait where people slow down.", killMethods: [
             KillMethod(
                 method: .pace,
                 params: [
@@ -235,7 +243,7 @@ public enum SampleData {
                 ],
                 hint: "Trace a triangle with your track, within a kilometre of it."
             ),
-        ])
+        ], speciesId: "bog-wraith", sigil: CreatureSigil(body: "wisp", feature: "hood", mark: "reeds"))
     )
     public static let sampleChest = WorldObject(
         id: UUID(uuidString: "8A1F0B2C-0000-4000-8000-00000000A002")!, kind: .chest, tier: 1,
@@ -244,10 +252,101 @@ public enum SampleData {
     )
     public static let samplePiece = WorldObject(
         id: UUID(uuidString: "8A1F0B2C-0000-4000-8000-00000000A003")!, kind: .collectable, tier: 1,
-        latitude: 51.4925, longitude: -0.0340, name: "Ansuz (Old Runes)", anchorName: "The Crown", rewardAC: 10,
+        latitude: 51.4925, longitude: -0.0340, name: "Ansuz (Road Six)", anchorName: "The Crown", rewardAC: 10,
         expiresAt: referenceDate.addingTimeInterval(3 * 86_400), setId: "RUNES", piece: "Ansuz"
     )
     public static let sampleObjects: [WorldObject] = [sampleMonster, sampleChest, samplePiece]
+
+    // MARK: Codex
+
+    private static func creature(
+        _ id: String, _ name: String, _ family: String, _ flavour: String, hint: String, leaves: String,
+        wants: [String], minds: String, rune: String? = nil, elders: (String, String), sigil: CreatureSigil,
+        state: CodexState, seen: Int = 0, seenOff: Int = 0
+    ) -> CodexCreature {
+        CodexCreature(
+            id: id, name: name, family: family, flavour: flavour, hint: hint, page: flavour, leaves: leaves,
+            wants: wants, minds: [minds], rune: rune,
+            elders: [
+                CodexElder(tier: 2, name: elders.0, flavour: "", seen: seen > 1),
+                CodexElder(tier: 3, name: elders.1, flavour: "", seen: false),
+            ],
+            sigil: sigil, state: state, seenCount: seen, seenOffCount: seenOff,
+            firstSeenAt: seen > 0 ? referenceDate : nil, lastSeenOffAt: seenOff > 0 ? referenceDate : nil
+        )
+    }
+
+    private static func rune(_ id: String, _ name: String, _ order: Int, _ six: String, _ gloss: String, lends: String,
+                             form: String? = nil, held: Int = 0) -> CodexRune {
+        CodexRune(id: id, name: name, order: order, six: six, gloss: gloss, lends: lends, roadForm: form,
+                  state: held > 0 ? .held : .notFound, found: held)
+    }
+
+    /// A smaller codex than the server's, with every kind of page in it.
+    public static let sampleCodex = Codex(
+        chapters: [
+            CodexChapter(id: "WORLD", title: "The Old Roads"),
+            CodexChapter(id: "CREATURES", title: "Things that settle"),
+            CodexChapter(id: "RUNES", title: "Runes"),
+            CodexChapter(id: "PEOPLE", title: "People"),
+            CodexChapter(id: "PLACES", title: "Places found"),
+        ],
+        entries: [
+            CodexEntry(id: "the-old-roads", chapter: "WORLD", title: "The Old Roads", body: [
+                "Every road was written once. The people who made them cut a rune where two ways met.",
+                "People still use the roads. Nobody reads them. A road that is used and not read goes vague. That is the fog.",
+            ], by: "enid-sallow", byName: "Enid Sallow"),
+            CodexEntry(id: "the-fog", chapter: "WORLD", title: "The fog",
+                       body: ["Ground you have not read. Plenty of people have passed it. That is not the same thing."],
+                       by: "enid-sallow", byName: "Enid Sallow"),
+            CodexEntry(id: "old-coin", chapter: "WORLD", title: "Old coin",
+                       body: ["The roads pay in old coin. Nobody will change it for you."],
+                       by: "walter-garth", byName: "Walter Garth"),
+            CodexEntry(id: "the-wayfinders", chapter: "PEOPLE", title: "The Wayfinders",
+                       body: ["They went ahead and decided where the road would go. Their saying: the edge moves."],
+                       by: "enid-sallow", byName: "Enid Sallow", characterClass: "EXPLORER"),
+        ],
+        creatures: [
+            creature("bog-wraith", "Bog Wraith", "WATER", "A cold patch of air that follows the bank.",
+                     hint: "Keeps to water and the paths beside it.", leaves: "a cold button", wants: ["GROUND", "WORD"],
+                     minds: "CLIMB", elders: ("Lock Wraith", "the Long Cold"),
+                     sigil: CreatureSigil(body: "wisp", feature: "hood", mark: "reeds"), state: .met, seen: 3, seenOff: 1),
+            creature("fen-troll", "Fen Troll", "WATER", "Sleeps by the water; wakes for footsteps.",
+                     hint: "Keeps to water.", leaves: "a bridge nail", wants: ["ROAD", "RUNE"], minds: "WORD", rune: "dagaz",
+                     elders: ("Culvert Troll", "Old Arch"), sigil: CreatureSigil(body: "hulk", feature: "horns", mark: "water"),
+                     state: .seen, seen: 1),
+            creature("rook-lord", "Rook Lord", "GREEN", "Holds the green by the sheer number of rooks.",
+                     hint: "Keeps to parks and gardens.", leaves: "a black feather", wants: ["GROUND", "WORD"], minds: "CLIMB",
+                     elders: ("Rook Baron", "the Parliament"), sigil: CreatureSigil(body: "bird", feature: "crown", mark: "tree"),
+                     state: .unseen),
+            creature("grey-stag", "Grey Stag", "GREEN", "Stands in the mist and dares you.",
+                     hint: "Keeps to high places.", leaves: "a tine", wants: ["CLIMB", "RUNE"], minds: "WORD", rune: "kenaz",
+                     elders: ("Grey Hart", "the Grey Royal"), sigil: CreatureSigil(body: "beast", feature: "antlers", mark: "mist"),
+                     state: .unseen),
+        ],
+        runes: [
+            rune("fehu", "Fehu", 1, "TRADE", "The toll-rune. What a road is owed.", lends: "coin"),
+            rune("ansuz", "Ansuz", 4, "ROAD", "The word-rune. A place named is a place kept.", lends: "the word", form: "NOTE", held: 1),
+            rune("raido", "Raido", 5, "ROAD", "The road-rune. Cut it again and the way remembers you.", lends: "the road", form: "LOOP", held: 2),
+            rune("kenaz", "Kenaz", 6, "ROAD", "The torch. It shows what is there, which is not always welcome.", lends: "sight", form: "TRIANGLE"),
+            rune("wunjo", "Wunjo", 8, "ROAD", "The glad rune. Roads were also for going somewhere pleasant.", lends: "a stop", form: "STOP"),
+            rune("sowilo", "Sowilo", 16, "ROAD", "The sun. A road goes somewhere; this is the somewhere.", lends: "a rune's reach", form: "ZIGZAG"),
+            rune("dagaz", "Dagaz", 23, "ROAD", "The day-rune. Dawn and dusk are the same mark seen from each side.", lends: "the day's first outing", form: "SQUARE"),
+        ],
+        sixes: [
+            CodexSix(id: "ROAD", name: "the Road Six", how: "Found lying anywhere. Rune-stones work loose."),
+            CodexSix(id: "TRADE", name: "the Trade Six", how: "Given by the trades, at the end of a chapter."),
+        ],
+        people: [
+            CodexPerson(id: "ada-pym", name: "Ada Pym", role: "Keeps the board", posts: "ANY",
+                        page: "Pins what needs looking at and does not say who told her.", pageBy: "enid-sallow",
+                        lines: ["Wanted: somebody. The park, north side. Up since Tuesday."]),
+            CodexPerson(id: "walter-garth", name: "Walter Garth", role: "Toll-keeper", posts: "SCRIBE",
+                        page: "Keeps the book: every coin in and every coin out.", pageBy: "enid-sallow",
+                        lines: ["Nothing is yours until it is in the book."]),
+        ],
+        counts: CodexCounts(creaturesSeenOff: 1, creaturesSeen: 2, creaturesTotal: 12, runesHeld: 2, runesTotal: 24)
+    )
 
     public static let sampleWorld = WorldSnapshot(
         center: origin, h3Resolution: 9,
@@ -258,13 +357,13 @@ public enum SampleData {
         ],
         discoveries: sampleDiscoveries,
         questMarkers: [QuestMarker(questId: questId, title: sampleQuest.title, latitude: 51.5, longitude: -0.02, difficulty: .moderate, questType: "EXPLORE_REGION", status: .available)],
-        featureFlags: ["fog_of_war": false, "story_quests": false],
+        featureFlags: ["fog_of_war": false, "story_quests": false, "codex": true],
         objects: sampleObjects
     )
 
     // MARK: Social & meta
 
-    public static let sampleFriend = FriendSummary(id: friendId, displayName: "Bea", characterClass: .explorer, overallLevel: 5, title: "Pathfinder", since: referenceDate)
+    public static let sampleFriend = FriendSummary(id: friendId, displayName: "Bea", characterClass: .explorer, overallLevel: 5, title: "Familiar Face", since: referenceDate)
 
     public static let sampleParty = Party(
         id: partyId, ownerId: userId, questId: questId, routeId: nil, status: .forming, completionRule: .group,
@@ -279,35 +378,109 @@ public enum SampleData {
         StoryArc(
             slug: "first-light",
             title: "First Light",
-            description: "Nobody starts as an adventurer. They start by going outside, and then going a little further than last time.",
+            description: "Nobody starts out knowing the roads. They start by going outside, and then a little further than last time.",
             minLevel: 1,
             unlocked: true,
             quests: [
                 StoryStep(slug: "first-light-out-of-the-door", sequence: 1, title: "Out of the Door",
-                          description: "The hardest part of every ride is the first hundred metres.", state: .completed),
+                          description: "The hardest part of any outing is the first hundred metres.", state: .completed),
                 StoryStep(slug: "first-light-something-green", sequence: 2, title: "Something Green",
-                          description: "Every town keeps a green place, and most riders pass the turning for years.", state: .open, questId: questId),
+                          description: "Every town keeps a green place, and most people pass the turning for years.", state: .open, questId: questId),
                 StoryStep(slug: "first-light-somewhere-to-look-from", sequence: 3, title: "Somewhere to Look From",
-                          description: "Ground you have ridden looks different from above it.", state: .locked),
-            ]
+                          description: "Ground you have read looks different from above it.", state: .locked),
+            ],
+            track: "MAIN", act: 1, actTitle: "The Board", chapter: 1, giver: "ada-pym",
+            reward: StoryStanding.Reward(title: "Early Riser", ac: 100)
+        ),
+        StoryArc(
+            slug: "what-settles",
+            title: "What Settles",
+            description: "A road used and not read goes vague, and things settle in the vague parts. Not wicked; in the way.",
+            minLevel: 1,
+            unlocked: false,
+            quests: [
+                StoryStep(slug: "what-settles-something-in-the-way", sequence: 1, title: "Something in the Way",
+                          description: "One on the board with a name and a place.", state: .ready),
+                StoryStep(slug: "what-settles-a-box-nobody-came-back-for", sequence: 2, title: "A Box Nobody Came Back For",
+                          description: "A waywright buried it when the gate closed.", state: .locked),
+                StoryStep(slug: "what-settles-three-patches", sequence: 3, title: "Three Patches",
+                          description: "Three patches of unread ground within reach.", state: .locked),
+            ],
+            track: "MAIN", act: 1, actTitle: "The Board", chapter: 2, after: "first-light", giver: "ada-pym",
+            reward: StoryStanding.Reward(title: "Somebody", ac: 150)
         ),
         StoryArc(
             slug: "the-edge-of-the-map",
             title: "The Edge of the Map",
-            description: "An Explorer's map has an edge, and the edge moves. This is the work of moving it.",
+            description: "A Wayfinder's map has an edge, and the edge moves. This is the work of moving it.",
             characterClass: .explorer,
             minLevel: 2,
-            unlocked: false,
+            unlocked: true,
             quests: [
                 StoryStep(slug: "edge-of-the-map-past-the-fog", sequence: 1, title: "Past the Fog",
-                          description: "Roads you have never travelled, and enough of them to be sure it was deliberate.", state: .ready),
-            ]
+                          description: "Ways you have never taken, and enough of them to be sure it was deliberate.", state: .waiting,
+                          waitingReason: "Waiting for unread ground within reach."),
+            ],
+            track: "SIDE", giver: "nell-foss", reward: StoryStanding.Reward(title: "Edgewalker", ac: 200)
         ),
     ]
 
+    public static let sampleTitles: [TitleInfo] = [
+        TitleInfo(slug: "level-1", name: "Passer-by", source: "LEVEL", how: "Go out once.", earned: true, earnedAt: referenceDate),
+        TitleInfo(slug: "level-5", name: "Familiar Face", source: "LEVEL", how: "Reach level 5.", earned: true, earnedAt: referenceDate, worn: true),
+        TitleInfo(slug: "arc-first-light", name: "Early Riser", source: "ARC", how: "Finish First Light.", earned: false),
+        TitleInfo(slug: "level-10", name: "Roadwise", source: "LEVEL", how: "Reach level 10.", earned: false),
+    ]
+
+    public static let sampleRunes = RunesState(
+        runes: [
+            RuneInfo(id: "raido", name: "Raido", six: "ROAD", gloss: "The road-rune. Cut it again and the way remembers you.", roadForm: "LOOP",
+                     held: true, rank: 1, shards: 2, inscribed: true,
+                     rule: "The opening blow, what the outing did before it met something, counts 2× at contact.",
+                     nextRank: RuneInfo.RankCost(shards: 2, coins: 100)),
+            RuneInfo(id: "kenaz", name: "Kenaz", six: "ROAD", gloss: "The torch. It shows what is there, which is not always welcome.",
+                     roadForm: "TRIANGLE", held: true, rank: 1, rule: "1 ring of ground read round each place found; things are sighted 600 m out.",
+                     nextRank: RuneInfo.RankCost(shards: 2, coins: 100)),
+            RuneInfo(id: "laguz", name: "Laguz", six: "GROUND", held: false,
+                     rule: "Things that keep to water count the road as something they want: the first 1 met on an outing."),
+        ],
+        inscribed: ["raido"], slots: 1, slotsAtLevel: [1, 10, 25]
+    )
+
+    public static let sampleRuneCuts: [RuneCutInfo] = [
+        RuneCutInfo(runeId: "raido", name: "Raido", latitude: 51.4930, longitude: -0.0300, woke: true, source: "WAKING",
+                    cutAt: referenceDate.addingTimeInterval(-86_400)),
+    ]
+
+    public static let sampleDeeds = DeedsState(
+        deeds: [
+            DeedsState.Deed(id: "LEGS", name: "Legs", what: "Distance, in all", unit: "km", value: 312.4, tier: 2, next: 1000,
+                            title: "Well Travelled", frame: "legs-2"),
+            DeedsState.Deed(id: "LUNGS", name: "Lungs", what: "Height climbed, in all", unit: "m", value: 2400, tier: 1, next: 5000,
+                            title: "Up and Over", frame: "lungs-1"),
+            DeedsState.Deed(id: "EYES", name: "Eyes", what: "New ground read, in all", unit: "patches", value: 412, tier: 1, next: 500,
+                            title: "Looker", frame: "eyes-1"),
+            DeedsState.Deed(id: "HAND", name: "Hand", what: "Runes cut with your track", unit: "runes", value: 1, tier: 1, next: 5,
+                            title: "First Cut", frame: "hand-1"),
+            DeedsState.Deed(id: "INK", name: "Ink", what: "Words written out there", unit: "words", value: 0, tier: 0, next: 1),
+        ],
+        records: [
+            DeedsState.Record(id: "RECORD_FURTHEST", name: "Furthest from where you usually start", unit: "km", value: 14.2),
+            DeedsState.Record(id: "RECORD_NEW_GROUND", name: "Most new ground on one outing", unit: "patches", value: 61),
+            DeedsState.Record(id: "RECORD_HIGHEST", name: "Highest point reached", unit: "m", value: 142),
+        ]
+    )
+
+    public static let sampleWeekNotice = WeekNotice(
+        week: "2026-W41", kind: "OUTINGS", title: "Three outings this week.", line: "Pinned Monday. Comes down Sunday night.",
+        postedBy: "Ada Pym", target: 3, unit: "outings", progress: 1, done: false, paid: false, coins: 150, xp: 200,
+        endsAt: referenceDate.addingTimeInterval(4 * 86_400)
+    )
+
     public static let sampleConfig = AppConfig(
         featureFlags: ["fog_of_war": false, "story_quests": false, "party_quests": false, "strava": false,
-                       "wizard_class": false, "warrior_class": false, "scribe_class": false],
+                       "wizard_class": true, "warrior_class": true, "scribe_class": true, "codex": true,
+                       "pledge": true, "parchment_map": false],
         h3Resolution: 9, levels: LevelLimits(max: 50, maxClass: 30), environment: "preview"
     )
 }

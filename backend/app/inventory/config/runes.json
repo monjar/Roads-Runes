@@ -1,0 +1,396 @@
+{
+  "_comment": "Runes as the build (docs/ROADMAP.md, 0.7.0 and Appendix H). A rune is held from its first stone; two more stones and some coins raise it a rank, I to III. Only inscribed runes act, each changing one rule; a rank widens the rule's number and never adds a damage percentage. `values` are by rank (I, II, III); a woken rune counts one rank higher for that outing, so a fourth value is its rank III woken. The Ground Six are only found on their own kind of ground (`ground`). The Hard Six (0.8.0) are never found as stones: a legend leaves one when it is defeated, and a lair's great chest gives Ingwaz. The Trade Six (0.9.0) are never found as stones either: they are given at the ends of Act III's and Act IV's chapters and by the festivals' arcs (`reward.rune` in quests/config/story_arcs.json). Ids are lore/config/runes.json's.",
+  "slotsAtLevel": [
+    1,
+    10,
+    25
+  ],
+  "rankCost": {
+    "2": {
+      "shards": 2,
+      "coins": 100
+    },
+    "3": {
+      "shards": 2,
+      "coins": 250
+    }
+  },
+  "pityAfterRepeats": 4,
+  "runes": [
+    {
+      "id": "raido",
+      "six": "ROAD",
+      "rule": "CARRIED_SCALE",
+      "values": [
+        2.0,
+        2.5,
+        3.0,
+        3.5
+      ],
+      "text": "Everything your journey did before you met a creature counts {v}× as your opening blow."
+    },
+    {
+      "id": "sowilo",
+      "six": "ROAD",
+      "rule": "RUNE_REACH_M",
+      "values": [
+        2000,
+        2500,
+        3000,
+        3500
+      ],
+      "text": "A rune shape reaches creatures up to {km} km from where you rode it."
+    },
+    {
+      "id": "kenaz",
+      "six": "ROAD",
+      "rule": "REVEAL_RINGS",
+      "values": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "text": "{n} ring{s} of tiles explored around each place found, and creatures show up from 600 m away."
+    },
+    {
+      "id": "dagaz",
+      "six": "ROAD",
+      "rule": "MINDS_NEUTRAL_FIRST",
+      "values": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "text": "On your {first} journey{s} of the day, creatures resist nothing."
+    },
+    {
+      "id": "ansuz",
+      "six": "ROAD",
+      "rule": "WORD_RADIUS_M",
+      "values": [
+        1000,
+        1500,
+        2000,
+        2500
+      ],
+      "text": "A note hits every creature within {km} km of where you wrote it, not only the one beside you."
+    },
+    {
+      "id": "wunjo",
+      "six": "ROAD",
+      "rule": "STOP_IS_WORD_S",
+      "values": [
+        300,
+        240,
+        180,
+        120
+      ],
+      "text": "A stop of {min} minutes at a café, a pub or a green place counts as a note."
+    },
+    {
+      "id": "laguz",
+      "six": "GROUND",
+      "rule": "WANTS_ROAD_AT_WATER",
+      "values": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "ground": {
+        "categories": [],
+        "tags": {
+          "natural": [
+            "water",
+            "wetland"
+          ],
+          "water": [
+            "*"
+          ],
+          "waterway": [
+            "*"
+          ],
+          "leisure": [
+            "marina"
+          ]
+        }
+      },
+      "text": "Water creatures are weak to distance: the {first} you meet on a journey."
+    },
+    {
+      "id": "berkano",
+      "six": "GROUND",
+      "rule": "WANTS_GROUND_AT_GREEN",
+      "values": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "ground": {
+        "categories": [
+          "NATURE"
+        ],
+        "tags": {
+          "leisure": [
+            "park",
+            "garden",
+            "nature_reserve"
+          ],
+          "landuse": [
+            "forest",
+            "meadow",
+            "grass"
+          ]
+        }
+      },
+      "text": "Creatures of green places are weak to exploring: the {first} you meet on a journey."
+    },
+    {
+      "id": "eihwaz",
+      "six": "GROUND",
+      "rule": "WANTS_WORD_AT_STONE",
+      "values": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "ground": {
+        "categories": [
+          "HISTORICAL"
+        ],
+        "tags": {
+          "historic": [
+            "*"
+          ]
+        }
+      },
+      "text": "Creatures of old stone are weak to a note: the {first} you meet on a journey."
+    },
+    {
+      "id": "ehwaz",
+      "six": "GROUND",
+      "rule": "WANTS_ROAD_ON_STREET_BY_BIKE",
+      "values": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "ground": {
+        "categories": [
+          "CYCLING"
+        ],
+        "tags": {
+          "highway": [
+            "cycleway"
+          ],
+          "route": [
+            "bicycle"
+          ],
+          "shop": [
+            "bicycle"
+          ]
+        }
+      },
+      "text": "Street creatures are weak to distance on a bike: the {first} you meet on a ride."
+    },
+    {
+      "id": "jera",
+      "six": "GROUND",
+      "rule": "WEEK_NOTICE_SCALE",
+      "values": [
+        1.5,
+        1.75,
+        2.0,
+        2.0
+      ],
+      "ground": {
+        "categories": [
+          "NATURE"
+        ],
+        "tags": {
+          "landuse": [
+            "farmland",
+            "orchard",
+            "allotments"
+          ]
+        }
+      },
+      "text": "The week's notice pays {v}× what it says."
+    },
+    {
+      "id": "algiz",
+      "six": "GROUND",
+      "rule": "BOUNTY_KEEPS_PURSE",
+      "values": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "ground": {
+        "categories": [
+          "VIEWPOINT"
+        ],
+        "tags": {
+          "natural": [
+            "peak",
+            "ridge"
+          ],
+          "tourism": [
+            "viewpoint"
+          ]
+        }
+      },
+      "text": "A bounty you weaken keeps its double coins and stays {n} day{s} longer."
+    },
+    {
+      "id": "fehu",
+      "six": "TRADE",
+      "rule": "DISTRICT_PAY_EXTRA",
+      "values": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "text": "Each district that's yours pays {n} more coin{s} a week."
+    },
+    {
+      "id": "gebo",
+      "six": "TRADE",
+      "rule": "CHEST_COINS_SCALE",
+      "values": [
+        1.1,
+        1.2,
+        1.3,
+        1.4
+      ],
+      "text": "Chests give {v}× coins."
+    },
+    {
+      "id": "mannaz",
+      "six": "TRADE",
+      "rule": "FOOT_XP_SCALE",
+      "values": [
+        1.1,
+        1.15,
+        1.2,
+        1.25
+      ],
+      "text": "Runs and walks give {v}× XP for distance."
+    },
+    {
+      "id": "tiwaz",
+      "six": "TRADE",
+      "rule": "QUARRY_CARRIED_SCALE",
+      "values": [
+        1.25,
+        1.5,
+        1.75,
+        2.0
+      ],
+      "text": "Against the creature you planned the journey for, your opening blow is {v}× stronger."
+    },
+    {
+      "id": "perthro",
+      "six": "TRADE",
+      "rule": "SEALED_UPGRADE",
+      "values": [
+        0.1,
+        0.15,
+        0.2,
+        0.25
+      ],
+      "text": "A sealed chest has a {pct}% chance to hold one rarity better."
+    },
+    {
+      "id": "othala",
+      "six": "TRADE",
+      "rule": "DISTRICT_KEEP_DAYS",
+      "values": [
+        45,
+        60,
+        75,
+        90
+      ],
+      "text": "A district stays yours for {n} days after your last visit (usually 30)."
+    },
+    {
+      "id": "uruz",
+      "six": "HARD",
+      "rule": "CLIMB_SHARED_M",
+      "values": [
+        500,
+        750,
+        1000,
+        1250
+      ],
+      "text": "Climbing counts against every creature within {v} m, not just one."
+    },
+    {
+      "id": "isa",
+      "six": "HARD",
+      "rule": "WEAKENED_STAYS_DAYS",
+      "values": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "text": "A weakened creature stays {n} more days."
+    },
+    {
+      "id": "nauthiz",
+      "six": "HARD",
+      "rule": "ENGAGE_M",
+      "values": [
+        250,
+        300,
+        350,
+        400
+      ],
+      "text": "Creatures within {v} m of your journey count as met (usually 150 m)."
+    },
+    {
+      "id": "hagalaz",
+      "six": "HARD",
+      "rule": "FIND_RADIUS_M",
+      "values": [
+        150,
+        200,
+        250,
+        300
+      ],
+      "text": "Hidden places within {v} m of your journey are found."
+    },
+    {
+      "id": "thurisaz",
+      "six": "HARD",
+      "rule": "ELDER_CARRIED_SCALE",
+      "values": [
+        1.5,
+        2.0,
+        2.5,
+        3.0
+      ],
+      "text": "Against elders and legends, your opening blow is {v}× stronger."
+    },
+    {
+      "id": "ingwaz",
+      "six": "HARD",
+      "rule": "PICKUP_REACH_M",
+      "values": [
+        60,
+        80,
+        100,
+        120
+      ],
+      "text": "Rune stones and chests within {v} m of your journey are picked up."
+    }
+  ]
+}

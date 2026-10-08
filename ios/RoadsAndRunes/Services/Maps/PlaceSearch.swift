@@ -1,21 +1,29 @@
 import CoreLocation
 import MapKit
 import Observation
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 
 /// Somewhere the rider can ride to: a search result, a base-map POI, one of
 /// the game's discoveries or a dropped pin. The World's place card and
 /// Directions only need this much.
 struct Place: Identifiable, Hashable {
-    enum Source: Hashable { case search, map, pin, discovery(UUID) }
+    /// `quarry`: a creature on the World map, which an outing planned to it is for.
+    enum Source: Hashable { case search, map, pin, discovery(UUID), quarry(UUID) }
 
     let id: String
     var name: String
     var category: String?
     var address: String?
-    var symbol: String
+    /// Its face on the card and the map: the kind of place, or the creature it is.
+    var mark: Mark
     let coordinate: Coordinate
     let source: Source
+
+    var quarryId: UUID? {
+        if case .quarry(let id) = source { return id }
+        return nil
+    }
 }
 
 /// One-tap searches under the World's search bar: the stops a cyclist looks for.
@@ -35,14 +43,15 @@ enum PlaceShortcut: String, CaseIterable, Identifiable {
         }
     }
 
-    var symbol: String {
+    /// The same icon as a place of this kind on the map.
+    var icon: GameIcon {
         switch self {
-        case .cafes: return "cup.and.saucer.fill"
-        case .pubs: return "mug.fill"
-        case .parks: return "tree.fill"
-        case .viewpoints: return "binoculars.fill"
-        case .bikeShops: return "bicycle"
-        case .landmarks: return "building.columns.fill"
+        case .cafes: return .mug
+        case .pubs: return .tavern
+        case .parks: return .oak
+        case .viewpoints: return .spyglass
+        case .bikeShops: return .cycling
+        case .landmarks: return .tower
         }
     }
 
@@ -120,24 +129,24 @@ final class PlaceSearch: NSObject, MKLocalSearchCompleterDelegate {
         let mark = item.placemark
         let street = [mark.subThoroughfare, mark.thoroughfare].compactMap { $0 }.joined(separator: " ")
         let address = [street.isEmpty ? nil : street, mark.locality].compactMap { $0 }.joined(separator: ", ")
-        let (category, symbol) = describe(item.pointOfInterestCategory, name: item.name)
+        let (category, kind) = describe(item.pointOfInterestCategory, name: item.name)
         let coordinate = Coordinate(latitude: mark.coordinate.latitude, longitude: mark.coordinate.longitude)
         return Place(
             id: String(format: "search-%.5f,%.5f-", coordinate.latitude, coordinate.longitude) + (item.name ?? ""),
             name: item.name ?? (address.isEmpty ? "Place" : address),
             category: category,
             address: address.isEmpty ? nil : address,
-            symbol: symbol,
+            mark: .place(kind),
             coordinate: coordinate,
             source: .search
         )
     }
 
     static func place(from feature: MapFeature) -> Place {
-        let (category, symbol) = describe(mapClass: feature.kind, subclass: feature.subkind)
+        let (category, kind) = describe(mapClass: feature.kind, subclass: feature.subkind)
         return Place(
             id: String(format: "map-%.5f,%.5f", feature.coordinate.latitude, feature.coordinate.longitude),
-            name: feature.name, category: category, address: nil, symbol: symbol,
+            name: feature.name, category: category, address: nil, mark: .place(kind),
             coordinate: feature.coordinate, source: .map
         )
     }
@@ -151,35 +160,35 @@ final class PlaceSearch: NSObject, MKLocalSearchCompleterDelegate {
 
     private static func describe(_ category: MKPointOfInterestCategory?, name: String?) -> (String?, String) {
         let lowered = name?.lowercased() ?? ""
-        if lowered.contains("cycle") || lowered.contains("bike") || lowered.contains("bicycle") { return ("Bike shop", "bicycle") }
+        if lowered.contains("cycle") || lowered.contains("bike") || lowered.contains("bicycle") { return ("Bike shop", "CYCLING") }
         switch category {
-        case .cafe: return ("Café", "cup.and.saucer.fill")
-        case .restaurant, .bakery, .foodMarket: return ("Food", "fork.knife")
-        case .nightlife, .brewery, .winery: return ("Pub & bar", "mug.fill")
-        case .park, .nationalPark, .beach, .campground: return ("Park", "tree.fill")
-        case .museum, .theater: return ("Landmark", "building.columns.fill")
-        case .store: return ("Shop", "bag.fill")
-        case .publicTransport: return ("Transit", "tram.fill")
-        case .restroom: return ("Toilets", "toilet.fill")
-        default: return (nil, "mappin")
+        case .cafe: return ("Café", "CAFE")
+        case .restaurant, .bakery, .foodMarket: return ("Food", "FOOD")
+        case .nightlife, .brewery, .winery: return ("Pub & bar", "PUB")
+        case .park, .nationalPark, .beach, .campground: return ("Park", "PARK")
+        case .museum, .theater: return ("Landmark", "LANDMARK")
+        case .store: return ("Shop", "SHOP")
+        case .publicTransport: return ("Transit", "PLACE")
+        case .restroom: return ("Toilets", "PLACE")
+        default: return (nil, "PLACE")
         }
     }
 
-    /// OpenMapTiles `poi` class/subclass (the base map's labels) to a label and symbol.
+    /// OpenMapTiles `poi` class/subclass (the base map's labels) to a label and a kind of place.
     private static func describe(mapClass: String?, subclass: String?) -> (String?, String) {
         switch mapClass {
-        case "cafe": return ("Café", "cup.and.saucer.fill")
-        case "beer", "bar": return ("Pub & bar", "mug.fill")
-        case "restaurant", "fast_food", "ice_cream", "bakery": return ("Food", "fork.knife")
-        case "park", "garden", "campsite", "playground": return ("Park", "tree.fill")
-        case "museum", "castle", "monument", "attraction", "art_gallery", "place_of_worship", "town_hall": return ("Landmark", "building.columns.fill")
-        case "bicycle": return ("Bike shop", "bicycle")
-        case "railway", "bus", "ferry_terminal": return ("Transit", "tram.fill")
-        case "toilets": return ("Toilets", "toilet.fill")
-        case "shop", "grocery", "clothing_store": return ("Shop", "bag.fill")
+        case "cafe": return ("Café", "CAFE")
+        case "beer", "bar": return ("Pub & bar", "PUB")
+        case "restaurant", "fast_food", "ice_cream", "bakery": return ("Food", "FOOD")
+        case "park", "garden", "campsite", "playground": return ("Park", "PARK")
+        case "museum", "castle", "monument", "attraction", "art_gallery", "place_of_worship", "town_hall": return ("Landmark", "LANDMARK")
+        case "bicycle": return ("Bike shop", "CYCLING")
+        case "railway", "bus", "ferry_terminal": return ("Transit", "PLACE")
+        case "toilets": return ("Toilets", "PLACE")
+        case "shop", "grocery", "clothing_store": return ("Shop", "SHOP")
         default:
             let label = (subclass ?? mapClass)?.replacingOccurrences(of: "_", with: " ").capitalized
-            return (label, "mappin")
+            return (label, "PLACE")
         }
     }
 }

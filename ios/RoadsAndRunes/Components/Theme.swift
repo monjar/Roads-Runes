@@ -1,3 +1,4 @@
+import RoadsAndRunesArt
 import RoadsAndRunesCore
 import SwiftUI
 
@@ -46,6 +47,8 @@ enum Theme {
         static let scribe = Color(hex: 0x4F6B7A)
         static let scribeLight = Color(hex: 0xA3BCC9)
         static let heartRate = Color(hex: 0xFF8F8F)
+        /// The bounty, and anything within reach: one gold, not three.
+        static let gold = Color(hex: 0xD9A621)
 
         // Semantic aliases
         static let parchment = cream
@@ -219,15 +222,6 @@ enum ClassStyle {
         case .warrior: return Theme.Colors.terracottaLight
         case .scribe: return Theme.Colors.scribeLight
         default: return Theme.Colors.sageLight
-        }
-    }
-
-    static func symbol(_ characterClass: CharacterClass) -> String {
-        switch characterClass {
-        case .wizard: return "circle.circle"
-        case .warrior: return "shield.fill"
-        case .scribe: return "drop.fill"
-        default: return "sparkle"
         }
     }
 
@@ -430,20 +424,17 @@ struct SheetHandle: View {
     }
 }
 
-/// Class emblem in a circle. `inverted` puts the glyph in class colour on cream.
+/// A class's crest (RoadsAndRunesArt): its icon on a shield in the class colour.
+/// The open class ("for anyone") has a plain stone shield with a star.
 struct ClassEmblem: View {
     let characterClass: CharacterClass
     var size: CGFloat = 32
+    /// Kept for callers on an ink or class-coloured ground; the shield carries its own colour.
     var inverted = false
 
     var body: some View {
-        ZStack {
-            Circle().fill(inverted ? Theme.Colors.cream : ClassStyle.color(characterClass))
-            Image(systemName: ClassStyle.symbol(characterClass))
-                .font(.system(size: size * 0.44, weight: .bold))
-                .foregroundStyle(inverted ? ClassStyle.color(characterClass) : Theme.Colors.cream)
-        }
-        .frame(width: size, height: size)
+        MarkView(.crest(characterClass.rawValue.lowercased()))
+            .frame(width: size, height: size)
     }
 }
 
@@ -468,9 +459,9 @@ struct DiamondMarker: View {
                     .rotationEffect(.degrees(45))
                     .frame(width: size * 0.8, height: size * 0.8)
                 if done {
-                    Image(systemName: "checkmark").font(.system(size: size * 0.45, weight: .heavy)).foregroundStyle(.white)
+                    Image(systemName: "checkmark").font(.system(size: size * 0.45, weight: .heavy)).foregroundStyle(Theme.Colors.cream)
                 } else if let label {
-                    Text(label).font(.system(size: size * 0.5, weight: .bold)).foregroundStyle(.white)
+                    Text(label).font(.system(size: size * 0.5, weight: .bold)).foregroundStyle(Theme.Colors.cream)
                 }
             }
         }
@@ -517,10 +508,16 @@ struct StatusPill: View {
 struct MapPill: View {
     let text: String
     var symbol: String? = nil
+    /// A game thing's icon, in place of a system symbol.
+    var icon: GameIcon? = nil
 
     var body: some View {
         HStack(spacing: 6) {
-            if let symbol { Image(systemName: symbol).font(.system(size: 12, weight: .bold)) }
+            if let icon {
+                MarkView(.icon(icon)).frame(width: 16, height: 16)
+            } else if let symbol {
+                Image(systemName: symbol).font(.system(size: 12, weight: .bold))
+            }
             Text(text).font(Theme.Typography.captionStrong).lineLimit(1)
         }
         .foregroundStyle(Theme.Colors.ink)

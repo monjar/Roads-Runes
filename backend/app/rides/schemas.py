@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import Field
@@ -29,8 +29,12 @@ class RideCreate(APIModel):
     questId: uuid.UUID | None = None
     bikeId: uuid.UUID | None = None
     routeId: uuid.UUID | None = None
+    # The thing this outing is for, if it was planned at one (0.6.1).
+    quarryId: uuid.UUID | None = None
     # Custom adventures (no quest) name themselves; quest rides take the quest title.
     title: str | None = Field(default=None, max_length=120)
+    # The day it began on the phone's calendar (0.7.3): the day whose pledge it keeps.
+    localDate: date | None = None
 
 
 class RidePointsIn(APIModel):
@@ -47,6 +51,8 @@ class ObjectiveEventIn(APIModel):
     latitude: float | None = None
     longitude: float | None = None
     value: float | None = None
+    # A note written for the objective (WRITE_NOTE, or Ansuz's INSCRIBE_RUNE), 0.7.0.
+    note: str | None = Field(default=None, max_length=2000)
 
 
 class EncounterEventIn(APIModel):
@@ -107,6 +113,13 @@ class RideOut(APIModel):
     stravaActivityId: str | None = None
     stravaUploadStatus: str | None = None  # QUEUED / UPLOADED / FAILED
     stravaError: str | None = None
+    # The character sheet frozen at the start (characters/sheet.py); the phone folds
+    # the fight over it. Absent for rides from before 0.6.1.
+    loadout: dict[str, Any] | None = None
+    quarryId: uuid.UUID | None = None
+    # 0.7.2: the entry written by the model, when there is one: {"lines": [...],
+    # "by": "model"}. The composed `entry` stays on the summary either way.
+    entryWritten: dict[str, Any] | None = None
 
 
 class RideCompleteOut(APIModel):
@@ -132,7 +145,40 @@ class AdventureSummary(APIModel):
     acBreakdown: list[dict[str, Any]] = []
     walletBalance: int | None = None
     worldObjects: dict[str, Any] | None = None
+    # The thing the outing was planned for; its fight leads the reckoning (0.6.1).
+    quarryId: str | None = None
     streak: dict[str, Any] | None = None
+    # 0.6.2: the entry the outing leaves in the journal, the week's notice when this
+    # outing met it, and the creatures met for the first time (the codex stamp).
+    entry: str | None = None
+    weekNotice: dict[str, Any] | None = None
+    codexFirsts: list[dict[str, Any]] = []
+    # 0.7.0: rune stones picked up, and what the outing did for the deeds (in the
+    # processing result since 0.7.0; on the summary since 0.7.2).
+    runesFound: list[dict[str, Any]] | None = None
+    deeds: dict[str, Any] | None = None
+    # 0.7.2: what creatures, chests and the quest left (ItemFoundOut), and the
+    # model-written entry when there is one.
+    itemsFound: list[dict[str, Any]] | None = None
+    entryWritten: dict[str, Any] | None = None
+    # 0.7.3: a pledge kept on this journey ({"kept": true, "targetName", "line", ...};
+    # absent otherwise: a missed pledge is never mentioned), and letters found again.
+    pledge: dict[str, Any] | None = None
+    letters: list[dict[str, Any]] | None = None
+    # 0.8.0: what the journey did to the legend ({"id", "name", "icon", "phaseBefore",
+    # "phaseAfter", "healthLeft", "healthMax", "damage", "kinds", "phaseBroken",
+    # "defeated", "rewards", "line", ...}), a lair's tiles visited, buried treasure
+    # found, and a legend that woke after it. Each absent when there was none.
+    legend: dict[str, Any] | None = None
+    lair: dict[str, Any] | None = None
+    treasureFound: dict[str, Any] | None = None
+    legendWoke: dict[str, Any] | None = None
+    # 0.9.0: every district the journey was in ({"id", "name", "title", "displayName",
+    # "percent", "exploredTiles", "newTiles", "becameYours", "completed"}), and the
+    # week's pay for the districts that are yours ({"coins", "districts", "doubled"};
+    # absent unless this journey was paid).
+    districts: list[dict[str, Any]] = []
+    districtPay: dict[str, Any] | None = None
 
 
 class RideGeometry(APIModel):
