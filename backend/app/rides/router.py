@@ -5,10 +5,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response, status
 
+from app.core import fit
 from app.core.deps import CurrentUser, DBDep, get_job_queue
+from app.core.errors import Conflict
 from app.core.pagination import Page, clamp_limit
 from app.rides import service
-from app.rides.export import to_gpx, to_tcx
+from app.rides.export import name as export_name
+from app.rides.export import to_fit, to_gpx, to_tcx
 from app.rides.schemas import (
     AdventureSummary,
     RideCellsIn,
@@ -101,16 +104,24 @@ async def export(
     ride_id: uuid.UUID,
     user: CurrentUser,
     db: DBDep,
-    format: str = Query(default="gpx", pattern="^(gpx|tcx)$"),
+    format: str = Query(default="gpx", pattern="^(gpx|tcx|fit)$"),
 ) -> Response:
+    """The journey as a file; `fit` is what Garmin Connect imports (409 `NO_TRACK`)."""
     ride = await service.get_ride(db, user, ride_id)
-    pts = await service.points(db, ride)
-    body = to_gpx(ride, pts) if format == "gpx" else to_tcx(ride, pts)
-    media = "application/gpx+xml" if format == "gpx" else "application/vnd.garmin.tcx+xml"
+    pts = await service.kept_points(db, ride)
+    if format == "fit":
+        if not pts:
+            raise Conflict("This journey has no track to save.", code="NO_TRACK")
+        body: bytes | str = to_fit(ride, pts)
+        media = fit.MEDIA_TYPE
+    elif format == "gpx":
+        body, media = to_gpx(ride, pts), "application/gpx+xml"
+    else:
+        body, media = to_tcx(ride, pts), "application/vnd.garmin.tcx+xml"
     return Response(
         content=body,
         media_type=media,
-        headers={"Content-Disposition": f'attachment; filename="ride-{ride.id}.{format}"'},
+        headers={"Content-Disposition": f'attachment; filename="{fit.filename(export_name(ride), format)}"'},
     )
 
 

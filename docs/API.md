@@ -1122,6 +1122,17 @@ With `effort_combat` on, fetching the package of the route chosen to ride places
 real place beside its far half (from halfway to nine tenths of the way), once per route, unless one is
 already waiting there. Fetch the world objects after the package to see it.
 
+### `GET /routes/{id}/export?format=fit|gpx` (Garmin)
+
+The route as a course for a Garmin Edge or watch (docs/GARMIN.md). `fit` (the default) is a FIT
+course file, `application/vnd.ant.fit`: the line with its heights, a course point for each turn (named
+for the street, at most 16 characters; a street changing its name is not a turn), each requested stop,
+and each quest objective the phone can show that is not done and lies within 300 m of the line. A
+hidden objective's place is never in the file. `gpx` is the same line as a track with the places as
+waypoints and no turns. `Content-Disposition` names the file after the quest, else the route's label,
+activity and day: `attachment; filename="Scenic ride 8 Oct.fit"`. `409 ROUTE_SEALED` for a sealed
+quest's route while the quest is open; `404` for a route that is not the caller's.
+
 ---
 
 ## Rides
@@ -1299,7 +1310,7 @@ Parties:
 - `POST /integrations/strava/callback` `{"code": "..."}`
 - `DELETE /integrations/strava`
 - `POST /integrations/strava/upload/{rideId}` → `{"status": "QUEUED"}`
-- `GET /rides/{id}/export?format=gpx|tcx` → file
+- `GET /rides/{id}/export?format=gpx|tcx|fit` → file of the fixes processing kept, with the journey's own sport. `fit` is a FIT activity (`application/vnd.ant.fit`) to import into Garmin Connect by hand; `409 NO_TRACK` when nothing was kept. `Content-Disposition` names it after the title, else `Ride 8 Oct 2026.fit`
 
 ---
 

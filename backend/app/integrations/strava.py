@@ -16,8 +16,9 @@ from app.core.config import Settings
 from app.core.errors import FeatureDisabled, NotFound
 from app.core.feature_flags import require_flag
 from app.integrations.models import StravaConnection
+from app.rides import service as rides_service
 from app.rides.export import to_gpx
-from app.rides.models import Ride, RidePoint
+from app.rides.models import Ride
 
 STRAVA_AUTH = "https://www.strava.com/oauth/authorize"
 STRAVA_TOKEN = "https://www.strava.com/oauth/token"
@@ -127,12 +128,7 @@ async def upload_ride(
         raise FeatureDisabled("Strava isn't connected. Connect it in Settings first.")
     try:
         token = await _fresh_token(settings, connection)
-        points = list(
-            (
-                await db.execute(select(RidePoint).where(RidePoint.ride_id == ride.id).order_by(RidePoint.sequence))
-            ).scalars()
-        )
-        gpx = to_gpx(ride, points)
+        gpx = to_gpx(ride, await rides_service.kept_points(db, ride))
         async with httpx.AsyncClient(timeout=30.0, transport=transport) as client:
             response = await client.post(
                 STRAVA_UPLOAD,
