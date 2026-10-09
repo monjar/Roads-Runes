@@ -608,6 +608,32 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     public func route(id: UUID) async throws -> RouteOption {
         try await run { guard let route = self.storedRoutes[id] else { throw self.notFound("Route") }; return route }
     }
+    /// A small stand-in file, so the share sheet has something to pass on offline. Like
+    /// the server, an open sealed quest's route is refused: it would give the goal away.
+    public func downloadRouteExport(id: UUID, format: RouteExportFormat) async throws -> URL {
+        try await run {
+            guard let route = self.storedRoutes[id] else { throw self.notFound("Route") }
+            let open: Set<QuestStatus> = [.available, .accepted, .active]
+            if self.storedQuests.values.contains(where: { $0.suggestedRouteId == id && SealedQuest.isSealed($0) && open.contains($0.status) }) {
+                throw APIError.server(code: APIErrorCode.routeSealed,
+                                      message: "A sealed quest's route can't be sent until the quest is done.", status: 409)
+            }
+            return try ExportFile.write(Self.placeholderExport(format: format.rawValue, name: route.label, path: route.path),
+                                        named: "\(route.label) route.\(format.rawValue)")
+        }
+    }
+
+    /// GPX a reader can open; FIT and TCX a line saying what this is.
+    static func placeholderExport(format: String, name: String, path: [Coordinate]) -> Data {
+        guard format == "gpx" else { return Data("Roads & Runes mock \(format.uppercased()) export: \(name)\n".utf8) }
+        let points = path.map { "<trkpt lat=\"\($0.latitude)\" lon=\"\($0.longitude)\"/>" }.joined()
+        return Data("""
+        <?xml version="1.0" encoding="UTF-8"?>
+        <gpx version="1.1" creator="Roads &amp; Runes mock" xmlns="http://www.topografix.com/GPX/1/1">\
+        <trk><name>\(name.replacingOccurrences(of: "&", with: "&amp;"))</name><trkseg>\(points)</trkseg></trk></gpx>
+        """.utf8)
+    }
+
     public func routePackage(id: UUID) async throws -> RoutePackage {
         try await run {
             guard let route = self.storedRoutes[id] else { throw self.notFound("Route") }

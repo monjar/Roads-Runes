@@ -351,7 +351,9 @@ public struct AdventureEntry: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
+/// `GET /rides/{id}/export?format=`: `fit` is the FIT activity a rider imports into Garmin Connect.
 public enum RideExportFormat: String, Sendable {
     case gpx
     case tcx
+    case fit
 }

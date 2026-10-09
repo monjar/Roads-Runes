@@ -69,6 +69,8 @@ public enum APIErrorCode {
     /// 0.9.0: a look worn that the player does not own, or one of another kind.
     public static let notOwned = "LOOK_NOT_OWNED"
     public static let wrongLook = "WRONG_LOOK"
+    /// A sealed quest's route is not exported while the quest is open: it would give the goal away.
+    public static let routeSealed = "ROUTE_SEALED"
 }
 
 public struct StravaStatus: Codable, Hashable, Sendable {

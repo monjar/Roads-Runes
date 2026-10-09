@@ -45,7 +45,7 @@ from app.quests.models import QuestInstance, QuestObjective
 from app.quests.service import all_required_complete, completion_payload, quest_out
 from app.quests.state_machine import assert_transition
 from app.rides.models import Ride, RidePoint, RideRoute
-from app.rides.validation import CleanPoint, check_cell_plausibility, validate_points
+from app.rides.validation import CleanPoint, as_raw, check_cell_plausibility, validate_points
 from app.social.service import publish
 from app.users.models import User
 from app.world_objects import lairs
@@ -361,18 +361,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         .scalars()
         .all()
     )
-    raw = [
-        {
-            "latitude": p.latitude,
-            "longitude": p.longitude,
-            "timestamp": p.timestamp,
-            "altitudeMeters": p.altitude_meters,
-            "horizontalAccuracyMeters": p.horizontal_accuracy_meters,
-            "speedMps": p.speed_mps,
-            "heartRateBpm": p.heart_rate_bpm,
-        }
-        for p in points_rows
-    ]
+    raw = as_raw(points_rows)
     validation = validate_points(raw, client_distance_m=ride.distance_meters, activity=ride.activity)
     flags = list(validation.flags)
     points = validation.points

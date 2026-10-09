@@ -113,6 +113,26 @@ reckoning say Raido woke; is the cut marked on the Journal's map; did a
 creature in reach take a rune blow. Then, on foot, the same with Sowilo's
 zigzag. Note any loop the matcher did not read (send the GPX).
 
+### 12. A route on the Garmin, a journey into Garmin Connect
+**Question:** does a planned route arrive on a Garmin as a course you can
+follow, and does a journey import into Garmin Connect? (docs/GARMIN.md, plan
+step 3; it decides whether a Connect IQ app is worth building.)
+Plan a loop with a stop (a pub or a café) and a quest route with an objective
+on the way. On each, Send to Garmin → Share → Garmin Connect. Check:
+* Did Garmin Connect take the `.fit` file and offer to save a course? If not,
+  try the GPX (the same route as `?format=gpx`) and note which worked.
+* After a sync, is the course under Courses on the device, with our name?
+* Ride or walk part of it with the course running. Do the turns come up named
+  for the street? Does the device also add its own turn prompts (Edge with
+  maps), and do the two disagree anywhere? Do the stop and the objective show
+  as course points, and are their names readable or cut?
+Then Save for Garmin on the journey you just recorded with the app. Try the
+import at connect.garmin.com (Import Data) from Safari on the phone first,
+then from a computer. Check: did Safari let you pick the `.fit` file; does the
+activity have the right sport, distance, time and heart rate; does it count
+toward Training Status. Note the Garmin's model and the Garmin Connect app's
+version.
+
 ## Every release's gate outing
 
 Each release in `docs/ROADMAP.md` is gated on one real outing with the build

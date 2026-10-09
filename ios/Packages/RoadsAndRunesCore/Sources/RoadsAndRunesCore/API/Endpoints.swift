@@ -194,6 +194,10 @@ public enum Endpoints {
         let query = origin.map { [QueryItem("latitude", format($0.latitude)), QueryItem("longitude", format($0.longitude))] } ?? []
         return Endpoint(method: .get, path: "/quests/\(id.uuidString)/route", query: query, timeout: 90)
     }
+    /// The route as a file to hand on: a FIT course for a Garmin, or GPX. 409 `ROUTE_SEALED` for an open sealed quest's route.
+    public static func routeExport(id: UUID, format: RouteExportFormat) -> Endpoint {
+        Endpoint(method: .get, path: "/routes/\(id.uuidString)/export", query: [QueryItem("format", format.rawValue)])
+    }
     /// Asked for mid-ride, so it gives up sooner than a plan does: the rider is told and shown the way back instead.
     public static func reroute(routeId: UUID, _ body: RerouteRequest) throws -> Endpoint {
         try .json(.post, "/routes/\(routeId.uuidString)/reroute", body: body, timeout: 25)
