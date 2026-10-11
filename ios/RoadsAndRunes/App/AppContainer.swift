@@ -101,6 +101,7 @@ final class AppContainer {
                 case .pause: recorder.pause()
                 case .resume: recorder.resume()
                 case .end: await recorder.finish()
+                case .keepGoing: recorder.keepGoing()
                 }
             }
         }

@@ -330,6 +330,60 @@ final class RideAnywhereTests: XCTestCase {
         XCTAssertFalse(older.offersRideAnywhere)
     }
 
+    // MARK: - A journey left standing
+
+    func testTwentyMinutesStillSavesTheBatteryAndAsksThenAgainAtAnHour() {
+        var idle = IdleWatch(endsItself: false, startedAt: t0, at: start)
+        XCTAssertEqual(idle.tick(at: t0 + 19 * 60), [])
+        // GPS drift within 50 m is not moving.
+        XCTAssertNil(idle.moved(to: east(30), at: t0 + 19 * 60 + 30))
+        XCTAssertEqual(idle.tick(at: t0 + 20 * 60), [.saveBattery, .ask(minutes: 20)])
+        XCTAssertTrue(idle.asking && idle.savingBattery)
+        XCTAssertEqual(idle.tick(at: t0 + 25 * 60), [], "asked once")
+        idle.keepGoing()
+        XCTAssertFalse(idle.asking)
+        XCTAssertEqual(idle.tick(at: t0 + 60 * 60), [.ask(minutes: 60)], "again at an hour; the battery is already saved")
+        // A planned journey only asks: it never ends itself.
+        XCTAssertEqual(idle.tick(at: t0 + 5 * 3600), [])
+        // Moving 50 m and more puts it all back.
+        XCTAssertEqual(idle.moved(to: east(200), at: t0 + 5 * 3600 + 10), .moving)
+        XCTAssertFalse(idle.asking || idle.savingBattery)
+        XCTAssertEqual(idle.tick(at: t0 + 5 * 3600 + 19 * 60), [])
+        XCTAssertEqual(idle.tick(at: t0 + 5 * 3600 + 10 + 20 * 60), [.saveBattery, .ask(minutes: 20)])
+    }
+
+    func testARoamLeftStandingTwoHoursEndsAtItsLastMove() {
+        var idle = IdleWatch(endsItself: true)
+        XCTAssertEqual(idle.tick(at: t0 + 10_000), [], "no fix yet, no clock to read")
+        XCTAssertNil(idle.moved(to: start, at: t0))
+        XCTAssertNil(idle.moved(to: east(400), at: t0 + 120))
+        XCTAssertEqual(idle.lastMovedAt, t0 + 120)
+        // Asleep in a pocket for hours: one question, then the end, at the last move.
+        XCTAssertEqual(idle.tick(at: t0 + 120 + 61 * 60), [.saveBattery, .ask(minutes: 60)])
+        XCTAssertEqual(idle.tick(at: t0 + 120 + 2 * 3600), [.end(lastMovedAt: t0 + 120)])
+        XCTAssertEqual(idle.tick(at: t0 + 120 + 3 * 3600), [], "it ends once")
+    }
+
+    func testAStopByHandIsNotStandingStill() {
+        var idle = IdleWatch(endsItself: true, startedAt: t0, at: start)
+        XCTAssertEqual(idle.tick(at: t0 + 3 * 3600, paused: true), [], "paused is the rider's own stop")
+        idle.restart(at: t0 + 3 * 3600, at: start)
+        XCTAssertEqual(idle.tick(at: t0 + 3 * 3600 + 19 * 60), [])
+        XCTAssertEqual(idle.tick(at: t0 + 3 * 3600 + 20 * 60), [.saveBattery, .ask(minutes: 20)])
+    }
+
+    func testTheQuestionIsANoticeOnTheWristAndKeepGoingAnOlderPhoneDrops() throws {
+        XCTAssertTrue(WristTap.notices.contains(.notice))
+        XCTAssertFalse(WristTap.turns.contains(.notice) || WristTap.fight.contains(.notice))
+        var update = WatchNavigationUpdate(state: .active, distanceMeters: 1000, elapsedSeconds: 600, elevationGainMeters: 0,
+                                           timestamp: t0, stillOut: true)
+        let back = try WatchMessages.navigationUpdate(from: WatchMessages.navigationUpdate(update))
+        XCTAssertEqual(back.stillOut, true)
+        update.stillOut = nil
+        XCTAssertNil(try WatchMessages.navigationUpdate(from: WatchMessages.navigationUpdate(update)).stillOut)
+        XCTAssertEqual(try WatchMessages.command(from: WatchMessages.command(.keepGoing)), .keepGoing)
+    }
+
     func testTheButtonSaysTheActivity() {
         XCTAssertEqual(LoreCopy.anywhere(.ride), "Ride anywhere")
         XCTAssertEqual(LoreCopy.anywhere(.run), "Run anywhere")

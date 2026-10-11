@@ -529,4 +529,29 @@ final class RideStoreTests: XCTestCase {
         // None, or an older phone: no district lines.
         XCTAssertEqual(JourneyEndCard.lines(for: WatchJourneyEnd(districts: [], completedDistricts: nil)).map(\.text), ["Saved to your Journal"])
     }
+
+    /// 0.9.2: "Still out? End ride or keep going." while the phone asks; "Keep going"
+    /// on the wrist takes it away at once, and a later question comes back.
+    func testStillOutIsAskedUntilAnsweredOrTheRiderMoves() throws {
+        let store = RideStore()
+        var asking = update(instruction: nil)
+        asking.stillOut = true
+        store.apply(update: update(instruction: nil))
+        XCTAssertFalse(store.isAskingStillOut)
+        let decoded = try WatchMessages.navigationUpdate(from: WatchMessages.navigationUpdate(asking))
+        store.apply(update: decoded)
+        XCTAssertTrue(store.isAskingStillOut)
+        store.answerStillOut()
+        XCTAssertFalse(store.isAskingStillOut, "answered on the wrist")
+        store.apply(update: decoded)
+        XCTAssertFalse(store.isAskingStillOut, "the phone has not heard yet; it stays answered")
+        store.apply(update: update(instruction: nil))
+        store.apply(update: decoded)
+        XCTAssertTrue(store.isAskingStillOut, "a new question, at the hour")
+        // Not while paused, and an older phone never asks.
+        var paused = asking
+        paused.state = .completed
+        store.apply(update: paused)
+        XCTAssertFalse(store.isAskingStillOut)
+    }
 }

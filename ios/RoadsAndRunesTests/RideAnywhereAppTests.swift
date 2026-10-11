@@ -10,11 +10,15 @@ final class RideAnywhereAppTests: XCTestCase {
 
     override func setUp() async throws {
         clock = 0
+        base = SampleData.referenceDate
     }
+
+    /// When the fixes' clock starts: the sample date, or now for a test that ends a journey by its fixes.
+    private var base = SampleData.referenceDate
 
     private func ride(_ recorder: RideRecorder, to coordinate: Coordinate, after seconds: TimeInterval = 20) {
         clock += seconds
-        recorder.handle(fix: LocationFix(coordinate: coordinate, timestamp: SampleData.referenceDate.addingTimeInterval(clock), altitude: 10,
+        recorder.handle(fix: LocationFix(coordinate: coordinate, timestamp: base.addingTimeInterval(clock), altitude: 10,
                                          horizontalAccuracy: 5, speed: 5))
     }
 
@@ -188,6 +192,60 @@ final class RideAnywhereAppTests: XCTestCase {
         let asked = api.aroundAsks.count
         ride(recorder, to: GeoMath.destination(from: start, bearingDegrees: 90, distanceMeters: 700), after: 10)
         XCTAssertEqual(api.aroundAsks.count, asked, "not asked again before the backoff")
+        recorder.discard()
+    }
+
+    // MARK: - Left standing
+
+    /// Twenty minutes still: the question, on the phone and for the Watch. "Keep
+    /// going" takes it away; two hours still and the roam ends where it last moved.
+    func testARoamLeftStandingIsAskedAboutThenEndsWhereItLastMoved() async throws {
+        let api = MockAPI()
+        let container = AppContainer(api: api, inMemory: true)
+        await container.session.bootstrap()
+        let recorder = container.rideRecorder
+        await recorder.startRoam(activity: .ride, bikeId: nil)
+        // Fixes from now on: the journey ends at one of their times.
+        base = Date()
+        let start = SampleData.origin
+        ride(recorder, from: start, meters: 1000)
+        let lastMoved = base.addingTimeInterval(clock)
+        XCTAssertEqual(recorder.idleWatch?.lastMovedAt, lastMoved)
+        // A little drift where it stopped.
+        ride(recorder, to: GeoMath.destination(from: start, bearingDegrees: 90, distanceMeters: 1010), after: 300)
+
+        recorder.checkIdle(at: lastMoved.addingTimeInterval(19 * 60))
+        XCTAssertFalse(recorder.stillOutPrompt)
+        recorder.checkIdle(at: lastMoved.addingTimeInterval(20 * 60))
+        XCTAssertTrue(recorder.stillOutPrompt, "Still out? End ride or keep going.")
+        XCTAssertEqual(recorder.idleWatch?.savingBattery, true)
+        recorder.keepGoing()
+        XCTAssertFalse(recorder.stillOutPrompt)
+        XCTAssertTrue(recorder.isActive)
+
+        recorder.checkIdle(at: lastMoved.addingTimeInterval(2 * 3600))
+        await eventually("the roam ended itself") { !recorder.isActive }
+        let completion = try XCTUnwrap(api.rideCompletions.last)
+        XCTAssertEqual(completion.endedAt, lastMoved, "trimmed to the last time it moved")
+        XCTAssertTrue(completion.points.allSatisfy { $0.timestamp <= lastMoved }, "the drift after it stopped is left off")
+    }
+
+    /// A planned journey is only asked; it never ends itself.
+    func testAPlannedJourneyLeftStandingIsOnlyAsked() async throws {
+        let container = AppContainer(api: MockAPI(), inMemory: true)
+        await container.session.bootstrap()
+        let package = try await container.api.routePackage(id: SampleData.routeId)
+        let recorder = container.rideRecorder
+        await recorder.start(package: package, quest: nil, bikeId: nil)
+        for point in package.route.path.prefix(3) { ride(recorder, to: point) }
+        let lastMoved = base.addingTimeInterval(clock)
+        recorder.checkIdle(at: lastMoved.addingTimeInterval(61 * 60))
+        XCTAssertTrue(recorder.stillOutPrompt)
+        recorder.checkIdle(at: lastMoved.addingTimeInterval(5 * 3600))
+        XCTAssertTrue(recorder.isActive, "only a roam ends itself")
+        // Moving again: the question goes.
+        ride(recorder, to: package.route.path[8])
+        XCTAssertFalse(recorder.stillOutPrompt)
         recorder.discard()
     }
 

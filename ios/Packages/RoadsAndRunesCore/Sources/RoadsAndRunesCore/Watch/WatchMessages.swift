@@ -141,6 +141,10 @@ public struct WatchNavigationUpdate: Codable, Hashable, Sendable {
     /// journey, at a standstill (`DistrictNaming`, by `speedMps`), never while
     /// moving. Nil while the phone does not know, and from an older phone.
     public var districtName: String?
+    /// The journey has stood still a long while (0.9.2, `IdleWatch`): the Watch asks
+    /// "Still out? End ride or keep going." until the rider answers or moves. Nil
+    /// from an older phone, and an older Watch ignores it.
+    public var stillOut: Bool?
 
     public init(
         state: NavigationState, instruction: Instruction? = nil, distanceToInstructionMeters: Double? = nil,
@@ -148,8 +152,10 @@ public struct WatchNavigationUpdate: Codable, Hashable, Sendable {
         distanceMeters: Double, elapsedSeconds: Double, elevationGainMeters: Double, heartRate: Int? = nil,
         speedMps: Double? = nil, latitude: Double? = nil, longitude: Double? = nil, timestamp: Date = Date(),
         encounterLine: String? = nil, newTerritoryMeters: Double? = nil, remainingMeters: Double? = nil,
-        courseDegrees: Double? = nil, fight: WatchFight? = nil, goneMarkIds: [UUID]? = nil, districtName: String? = nil
+        courseDegrees: Double? = nil, fight: WatchFight? = nil, goneMarkIds: [UUID]? = nil, districtName: String? = nil,
+        stillOut: Bool? = nil
     ) {
+        self.stillOut = stillOut
         self.districtName = districtName
         self.fight = fight
         self.goneMarkIds = goneMarkIds
@@ -219,6 +225,8 @@ public enum WatchCommand: String, Codable, CaseIterable, Hashable, Sendable {
     case pause
     case resume
     case end
+    /// "Keep going" to "Still out?" (0.9.2). An older phone cannot read it and drops it.
+    case keepGoing
 }
 
 /// Watch → iPhone heart-rate sample from the Watch workout session.

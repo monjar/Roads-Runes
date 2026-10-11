@@ -67,6 +67,8 @@ final class RideRecorder {
     private(set) var isRoaming = false
     /// The lock screen's journey; a test hands in one with a fake sink.
     @ObservationIgnored var liveActivity: RideActivityController = .shared
+    /// "Still out? End ride or keep going." after a long stop (0.9.2, Core `IdleWatch`).
+    private(set) var stillOutPrompt = false
 
     // Dependencies
     private let api: any RoadsAndRunesAPI
@@ -127,6 +129,9 @@ final class RideRecorder {
     @ObservationIgnored private(set) var roamWorldLoaded = false
     /// When a roam asks for the world round it again (Core `RoamRefresher`).
     @ObservationIgnored private(set) var roamRefresher = RoamRefresher()
+    /// A journey left standing (0.9.2): asked about at 20 and 60 minutes, a roam ended at two hours.
+    @ObservationIgnored private(set) var idleWatch: IdleWatch?
+    @ObservationIgnored private var idleTicker: Task<Void, Never>?
     private let audio: RideAudio
 
     init(api: any RoadsAndRunesAPI, location: LocationService, health: HealthKitService, watch: WatchSessionService, sync: SyncService,
@@ -243,6 +248,7 @@ final class RideRecorder {
 
         transition(to: .active)
         isActive = true
+        startIdleWatch(from: location.lastFix.flatMap { abs($0.timestamp.timeIntervalSinceNow) <= Self.freshStartSeconds ? $0 : nil })
         analytics.track(.rideStarted, properties: ["questId": self.quest?.id.uuidString ?? "none", "roam": isRoaming ? "true" : "false"])
         if let package { analytics.track(.navigationStarted, properties: ["routeId": package.route.id.uuidString]) }
         sendWatchSummary()
@@ -261,6 +267,9 @@ final class RideRecorder {
         }
         guard transition(to: .paused) else { return }
         stopRerouteTicker()
+        // A stop by hand is the rider's own: standing counts again from the resume.
+        idleWatch?.restart(at: fixClockNow)
+        stillOutPrompt = false
         location.apply(mode: .endurance)
         sendWatchUpdate(force: true)
         persist(force: true)
@@ -268,25 +277,33 @@ final class RideRecorder {
 
     func resume() {
         guard transition(to: .active) else { return }
+        idleWatch?.restart(at: fixClockNow, at: lastFix?.coordinate)
         location.startTracking(mode: batteryMode)
         sendWatchUpdate(force: true)
         persist(force: true)
     }
 
-    func finish() async {
+    /// Ends the journey now, or (`trimmedTo`, a roam left standing two hours) as it
+    /// stood when it last moved: the fixes since are left off and the time stops there.
+    func finish(trimmedTo lastMoved: Date? = nil) async {
         guard isActive || state == .recovery else { return }
         cancelReroute()
         stopRerouteTicker()
         if state == .rerouting { _ = transition(to: .offRoute) }
         _ = transition(to: .finishing)
         location.stop()
-        let endedAt = Date()
+        let endedAt = lastMoved.map { max(startedAt, $0) } ?? Date()
         let workoutId = await health.endWorkout(endDate: endedAt)
         stats = statistics.snapshot
+        var elapsed = stats.elapsedSeconds
+        if lastMoved != nil {
+            pendingPoints.removeAll { $0.timestamp > endedAt }
+            elapsed = min(elapsed, endedAt.timeIntervalSince(startedAt))
+        }
         var cells = exploration?.takePendingBatch(now: endedAt, force: true) ?? []
         cells.append(contentsOf: pendingCellsFromStore())
         let completion = RideComplete(
-            endedAt: endedAt, distanceMeters: stats.distanceMeters, durationSeconds: Int(stats.elapsedSeconds), movingSeconds: Int(stats.movingSeconds),
+            endedAt: endedAt, distanceMeters: stats.distanceMeters, durationSeconds: Int(elapsed), movingSeconds: Int(min(stats.movingSeconds, elapsed)),
             elevationGainMeters: stats.elevationGainMeters, activeCalories: nil, points: pendingPoints, cellsVisited: Array(Set(cells)),
             objectiveEvents: pendingObjectiveEvents, healthKitWorkoutId: workoutId,
             encounterEvents: encounterTracker?.pendingEvents ?? []
@@ -300,7 +317,7 @@ final class RideRecorder {
         let endedClientId = clientRideId
         sync.beginReckoning(PendingReckoning(
             rideId: rideId, clientRideId: endedClientId, title: quest?.title ?? title ?? LoreCopy.free(activity), endedAt: endedAt,
-            distanceMeters: stats.distanceMeters, elapsedSeconds: stats.elapsedSeconds, newTerritoryMeters: newTerritoryMeters,
+            distanceMeters: stats.distanceMeters, elapsedSeconds: elapsed, newTerritoryMeters: newTerritoryMeters,
             claimed: eventLog.compactMap { event in
                 if case .phaseBroken(let name) = event { return "\(LegendCopy.phaseBroken) \(name)" }
                 guard case .claimed(let name, let kind, _, _) = event else { return nil }
@@ -363,6 +380,10 @@ final class RideRecorder {
         roamWorldLoading = false
         roamWorldLoaded = false
         roamRefresher = RoamRefresher()
+        idleTicker?.cancel()
+        idleTicker = nil
+        idleWatch = nil
+        stillOutPrompt = false
     }
 
     // MARK: - Fix handling (spec §35, §36)
@@ -377,6 +398,11 @@ final class RideRecorder {
         let still = stillness.update(speedMps: enriched.speed, at: enriched.timestamp)
         if still != isStill { isStill = still }
         updateNearbyStop(from: enriched.coordinate)
+        if var idle = idleWatch {
+            let woke = idle.moved(to: enriched.coordinate, at: enriched.timestamp)
+            idleWatch = idle
+            if let woke { perform(idle: woke) }
+        }
         let accepted = statistics.add(fix: enriched)
         stats = statistics.snapshot
         if accepted {
@@ -1208,7 +1234,8 @@ final class RideRecorder {
             courseDegrees: course.course,
             fight: encounterTracker?.watchFight(quarryId: quarryId, from: lastFix?.coordinate, icon: WatchArt.icon(for:)),
             goneMarkIds: watchGoneMarkIds,
-            districtName: watchDistrictName()
+            districtName: watchDistrictName(),
+            stillOut: stillOutPrompt ? true : nil
         )
         watch.send(update: update, force: force)
         // The lock screen, throttled by the controller; the last update (completed or cancelled) ends it.
@@ -1366,6 +1393,66 @@ final class RideRecorder {
         if let saved = recoverableRide { persistence.deleteActiveRide(clientRideId: saved.clientRideId) }
         recoverableRide = nil
         try? activeRideStore.clear()
+    }
+
+    // MARK: - A journey left standing (0.9.2)
+
+    /// Asked about every journey once the server's `ride_anywhere` is on; a roam always.
+    private var asksWhenIdle: Bool { isRoaming || session.isEnabled(FeatureFlag.rideAnywhere) }
+
+    private func startIdleWatch(from fix: LocationFix?) {
+        idleTicker?.cancel()
+        idleTicker = nil
+        guard asksWhenIdle else {
+            idleWatch = nil
+            return
+        }
+        idleWatch = IdleWatch(endsItself: isRoaming, startedAt: fix?.timestamp, at: fix?.coordinate)
+        // Fixes stop when the rider does: the clock is what notices.
+        idleTicker = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(30))
+                guard !Task.isCancelled, let self, self.isActive else { return }
+                self.checkIdle(at: self.fixClockNow)
+            }
+        }
+    }
+
+    /// What standing still this long calls for at `now` (the fixes' clock).
+    func checkIdle(at now: Date) {
+        guard isActive, var idle = idleWatch else { return }
+        let actions = idle.tick(at: now, paused: state == .paused)
+        idleWatch = idle
+        for action in actions { perform(idle: action) }
+    }
+
+    private func perform(idle action: IdleWatch.Action) {
+        switch action {
+        case .saveBattery:
+            location.apply(mode: .endurance)
+            watch.configure(batteryMode: .endurance)
+            AppLog.navigation.info("idle_endurance")
+        case .ask(let minutes):
+            stillOutPrompt = true
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            AppLog.navigation.info("idle_asked \(minutes, privacy: .public)")
+            sendWatchUpdate(force: true)
+        case .end(let lastMoved):
+            AppLog.navigation.info("idle_roam_ended")
+            Task { await self.finish(trimmedTo: lastMoved) }
+        case .moving:
+            stillOutPrompt = false
+            location.apply(mode: batteryMode)
+            watch.configure(batteryMode: batteryMode)
+            sendWatchUpdate(force: true)
+        }
+    }
+
+    /// "Keep going": the question goes. The GPS stays low until the rider moves.
+    func keepGoing() {
+        idleWatch?.keepGoing()
+        stillOutPrompt = false
+        sendWatchUpdate(force: true)
     }
 
     // MARK: - Helpers
