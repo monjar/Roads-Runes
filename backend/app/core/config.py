@@ -32,6 +32,7 @@ ALL_FEATURE_FLAGS: tuple[str, ...] = (
     "pledge",
     "parchment_map",
     "place_lore",
+    "ride_anywhere",
 )
 
 DEFAULT_FLAGS: dict[str, bool] = {
@@ -63,6 +64,8 @@ DEFAULT_FLAGS: dict[str, bool] = {
     # Place lore from Wikidata (0.9.0, discoveries/place_lore.py): a checked one-line
     # description kept on a place at tile import. Off until it has been read over.
     "place_lore": False,
+    # Ride anywhere (0.9.2): a journey with no route, and GET /world/around as it goes.
+    "ride_anywhere": True,
 }
 
 # Flags on wherever ENVIRONMENT is development (the local stack and the Fly backend)

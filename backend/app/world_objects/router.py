@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, Query
+from sqlalchemy import select
 
 from app.characters.service import get_character, get_rider_profile, maybe_character
 from app.core.deps import CurrentUser, DBDep, SettingsDep
 from app.core.errors import NotFound
+from app.core.feature_flags import require_flag
 from app.core.logging import get_logger
 from app.core.schemas import APIModel
+from app.core.security import utcnow
+from app.discoveries import osm_import
+from app.discoveries.schemas import DiscoverySummary
+from app.discoveries.service import nearby as discoveries_nearby
+from app.discoveries.service import summaries, user_found
 from app.economy import service as economy
 from app.economy.rules import load_ac_rules
 from app.inventory import service as inventory
@@ -19,6 +27,8 @@ from app.world_objects import lairs, service
 from app.world_objects.schemas import ClaimIn, ClaimResultOut, WorldObjectOut
 
 router = APIRouter(prefix="/world/objects", tags=["world"])
+# Ride anywhere (0.9.2): the world round a journey with no route, as it goes.
+around_router = APIRouter(prefix="/world", tags=["world"])
 log = get_logger(__name__)
 
 
@@ -45,6 +55,10 @@ async def objects(
             await lairs.ensure_offered(db, settings, character, near=(latitude, longitude))
     except Exception as exc:  # noqa: BLE001
         log.error("lair_offer_failed", error=str(exc)[:200])
+    # The places round here are fetched the first time the area is looked at (0.9.2),
+    # not only when a quest or a route is planned there; the world spawns on them on a
+    # later look (the tile is not counted as checked while they are on their way).
+    await _import_places(settings, latitude, longitude)
     live = await service.ensure_spawned(
         db,
         settings,
@@ -166,4 +180,74 @@ async def claim(
         setCompleted=set_done,
         itemFound=found,
         itemsFound=[f for f in (found, treasure_map) if f],
+    )
+
+
+async def _import_places(settings: Any, latitude: float, longitude: float) -> None:
+    try:
+        await osm_import.ensure_pois(settings, latitude, longitude, wait=False)
+    except Exception as exc:  # noqa: BLE001 - a map without new places, never no map
+        log.error("poi_import_start_failed", error=str(exc)[:200])
+
+
+class AroundOut(APIModel):
+    """The world round a journey with no route (0.9.2): the things there, the places
+    there (for the ride to say when one is found), and whether places round here are
+    still being fetched, so the phone asks again sooner."""
+
+    objects: list[WorldObjectOut]
+    places: list[DiscoverySummary]
+    importing: bool = False
+
+
+AROUND_RADIUS_M = 6000.0
+AROUND_PLACES_M = 3000.0
+
+
+@around_router.get("/around", response_model=AroundOut)
+async def around(
+    user: CurrentUser,
+    db: DBDep,
+    settings: SettingsDep,
+    latitude: float = Query(ge=-90, le=90),
+    longitude: float = Query(ge=-180, le=180),
+    rideId: uuid.UUID | None = None,
+    radiusMeters: float = Query(default=AROUND_RADIUS_M, ge=200, le=8000),
+) -> AroundOut:
+    """Ride anywhere: what is round the rider now. For a journey still recording it
+    may also place things here, at most once a minute and 20 times a journey; anyone
+    else is only shown what is already there (`GET /world/objects` places)."""
+    from app.rides.models import Ride
+
+    require_flag(settings, "ride_anywhere")
+    character = await get_character(db, user)
+    await _import_places(settings, latitude, longitude)
+    ride = (
+        await db.scalar(select(Ride).where(Ride.id == rideId, Ride.user_id == user.id, Ride.status == "RECORDING"))
+        if rideId is not None
+        else None
+    )
+    now = utcnow()
+    if ride is not None and service.ride_may_spawn(ride.id, now):
+        service.ride_spawned(ride.id, now)
+        live = await service.ensure_spawned(
+            db,
+            settings,
+            user.id,
+            latitude,
+            longitude,
+            radiusMeters,
+            character_class=character.character_class,
+            activity=ride.activity,
+        )
+    else:
+        await service.expire_stale(db, user.id)
+        live = await service.live_objects(db, user.id, latitude, longitude, radiusMeters)
+    places = await discoveries_nearby(db, latitude, longitude, min(radiusMeters, AROUND_PLACES_M), limit=100)
+    found = await user_found(db, user.id, [d.id for d in places])
+    owned = await service.pieces_owned(db, user.id)
+    return AroundOut(
+        objects=[service.to_out(o, owned) for o in live if o.kind != "LAIR"],
+        places=summaries(places, found),
+        importing=await service.import_due(db, settings, latitude, longitude),
     )

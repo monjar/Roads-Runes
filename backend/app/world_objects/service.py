@@ -42,6 +42,9 @@ from app.world_objects.spawner import Anchor, SpawnPlan, day_seed, plan_spawns, 
 
 # Spawning is checked at most once per (user, tile, day) per process; the map is
 # asked for the world on every pan, and the answer does not change within a day.
+# A tile counts as checked only once it had places to anchor on and none round it
+# were still to be imported (0.9.2), so ground reached before its places is spawned
+# again once they arrive.
 log = get_logger(__name__)
 
 _checked: OrderedDict[tuple[str, str, str], bool] = OrderedDict()
@@ -57,6 +60,28 @@ def load_config() -> dict[str, Any]:
 def forget_checks() -> None:
     """Tests, and a lure: the next look at the world spawns again."""
     _checked.clear()
+    _ride_spawns.clear()
+
+
+# Ride anywhere (0.9.2): during a recording journey, `GET /world/around` may place
+# things at most once a minute and 20 times a journey (per process, like `_checked`).
+# The per-tile slots and the per-journey coin and XP caps stay the backstop.
+RIDE_SPAWN_EVERY = timedelta(seconds=60)
+RIDE_SPAWN_MAX = 20
+_ride_spawns: OrderedDict[str, tuple[int, datetime]] = OrderedDict()
+
+
+def ride_may_spawn(ride_id: uuid.UUID, now: datetime) -> bool:
+    """Whether this journey may place things now: under its 20, a minute after the last."""
+    count, last = _ride_spawns.get(str(ride_id), (0, datetime.min.replace(tzinfo=now.tzinfo)))
+    return count < RIDE_SPAWN_MAX and now - last >= RIDE_SPAWN_EVERY
+
+
+def ride_spawned(ride_id: uuid.UUID, now: datetime) -> None:
+    count, _ = _ride_spawns.pop(str(ride_id), (0, now))
+    _ride_spawns[str(ride_id)] = (count + 1, now)
+    while len(_ride_spawns) > _CHECKED_LIMIT:
+        _ride_spawns.popitem(last=False)
 
 
 @dataclass
@@ -489,7 +514,9 @@ async def _ensure_spawned(
     key = (str(user_id), tile, day)
     if not force and key in _checked:
         return [o for o in live if haversine_m(latitude, longitude, o.latitude, o.longitude) <= radius_m]
-    if len(live) < int(cfg["maxLiveInRadius"]):
+    full = len(live) >= int(cfg["maxLiveInRadius"])
+    had_places = False
+    if not full:
         # Nearest first, and enough of them that the outer rings are real: with 300,
         # a city's places ran out a kilometre from the door.
         nearby = await discoveries_nearby(db, latitude, longitude, spawn_radius, limit=900)
@@ -516,6 +543,7 @@ async def _ensure_spawned(
             for d in nearby
             if d.id not in sensitive
         ]
+        had_places = bool(anchors)
         known = await known_cells(db, user_id)
         explored = {h for h, s in known.items() if s == "EXPLORED"}
         frontier = (
@@ -600,10 +628,30 @@ async def _ensure_spawned(
             plans.extend(batch)
             room -= len(batch)
         live += await _persist(db, user_id, plans, utcnow(), float(cfg["expiryDays"]), settings.h3_resolution)
-    _checked[key] = True
-    while len(_checked) > _CHECKED_LIMIT:
-        _checked.popitem(last=False)
+    # Done for the day only once there was somewhere to put things and nothing round
+    # here is still to be fetched: a tile looked at before its places arrived (a
+    # journey into new ground) used to stay empty until midnight.
+    if full or (had_places and not await import_due(db, settings, latitude, longitude)):
+        _checked[key] = True
+        while len(_checked) > _CHECKED_LIMIT:
+            _checked.popitem(last=False)
     return [o for o in live if haversine_m(latitude, longitude, o.latitude, o.longitude) <= radius_m]
+
+
+def _tile_reach_m(key: str, latitude: float, longitude: float) -> float:
+    """How far the point is from an import tile's edge (0 inside it)."""
+    south, west, north, east = osm_import.tile_bbox(key)
+    return haversine_m(latitude, longitude, min(max(latitude, south), north), min(max(longitude, west), east))
+
+
+async def import_due(db: AsyncSession, settings: Any, latitude: float, longitude: float) -> bool:
+    """Whether places within the spawn radius are still to be fetched: an import
+    tile under it never imported, or failed long enough ago to be tried again."""
+    if not getattr(settings, "poi_import_enabled", False):
+        return False
+    reach = float(load_config()["spawnRadiusMeters"])
+    keys = [k for k in osm_import.tiles_around(latitude, longitude) if _tile_reach_m(k, latitude, longitude) <= reach]
+    return bool(await osm_import.due_tiles(db, keys))
 
 
 LURE_REACH_M = 250.0
@@ -1077,8 +1125,8 @@ async def claim_from_ride(
     lons = [p.longitude for p in points]
     centre_lat, centre_lon = (min(lats) + max(lats)) / 2, (min(lons) + max(lons)) / 2
     reach = max(haversine_m(centre_lat, centre_lon, lat, lon) for lat, lon in zip(lats, lons, strict=True)) + 1200
+    started = getattr(ride, "started_at", None) or ended
     if effort:
-        started = getattr(ride, "started_at", None) or ended
         live = await window_objects(db, ride.user_id, centre_lat, centre_lon, reach, started, ended)
         live = [o for o in live if not (o.kind != "MONSTER" and o.status != "SPAWNED")]
     else:
@@ -1095,7 +1143,14 @@ async def claim_from_ride(
         if obj.kind not in ("CHEST", "COLLECTABLE", "MONSTER"):
             # A lair is visited tile by tile (world_objects/lairs.py), never passed or fought.
             continue
-        distance = claims.min_distance_to_path_m(obj.latitude, obj.longitude, coords)
+        # Placed while the journey was under way: only the fixes after it count.
+        cut = from_spawn(obj, points, started, ended)
+        if cut >= len(points):
+            if obj.kind == "MONSTER" and not effort:
+                outcome.missed.append((obj, "NOT_NEAR"))
+            continue
+        path = coords[cut:]
+        distance = claims.min_distance_to_path_m(obj.latitude, obj.longitude, path)
         if obj.kind in ("CHEST", "COLLECTABLE"):
             passed_within = max(float(cfg["claimRadiusMeters"][obj.kind]) * 1.25, pickup_reach)
             if obj.kind == "CHEST":
@@ -1111,7 +1166,7 @@ async def claim_from_ride(
             outcome.missed.append((obj, "NOT_NEAR"))
             continue
         tried: list[dict[str, Any]] = []
-        verdict = _fight(obj, points, coords, activity, new_cells, encounter_events, resolution, tried)
+        verdict = _fight(obj, points[cut:], path, activity, new_cells, encounter_events, resolution, tried)
         if verdict is None:
             outcome.missed.append((obj, "UNBEATEN"))
             if tried:
@@ -1136,6 +1191,17 @@ async def claim_from_ride(
     outcome.owned = await pieces_owned(db, ride.user_id)
     outcome.sets_completed = newly_completed(held, outcome.owned)
     return outcome
+
+
+def from_spawn(obj: WorldObject, points: list[CleanPoint], started: datetime | None, ended: datetime) -> int:
+    """The first fix that may count against this thing: 0, or for one placed while
+    the journey was under way (a roam's world grows as it goes, 0.9.2), the first
+    fix at or after it was placed. Ground ridden before it existed pays nothing.
+    One placed after the journey ended is a late upload's business, judged as before."""
+    spawned = obj.spawned_at
+    if spawned is None or started is None or not (started < spawned <= ended):
+        return 0
+    return next((i for i, p in enumerate(points) if p.timestamp >= spawned), len(points))
 
 
 async def _fight_by_effort(
@@ -1182,7 +1248,18 @@ async def _fight_by_effort(
     old_places = await _old_place_anchors(db, monsters)
     # The Ground Six add a want to the first few of a family met on the outing.
     extra_wants = _ground_wants(sheet, monsters, fight_points, cfg, activity)
+    started = getattr(ride, "started_at", None)
     for obj in monsters:
+        # Placed while the journey was under way (0.9.2): fought only from then on.
+        cut = from_spawn(obj, points, started, ended)
+        if cut >= len(points) - 1:
+            if obj.status == "SPAWNED":
+                outcome.missed.append((obj, "NOT_NEAR"))
+            continue
+        its_points, its_coords = fight_points[cut:], coords[cut:]
+        its_cells = [i - cut for i in new_cell_indices if i >= cut]
+        its_words = [i - cut for i in words if i >= cut]
+        its_woken = [(lat, lon, i - cut) for lat, lon, i in woken if i >= cut]
         try:
             foe = foe_of(obj, excluding_ride=ride_id, day=day)
             if extra_wants.get(obj.id):
@@ -1190,7 +1267,7 @@ async def _fight_by_effort(
             hit = None
             if foe.road_form and not foe.rune_today:
                 match = claims.match_rune(
-                    coords,
+                    its_coords,
                     (obj.latitude, obj.longitude),
                     threshold=sheet.rune_threshold,
                     search_radius_m=sheet.rune_reach_m,
@@ -1202,13 +1279,15 @@ async def _fight_by_effort(
                     if match.shape == foe.road_form and user_id is not None:
                         cut_rune = runes_catalog.rune_for_form(match.shape)
                         if cut_rune:
-                            at = coords[min(match.end, len(coords) - 1)]
+                            at = its_coords[min(match.end, len(its_coords) - 1)]
                             await inventory.record_cut(
                                 db, user_id, ride_id=ride_uuid, rune_id=cut_rune, latitude=at[0], longitude=at[1],
                                 source="FIGHT", place_name=obj.payload.get("anchorName"),
                             )  # fmt: skip
             if hit is None or hit.shape != foe.road_form:
-                near = [w for w in woken if haversine_m(w[0], w[1], obj.latitude, obj.longitude) <= sheet.rune_reach_m]
+                near = [
+                    w for w in its_woken if haversine_m(w[0], w[1], obj.latitude, obj.longitude) <= sheet.rune_reach_m
+                ]
                 if near:
                     hit = fight.RuneHit(fight.WOKEN, near[0][2])
             # The build against this one: elders and bounties, an old place, a long outing.
@@ -1220,15 +1299,15 @@ async def _fight_by_effort(
                 foot=activity in ("RUN", "WALK"),
             )
             report = fight.resolve(
-                fight_points,
+                its_points,
                 foe,
                 activity=activity,
                 damage_pct=pct,
                 # Tiwaz (0.9.0): the creature this journey was planned for.
                 cfg=sheet.foe_cfg(cfg, elder=elder, quarry=quarry_id is not None and obj.id == quarry_id),
-                new_cell_indices=new_cell_indices,
+                new_cell_indices=its_cells,
                 rune_hit=hit,
-                word_indices=words,
+                word_indices=its_words,
             )
         except Exception as exc:  # noqa: BLE001 - one bad fight is a miss, never a lost outing
             log.error("fight_failed", ride_id=ride_id, object_id=str(obj.id), error=str(exc)[:200])

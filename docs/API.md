@@ -324,6 +324,44 @@ one, so it is coins and not progress).
 `EXPIRED` (buried treasure is `HIDDEN` and never listed).
 `claimRadiusMeters` is how close the player must be to take it, and null for a monster.
 
+0.9.2: the first look at an area also starts fetching its places from OpenStreetMap, in the
+background (before, only a quest board, a route or a lamp did). A tile counts as done for the day
+only once it had places to anchor on and none within the spawn radius are still to be fetched, so a
+look that came before the places spawns again once they arrive (it used to stay empty until
+midnight).
+
+**Placed during a journey (0.9.2).** Something placed after a journey started and before it ended is
+judged only on the fixes from the moment it was placed: a chest or a piece is opened by the trace from
+then on, and a creature is fought from then on (both fight rules). Ground ridden before it existed
+pays nothing. Something placed after the journey ended is judged as before.
+
+### `GET /world/around?latitude&longitude&rideId&radiusMeters=6000` (0.9.2, flag `ride_anywhere`)
+
+Ride anywhere: what is round the rider during a journey with no route, asked as they go.
+
+```json
+{
+  "objects": [WorldObject],
+  "places": [DiscoverySummary],
+  "importing": false
+}
+```
+
+- `objects`: the live chests, pieces and creatures within `radiusMeters` (at most 8000), never a lair.
+- `places`: named places within 3 km (at most 100, nearest first), with `discoveredByUser`, so the
+  ride can say when it finds a new one.
+- `importing`: places within the spawn radius are still being fetched; ask again in a minute or two.
+
+With `rideId` naming the player's own journey still `RECORDING`, the call may also place things here,
+as `GET /world/objects` does, at most once a minute and 20 times a journey (per server process). The
+per-tile daily slots and each journey's coin and XP caps stay the limit on farming. Without a
+recording journey it only lists what is already there. `403 FEATURE_DISABLED` with the flag off
+(`FEATURE_FLAGS=!ride_anywhere`); the phone then hides "Ride anywhere".
+
+A journey with no route and no quest is created as any other (`POST /rides` with `routeId` and
+`questId` null) and processed as any other: XP, tiles, places found, chests and creatures passed, and
+the quests it fits (see Rides).
+
 ### `POST /world/objects/{id}/claim`
 
 Open a chest or pick up a piece from beside it. (A ride still claims whatever its trace passes; this

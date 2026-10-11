@@ -23,6 +23,7 @@ from app.rides.router import router as rides_router
 from app.routing.router import router as routes_router
 from app.social.router import feed_router, friends_router, parties_router
 from app.users.router import router as users_router
+from app.world_objects.router import around_router as world_around_router
 from app.world_objects.router import router as world_objects_router
 from app.world_objects.service import load_config as load_world_config
 
@@ -66,6 +67,7 @@ for r in (
     devices_router,
     wallet_router,
     world_objects_router,
+    world_around_router,
     codex_router,
     runes_router,
     pledge_router,
