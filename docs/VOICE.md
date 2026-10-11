@@ -53,6 +53,9 @@ alone and invent no new lore, cast lines or mysteries for it.
 | An ability / a point to spend | **skill** / **skill point** | knack, ability point |
 | Days in a row | **streak** | days kept |
 | A recorded activity | **ride**, **run** or **walk** when known; **journey** when it could be any | outing, adventure |
+| A journey with no route (0.9.2) | **Ride anywhere** (**Run anywhere**, **Walk anywhere**), the button; the card under it says "No route. Every chest, creature and place on the way counts." The journey itself is still a **Free ride** | free roam, roam, explore mode, wander |
+| A quest a journey finished without being ridden for it | "**Also finished:** Ten Miles Out" on Journey's end | bonus quest, side quest |
+| A journey left standing a long while | "**Still out?** End ride or keep going." with **End ride** and **Keep going** | idle, inactive, timeout |
 | The summary after a journey | **Journey's end**; its button is **Done** | the reckoning, Close the book |
 | Levels | **Level up!**; "Wizard level 3" for a class level | the roads count again, bare "Explorer 8" |
 | The lure | **lamp**; the button is **Light a lamp** | leave a lamp out, lure |
