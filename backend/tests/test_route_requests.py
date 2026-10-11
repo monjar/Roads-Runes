@@ -128,8 +128,13 @@ async def seed_pubs(centre: tuple[float, float], count: int = 8, radius_m: float
 
 
 @pytest.mark.anyio
-async def test_a_ride_in_a_named_place_goes_there_with_the_stops_asked_for(explorer_client, settings, monkeypatch):
+@pytest.mark.parametrize("shapes", [True, False], ids=["route_shapes", "as_0_9_1"])
+async def test_a_ride_in_a_named_place_goes_there_with_the_stops_asked_for(
+    explorer_client, settings, monkeypatch, shapes
+):
     monkeypatch.setattr(settings, "geocoding_enabled", True)
+    if not shapes:
+        monkeypatch.setattr(settings, "feature_flags", "!route_shapes")
     geocode.clear_cache()
     await seed_pubs(NOTTING_HILL)
 
@@ -156,15 +161,33 @@ async def test_a_ride_in_a_named_place_goes_there_with_the_stops_asked_for(explo
     assert len(parsed["stops"]) == 5
     assert parsed["poi"]["count"] == 5
 
-    # One card is the honest cheap one: straight there, none of the stops. The rest
-    # carry every pub the rider asked for, on the line rather than near it.
-    carrying = [r for r in body["alternatives"] if any(poi.get("requested") for poi in r["pois"])]
+    asked = {stop["name"] for stop in parsed["stops"]}
+
+    def carried(route: dict) -> set[str]:
+        return {poi["name"] for poi in route["pois"] if poi.get("requested")}
+
+    carrying = [r for r in body["alternatives"] if carried(r)]
     assert carrying, "no alternative honoured the request"
-    for route in carrying:
-        requested = [poi for poi in route["pois"] if poi.get("requested")]
-        assert {poi["name"] for poi in requested} == {stop["name"] for stop in parsed["stops"]}
+    if shapes:
+        # As asked carries every pub, on the line; Direct the nearer half of them; and
+        # "Other stops" a different set, none of the first card's (0.9.2).
+        by_label = {route["label"]: route for route in body["alternatives"]}
+        assert carried(by_label["As asked"]) == asked
+        assert carried(by_label["Direct"]) < asked
+        if "Other stops" in by_label:
+            assert carried(by_label["Other stops"]) and not carried(by_label["Other stops"]) & asked
+        carrying = [by_label["As asked"]]
+    else:
+        # One card is the honest cheap one: straight there, none of the stops. The rest
+        # carry every pub the rider asked for, on the line rather than near it.
+        for route in carrying:
+            assert carried(route) == asked
 
     # The ride is in Notting Hill, not at the rider's door.
+    for route in body["alternatives"]:
+        longitude, latitude = route["coordinates"][0][:2]
+        assert abs(latitude - NOTTING_HILL[0]) < 0.05
+        assert abs(longitude - NOTTING_HILL[1]) < 0.05
     for route in carrying:
         longitude, latitude = route["coordinates"][0][:2]
         assert abs(latitude - NOTTING_HILL[0]) < 0.05

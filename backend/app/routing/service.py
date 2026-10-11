@@ -47,6 +47,7 @@ from app.routing.engine import (
     EngineRoute,
     RoutingEngine,
     RoutingUnavailable,
+    downgraded,
     head_of,
     join_routes,
 )
@@ -532,6 +533,9 @@ async def _pick_stops(
     target_km: float,
     max_ring_m: float | None = None,
     appeal_weight: float = 0.25,
+    *,
+    exclude: set[Any] | frozenset[Any] = frozenset(),
+    avoid_bearings: list[float] | None = None,
 ) -> list[Discovery]:
     """`count` places around a centre, spread around the compass.
 
@@ -539,11 +543,26 @@ async def _pick_stops(
     per sector of the circle gives a loop that actually goes somewhere. When the
     rider named a neighbourhood, `max_ring_m` keeps the stops inside it — five pubs
     "in Notting Hill" must not be spread across half of London.
+
+    "Other stops" (0.9.2) leaves out the first card's (`exclude`) and keeps at least
+    a quarter of a sector from each of their bearings (`avoid_bearings`), so the
+    second loop is the first turned half a sector rather than the same one again.
     """
     ring = max(400.0, target_km * 1000 / (2 * math.pi) * 0.8)
     if max_ring_m is not None:
         ring = min(ring, max_ring_m)
-    candidates = await _candidates(db, latitude, longitude, ring * 2.5, categories)
+    candidates = [p for p in await _candidates(db, latitude, longitude, ring * 2.5, categories) if p.id not in exclude]
+    if avoid_bearings:
+        quarter = 360 / max(1, count) / 4
+        away = [
+            p
+            for p in candidates
+            if all(
+                _bearing_gap(bearing_deg(latitude, longitude, p.latitude, p.longitude), b) >= quarter
+                for b in avoid_bearings
+            )
+        ]
+        candidates = away or candidates
     if not candidates:
         return []
     spread = 360 / count * 0.6
@@ -671,12 +690,17 @@ async def _pick_stops_between(
     categories: list[str],
     count: int,
     appeal_weight: float = 0.25,
+    *,
+    side: int | None = None,
+    exclude: set[Any] | frozenset[Any] = frozenset(),
 ) -> list[Discovery]:
     """`count` stops strung along the way from the rider to a place.
 
     A ride to somewhere is not a loop, so spreading the stops around the compass
     (`_pick_stops`) would send the rider backwards. These come out of a corridor
     along the line, one per stretch of the way, in the order they are reached.
+    `side` keeps them to one side of the line and `exclude` leaves some out: the
+    "Other stops" card (0.9.2).
     """
     direct = haversine_m(start.latitude, start.longitude, destination.latitude, destination.longitude)
     pool = await _candidates(
@@ -686,6 +710,9 @@ async def _pick_stops_between(
         max(2500.0, direct * 0.8),
         categories,
     )
+    pool = [p for p in pool if p.id not in exclude]
+    if side is not None:
+        pool = [p for p in pool if (_signed_offset(p.latitude, p.longitude, start, destination)[0] > 0) == (side > 0)]
     measured = [(*_distance_to_leg(poi.latitude, poi.longitude, start, destination), poi) for poi in pool]
     # A short ride has a short corridor, and three cafés within 600 m of a 1.5 km line
     # is asking a lot of one neighbourhood. Rather than answer "none", give ground:
@@ -952,7 +979,14 @@ def _request_for(
         if (plan.engine.name == "synthetic" or custom_model is None)
         else strip_internal(custom_model),
         "heading": heading,
-        "costing": valhalla_costing(prefs, plan.bike_type, plan.allow_gravel, plan.allow_trails, plan.activity),
+        "costing": valhalla_costing(
+            prefs,
+            plan.bike_type,
+            plan.allow_gravel,
+            plan.allow_trails,
+            plan.activity,
+            living_streets=plan.shaped and variant.label == ASKED_LABEL,
+        ),
         "activity": plan.activity,
         "details": plan.details,
     }
@@ -1320,6 +1354,7 @@ def _loop_destination_slots(
        those come back too alike) the long way, mirrored at 0.35×.
     """
     main, plain, third = _roles(variants)
+    plain = _wider(plain)
     assert plan.destination is not None
     destination = plan.destination
     side = main_shape.offset_side
@@ -1405,6 +1440,222 @@ def _loop_destination_slots(
         [candidate(main, 0, main.label, as_asked)],
         [candidate(plain, 1, plain.label, cheapest, direct=True)],
         third_slot,
+    ]
+
+
+# Direct's costing on Valhalla's narrow range: at most this quiet and this keen on
+# cycle paths, which lifts `use_roads` from about 0.44 to 0.6.
+DIRECT_TRAFFIC_AVERSION = 0.4
+DIRECT_CYCLEWAY = 0.3
+
+
+def _wider(variant: Variant) -> Variant:
+    """Direct as the quick way, not the asked-for way again: busier roads and fewer
+    cycle paths allowed than the rider's own preferences."""
+    prefs = RoutePreferences(**variant.prefs.to_dict())
+    prefs.trafficAversion = min(prefs.trafficAversion, DIRECT_TRAFFIC_AVERSION)
+    prefs.cyclewayPreference = min(prefs.cyclewayPreference, DIRECT_CYCLEWAY)
+    return replace(variant, prefs=prefs)
+
+
+def _side_of(points: list[tuple[float, float]], start: Coordinate, end: Coordinate) -> int:
+    """Which side of the start→end line these points mostly sit: +1 left, −1 right."""
+    total = sum(_signed_offset(lat, lon, start, end)[0] for lat, lon in points)
+    return 1 if total >= 0 else -1
+
+
+async def _plain_card(
+    cards: _Cards,
+    variant: Variant,
+    index: int,
+    label: str,
+    points: list[tuple[float, float]],
+    first: bool,
+    *,
+    direct: bool = False,
+    alternatives: int = 1,
+    types: list[str] | None = None,
+    cutoffs: list[float | None] | None = None,
+) -> _Card | None:
+    """A card through its points. Two points may ask for alternates, which go to the
+    pool for a later card; a "through" point at a dead end gets its U-turn back."""
+    plan = cards.plan
+    request = _request_for(
+        plan,
+        variant,
+        index,
+        points,
+        details=False,
+        alternatives=alternatives if len(points) == 2 else 1,
+        location_types=types,
+        search_cutoff_m=cutoffs,
+    )
+    routes, error = await _attempt(plan, request, label)
+    if not routes and error is not None and error.no_path and types and "through" in types and cards.affordable():
+        request = downgraded(request)
+        routes, _ = await _attempt(plan, request, label)
+    if not routes:
+        return None
+    cards.pool.extend((alt, request, variant) for alt in routes[1:])
+    retrace = overlap.self_overlap(routes[0].coordinates) if plan.loop else None
+    return _Card(label, variant, routes[0], request, direct=direct, self_overlap=retrace)
+
+
+def _plain(
+    variant: Variant,
+    index: int,
+    label: str,
+    points: list[tuple[float, float]],
+    *,
+    direct: bool = False,
+    alternatives: int = 1,
+) -> _Candidate:
+    async def make(cards: _Cards, first: bool) -> _Card | None:
+        return await _plain_card(cards, variant, index, label, points, first, direct=direct, alternatives=alternatives)
+
+    return _Candidate(make)
+
+
+def _pooled(label: str) -> _Candidate:
+    """The alternate least like the cards already kept, from requests already made."""
+
+    async def make(cards: _Cards, first: bool) -> _Card | None:
+        if not cards.pool:
+            return None
+
+        def likeness(index: int) -> float:
+            er = cards.pool[index][0]
+            return max((overlap.similarity(er.coordinates, k.er.coordinates) for k in cards.kept), default=0.0)
+
+        er, request, variant = cards.pool.pop(min(range(len(cards.pool)), key=likeness))
+        retrace = overlap.self_overlap(er.coordinates) if cards.plan.loop else None
+        return _Card(label, replace(variant, stops=[]), er, request, self_overlap=retrace)
+
+    return _Candidate(make, free=True)
+
+
+def _map_tap_slots(plan: _Plan, variants: list[Variant]) -> list[list[_Candidate]]:
+    """A place tapped on the map, nothing typed: the quiet way and the direct way,
+    each asking for the engine's alternates, and for the third card the alternate
+    least like those two. Three cards from two requests."""
+    assert plan.destination is not None
+    plain = next((v for v in variants if v.label == DIRECT_LABEL), None)
+    others = [v for v in variants if v is not plain] or list(variants)
+    quiet = max(others, key=lambda v: v.prefs.trafficAversion)
+    plain = _wider(plain or replace(quiet, label=DIRECT_LABEL))
+    points = [(plan.start.latitude, plan.start.longitude), (plan.destination.latitude, plan.destination.longitude)]
+    return [
+        [_plain(quiet, 0, quiet.label, points, alternatives=3)],
+        [_plain(plain, 1, DIRECT_LABEL, points, direct=True, alternatives=2)],
+        [_pooled(shapes.ANOTHER_WAY)],
+    ]
+
+
+def _one_way_slots(
+    plan: _Plan, variants: list[Variant], categories: list[str], wanted: int, appeal_weight: float
+) -> list[list[_Candidate]]:
+    """A ride to a place, as typed: as asked; Direct, asking for alternates; and a
+    third that is another way there — through a point off the far side of the first
+    card's line, else an alternate Direct's request brought back, else the stops on
+    the other side of the line."""
+    main, plain, third = _roles(variants)
+    plain = replace(_wider(plain), stops=[])
+    assert plan.destination is not None
+    destination = plan.destination
+    chosen = list(main.stops)
+
+    async def corridor(cards: _Cards, first: bool) -> _Card | None:
+        if cards.kept:
+            coords = cards.kept[0].er.coordinates
+            step = max(1, len(coords) // 60)
+            side = -_side_of([(c[1], c[0]) for c in coords[::step]], plan.start, destination)
+        else:
+            side = 1 if plan.seed_base % 2 == 0 else -1
+        spot = await _offset_spot(plan.db, plan.start, destination, side, shapes.DIRECT_OFFSET_FACTOR)
+        via = [(p.latitude, p.longitude) for p in plan.via]
+        points = [
+            (plan.start.latitude, plan.start.longitude),
+            spot,
+            *via,
+            (destination.latitude, destination.longitude),
+        ]
+        types = ["break", "through", *(["via"] * len(via)), "break"]
+        cutoffs: list[float | None] = [None, shapes.OFFSET_CUTOFF_M, *([None] * (len(via) + 1))]
+        return await _plain_card(
+            cards, replace(third, stops=[]), 2, third.label, points, first, types=types, cutoffs=cutoffs
+        )
+
+    async def other_side(cards: _Cards, first: bool) -> _Card | None:
+        side = -_side_of([(p.latitude, p.longitude) for p in chosen], plan.start, destination)
+        picks = await _pick_stops_between(
+            plan.db,
+            plan.start,
+            destination,
+            categories,
+            wanted,
+            appeal_weight,
+            side=side,
+            exclude={p.id for p in chosen},
+        )
+        if not picks:
+            return None
+        ids = {p.id for p in picks}
+        plan.poi_candidates = [*picks, *(p for p in plan.poi_candidates if p.id not in ids)]
+        variant = replace(third, stops=picks)
+        return await _plain_card(cards, variant, 2, shapes.OTHER_STOPS, _points_for(plan, variant), first)
+
+    third_slot = [_Candidate(corridor), _pooled(shapes.ANOTHER_WAY)]
+    if chosen and categories:
+        third_slot.append(_Candidate(other_side))
+    return [
+        [_plain(main, 0, main.label, _points_for(plan, main))],
+        [_plain(plain, 1, plain.label, _points_for(plan, plain), direct=True, alternatives=3)],
+        third_slot,
+    ]
+
+
+def _loop_stops_slots(
+    plan: _Plan,
+    variants: list[Variant],
+    categories: list[str],
+    wanted: int,
+    appeal_weight: float,
+    max_ring_m: float | None,
+) -> list[list[_Candidate]]:
+    """A loop through stops: as asked; Direct through the nearer half of them (a
+    round trip when that is none); and other stops, none of the first card's, turned
+    half a sector — else the third costing through the same stops."""
+    main, plain, third = _roles(variants)
+    chosen = list(main.stops)
+    start = plan.start
+    nearest = sorted(chosen, key=lambda p: haversine_m(start.latitude, start.longitude, p.latitude, p.longitude))
+    plain = replace(_wider(plain), stops=_tour(start.latitude, start.longitude, nearest[: len(chosen) // 2]))
+
+    async def other_stops(cards: _Cards, first: bool) -> _Card | None:
+        bearings = [bearing_deg(start.latitude, start.longitude, p.latitude, p.longitude) for p in chosen]
+        picks = await _pick_stops(
+            plan.db,
+            start.latitude,
+            start.longitude,
+            categories,
+            wanted,
+            plan.target_km,
+            max_ring_m=max_ring_m,
+            appeal_weight=appeal_weight,
+            exclude={p.id for p in chosen},
+            avoid_bearings=bearings,
+        )
+        if not picks:
+            return None
+        ids = {p.id for p in picks}
+        plan.poi_candidates = [*picks, *(p for p in plan.poi_candidates if p.id not in ids)]
+        variant = replace(third, stops=picks)
+        return await _plain_card(cards, variant, 2, shapes.OTHER_STOPS, _points_for(plan, variant), first)
+
+    return [
+        [_plain(main, 0, main.label, _points_for(plan, main))],
+        [_plain(plain, 1, plain.label, _points_for(plan, plain), direct=True)],
+        [_Candidate(other_stops), _plain(third, 2, third.label, _points_for(plan, third))],
     ]
 
 
@@ -1836,10 +2087,22 @@ async def _generate(
     )
     routing = monotonic()
     variants = _variants(base_prefs, usual_prefs, requested_stops, labels, cfg, asked)
+    # Which shapes the cards take (docs/ROUTING.md, "Cards that differ").
+    slots: list[list[_Candidate]] | None = None
+    case: str | None = None
     if loop_destination and main_shape is not None:
-        slots = _loop_destination_slots(plan, variants, main_shape, categories, wanted, appeal_weight)
+        case, slots = "loop", _loop_destination_slots(plan, variants, main_shape, categories, wanted, appeal_weight)
+    elif shaped and destination is not None:
+        if asked:
+            case, slots = "one_way", _one_way_slots(plan, variants, categories, wanted, appeal_weight)
+        else:
+            case, slots = "map_tap", _map_tap_slots(plan, variants)
+    elif shaped and loop and requested_stops:
+        ring = 2500.0 if area is not None else None
+        case, slots = "loop_stops", _loop_stops_slots(plan, variants, categories, wanted, appeal_weight, ring)
+    if slots is not None:
         results, kept, same_road = await _shaped_cards(plan, slots[:max_variants])
-        if kept and (kept[0].self_overlap or 0.0) > shapes.SELF_OVERLAP_MAX:
+        if case == "loop" and kept and (kept[0].self_overlap or 0.0) > shapes.SELF_OVERLAP_MAX:
             same_road.append(shapes.RETRACE_NOTE)
     else:
         results, same_road = await _legacy_cards(plan, variants[:max_variants])
@@ -1890,7 +2153,7 @@ async def _generate(
         ms_import=ms_import,
         ms_engine=ms_engine,
         engine_calls=budget.used(),
-        shape="loop" if loop_destination else ("shaped" if shaped else None),
+        shape=case,
     )
     return results, parsed_dict
 

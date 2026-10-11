@@ -94,7 +94,13 @@ VALHALLA_BICYCLE_TYPE = {
 
 
 def valhalla_costing(
-    prefs: RoutePreferences, bike_type: str, allow_gravel: bool, allow_trails: bool, activity: str = "RIDE"
+    prefs: RoutePreferences,
+    bike_type: str,
+    allow_gravel: bool,
+    allow_trails: bool,
+    activity: str = "RIDE",
+    *,
+    living_streets: bool = False,
 ) -> dict[str, Any]:
     """The same preferences as Valhalla costing, for rides outside GraphHopper's graph.
 
@@ -102,6 +108,9 @@ def valhalla_costing(
     gravel appetite lowers `avoid_bad_surfaces` (bikes that cannot take gravel
     avoid it strongly), and hill tolerance is `use_hills`. On foot the costing is
     pedestrian: quiet means footways and pavements, gravel means tracks.
+
+    `living_streets` (0.9.2, the "As asked" card) also sets `use_living_streets`,
+    one more knob that tells the asked-for way from the plain one.
     """
     quiet = max(prefs.trafficAversion, prefs.cyclewayPreference * 0.8)
     if is_foot(activity):
@@ -122,12 +131,15 @@ def valhalla_costing(
         avoid_rough = max(avoid_rough, 0.7)
     if allow_trails and bike_type == "MOUNTAIN":
         avoid_rough = min(avoid_rough, 0.1)
-    return {
+    costing = {
         "bicycle_type": VALHALLA_BICYCLE_TYPE.get(bike_type, "Hybrid"),
         "use_roads": _unit(1 - quiet),
         "use_hills": _unit(prefs.hillTolerance),
         "avoid_bad_surfaces": _unit(avoid_rough),
     }
+    if living_streets:
+        costing["use_living_streets"] = _unit(0.5 + 0.4 * quiet)
+    return costing
 
 
 def _unit(value: float) -> float:

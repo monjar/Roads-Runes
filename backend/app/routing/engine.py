@@ -380,15 +380,11 @@ class SyntheticRouter:
         boundaries = {
             i for i, kind in enumerate(types) if kind in ("break", "break_through") and 0 < i < len(types) - 1
         }
-        # Two points may come with alternates, as the real engines' do: other bends.
-        count = max(1, request.alternatives) if len(request.points) == 2 else 1
-        routes = []
-        for k in range(count):
-            coords, legs = self._chain(request.points, seed + k, request.exclude_points, boundaries)
-            route = self._answer(coords, request)
-            route.leg_boundaries = legs
-            routes.append(route)
-        return routes
+        # No alternates: a test that wants them uses a router of its own.
+        coords, legs = self._chain(request.points, seed, request.exclude_points, boundaries)
+        route = self._answer(coords, request)
+        route.leg_boundaries = legs
+        return [route]
 
     async def details(self, route: EngineRoute, request: EngineRequest) -> EngineRoute:
         return route  # made up with the route
