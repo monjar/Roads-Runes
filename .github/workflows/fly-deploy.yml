@@ -6,6 +6,11 @@ on:
     branches: [master]
     paths: ["backend/**", ".github/workflows/fly-deploy.yml"]
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Deploy even if the code's version is older than the one running"
+        type: boolean
+        default: false
 
 concurrency:
   group: fly-deploy
@@ -80,6 +85,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
+      # A deploy never takes the server back a version. On 2026-10-08 the master
+      # push for PR #8 shipped 0.9.0 over a 0.9.1 deployed from a branch, and the
+      # phone's Send to Garmin found nothing. A server that cannot be reached does
+      # not block (that is when a deploy is most needed); `force` allows it on purpose.
+      - name: Refuse to deploy a version older than the one running
+        if: ${{ !inputs.force }}
+        run: |
+          code=$(python3 -c "import re; print(re.search(r'__version__ = \"([^\"]+)\"', open('app/__init__.py').read()).group(1))")
+          live=$(curl -fsS --max-time 60 https://roadsandrunes.fly.dev/api/v1/health | python3 -c "import json, sys; print(json.load(sys.stdin)['version'])" 2>/dev/null || true)
+          echo "code ${code}, running ${live:-unknown}"
+          [ -z "$live" ] && exit 0
+          python3 - "$code" "$live" <<'PY'
+          import sys
+          def parts(v): return tuple(int(x) for x in v.split(".") if x.isdigit())
+          code, live = sys.argv[1], sys.argv[2]
+          if parts(code) < parts(live):
+              sys.exit(f"Refusing to deploy {code} over {live}. Merge the newer branch, or run this workflow by hand with force.")
+          PY
       # The release command in backend/fly.toml runs `alembic upgrade head` before
       # the new machine takes traffic.
       - run: flyctl deploy --remote-only --ha=false

@@ -39,6 +39,9 @@ extension APIError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .server(_, let message, let status):
+            // The server's own "not found" is always a sentence; a bare "Not Found" is
+            // the web framework saying it has no such path: an app newer than its server.
+            if status == 404, message == "Not Found" { return "The server doesn't have this yet. Try again after the next update." }
             return status >= 500 || message.isEmpty ? "Something went wrong on our side. Try again in a moment." : message
         case .network(let error):
             if (error as? URLError)?.code == .timedOut { return "The server took too long to answer. Try again." }

@@ -137,6 +137,28 @@ final class ExportFileTests: XCTestCase {
         }
     }
 
+    func testAServerWithoutTheEndpointSaysSoInPlainWords() async throws {
+        // 0.9.0 answered the 0.9.1 app's export with the framework's own 404.
+        StubURLProtocol.reply { _ in
+            StubURLProtocol.Reply(status: 404, headers: ["Content-Type": "application/json"], body: Data(
+                #"{"error":{"code":"NOT_FOUND","message":"Not Found","details":{}}}"#.utf8
+            ))
+        }
+        let (api, _) = client()
+        do {
+            _ = try await api.downloadRouteExport(id: SampleData.routeId, format: .fit)
+            XCTFail("a missing endpoint is refused")
+        } catch let error as APIError {
+            XCTAssertTrue(error.isNotFound)
+            XCTAssertEqual(error.localizedDescription, "The server doesn't have this yet. Try again after the next update.")
+        }
+        // A route that is not there is still said in the server's own words.
+        XCTAssertEqual(
+            APIError.server(code: "NOT_FOUND", message: "We couldn't find that route. Plan a new one.", status: 404).localizedDescription,
+            "We couldn't find that route. Plan a new one."
+        )
+    }
+
     func testAnExpiredTokenIsRefreshedAndTheDownloadTriedAgain() async throws {
         let refreshed = try JSONCoding.encode(TokenResponse(accessToken: "access-2", refreshToken: "refresh-2", expiresIn: 3600, isNewUser: false, user: SampleData.sampleUser))
         StubURLProtocol.reply { request in

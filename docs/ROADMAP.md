@@ -1,8 +1,8 @@
 # Plan: Roads & Runes, the whole road to 1.0
 
-## Where it stands (2026-10-04)
+## Where it stands (2026-10-11)
 
-Built on the `feat/old-roads` branch, not merged to master. 0.7.2 to 0.9.0 were built on 2026-10-05; 0.9.0 is on Fly and on TestFlight (internal, build 20261005.1116) without the widgets, the Live Activity and the Watch complication, whose App IDs still need the app group attached (developer portal, or Xcode signed in):
+0.5.0 to 0.9.0 were merged to master on 2026-10-08 (PR #8). 0.9.1 (Garmin, `docs/GARMIN.md`) is on TestFlight (build 20261008.1116) and waits in PR #10 to reach master: the master push for PR #8 redeployed 0.9.0 over it on Fly, so the phone's Send to Garmin found nothing until PR #10 is merged. 0.9.2 (Ride anywhere, round trips that are loops, cards that differ) is being built on `feat/0.9.2`. TestFlight builds still leave out the widgets, the Live Activity and the Watch complication, whose App IDs need the app group attached (developer portal, or Xcode signed in):
 
 | Release | Built | Still yours |
 |---|---|---|
@@ -631,6 +631,7 @@ Nothing in it compares speed or performance, and nothing exposes live location.
   - Each writer is idempotent by ride and object.
   - New per-user tables join the delete list in `reset_character` (`characters/service.py:238`).
 - **Flags.** Every release's new behaviour sits behind a flag that isolates it on both server and phone, with a written way back.
+- **Ship from master.** Fly deploys on every master push that touches `backend/`, so a deploy from a branch lasts only until the next merge: on 2026-10-08 it took 0.9.1 back to 0.9.0. Merge first, then let the push deploy. The deploy refuses a version older than the one running unless it is run by hand with `force`.
 - **The Watch.** Every release says what changes on the wrist, or says "nothing on the Watch" and why.
   - A new field between phone and Watch is optional both ways: an older phone or Watch ignores it, and the Watch has a fallback when it is missing.
   - `RideStoreTests` cover each new message; the Watch scheme builds and its tests run with every release.
