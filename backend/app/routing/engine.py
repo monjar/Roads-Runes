@@ -95,6 +95,9 @@ class EngineRoute:
     # Coordinate indices where one leg ends and the next begins (at each "break" or
     # "break_through" point between the ends); empty for a single leg.
     leg_boundaries: list[int] = field(default_factory=list)
+    # Metres a rider on a bike would have to push it: a foot tunnel, a lift, steps.
+    # Only Valhalla says (its maneuvers' travel mode); 0 from an engine that does not.
+    walked_m: float = 0.0
 
 
 class RoutingEngine(Protocol):
@@ -151,6 +154,7 @@ def join_routes(out: EngineRoute, back: EngineRoute) -> EngineRoute:
         details=details,
         engine=out.engine,
         leg_boundaries=[*out.leg_boundaries, offset, *(b + offset for b in back.leg_boundaries)],
+        walked_m=out.walked_m + back.walked_m,
     )
 
 

@@ -34,6 +34,9 @@ SIMILAR = 0.75
 # Direct stays as the yardstick unless it is the same road and about the same length.
 DIRECT_SAME = 0.90
 DIRECT_LENGTH_SAME = 0.05
+# A card that has the rider push the bike this much further than the cards already
+# kept (a foot tunnel, a lift, steps) is not another way to ride it.
+PUSH_ALLOWANCE_M = 150.0
 
 # The offset point on a way back with no stops: off the middle of the line by this
 # share of the straight distance, within these bounds, moved onto a place nearby.

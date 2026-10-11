@@ -423,6 +423,7 @@ class ValhallaClient:
         elevation: list[Any] = []
         instructions: list[dict[str, Any]] = []
         boundaries: list[int] = []
+        walked_m = 0.0
         interval = ELEVATION_INTERVAL_M
         legs = trip.get("legs", [])
         for leg_index, leg in enumerate(legs):
@@ -434,6 +435,10 @@ class ValhallaClient:
             interval = float(leg.get("elevation_interval") or interval)
             elevation.extend(leg.get("elevation") or [])
             for maneuver in leg.get("maneuvers", []):
+                # On a bike, a pedestrian maneuver is one the bike is pushed through:
+                # the Greenwich Foot Tunnel and its lifts came back this way.
+                if costing_name == "bicycle" and maneuver.get("travel_mode") == "pedestrian":
+                    walked_m += float(maneuver.get("length", 0.0)) * 1000
                 sign = MANEUVER_SIGN.get(int(maneuver.get("type", 0)), "CONTINUE")
                 if sign == "FINISH" and leg_index < len(legs) - 1:
                     sign = "WAYPOINT"
@@ -461,6 +466,7 @@ class ValhallaClient:
             details=await self._details(client, points, costing, costing_name) if details else {},
             engine="valhalla",
             leg_boundaries=boundaries,
+            walked_m=round(walked_m, 1),
         )
 
     async def _details(

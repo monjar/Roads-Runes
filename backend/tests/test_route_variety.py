@@ -142,6 +142,36 @@ async def test_a_ride_to_a_place_offers_another_way_or_says_why_not(explorer_cli
     assert router.requests[1].alternatives == 3
 
 
+class TunnelRouter(SameRoadRouter):
+    """As SameRoadRouter, but every alternate pushes the bike through a foot tunnel,
+    as Valhalla's way to Greenwich round the Isle of Dogs did (lifts included)."""
+
+    async def route(self, request: EngineRequest) -> list[EngineRoute]:
+        routes = await super().route(request)
+        for alternate in routes[1:]:
+            alternate.walked_m = 370.0
+        return routes
+
+
+@pytest.mark.anyio
+async def test_another_way_that_pushes_the_bike_through_a_tunnel_is_not_offered(explorer_client, app):
+    router = TunnelRouter()
+    app.state.router = router
+    r = await explorer_client.post(
+        "/routes/generate",
+        json={
+            "origin": {"latitude": HOME[0], "longitude": HOME[1]},
+            "destination": {"latitude": CAMDEN[0], "longitude": CAMDEN[1]},
+            "loop": False,
+        },
+    )
+    assert r.status_code == 200, r.text
+    cards = r.json()["alternatives"]
+    # The pooled alternates all go through the tunnel: the third card is left out
+    # rather than offer a walk as a ride (Direct is the same road, as on the map tap).
+    assert [c["label"] for c in cards] == ["Gravel"], [c["label"] for c in cards]
+
+
 @pytest.mark.anyio
 async def test_the_cards_never_cost_more_than_ten_requests(app, explorer_client, reading, monkeypatch):
     """Everything fails as late as it can: no road through an offset point, a way

@@ -487,3 +487,21 @@ async def test_the_synthetic_router_keeps_out_of_points_to_avoid():
     )
     [turn] = loop.leg_boundaries
     assert loop.coordinates[turn][:2] == pytest.approx([d[1], d[0]])
+
+
+async def test_a_stretch_the_bike_is_pushed_through_is_measured():
+    """Valhalla routes a bike through a foot tunnel as pedestrian maneuvers (the
+    Greenwich Foot Tunnel, lifts and all); the route says how far that is."""
+    payload = route_payload()
+    payload["trip"]["legs"][0]["maneuvers"][1].update({"travel_mode": "pedestrian", "travel_type": "foot"})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    [ridden] = await client_for(handler).route(EngineRequest([(51.5, -0.1), (51.503, -0.102)], "gravel", details=False))
+    assert ridden.walked_m == 290.0
+    # On foot every maneuver is pedestrian, and none of it is pushing a bike.
+    [walked] = await client_for(handler).route(
+        EngineRequest([(51.5, -0.1), (51.503, -0.102)], "foot", details=False, activity="WALK")
+    )
+    assert walked.walked_m == 0.0

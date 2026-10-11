@@ -1140,6 +1140,12 @@ class _Cards:
 
     def alike(self, card: _Card) -> str | None:
         """Why this card is not another way to ride it, or None when it is."""
+        if self.kept:
+            pushed = max(k.er.walked_m for k in self.kept)
+            if card.er.walked_m > pushed + shapes.PUSH_ALLOWANCE_M:
+                # Another way that means pushing the bike (a foot tunnel, a lift) is
+                # not another way to ride it.
+                return f"{card.label} would mean pushing the bike for {round(card.er.walked_m, -1):.0f} m"
         found = shapes.duplicate_of(
             card.er.coordinates,
             card.er.distance_m,
