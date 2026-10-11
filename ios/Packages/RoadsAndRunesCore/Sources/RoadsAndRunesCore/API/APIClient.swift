@@ -39,6 +39,9 @@ extension APIError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .server(_, let message, let status):
+            // The server's own "not found" is always a sentence; a bare "Not Found" is
+            // the web framework saying it has no such path: an app newer than its server.
+            if status == 404, message == "Not Found" { return "The server doesn't have this yet. Try again after the next update." }
             return status >= 500 || message.isEmpty ? "Something went wrong on our side. Try again in a moment." : message
         case .network(let error):
             if (error as? URLError)?.code == .timedOut { return "The server took too long to answer. Try again." }
@@ -80,20 +83,29 @@ public actor APIClient: RoadsAndRunesAPI {
     // MARK: Generic requests
 
     public func request<T: Decodable>(_ endpoint: Endpoint) async throws -> T {
-        let (data, status) = try await send(endpoint, allowRefresh: true)
-        if status == 202 { throw APIError.processing }
+        let (data, response) = try await send(endpoint, allowRefresh: true)
+        if response.statusCode == 202 { throw APIError.processing }
         return try decode(T.self, from: data)
     }
 
     /// Like `request` but returns `nil` on HTTP 202.
     public func requestOptional<T: Decodable>(_ endpoint: Endpoint) async throws -> T? {
-        let (data, status) = try await send(endpoint, allowRefresh: true)
-        if status == 202 { return nil }
+        let (data, response) = try await send(endpoint, allowRefresh: true)
+        if response.statusCode == 202 { return nil }
         return try decode(T.self, from: data)
     }
 
     public func requestNoContent(_ endpoint: Endpoint) async throws {
         _ = try await send(endpoint, allowRefresh: true)
+    }
+
+    /// Downloads a file with the rider's token (refreshed like any call) and keeps it
+    /// as the server named it in `Content-Disposition`, else as `fallbackName`.
+    private func download(_ endpoint: Endpoint, fallbackName: String) async throws -> URL {
+        let (data, response) = try await send(endpoint, allowRefresh: true)
+        if response.statusCode == 202 { throw APIError.processing }
+        let name = ExportFile.filename(contentDisposition: response.value(forHTTPHeaderField: "Content-Disposition"), fallback: fallbackName)
+        return try ExportFile.write(data, named: name)
     }
 
     private func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
@@ -106,7 +118,7 @@ public actor APIClient: RoadsAndRunesAPI {
 
     // MARK: Transport
 
-    private func send(_ endpoint: Endpoint, allowRefresh: Bool) async throws -> (Data, Int) {
+    private func send(_ endpoint: Endpoint, allowRefresh: Bool) async throws -> (Data, HTTPURLResponse) {
         var request = try makeRequest(for: endpoint)
         if endpoint.requiresAuth {
             guard let tokens = tokenStore.load() else { throw APIError.unauthenticated }
@@ -115,7 +127,7 @@ public actor APIClient: RoadsAndRunesAPI {
         let (data, response) = try await perform(request)
         let status = response.statusCode
         if (200...299).contains(status) {
-            return (data, status)
+            return (data, response)
         }
         if status == 401 {
             if endpoint.requiresAuth, allowRefresh, tokenStore.load() != nil {
@@ -252,6 +264,7 @@ public actor APIClient: RoadsAndRunesAPI {
     public func wallet() async throws -> Wallet { try await request(Endpoints.wallet()) }
     public func walletTransactions(limit: Int?, cursor: String?) async throws -> Page<WalletTransaction> { try await request(Endpoints.walletTransactions(limit: limit, cursor: cursor)) }
     public func worldObjects(near center: Coordinate, radiusMeters: Double) async throws -> [WorldObject] { try await request(Endpoints.worldObjects(near: center, radiusMeters: radiusMeters)) }
+    public func worldAround(near center: Coordinate, rideId: UUID?) async throws -> WorldAround { try await request(Endpoints.worldAround(near: center, rideId: rideId)) }
     public func worldObject(id: UUID) async throws -> WorldObject { try await request(Endpoints.worldObject(id: id)) }
     public func bounty() async throws -> WorldObject? {
         do { return try await request(Endpoints.bounty()) } catch let error as APIError {
@@ -355,6 +368,9 @@ public actor APIClient: RoadsAndRunesAPI {
     public func routePackage(id: UUID) async throws -> RoutePackage { try await request(Endpoints.routePackage(id: id)) }
     public func questRoute(id: UUID, from origin: Coordinate?) async throws -> RouteOption { try await request(Endpoints.questRoute(id: id, from: origin)) }
     public func reroute(routeId: UUID, _ request: RerouteRequest) async throws -> RouteOption { try await self.request(try Endpoints.reroute(routeId: routeId, request)) }
+    public func downloadRouteExport(id: UUID, format: RouteExportFormat) async throws -> URL {
+        try await download(Endpoints.routeExport(id: id, format: format), fallbackName: "route.\(format.rawValue)")
+    }
 
     // MARK: Rides
 
@@ -370,12 +386,8 @@ public actor APIClient: RoadsAndRunesAPI {
     public func rideGeometry(id: UUID) async throws -> RideGeometry { try await request(Endpoints.rideGeometry(id: id)) }
     public func updateRide(id: UUID, _ patch: RidePatch) async throws -> Ride { try await request(try Endpoints.updateRide(id: id, patch)) }
     public func deleteRide(id: UUID) async throws { try await requestNoContent(Endpoints.deleteRide(id: id)) }
-    public nonisolated func rideExportURL(id: UUID, format: RideExportFormat) -> URL {
-        let endpoint = Endpoints.rideExport(id: id, format: format)
-        if let request = try? makeRequest(for: endpoint), let url = request.url {
-            return url
-        }
-        return apiRoot.appendingPathComponent("rides/\(id.uuidString)/export")
+    public func downloadRideExport(id: UUID, format: RideExportFormat) async throws -> URL {
+        try await download(Endpoints.rideExport(id: id, format: format), fallbackName: "journey.\(format.rawValue)")
     }
 
     // MARK: Journal

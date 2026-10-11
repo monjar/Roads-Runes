@@ -8,7 +8,8 @@
     "scenicValue": 0.6,
     "trafficPenalty": 1.2,
     "excessiveDifficultyPenalty": 1.0,
-    "surfaceMismatchPenalty": 1.0
+    "surfaceMismatchPenalty": 1.0,
+    "retracePenalty": 0.8
   },
   "labels": {
     "_comment": "Preference overlays per alternative label. Values 0..1 override request preferences.",

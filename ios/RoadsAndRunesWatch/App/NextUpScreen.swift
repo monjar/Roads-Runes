@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The idle face between journeys. With Next up from the phone (0.7.3): the
 /// streak, today's bounty and how far, the quests taken, and a journey to start
-/// from the wrist. Without it (an older phone, or before the phone first speaks):
+/// from the wrist (0.9.2: "Ride anywhere", when the phone says it can). Without it (an older phone, or before the phone first speaks):
 /// the 0.7.2 face that says to start on the iPhone.
 struct IdleScreen: View {
     @Environment(RideStore.self) private var store
@@ -79,6 +79,13 @@ struct NextUpScreen: View {
                             .accessibilityLabel("Start \(quest.title)")
                         }
                     }
+                }
+                if store.phoneReachable, idle.offersRideAnywhere {
+                    // Ride anywhere (0.9.2): no route; the phone starts it without planning.
+                    WatchPill(title: LoreCopy.anywhere(activity), identifier: "watch.nextUp.rideAnywhere") {
+                        container.requestStart(.roam(activity: activity))
+                    }
+                    .padding(.top, 4)
                 }
                 if store.phoneReachable {
                     section("Quick loop")

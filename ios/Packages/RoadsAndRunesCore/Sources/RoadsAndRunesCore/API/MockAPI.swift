@@ -1,5 +1,11 @@
 import Foundation
 
+/// One `worldAround` asked of the mock: from where, and for which journey.
+public struct WorldAroundAsk: Hashable, Sendable {
+    public var center: Coordinate
+    public var rideId: UUID?
+}
+
 /// In-memory `RoadsAndRunesAPI` for previews and tests. State changes are
 /// serialised with a lock so it can be used from any task.
 public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
@@ -17,6 +23,16 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     public var rerouteFailure: APIError?
     /// While true every call fails as a phone with no signal does, for the offline paths.
     public var offline = false
+    /// Ride anywhere (0.9.2): every `worldAround` asked, a server still fetching places,
+    /// and a refusal (the flag off, `FEATURE_DISABLED`) while set.
+    public internal(set) var aroundAsks: [WorldAroundAsk] = []
+    public var aroundImporting = false
+    public var aroundRefusal: APIError?
+    /// `/config` as a test wants it (a flag off); the sample otherwise.
+    public var configOverride: AppConfig?
+    /// Every ride asked to be created and every completion sent, in order, for a test to read back.
+    public internal(set) var rideCreates: [RideCreate] = []
+    public internal(set) var rideCompletions: [RideComplete] = []
 
     let lock = NSLock()
     var user: User
@@ -263,6 +279,19 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     }
     public func worldObjects(near center: Coordinate, radiusMeters: Double) async throws -> [WorldObject] {
         try await run { self.storedObjects.values.filter { $0.status == .spawned && GeoMath.distance(center, $0.coordinate) <= radiusMeters } }
+    }
+    /// The world round a roam (0.9.2): what is within 6 km and the places within 3 km.
+    /// `aroundImporting` stands in for a server still fetching places; every ask is counted.
+    public func worldAround(near center: Coordinate, rideId: UUID?) async throws -> WorldAround {
+        try await run {
+            self.aroundAsks.append(WorldAroundAsk(center: center, rideId: rideId))
+            if let refusal = self.aroundRefusal { throw refusal }
+            let objects = self.storedObjects.values.filter {
+                $0.status == .spawned && !$0.isLair && GeoMath.distance(center, $0.coordinate) <= 6000
+            }
+            let places = self.storedDiscoveries.values.filter { GeoMath.distance(center, $0.coordinate) <= 3000 }.map(\.summary)
+            return WorldAround(objects: objects, places: places, importing: self.aroundImporting)
+        }
     }
     public func worldObject(id: UUID) async throws -> WorldObject {
         try await run { try self.storedObjects[id] ?? { throw self.notFound("World object") }() }
@@ -608,6 +637,32 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     public func route(id: UUID) async throws -> RouteOption {
         try await run { guard let route = self.storedRoutes[id] else { throw self.notFound("Route") }; return route }
     }
+    /// A small stand-in file, so the share sheet has something to pass on offline. Like
+    /// the server, an open sealed quest's route is refused: it would give the goal away.
+    public func downloadRouteExport(id: UUID, format: RouteExportFormat) async throws -> URL {
+        try await run {
+            guard let route = self.storedRoutes[id] else { throw self.notFound("Route") }
+            let open: Set<QuestStatus> = [.available, .accepted, .active]
+            if self.storedQuests.values.contains(where: { $0.suggestedRouteId == id && SealedQuest.isSealed($0) && open.contains($0.status) }) {
+                throw APIError.server(code: APIErrorCode.routeSealed,
+                                      message: "A sealed quest's route can't be sent until the quest is done.", status: 409)
+            }
+            return try ExportFile.write(Self.placeholderExport(format: format.rawValue, name: route.label, path: route.path),
+                                        named: "\(route.label) route.\(format.rawValue)")
+        }
+    }
+
+    /// GPX a reader can open; FIT and TCX a line saying what this is.
+    static func placeholderExport(format: String, name: String, path: [Coordinate]) -> Data {
+        guard format == "gpx" else { return Data("Roads & Runes mock \(format.uppercased()) export: \(name)\n".utf8) }
+        let points = path.map { "<trkpt lat=\"\($0.latitude)\" lon=\"\($0.longitude)\"/>" }.joined()
+        return Data("""
+        <?xml version="1.0" encoding="UTF-8"?>
+        <gpx version="1.1" creator="Roads &amp; Runes mock" xmlns="http://www.topografix.com/GPX/1/1">\
+        <trk><name>\(name.replacingOccurrences(of: "&", with: "&amp;"))</name><trkseg>\(points)</trkseg></trk></gpx>
+        """.utf8)
+    }
+
     public func routePackage(id: UUID) async throws -> RoutePackage {
         try await run {
             guard let route = self.storedRoutes[id] else { throw self.notFound("Route") }

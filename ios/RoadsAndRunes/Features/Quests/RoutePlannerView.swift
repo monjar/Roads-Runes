@@ -54,7 +54,14 @@ final class RoutePlannerViewModel {
     var routesHeading: String {
         if rune != nil { return "Routes for its shape" }
         if quest != nil { return alternatives.count > 1 ? "Ways to \(activity.noun) it" : "The route" }
-        return destination == nil ? "Three ways to \(activity.noun) it" : "Ways to get there"
+        // The planner offers fewer cards when there are fewer different ways (0.9.2),
+        // so the heading counts what came back rather than promising three.
+        switch alternatives.count {
+        case 1: return "One way to \(activity.noun) it"
+        case 2: return "Two ways to \(activity.noun) it"
+        case 3: return "Three ways to \(activity.noun) it"
+        default: return "Ways to \(activity.noun) it"
+        }
     }
 
     var units: Units { container.session.units }
@@ -296,6 +303,8 @@ struct RoutePlannerView: View {
     /// The request field is multi-line, so Return adds a line instead of dismissing
     /// the keyboard — which then covers the routes it just asked for.
     @FocusState private var writingRequest: Bool
+    /// "Send to Garmin": the chosen route as a FIT course, through the share sheet.
+    @State private var export: ExportRequest?
     let quest: Quest?
     var destination: Place?
     /// A rune ride: routes whose turns make this rune's road form (0.7.0).
@@ -321,6 +330,7 @@ struct RoutePlannerView: View {
             await model?.loadBikes()
             if model?.alternatives.isEmpty == true { await model?.prepare() }
         }
+        .sheet(item: $export) { ExportFileSheet(request: $0) }
     }
 
     @ViewBuilder
@@ -465,6 +475,15 @@ struct RoutePlannerView: View {
                             onFocus: { poi in withAnimation(.snappy) { model.focus(poi) } },
                             onClearStop: { withAnimation(.snappy) { model.focus(nil) } }
                         )
+                        // A Garmin can follow it as a course (docs/GARMIN.md). Never a sealed
+                        // quest's route, which would give the goal away; never mid-ride.
+                        if !SealedQuest.isSealed(model.quest), !container.rideRecorder.isActive {
+                            Button { export = .garminCourse(routeId: selected.id) } label: {
+                                Label("Send to Garmin", systemImage: "paperplane")
+                            }
+                            .buttonStyle(.surfacePill)
+                            .accessibilityIdentifier("planner.garmin")
+                        }
                     }
                 }
             }

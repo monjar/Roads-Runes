@@ -25,6 +25,7 @@ final class FlakyAPI: RoadsAndRunesAPI, @unchecked Sendable {
     func wallet() async throws -> Wallet { try await inner.wallet() }
     func walletTransactions(limit: Int?, cursor: String?) async throws -> Page<WalletTransaction> { try await inner.walletTransactions(limit: limit, cursor: cursor) }
     func worldObjects(near center: Coordinate, radiusMeters: Double) async throws -> [WorldObject] { try await inner.worldObjects(near: center, radiusMeters: radiusMeters) }
+    func worldAround(near center: Coordinate, rideId: UUID?) async throws -> WorldAround { try await inner.worldAround(near: center, rideId: rideId) }
     func worldObject(id: UUID) async throws -> WorldObject { try await inner.worldObject(id: id) }
     func bounty() async throws -> WorldObject? { try await inner.bounty() }
     func lure(at center: Coordinate) async throws -> [WorldObject] { try await inner.lure(at: center) }
@@ -87,7 +88,8 @@ final class FlakyAPI: RoadsAndRunesAPI, @unchecked Sendable {
     func routePackage(id: UUID) async throws -> RoutePackage { try await inner.routePackage(id: id) }
     func questRoute(id: UUID, from origin: Coordinate?) async throws -> RouteOption { try await inner.questRoute(id: id, from: origin) }
     func reroute(routeId: UUID, _ request: RerouteRequest) async throws -> RouteOption { try await inner.reroute(routeId: routeId, request) }
-    func rideExportURL(id: UUID, format: RideExportFormat) -> URL { inner.rideExportURL(id: id, format: format) }
+    func downloadRouteExport(id: UUID, format: RouteExportFormat) async throws -> URL { try await inner.downloadRouteExport(id: id, format: format) }
+    func downloadRideExport(id: UUID, format: RideExportFormat) async throws -> URL { try await inner.downloadRideExport(id: id, format: format) }
     func createRide(_ request: RideCreate) async throws -> Ride { try await inner.createRide(request) }
     func rides(limit: Int?, cursor: String?) async throws -> Page<Ride> { try await inner.rides(limit: limit, cursor: cursor) }
     func ride(id: UUID) async throws -> Ride { try await inner.ride(id: id) }

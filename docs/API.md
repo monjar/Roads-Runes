@@ -324,6 +324,44 @@ one, so it is coins and not progress).
 `EXPIRED` (buried treasure is `HIDDEN` and never listed).
 `claimRadiusMeters` is how close the player must be to take it, and null for a monster.
 
+0.9.2: the first look at an area also starts fetching its places from OpenStreetMap, in the
+background (before, only a quest board, a route or a lamp did). A tile counts as done for the day
+only once it had places to anchor on and none within the spawn radius are still to be fetched, so a
+look that came before the places spawns again once they arrive (it used to stay empty until
+midnight).
+
+**Placed during a journey (0.9.2).** Something placed after a journey started and before it ended is
+judged only on the fixes from the moment it was placed: a chest or a piece is opened by the trace from
+then on, and a creature is fought from then on (both fight rules). Ground ridden before it existed
+pays nothing. Something placed after the journey ended is judged as before.
+
+### `GET /world/around?latitude&longitude&rideId&radiusMeters=6000` (0.9.2, flag `ride_anywhere`)
+
+Ride anywhere: what is round the rider during a journey with no route, asked as they go.
+
+```json
+{
+  "objects": [WorldObject],
+  "places": [DiscoverySummary],
+  "importing": false
+}
+```
+
+- `objects`: the live chests, pieces and creatures within `radiusMeters` (at most 8000), never a lair.
+- `places`: named places within 3 km (at most 100, nearest first), with `discoveredByUser`, so the
+  ride can say when it finds a new one.
+- `importing`: places within the spawn radius are still being fetched; ask again in a minute or two.
+
+With `rideId` naming the player's own journey still `RECORDING`, the call may also place things here,
+as `GET /world/objects` does, at most once a minute and 20 times a journey (per server process). The
+per-tile daily slots and each journey's coin and XP caps stay the limit on farming. Without a
+recording journey it only lists what is already there. `403 FEATURE_DISABLED` with the flag off
+(`FEATURE_FLAGS=!ride_anywhere`); the phone then hides "Ride anywhere".
+
+A journey with no route and no quest is created as any other (`POST /rides` with `routeId` and
+`questId` null) and processed as any other: XP, tiles, places found, chests and creatures passed, and
+the quests it fits (see Rides).
+
 ### `POST /world/objects/{id}/claim`
 
 Open a chest or pick up a piece from beside it. (A ride still claims whatever its trace passes; this
@@ -1042,6 +1080,22 @@ guessed at). Three of those preferences change where the ride goes:
   `parsedRequest.stops` as `[{"name", "latitude", "longitude"}]` and appear in the route's
   `pois` like any other stop.
 
+0.9.2 (flag `route_shapes`, on; `FEATURE_FLAGS=!route_shapes` plans as 0.9.1 did):
+
+* **where it starts** — "**from Aragon Tower** to Westminster and back". `origin` is resolved
+  like `destination`; it comes back in `parsedRequest.origin` (`{"query", "name", "latitude",
+  "longitude"}`) and the understood line starts "from Aragon Tower". When it is more than 300 m
+  from `origin` in the request body the ride starts there and `parsedRequest.startsAt` says so.
+  One the geocoder cannot place is a note: "couldn't find 'X' — starting from here instead".
+* **"some pubs"** — a kind of stop with no number means 3 on a loop and 2 one way.
+  `parsedRequest.poi.countImplied` is `true` then, and finding fewer is not a shortfall (only
+  finding none is: "no stops like that nearby").
+* **to a place and back** is a loop: stops split between the way out and the way back (a stop
+  after the destination is the usual case), and `parsedRequest.stops` lists them in riding order.
+* **fewer cards** — 1 to 3. A card too like another is dropped, and `parsedRequest.notes` may say
+  why: "Direct and As asked are the same road here", "the stops add only 300 m", "only two
+  different ways here", "the way back shares some roads with the way out". Labels are unique;
+  "Another way", "The long way" and "Other stops" name cards that differ in shape.
 
 Response `{"alternatives": [RouteOption], "parsedRequest": RoutePreferences|null}`.
 
@@ -1062,6 +1116,8 @@ Response `{"alternatives": [RouteOption], "parsedRequest": RoutePreferences|null
   "newTerritoryFraction": 0.62,
   "questObjectiveCoverage": 1.0,
   "score": 0.81,
+  "detailsMissing": false,
+  "selfOverlap": 0.12,
   "pois": [RoutePOI],
   "coordinates": [[-0.04, 51.49], ...],
   "encodedPolyline": "...",
@@ -1070,6 +1126,12 @@ Response `{"alternatives": [RouteOption], "parsedRequest": RoutePreferences|null
   "climbs": [Climb]
 }
 ```
+
+`detailsMissing` (0.9.2, default `false`): the engine's surface and road-class details could not be
+had (Valhalla's `trace_attributes` failed, or the quest board's prefetch skipped them), so `surface`,
+`cyclewayFraction` and `trafficExposure` are defaults, not measurements. `selfOverlap` (0.9.2,
+optional): on a loop, the share of the way back that rides the way out (0..1); `null` one way, on a
+quest's or rune's route, and from servers before 0.9.2. An older app ignores both.
 
 `Instruction`:
 
@@ -1121,6 +1183,17 @@ when no way can be found, `404` for a route that is not the caller's.
 With `effort_combat` on, fetching the package of the route chosen to ride places one creature at a
 real place beside its far half (from halfway to nine tenths of the way), once per route, unless one is
 already waiting there. Fetch the world objects after the package to see it.
+
+### `GET /routes/{id}/export?format=fit|gpx` (Garmin)
+
+The route as a course for a Garmin Edge or watch (docs/GARMIN.md). `fit` (the default) is a FIT
+course file, `application/vnd.ant.fit`: the line with its heights, a course point for each turn (named
+for the street, at most 16 characters; a street changing its name is not a turn), each requested stop,
+and each quest objective the phone can show that is not done and lies within 300 m of the line. A
+hidden objective's place is never in the file. `gpx` is the same line as a track with the places as
+waypoints and no turns. `Content-Disposition` names the file after the quest, else the route's label,
+activity and day: `attachment; filename="Scenic ride 8 Oct.fit"`. `409 ROUTE_SEALED` for a sealed
+quest's route while the quest is open; `404` for a route that is not the caller's.
 
 ---
 
@@ -1231,6 +1304,17 @@ What a ride pays:
 - `pledge` and `letters` (0.7.3): a pledge this journey kept (absent otherwise; a missed pledge is
   never mentioned) and the letters it found again. See **Between rides**.
 - `legend`, `lair`, `treasureFound` and `legendWoke` (0.8.0). See **Legends, lairs and treasure**.
+- `alsoFinished` (0.9.2, flag `ride_anywhere`): `{"id", "title"}` of a quest the rider had taken that
+  a journey with no quest of its own finished on the way ("Also finished: Ten miles out"); absent
+  otherwise. Such a journey (`questId` null, a Ride anywhere or a planned ride with no quest) is
+  judged against the rider's quests that were taken before it started, are for the same activity,
+  are not sealed or a party's, and have no objective that needs a planned route (`INSCRIBE_RUNE`,
+  `COMPLETE_ROUTE`). What the trace meets is marked done on each of them, as on a quest ride; the
+  first (oldest taken) with every required objective done is finished through the usual
+  `ACCEPTED → ACTIVE → COMPLETED` and paid as a quest ride (`questCompletion`, the `QUEST_COMPLETED`
+  XP and coin lines). At most one a journey: the others keep their progress and finish on the next.
+  `quest` and `ride.questId` stay null, so the journey is still a free one in the Journal. An app
+  from before 0.9.2 ignores `alsoFinished` and shows no quest card (it needs `quest`).
 
 - `GET /rides` paginated, newest first. `GET /rides/{id}`. `GET /rides/{id}/geometry` → `{"coordinates": [...], "encodedPolyline": "..."}`.
 - `PATCH /rides/{id}` `{"visibility": "FRIENDS", "title": "...", "notes": "..."}`
@@ -1299,7 +1383,7 @@ Parties:
 - `POST /integrations/strava/callback` `{"code": "..."}`
 - `DELETE /integrations/strava`
 - `POST /integrations/strava/upload/{rideId}` → `{"status": "QUEUED"}`
-- `GET /rides/{id}/export?format=gpx|tcx` → file
+- `GET /rides/{id}/export?format=gpx|tcx|fit` → file of the fixes processing kept, with the journey's own sport. `fit` is a FIT activity (`application/vnd.ant.fit`) to import into Garmin Connect by hand; `409 NO_TRACK` when nothing was kept. `Content-Disposition` names it after the title, else `Ride 8 Oct 2026.fit`
 
 ---
 
@@ -1311,4 +1395,4 @@ Parties:
 ## Meta
 
 - `GET /health` → `{"status": "ok", "version": "..."}`
-- `GET /config` → `{"featureFlags": {...}, "h3Resolution": 9, "levels": {"max": 50, "maxClass": 50}, "environment": "development", "combat": {...}, "letterMinAgeDays": 90}`. 0.7.3 adds the flags `pledge` (on where `ENVIRONMENT=development`, off elsewhere) and `parchment_map` (off: the World tab's parchment map style), and `letterMinAgeDays`. `combat` (0.6.1) holds the fight's constants from `world_objects.json`; see `docs/COMBAT.md`. Flags added since 0.6.0: `codex` (on), `effort_combat` (off until ridden), `ink_fog` (0.7.0, off: the World tab's fog as one ink wash with a frontier chevron; the Journal's map card draws the wash regardless). 0.9.0 adds `place_lore` (off: Wikidata's line on a place). An objective event may carry `note` (0.7.0): the note written for a `WRITE_NOTE` or an Ansuz `INSCRIBE_RUNE`, which the server judges by.
+- `GET /config` → `{"featureFlags": {...}, "h3Resolution": 9, "levels": {"max": 50, "maxClass": 50}, "environment": "development", "combat": {...}, "letterMinAgeDays": 90}`. 0.7.3 adds the flags `pledge` (on where `ENVIRONMENT=development`, off elsewhere) and `parchment_map` (off: the World tab's parchment map style), and `letterMinAgeDays`. `combat` (0.6.1) holds the fight's constants from `world_objects.json`; see `docs/COMBAT.md`. Flags added since 0.6.0: `codex` (on), `effort_combat` (off until ridden), `ink_fog` (0.7.0, off: the World tab's fog as one ink wash with a frontier chevron; the Journal's map card draws the wash regardless). 0.9.0 adds `place_lore` (off: Wikidata's line on a place). 0.9.2 adds `route_shapes` (on: Plan a ride's cards differ in shape and "to X and back" is a loop; see `docs/ROUTING.md`). An objective event may carry `note` (0.7.0): the note written for a `WRITE_NOTE` or an Ansuz `INSCRIBE_RUNE`, which the server judges by.

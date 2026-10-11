@@ -179,6 +179,9 @@ class AdventureSummary(APIModel):
     # absent unless this journey was paid).
     districts: list[dict[str, Any]] = []
     districtPay: dict[str, Any] | None = None
+    # 0.9.2: a quest the rider had taken that this journey, ridden for no quest (Ride
+    # anywhere), finished on the way: {"id", "title"}; "Also finished: …".
+    alsoFinished: dict[str, Any] | None = None
 
 
 class RideGeometry(APIModel):

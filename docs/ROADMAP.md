@@ -1,8 +1,8 @@
 # Plan: Roads & Runes, the whole road to 1.0
 
-## Where it stands (2026-10-04)
+## Where it stands (2026-10-11)
 
-Built on the `feat/old-roads` branch, not merged to master. 0.7.2 to 0.9.0 were built on 2026-10-05; 0.9.0 is on Fly and on TestFlight (internal, build 20261005.1116) without the widgets, the Live Activity and the Watch complication, whose App IDs still need the app group attached (developer portal, or Xcode signed in):
+0.5.0 to 0.9.0 were merged to master on 2026-10-08 (PR #8). 0.9.1 (Garmin, `docs/GARMIN.md`) is on TestFlight (build 20261008.1116) and waits in PR #10 to reach master: the master push for PR #8 redeployed 0.9.0 over it on Fly, so the phone's Send to Garmin found nothing until PR #10 is merged. 0.9.2 (Ride anywhere, round trips that are loops, cards that differ) is being built on `feat/0.9.2`. TestFlight builds still leave out the widgets, the Live Activity and the Watch complication, whose App IDs need the app group attached (developer portal, or Xcode signed in):
 
 | Release | Built | Still yours |
 |---|---|---|
@@ -562,6 +562,46 @@ moving; Journey's end on the wrist says which districts were kept.
 
 ---
 
+## 0.9.2 Ride anywhere, and loops that are loops
+
+Not in the original plan: three problems found riding 0.9.1. Built 2026-10-11 on `feat/0.9.2`.
+
+- **Ride anywhere** (flag `ride_anywhere`, on).
+  - A journey with no route, started from the World tab, the Watch, Siri or a link.
+  - The world is refreshed as the rider goes (`GET /world/around`).
+  - It finishes at most one accepted quest it fits.
+  - A long stop asks "Still out? End ride or keep going.", and a roam idle for two hours ends itself.
+- **Round trips** (flag `route_shapes`, on).
+  - "To X and back" goes out one side and home the other.
+  - "Some pubs" means three, split between the way out and the way back.
+  - A "from" place is read.
+- **Cards that differ** (same flag).
+  - Each card is a different shape, not only a different costing.
+  - A card too like another, or one that pushes the bike through a foot tunnel, is dropped, and the heading counts the cards.
+- **Plumbing.** Valhalla requests are paced, and each plan has a budget of 10 requests. `scripts/route_diversity.py` measures it all on the real server.
+
+Contract (everything optional; an older client ignores it):
+- **Server:**
+  - route `selfOverlap`, `detailsMissing`;
+  - parsed `startsAt`, `countImplied`;
+  - summary `alsoFinished`;
+  - `GET /world/around` → `{objects, places, importing}`.
+- **Phone ↔ Watch:**
+  - `WatchRouteSummary.roam`, `WatchNavigationUpdate.stillOut`, `WatchIdleInfo.rideAnywhere`;
+  - `WatchStartRequest` kind `ROAM`, `WatchCommand.keepGoing`.
+  - An older Watch shows "Waiting for the first turn" on a roam. An older phone refuses a ROAM start quickly.
+- **Phone storage:** `ActiveRideState.roam`, `RideGameState.addedAt`.
+
+**On the Watch:**
+- a Ride anywhere pill on Next up;
+- the roam's map marks;
+- the long-stop prompt;
+- "Pause here when you stop" replaces the false auto-pause line.
+
+**Gate outings:**
+- protocol 13 (Ride anywhere);
+- protocol 7 re-ridden with "from Aragon Tower to Westminster and back with some pubs".
+
 ## 1.0 The long way round
 
 Migration `0015`: `familiars`. The game is whole for one player.
@@ -631,6 +671,7 @@ Nothing in it compares speed or performance, and nothing exposes live location.
   - Each writer is idempotent by ride and object.
   - New per-user tables join the delete list in `reset_character` (`characters/service.py:238`).
 - **Flags.** Every release's new behaviour sits behind a flag that isolates it on both server and phone, with a written way back.
+- **Ship from master.** Fly deploys on every master push that touches `backend/`, so a deploy from a branch lasts only until the next merge: on 2026-10-08 it took 0.9.1 back to 0.9.0. Merge first, then let the push deploy. The deploy refuses a version older than the one running unless it is run by hand with `force`.
 - **The Watch.** Every release says what changes on the wrist, or says "nothing on the Watch" and why.
   - A new field between phone and Watch is optional both ways: an older phone or Watch ignores it, and the Watch has a fallback when it is missing.
   - `RideStoreTests` cover each new message; the Watch scheme builds and its tests run with every release.

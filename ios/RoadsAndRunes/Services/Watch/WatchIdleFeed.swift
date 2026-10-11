@@ -12,6 +12,8 @@ extension AppContainer {
         let info = WatchIdleInfo.make(
             character: session.character, objects: objects, quests: quests, position: position,
             activity: session.defaultActivity, units: session.units, pledge: pledge,
+            // "Ride anywhere" on the wrist (0.9.2), while the server's flag is on.
+            rideAnywhere: session.isEnabled(FeatureFlag.rideAnywhere),
             icon: WatchArt.icon(for:), questIcon: WatchArt.icon(for:)
         )
         watch.send(idleInfo: info)

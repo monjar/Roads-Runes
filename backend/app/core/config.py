@@ -32,6 +32,8 @@ ALL_FEATURE_FLAGS: tuple[str, ...] = (
     "pledge",
     "parchment_map",
     "place_lore",
+    "ride_anywhere",
+    "route_shapes",
 )
 
 DEFAULT_FLAGS: dict[str, bool] = {
@@ -63,6 +65,11 @@ DEFAULT_FLAGS: dict[str, bool] = {
     # Place lore from Wikidata (0.9.0, discoveries/place_lore.py): a checked one-line
     # description kept on a place at tile import. Off until it has been read over.
     "place_lore": False,
+    # Ride anywhere (0.9.2): a journey with no route, and GET /world/around as it goes.
+    "ride_anywhere": True,
+    # Plan a ride's cards differ in shape, not only costing, and "to X and back" is a
+    # loop (0.9.2, docs/ROUTING.md). FEATURE_FLAGS=!route_shapes plans as 0.9.1 did.
+    "route_shapes": True,
 }
 
 # Flags on wherever ENVIRONMENT is development (the local stack and the Fly backend)
@@ -89,6 +96,8 @@ class Settings(BaseSettings):
     valhalla_url: str = "https://valhalla1.openstreetmap.de"
     valhalla_api_key: str = ""
     valhalla_timeout_seconds: float = 30.0
+    # The public server's fair use is about one request a second (routing/valhalla.py Pacer).
+    valhalla_min_interval_s: float = 1.0
     # Discoveries are imported from OpenStreetMap per area on first use (discoveries/osm_import.py).
     poi_import_enabled: bool = True
     # Place names in a ride request ("a ride in Notting Hill") are resolved by these, in order.

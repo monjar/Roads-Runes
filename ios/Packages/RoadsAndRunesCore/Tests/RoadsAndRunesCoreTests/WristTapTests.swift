@@ -5,7 +5,9 @@ import XCTest
 final class WristTapTests: XCTestCase {
     func testFightTapsNeverShareAPatternWithTurnTaps() {
         XCTAssertTrue(WristTap.fight.isDisjoint(with: WristTap.turns))
-        XCTAssertEqual(WristTap.fight.union(WristTap.turns), Set(WristTap.allCases))
+        // The journey's own question (0.9.2) is neither a turn's tap nor a fight's.
+        XCTAssertTrue(WristTap.notices.isDisjoint(with: WristTap.turns.union(WristTap.fight)))
+        XCTAssertEqual(WristTap.fight.union(WristTap.turns).union(WristTap.notices), Set(WristTap.allCases))
         for beat in FightBeat.allCases {
             XCTAssertTrue(WristTap.fight.contains(beat.tap), beat.rawValue)
         }

@@ -20,7 +20,8 @@ struct ControlsScreen: View {
                         .foregroundStyle(store.isPaused ? WatchTheme.secondary : WatchTheme.sageLight)
                     Text(store.formatter.duration(seconds: store.elapsedSeconds(at: context.date)))
                         .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
-                    Text(store.isPaused ? "Paused · still recording" : "Auto-pauses when you stop")
+                    // It never paused itself (0.9.2): a long stop is asked about instead.
+                    Text(store.isPaused ? "Paused · still recording" : "Pause here when you stop")
                         .font(.system(size: 12))
                         .foregroundStyle(WatchTheme.tertiary)
                     Spacer(minLength: 0)

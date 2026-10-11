@@ -11,6 +11,9 @@ waypoints on a circle and rescaled once toward the target distance. Surface,
 road class and cycle-network details come from a `trace_attributes` call over
 the same shape, translated into GraphHopper's detail format so analysis and
 scoring stay engine-agnostic.
+
+The public server asks for about one request a second, so every request waits
+its turn (`Pacer`), and each one is charged to the plan's budget (`budget.py`).
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import bisect
 import math
+from time import monotonic
 from typing import Any
 
 import httpx
@@ -25,6 +29,7 @@ import httpx
 from app.core.activity import VALHALLA_COSTING, WALKING_SPEED_KMH, normalise
 from app.core.geo import decode_polyline, destination_point, encode_polyline, haversine_m
 from app.core.logging import EVENT_ROUTE_GENERATION_FAILED, get_logger
+from app.routing import budget
 from app.routing.engine import EngineRequest, EngineRoute, RoutingUnavailable
 
 log = get_logger(__name__)
@@ -37,6 +42,12 @@ LOOP_TOLERANCE = 0.15
 # Waits before the second and third try of a request the server did not answer.
 RETRY_DELAYS_S: tuple[float, ...] = (0.5, 1.5)
 RETRY_AFTER_CAP_S = 5.0
+# A 429 means the server wants a rest: nobody asks again for at least this long.
+COOL_DOWN_S = 2.0
+# A point the way back keeps off closes every edge this close to it. On 2026-10-11
+# the way back from Greenwich rode the carriageway 6–17 m beside the CS4 cycle track
+# its exclusions had closed.
+EXCLUDE_RADIUS_M = 20
 
 BICYCLE_TYPE_FOR_PROFILE = {"road": "Road", "gravel": "Cross", "mountain": "Mountain", "hybrid": "Hybrid"}
 
@@ -208,6 +219,54 @@ def _valid_height(value: Any) -> bool:
     return value is not None and float(value) > -500  # Valhalla marks missing data with -32768
 
 
+class Pacer:
+    """One request at a time, at least `min_interval_s` apart, for every caller.
+
+    The public server's fair use is about one request a second, and the hosted
+    backend is one machine, so one lock and the time the next request may go are
+    enough. Requests made in `budget.background()` (the quest board's prefetch) step
+    aside while a rider is waiting on a plan. At 0 (the tests) nothing waits.
+    """
+
+    def __init__(self, min_interval_s: float = 0.0) -> None:
+        self.min_interval_s = max(0.0, min_interval_s)
+        self._lock: asyncio.Lock | None = None
+        self._next = 0.0
+        self._waiting = 0  # riders' requests queued
+
+    @property
+    def enabled(self) -> bool:
+        return self.min_interval_s > 0
+
+    async def wait(self) -> None:
+        if not self.enabled:
+            return
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        background = budget.in_background()
+        if not background:
+            self._waiting += 1
+        try:
+            while True:
+                while background and self._waiting:
+                    await asyncio.sleep(self.min_interval_s / 2)
+                async with self._lock:
+                    if background and self._waiting:
+                        continue
+                    delay = self._next - monotonic()
+                    if delay > 0:
+                        await asyncio.sleep(delay)
+                    self._next = monotonic() + self.min_interval_s
+                    return
+        finally:
+            if not background:
+                self._waiting -= 1
+
+    def cool_down(self, seconds: float) -> None:
+        if self.enabled:
+            self._next = max(self._next, monotonic() + max(seconds, COOL_DOWN_S))
+
+
 class ValhallaClient:
     name = "valhalla"
 
@@ -217,11 +276,13 @@ class ValhallaClient:
         timeout: float = 30.0,
         api_key: str = "",
         transport: httpx.AsyncBaseTransport | None = None,
+        min_interval_s: float = 0.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.api_key = api_key
         self.transport = transport
+        self.pacer = Pacer(min_interval_s)
 
     def _params(self) -> dict[str, str] | None:
         return {"api_key": self.api_key} if self.api_key else None
@@ -239,7 +300,8 @@ class ValhallaClient:
             return False
         return response.status_code == 200
 
-    async def route(self, request: EngineRequest) -> list[EngineRoute]:
+    @staticmethod
+    def _costing(request: EngineRequest) -> tuple[dict[str, Any], str]:
         activity = normalise(request.activity)
         costing_name = VALHALLA_COSTING.get(activity, "bicycle")
         if request.costing:
@@ -248,17 +310,41 @@ class ValhallaClient:
             costing = {"bicycle_type": BICYCLE_TYPE_FOR_PROFILE.get(request.profile, "Hybrid")}
         else:
             costing = {"walking_speed": WALKING_SPEED_KMH.get(activity, 5.0)}
+        return costing, costing_name
+
+    async def route(self, request: EngineRequest) -> list[EngineRoute]:
+        costing, costing_name = self._costing(request)
         async with self._client() as client:
             try:
                 if request.round_trip_distance_m:
                     trips = [await self._loop(client, request, costing, costing_name)]
                 else:
                     alternates = request.alternatives - 1 if len(request.points) == 2 else 0
-                    trips = await self._trips(client, request.points, costing, alternates, costing_name)
+                    trips = await self._trips(
+                        client,
+                        request.points,
+                        costing,
+                        alternates,
+                        costing_name,
+                        types=request.location_types,
+                        exclude=request.exclude_points,
+                        cutoffs=request.search_cutoff_m,
+                    )
             except RoutingUnavailable as exc:
                 log.error(EVENT_ROUTE_GENERATION_FAILED, engine="valhalla", error=str(exc)[:300])
                 raise
             return [await self._build(client, trip, costing, costing_name, request.details) for trip in trips]
+
+    async def details(self, route: EngineRoute, request: EngineRequest) -> EngineRoute:
+        """Surface and road-class details for a route asked for without them: the
+        planner fetches them only for the cards it keeps."""
+        if route.details:
+            return route
+        costing, costing_name = self._costing(request)
+        points = [(c[1], c[0]) for c in route.coordinates]
+        async with self._client() as client:
+            route.details = await self._details(client, points, costing, costing_name)
+        return route
 
     async def _loop(
         self,
@@ -271,7 +357,9 @@ class ValhallaClient:
         target = float(request.round_trip_distance_m or 0.0)
         radius = target / (2 * math.pi) / LOOP_DETOUR
         best: dict[str, Any] | None = None
-        for _ in range(2):
+        for attempt in range(2):
+            if attempt and not budget.allows():
+                break  # the first circle stands; the plan has other cards to pay for
             waypoints = loop_waypoints(lat, lon, radius, request.seed, request.heading)
             trip = (await self._trips(client, [(lat, lon), *waypoints, (lat, lon)], costing, 0, costing_name))[0]
             length = _length_m(trip)
@@ -290,20 +378,34 @@ class ValhallaClient:
         costing: dict[str, Any],
         alternates: int,
         costing_name: str = "bicycle",
+        *,
+        types: list[str] | None = None,
+        exclude: list[tuple[float, float]] | None = None,
+        cutoffs: list[float | None] | None = None,
     ) -> list[dict[str, Any]]:
         last = len(points) - 1
-        body: dict[str, Any] = {
+        if not types or len(types) != len(points):
             # Intermediate points are "via": no leg boundary, but a U-turn is allowed there,
             # which an out-and-back to an objective needs.
-            "locations": [
-                {"lat": lat, "lon": lon, "type": "break" if i in (0, last) else "via"}
-                for i, (lat, lon) in enumerate(points)
-            ],
+            types = ["break" if i in (0, last) else "via" for i in range(len(points))]
+        locations: list[dict[str, Any]] = []
+        for i, (lat, lon) in enumerate(points):
+            location: dict[str, Any] = {"lat": lat, "lon": lon, "type": types[i]}
+            cutoff = cutoffs[i] if cutoffs and i < len(cutoffs) else None
+            if cutoff:
+                location["search_cutoff"] = int(cutoff)
+            locations.append(location)
+        body: dict[str, Any] = {
+            "locations": locations,
             "costing": costing_name,
             "costing_options": {costing_name: costing},
             "elevation_interval": ELEVATION_INTERVAL_M,
             "directions_options": {"units": "kilometers", "language": "en-US"},
         }
+        if exclude:
+            # Every road within the radius, not only the nearest: a cycle track and the
+            # carriageway beside it are the same street to a rider.
+            body["exclude_locations"] = [{"lat": lat, "lon": lon, "radius": EXCLUDE_RADIUS_M} for lat, lon in exclude]
         if alternates > 0:
             body["alternates"] = alternates
         payload = await self._post(client, "route", body)
@@ -320,15 +422,23 @@ class ValhallaClient:
         points: list[tuple[float, float]] = []
         elevation: list[Any] = []
         instructions: list[dict[str, Any]] = []
+        boundaries: list[int] = []
+        walked_m = 0.0
         interval = ELEVATION_INTERVAL_M
         legs = trip.get("legs", [])
         for leg_index, leg in enumerate(legs):
             leg_points = decode_polyline(leg["shape"], precision=6)
             offset = len(points) - 1 if points else 0
+            if leg_index:
+                boundaries.append(offset)
             points.extend(leg_points[1:] if points else leg_points)  # legs share their joining point
             interval = float(leg.get("elevation_interval") or interval)
             elevation.extend(leg.get("elevation") or [])
             for maneuver in leg.get("maneuvers", []):
+                # On a bike, a pedestrian maneuver is one the bike is pushed through:
+                # the Greenwich Foot Tunnel and its lifts came back this way.
+                if costing_name == "bicycle" and maneuver.get("travel_mode") == "pedestrian":
+                    walked_m += float(maneuver.get("length", 0.0)) * 1000
                 sign = MANEUVER_SIGN.get(int(maneuver.get("type", 0)), "CONTINUE")
                 if sign == "FINISH" and leg_index < len(legs) - 1:
                     sign = "WAYPOINT"
@@ -355,6 +465,8 @@ class ValhallaClient:
             instructions=instructions,
             details=await self._details(client, points, costing, costing_name) if details else {},
             engine="valhalla",
+            leg_boundaries=boundaries,
+            walked_m=round(walked_m, 1),
         )
 
     async def _details(
@@ -375,22 +487,37 @@ class ValhallaClient:
             "filters": {"attributes": DETAIL_ATTRIBUTES, "action": "include"},
         }
         try:
-            payload = await self._post(client, "trace_attributes", body, retry=False)
+            # Asked again only while the plan can afford it: the route stands without them.
+            payload = await self._post(client, "trace_attributes", body, optional=True)
         except RoutingUnavailable as exc:
-            # The route stands without them; analysis falls back to "unknown" surfaces.
+            # The route stands without them; analysis falls back to "unknown" surfaces
+            # and the card says its surface and traffic were not measured.
             log.warning("valhalla_details_unavailable", error=str(exc)[:300])
             return {}
         return edge_details(payload.get("edges", []), points)
 
     async def _post(
-        self, client: httpx.AsyncClient, action: str, body: dict[str, Any], *, retry: bool = True
+        self,
+        client: httpx.AsyncClient,
+        action: str,
+        body: dict[str, Any],
+        *,
+        retry: bool = True,
+        optional: bool = False,
     ) -> dict[str, Any]:
         """A busy shared server answers the second time far more often than not, so a
-        timeout, a 429 or a 5xx is tried again; "no path" (a 400) is an answer."""
+        timeout, a 429 or a 5xx is tried again; "no path" (a 400) is an answer.
+
+        Every attempt waits its turn and is charged to the plan's budget. An
+        `optional` request is tried again only while the budget allows.
+        """
         delays = RETRY_DELAYS_S if retry else ()
         failure = ""
+        no_path = False
         for attempt in range(len(delays) + 1):
             wait = delays[attempt] if attempt < len(delays) else None
+            await self.pacer.wait()
+            budget.charge()
             try:
                 response = await client.post(f"{self.base_url}/{action}", json=body, params=self._params())
             except httpx.HTTPError as exc:
@@ -399,15 +526,18 @@ class ValhallaClient:
                 if response.status_code == 200:
                     return response.json()
                 failure = f"Valhalla {action} returned {response.status_code}: {response.text[:200]}"
+                if response.status_code == 429:
+                    self.pacer.cool_down(_retry_after_s(response))
                 if response.status_code != 429 and response.status_code < 500:
+                    no_path = True
                     break
                 if wait is not None:
                     wait = max(wait, _retry_after_s(response))
-            if wait is None:
+            if wait is None or (optional and not budget.allows()):
                 break
             log.warning("valhalla_retry", action=action, attempt=attempt + 1, error=failure[:200])
             await asyncio.sleep(wait)
-        raise RoutingUnavailable(failure)
+        raise RoutingUnavailable(failure, no_path=no_path)
 
 
 def _retry_after_s(response: httpx.Response) -> float:

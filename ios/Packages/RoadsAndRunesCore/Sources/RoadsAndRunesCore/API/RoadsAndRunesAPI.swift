@@ -25,6 +25,9 @@ public protocol RoadsAndRunesAPI: Sendable {
     func wallet() async throws -> Wallet
     func walletTransactions(limit: Int?, cursor: String?) async throws -> Page<WalletTransaction>
     func worldObjects(near center: Coordinate, radiusMeters: Double) async throws -> [WorldObject]
+    /// Ride anywhere (0.9.2): the world round a journey with no route, asked as it goes.
+    /// With `rideId` naming a journey still recording, the server may place things here.
+    func worldAround(near center: Coordinate, rideId: UUID?) async throws -> WorldAround
     func worldObject(id: UUID) async throws -> WorldObject
     /// Today's bounty; nil until the world has been looked at today, or once it is gone.
     func bounty() async throws -> WorldObject?
@@ -132,6 +135,10 @@ public protocol RoadsAndRunesAPI: Sendable {
     func questRoute(id: UUID, from origin: Coordinate?) async throws -> RouteOption
     /// The rest of a ride from where the rider is, when they have left the route.
     func reroute(routeId: UUID, _ request: RerouteRequest) async throws -> RouteOption
+    /// Downloads the route as a file (a FIT course by default) to a temporary file named
+    /// as the server named it, ready for the share sheet. 409 `ROUTE_SEALED` for an open
+    /// sealed quest's route. Discard it with `ExportFile.discard` once shared.
+    func downloadRouteExport(id: UUID, format: RouteExportFormat) async throws -> URL
 
     // MARK: Rides
     func createRide(_ request: RideCreate) async throws -> Ride
@@ -145,8 +152,9 @@ public protocol RoadsAndRunesAPI: Sendable {
     func rideGeometry(id: UUID) async throws -> RideGeometry
     func updateRide(id: UUID, _ patch: RidePatch) async throws -> Ride
     func deleteRide(id: UUID) async throws
-    /// URL of the GPX/TCX export; the caller attaches the bearer token when downloading.
-    func rideExportURL(id: UUID, format: RideExportFormat) -> URL
+    /// Downloads the journey as GPX, TCX or a FIT activity to a temporary file named as the
+    /// server named it, ready for the share sheet. Discard it with `ExportFile.discard` once shared.
+    func downloadRideExport(id: UUID, format: RideExportFormat) async throws -> URL
 
     // MARK: Journal
     func adventures(limit: Int?, cursor: String?) async throws -> Page<AdventureEntry>

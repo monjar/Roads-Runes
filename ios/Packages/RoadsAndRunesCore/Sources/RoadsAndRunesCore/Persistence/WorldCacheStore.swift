@@ -13,9 +13,14 @@ public struct RideGameState: Codable, Hashable, Sendable {
     public var sightMeters: Double?
     /// Present when the ride was following fights (effort is damage).
     public var fights: FightSetupState?
+    /// When each thing joined the journey after it began (0.9.2, Ride anywhere), by the
+    /// fixes' clock: a crash's replay puts it in play only from then, so fixes from
+    /// before it existed can never claim it. Nil in older snapshots (all from the start).
+    public var addedAt: [UUID: Date]?
 
     public init(objects: [WorldObject], claimedIDs: [UUID] = [], events: [EncounterEvent] = [], quarryId: UUID? = nil,
-                sightMeters: Double? = nil, fights: FightSetupState? = nil) {
+                sightMeters: Double? = nil, fights: FightSetupState? = nil, addedAt: [UUID: Date]? = nil) {
+        self.addedAt = addedAt
         self.objects = objects
         self.claimedIDs = claimedIDs
         self.events = events

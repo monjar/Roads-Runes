@@ -62,6 +62,13 @@ final class RideRecorder {
     private(set) var eventLog: [RideEvent] = []
     private(set) var localCellStates: [String: CellState] = [:]
     var recoverableRide: ActiveRideState?
+    /// A journey with no route (0.9.2, Ride anywhere): the world round the rider loads
+    /// with the first fix and is refreshed as they go.
+    private(set) var isRoaming = false
+    /// The lock screen's journey; a test hands in one with a fake sink.
+    @ObservationIgnored var liveActivity: RideActivityController = .shared
+    /// "Still out? End ride or keep going." after a long stop (0.9.2, Core `IdleWatch`).
+    private(set) var stillOutPrompt = false
 
     // Dependencies
     private let api: any RoadsAndRunesAPI
@@ -117,6 +124,14 @@ final class RideRecorder {
     @ObservationIgnored private var announcedPlaces: Set<UUID> = []
     /// What the fights were armed with, saved with the ride so recovery can fold them again.
     @ObservationIgnored private var fightSetup: FightSetupState?
+    /// A roam's world: being fetched round the first fix, and loaded (0.9.2).
+    @ObservationIgnored private var roamWorldLoading = false
+    @ObservationIgnored private(set) var roamWorldLoaded = false
+    /// When a roam asks for the world round it again (Core `RoamRefresher`).
+    @ObservationIgnored private(set) var roamRefresher = RoamRefresher()
+    /// A journey left standing (0.9.2): asked about at 20 and 60 minutes, a roam ended at two hours.
+    @ObservationIgnored private(set) var idleWatch: IdleWatch?
+    @ObservationIgnored private var idleTicker: Task<Void, Never>?
     private let audio: RideAudio
 
     init(api: any RoadsAndRunesAPI, location: LocationService, health: HealthKitService, watch: WatchSessionService, sync: SyncService,
@@ -156,12 +171,27 @@ final class RideRecorder {
     // MARK: - Lifecycle
 
     func start(package: RoutePackage, quest: Quest?, bikeId: UUID?, title: String? = nil, activity: Activity = .ride, quarryId: UUID? = nil) async {
+        await begin(package: package, quest: quest, bikeId: bikeId, title: title, activity: activity, quarryId: quarryId)
+    }
+
+    /// Ride anywhere (0.9.2): a journey with no route and no quest. Every tile, place,
+    /// chest and creature on the way counts, and the server finishes a quest it
+    /// happens to fit. The world round the rider loads with the first fix.
+    func startRoam(activity: Activity, bikeId: UUID?) async {
+        await begin(package: nil, quest: nil, bikeId: bikeId, title: nil, activity: activity, quarryId: nil)
+    }
+
+    /// A fix this recent is where the journey starts; an older one is somewhere they were.
+    static let freshStartSeconds: TimeInterval = 120
+
+    private func begin(package: RoutePackage?, quest: Quest?, bikeId: UUID?, title: String?, activity: Activity, quarryId: UUID?) async {
         guard !isActive else { return }
         self.quarryId = quarryId
         self.activity = activity == .unknown ? .ride : activity
-        try? routePackages.save(package)
+        if let package { try? routePackages.save(package) }
         self.package = package
-        self.quest = quest ?? package.quest
+        isRoaming = package == nil
+        self.quest = quest ?? package?.quest
         self.bikeId = bikeId
         self.title = self.quest == nil ? title : nil
         clientRideId = UUID()
@@ -178,11 +208,16 @@ final class RideRecorder {
         machine = NavigationStateMachine()
         rerouteAdvisor = RerouteAdvisor()
         resetEvents()
-        milestones = RideMilestones(route: package.route)
+        roamWorldLoading = false
+        roamWorldLoaded = false
+        milestones = package.map { RideMilestones(route: $0.route) }
         transition(to: .ready)
-        configureTrackers(for: package, start: location.lastFix?.coordinate ?? package.route.path.first ?? package.route.instructions.first?.coordinate)
-        await loadEncounters(around: location.lastFix?.coordinate ?? package.route.path.first)
-        await loadUnfoundPlaces(for: package)
+        let here = location.lastFix.flatMap { abs($0.timestamp.timeIntervalSinceNow) <= Self.freshStartSeconds ? $0.coordinate : nil }
+        configureTrackers(for: package, start: location.lastFix?.coordinate ?? package?.route.path.first ?? package?.route.instructions.first?.coordinate)
+        if let package {
+            await loadEncounters(around: location.lastFix?.coordinate ?? package.route.path.first)
+            await loadUnfoundPlaces(for: package)
+        }
         audio.start()
 
         if location.authorization != .always { location.requestAlways() }
@@ -191,22 +226,34 @@ final class RideRecorder {
         location.startTracking(mode: batteryMode)
         watch.configure(batteryMode: batteryMode)
 
-        persistence.upsertActiveRide(clientRideId: clientRideId, serverRideId: nil, questId: self.quest?.id, routeId: package.route.id, bikeId: bikeId, startedAt: startedAt, state: .active)
+        let routeId = package?.route.id
+        persistence.upsertActiveRide(clientRideId: clientRideId, serverRideId: nil, questId: self.quest?.id, routeId: routeId, bikeId: bikeId, startedAt: startedAt, state: .active)
         ride = try? await api.createRide(RideCreate(
-            clientRideId: clientRideId, startedAt: startedAt, questId: self.quest?.id, bikeId: bikeId, routeId: package.route.id, title: self.title,
+            clientRideId: clientRideId, startedAt: startedAt, questId: self.quest?.id, bikeId: bikeId, routeId: routeId, title: self.title,
             activity: self.activity, quarryId: quarryId,
             // The rider's own day, whose pledge this journey keeps (0.7.3).
             localDate: PledgeWindow.dayString(startedAt)
         ))
-        if let ride { persistence.upsertActiveRide(clientRideId: clientRideId, serverRideId: ride.id, questId: self.quest?.id, routeId: package.route.id, bikeId: bikeId, startedAt: startedAt, state: .active) }
-        await armFights(for: package, start: location.lastFix?.coordinate ?? package.route.path.first)
+        if let ride {
+            persistence.upsertActiveRide(clientRideId: clientRideId, serverRideId: ride.id, questId: self.quest?.id, routeId: routeId, bikeId: bikeId,
+                                         startedAt: startedAt, state: .active)
+        }
+        if let package {
+            await armFights(for: package, start: location.lastFix?.coordinate ?? package.route.path.first)
+        } else if let here {
+            // Ride anywhere with a fix in hand: the world round it now. Without one it
+            // comes with the first fix (`handle(fix:)`).
+            await loadRoamWorld(around: here)
+        }
 
         transition(to: .active)
         isActive = true
-        analytics.track(.rideStarted, properties: ["questId": self.quest?.id.uuidString ?? "none"])
-        analytics.track(.navigationStarted, properties: ["routeId": package.route.id.uuidString])
+        startIdleWatch(from: location.lastFix.flatMap { abs($0.timestamp.timeIntervalSinceNow) <= Self.freshStartSeconds ? $0 : nil })
+        analytics.track(.rideStarted, properties: ["questId": self.quest?.id.uuidString ?? "none", "roam": isRoaming ? "true" : "false"])
+        if let package { analytics.track(.navigationStarted, properties: ["routeId": package.route.id.uuidString]) }
         sendWatchSummary()
         persist(force: true)
+        guard let package else { return }
         // What the route has on it, said once before the first turn.
         emit(.briefing(for: objectsOnMap, along: package.route.path), at: startedAt)
         checkStartIsOnRoute()
@@ -220,6 +267,9 @@ final class RideRecorder {
         }
         guard transition(to: .paused) else { return }
         stopRerouteTicker()
+        // A stop by hand is the rider's own: standing counts again from the resume.
+        idleWatch?.restart(at: fixClockNow)
+        stillOutPrompt = false
         location.apply(mode: .endurance)
         sendWatchUpdate(force: true)
         persist(force: true)
@@ -227,25 +277,33 @@ final class RideRecorder {
 
     func resume() {
         guard transition(to: .active) else { return }
+        idleWatch?.restart(at: fixClockNow, at: lastFix?.coordinate)
         location.startTracking(mode: batteryMode)
         sendWatchUpdate(force: true)
         persist(force: true)
     }
 
-    func finish() async {
+    /// Ends the journey now, or (`trimmedTo`, a roam left standing two hours) as it
+    /// stood when it last moved: the fixes since are left off and the time stops there.
+    func finish(trimmedTo lastMoved: Date? = nil) async {
         guard isActive || state == .recovery else { return }
         cancelReroute()
         stopRerouteTicker()
         if state == .rerouting { _ = transition(to: .offRoute) }
         _ = transition(to: .finishing)
         location.stop()
-        let endedAt = Date()
+        let endedAt = lastMoved.map { max(startedAt, $0) } ?? Date()
         let workoutId = await health.endWorkout(endDate: endedAt)
         stats = statistics.snapshot
+        var elapsed = stats.elapsedSeconds
+        if lastMoved != nil {
+            pendingPoints.removeAll { $0.timestamp > endedAt }
+            elapsed = min(elapsed, endedAt.timeIntervalSince(startedAt))
+        }
         var cells = exploration?.takePendingBatch(now: endedAt, force: true) ?? []
         cells.append(contentsOf: pendingCellsFromStore())
         let completion = RideComplete(
-            endedAt: endedAt, distanceMeters: stats.distanceMeters, durationSeconds: Int(stats.elapsedSeconds), movingSeconds: Int(stats.movingSeconds),
+            endedAt: endedAt, distanceMeters: stats.distanceMeters, durationSeconds: Int(elapsed), movingSeconds: Int(min(stats.movingSeconds, elapsed)),
             elevationGainMeters: stats.elevationGainMeters, activeCalories: nil, points: pendingPoints, cellsVisited: Array(Set(cells)),
             objectiveEvents: pendingObjectiveEvents, healthKitWorkoutId: workoutId,
             encounterEvents: encounterTracker?.pendingEvents ?? []
@@ -259,7 +317,7 @@ final class RideRecorder {
         let endedClientId = clientRideId
         sync.beginReckoning(PendingReckoning(
             rideId: rideId, clientRideId: endedClientId, title: quest?.title ?? title ?? LoreCopy.free(activity), endedAt: endedAt,
-            distanceMeters: stats.distanceMeters, elapsedSeconds: stats.elapsedSeconds, newTerritoryMeters: newTerritoryMeters,
+            distanceMeters: stats.distanceMeters, elapsedSeconds: elapsed, newTerritoryMeters: newTerritoryMeters,
             claimed: eventLog.compactMap { event in
                 if case .phaseBroken(let name) = event { return "\(LegendCopy.phaseBroken) \(name)" }
                 guard case .claimed(let name, let kind, _, _) = event else { return nil }
@@ -318,6 +376,14 @@ final class RideRecorder {
         recentReroute = false
         isRerouting = false
         recoverableRide = nil
+        isRoaming = false
+        roamWorldLoading = false
+        roamWorldLoaded = false
+        roamRefresher = RoamRefresher()
+        idleTicker?.cancel()
+        idleTicker = nil
+        idleWatch = nil
+        stillOutPrompt = false
     }
 
     // MARK: - Fix handling (spec §35, §36)
@@ -332,6 +398,11 @@ final class RideRecorder {
         let still = stillness.update(speedMps: enriched.speed, at: enriched.timestamp)
         if still != isStill { isStill = still }
         updateNearbyStop(from: enriched.coordinate)
+        if var idle = idleWatch {
+            let woke = idle.moved(to: enriched.coordinate, at: enriched.timestamp)
+            idleWatch = idle
+            if let woke { perform(idle: woke) }
+        }
         let accepted = statistics.add(fix: enriched)
         stats = statistics.snapshot
         if accepted {
@@ -387,6 +458,17 @@ final class RideRecorder {
             noteSightings(result.status, tracker: tracker, from: enriched.coordinate, at: enriched.timestamp)
         }
         notePlaces(from: enriched.coordinate, at: enriched.timestamp)
+        if isRoaming, !roamWorldLoaded, !roamWorldLoading {
+            // Ride anywhere started with no fix: the world round the first one.
+            let here = enriched.coordinate
+            roamWorldLoading = true
+            Task { await self.loadRoamWorld(around: here) }
+        } else if isRoaming, roamWorldLoaded, roamRefresher.shouldRefresh(from: enriched.coordinate, at: enriched.timestamp, paused: state == .paused) {
+            // On new ground: what has been placed round here since.
+            let here = enriched.coordinate
+            roamRefresher.began(from: here, at: enriched.timestamp)
+            Task { await self.refreshRoam(from: here) }
+        }
         sayNext()
         if pendingPoints.count >= Config.pointsUploadBatchSize {
             let batch = pendingPoints
@@ -405,6 +487,22 @@ final class RideRecorder {
     /// that has gone since; with signal they are kept there for next time.
     private func loadEncounters(around coordinate: Coordinate?) async {
         guard let coordinate else { return }
+        let loaded = await fetchEncounters(around: coordinate)
+        // A bell worn (`SIGHT_M`) or Kenaz inscribed sights things further out.
+        encounterTracker = EncounterTracker(objects: loaded.objects + [loaded.legend].compactMap { $0 }, activity: activity,
+                                            sightMeters: loaded.sheet?.sightMeters)
+        objectsOnMap = loaded.objects.filter { $0.status == .spawned }
+        legendOnMap = loaded.legend
+    }
+
+    /// The world's things round a point and the legend awake, without touching the ride.
+    private struct LoadedWorld {
+        var objects: [WorldObject]
+        var legend: WorldObject?
+        var sheet: CharacterSheet?
+    }
+
+    private func fetchEncounters(around coordinate: Coordinate) async -> LoadedWorld {
         let cached = worldCache.load()
         let sheet = ride?.loadout ?? session.character?.sheet ?? cached?.sheet
         let objects: [WorldObject]
@@ -427,10 +525,80 @@ final class RideRecorder {
         let world = objects.filter { !$0.isLair }
         // The legend awake (0.8.0) is fought as its current phase, beside the world's things.
         let legend = await awakeLegend(cached: cached)?.foe
-        // A bell worn (`SIGHT_M`) or Kenaz inscribed sights things further out.
-        encounterTracker = EncounterTracker(objects: world + [legend].compactMap { $0 }, activity: activity, sightMeters: sheet?.sightMeters)
-        objectsOnMap = world.filter { $0.status == .spawned }
-        legendOnMap = legend
+        return LoadedWorld(objects: world, legend: legend, sheet: sheet)
+    }
+
+    /// How far round the start a roam's fights read the ground already explored, and
+    /// how far round it the places not yet found are looked for (0.9.2).
+    static let roamGroundMeters = 6000.0
+    static let roamPlacesMeters = 3000.0
+
+    /// The world round a journey with no route (0.9.2), once there is a fix: the
+    /// chests, pieces and creatures within 8 km, the fights armed over the ground
+    /// round the start, and the places not yet found. Built in one go at the end,
+    /// so a fix arriving meanwhile is never lost to a tracker about to be replaced.
+    private func loadRoamWorld(around start: Coordinate) async {
+        roamWorldLoading = true
+        let journey = clientRideId
+        let loaded = await fetchEncounters(around: start)
+        let all = loaded.objects + [loaded.legend].compactMap { $0 }
+        let setup = await fightSetup(for: all, box: BoundingBox(around: start, meters: Self.roamGroundMeters))
+        let places = await unfoundPlaces(around: start, radiusMeters: Self.roamPlacesMeters, asked: [])
+        guard isRoaming, journey == clientRideId, state != .completed, state != .cancelled else { return }
+        roamWorldLoading = false
+        roamWorldLoaded = true
+        roamRefresher = RoamRefresher()
+        roamRefresher.loaded(from: start, at: lastFix?.timestamp ?? location.lastFix?.timestamp ?? Date())
+        encounterTracker = EncounterTracker(objects: all, activity: activity, fights: setup, sightMeters: loaded.sheet?.sightMeters)
+        fightSetup = setup.map(FightSetupState.init)
+        objectsOnMap = loaded.objects.filter { $0.status == .spawned }
+        legendOnMap = loaded.legend
+        unfoundPlaces = places
+        guard isActive else { return }
+        sendWatchSummary()
+        persist(force: true)
+    }
+
+    /// How far round the rider a refresh keeps the world in the cache for a ride with no signal.
+    static let roamCacheMeters = 12_000.0
+
+    /// The world round a roam, asked again (0.9.2, `GET /world/around`): what the
+    /// server placed since joins the ride from this fix on, what is far behind is let
+    /// go, new places can be found, and the Watch's marks follow. With no answer, the
+    /// last world kept round here stands in, and the refresher backs off.
+    private func refreshRoam(from position: Coordinate) async {
+        let journey = clientRideId
+        do {
+            let around = try await api.worldAround(near: position, rideId: ride?.id)
+            guard isRoaming, journey == clientRideId, isActive else { return }
+            roamRefresher.succeeded(importing: around.importing ?? false)
+            mergeRoam(objects: around.objects, places: around.places, at: position)
+            let fresh = around.objects.filter { !$0.isLair }
+            try? worldCache.update { world in
+                let ids = Set(fresh.map(\.id))
+                world.objects = world.objects.filter { !ids.contains($0.id) && GeoMath.distance(position, $0.coordinate) <= Self.roamCacheMeters } + fresh
+            }
+        } catch {
+            guard isRoaming, journey == clientRideId, isActive else { return }
+            roamRefresher.failed()
+            AppLog.navigation.info("roam_refresh_failed \(error.localizedDescription, privacy: .public)")
+            let kept = worldCache.load()?.objects(near: position, radiusMeters: EncounterTracker.pruneBeyondMeters) ?? []
+            mergeRoam(objects: kept.filter { !$0.isLair }, places: [], at: position)
+        }
+    }
+
+    private func mergeRoam(objects fresh: [WorldObject], places: [DiscoverySummary], at position: Coordinate) {
+        guard var tracker = encounterTracker else { return }
+        let change = tracker.merge(fresh, at: position, now: lastFix?.timestamp ?? Date(), keeping: Set([quarryId].compactMap { $0 }))
+        encounterTracker = tracker
+        let known = Set(unfoundPlaces.map(\.id))
+        unfoundPlaces = unfoundPlaces.filter { GeoMath.distance(position, $0.coordinate) <= EncounterTracker.pruneBeyondMeters }
+            + places.filter { !$0.discoveredByUser && !known.contains($0.id) && !announcedPlaces.contains($0.id) }
+        guard !change.isEmpty else { return }
+        AppLog.navigation.info("roam_merged added=\(change.added.count, privacy: .public) removed=\(change.removed.count, privacy: .public)")
+        objectsOnMap = tracker.objects.filter { !tracker.claimedIDs.contains($0.id) && !$0.isLegend }
+        sendWatchSummary()
+        persist(force: true)
     }
 
     /// The legend awake now, from `/legends`, or with no signal the one the last
@@ -446,17 +614,26 @@ final class RideRecorder {
     /// ground already read round the route. Missing any, the ride says nothing of
     /// fights and the reckoning tells the server's verdict.
     private func armFights(for package: RoutePackage, start: Coordinate?) async {
-        // Offline, the constants, the sheet and the ground already read come from the last world loaded.
-        let cached = worldCache.load()
-        guard let tracker = encounterTracker, tracker.objects.contains(where: { $0.monster?.foughtByEffort == true }),
-              let constants = session.config?.combat ?? cached?.combat,
-              let sheet = ride?.loadout ?? session.character?.sheet ?? cached?.sheet else { return }
-        let resolution = session.config?.h3Resolution ?? cached?.h3Resolution ?? ExplorationDefaults.h3Resolution
+        guard let tracker = encounterTracker else { return }
         var box = package.mapRegion
         if let start {
             box.minLat = min(box.minLat, start.latitude); box.maxLat = max(box.maxLat, start.latitude)
             box.minLon = min(box.minLon, start.longitude); box.maxLon = max(box.maxLon, start.longitude)
         }
+        guard let setup = await fightSetup(for: tracker.objects, box: box) else { return }
+        fightSetup = FightSetupState(setup)
+        encounterTracker = EncounterTracker(objects: tracker.objects, activity: activity, fights: setup, sightMeters: setup.sheet.sightMeters)
+    }
+
+    /// What the fights need over `box`: the constants, the sheet and the ground already
+    /// read there; nil when anything is missing or nothing in `objects` is fought by effort.
+    private func fightSetup(for objects: [WorldObject], box: BoundingBox) async -> FightTracker.Setup? {
+        // Offline, the constants, the sheet and the ground already read come from the last world loaded.
+        let cached = worldCache.load()
+        guard objects.contains(where: { $0.monster?.foughtByEffort == true }),
+              let constants = session.config?.combat ?? cached?.combat,
+              let sheet = ride?.loadout ?? session.character?.sheet ?? cached?.sheet else { return nil }
+        let resolution = session.config?.h3Resolution ?? cached?.h3Resolution ?? ExplorationDefaults.h3Resolution
         // Its ground reaches a kilometre round anything on the way; a little more is read.
         let pad = constants.breakOffMeters
         let dLat = pad / 111_195
@@ -482,14 +659,12 @@ final class RideRecorder {
             known = offline.cells
             bounds = offline.bounds
         } else {
-            return
+            return nil
         }
-        let setup = FightTracker.Setup(
+        return FightTracker.Setup(
             constants: constants, sheet: sheet, activity: activity, knownCells: known, groundResolution: resolution,
             indexing: cellIndexing, readBounds: bounds, quarryId: quarryId
         )
-        fightSetup = FightSetupState(setup)
-        encounterTracker = EncounterTracker(objects: tracker.objects, activity: activity, fights: setup, sightMeters: sheet.sightMeters)
     }
 
     /// What a fight said. Only the quarry speaks, or else the nearest thing being
@@ -540,9 +715,13 @@ final class RideRecorder {
         let centre = Coordinate(latitude: (box.minLat + box.maxLat) / 2, longitude: (box.minLon + box.maxLon) / 2)
         let reach = GeoMath.distance(centre, Coordinate(latitude: box.maxLat, longitude: box.maxLon)) + 300
         let asked = Set(package.pois.filter { $0.requested == true }.map(\.discoveryId))
-        let nearby = (try? await api.discoveries(near: centre, radiusMeters: min(20_000, reach), category: nil, limit: 100, cursor: nil))?.items ?? []
         // The stops the rider asked for have their own card when they come up.
-        unfoundPlaces = nearby.filter { !$0.discoveredByUser && !asked.contains($0.id) }
+        unfoundPlaces = await unfoundPlaces(around: centre, radiusMeters: min(20_000, reach), asked: asked)
+    }
+
+    private func unfoundPlaces(around centre: Coordinate, radiusMeters: Double, asked: Set<UUID>) async -> [DiscoverySummary] {
+        let nearby = (try? await api.discoveries(near: centre, radiusMeters: radiusMeters, category: nil, limit: 100, cursor: nil))?.items ?? []
+        return nearby.filter { !$0.discoveredByUser && !asked.contains($0.id) }
     }
 
     // MARK: - Events: what the ride says
@@ -982,9 +1161,19 @@ final class RideRecorder {
     // MARK: - Watch
 
     private func sendWatchSummary() {
-        guard let package else { return }
         // The journey on the lock screen too (0.7.3); a new route keeps the one showing.
-        RideActivityController.shared.begin(activity: activity, questTitle: quest?.title ?? title, units: units)
+        // A journey with no route has one as well (0.9.2).
+        liveActivity.begin(activity: activity, questTitle: quest?.title ?? title, units: units)
+        // The legend (0.8.0) is on the map as the journey fights it, beside the world's objects.
+        let legends = encounterTracker?.objects.filter(\.isLegend) ?? []
+        guard let package else {
+            // Ride anywhere (0.9.2): no route, only the world round the rider. The summary
+            // is still the Watch's sign that the journey started.
+            let here = lastFix?.coordinate ?? location.lastFix?.coordinate
+            let marks = WatchWorldMarks.select(objects: objectsOnMap + legends, route: [], start: here, quarryId: quarryId, icon: WatchArt.icon(for:))
+            watch.send(summary: .roaming(activity: activity, worldMarks: marks), units: units)
+            return
+        }
         let objectives = (quest?.sortedObjectives ?? []).map { WatchObjective(objective: $0) }
         let stops = package.pois.prefix(12).map {
             WatchStop(id: $0.discoveryId, name: $0.name, latitude: $0.latitude, longitude: $0.longitude, requested: $0.requested == true,
@@ -992,8 +1181,6 @@ final class RideRecorder {
         }
         // The game near the route, and each objective still to do where it is.
         let pending = (quest?.sortedObjectives ?? []).filter { !completedObjectiveIDs.contains($0.id) && $0.status != .completed }
-        // The legend (0.8.0) is on the map as the journey fights it, beside the world's objects.
-        let legends = encounterTracker?.objects.filter(\.isLegend) ?? []
         let worldMarks = WatchWorldMarks.select(
             objects: objectsOnMap + legends, route: package.route.path, start: lastFix?.coordinate ?? package.route.path.first,
             objectives: pending, quarryId: quarryId, icon: WatchArt.icon(for:)
@@ -1047,11 +1234,12 @@ final class RideRecorder {
             courseDegrees: course.course,
             fight: encounterTracker?.watchFight(quarryId: quarryId, from: lastFix?.coordinate, icon: WatchArt.icon(for:)),
             goneMarkIds: watchGoneMarkIds,
-            districtName: watchDistrictName()
+            districtName: watchDistrictName(),
+            stillOut: stillOutPrompt ? true : nil
         )
         watch.send(update: update, force: force)
         // The lock screen, throttled by the controller; the last update (completed or cancelled) ends it.
-        RideActivityController.shared.update(update)
+        liveActivity.update(update)
     }
 
     /// What has been opened, defeated or done on this ride, for the Watch map to take off.
@@ -1099,7 +1287,8 @@ final class RideRecorder {
             pendingCells: exploration?.pendingUpload ?? [], visitedCells: Array(exploration?.visitedCells ?? []),
             completedObjectiveIDs: Array(completedObjectiveIDs), pendingObjectiveEvents: pendingObjectiveEvents,
             lastFix: lastFix, lastSegmentIndex: progress?.nearestSegmentIndex ?? 0, title: title, activity: activity.rawValue,
-            game: encounterTracker?.gameState(quarryId: quarryId, fights: fightSetup)
+            game: encounterTracker?.gameState(quarryId: quarryId, fights: fightSetup),
+            roam: isRoaming ? true : nil
         )
         try? activeRideStore.save(snapshot)
         persistence.save()
@@ -1132,13 +1321,26 @@ final class RideRecorder {
             configureTrackers(for: package, start: saved.lastFix?.coordinate ?? package.route.path.first)
             exploration?.restore(visitedCells: saved.visitedCells, pendingUpload: saved.pendingCells)
             progressTracker?.reset(toSegment: saved.lastSegmentIndex)
+        } else if saved.isRoam {
+            // Ride anywhere (0.9.2): no route to put back, but the tiles and the world round the rider.
+            isRoaming = true
+            configureTrackers(for: nil, start: saved.lastFix?.coordinate)
+            exploration?.restore(visitedCells: saved.visitedCells, pendingUpload: saved.pendingCells)
         }
         restoreGameLayer(saved)
+        // A roam whose world was loaded before the crash carries on refreshing it from
+        // the next fix; one that had not loaded it yet loads it with the next fix.
+        if isRoaming {
+            roamWorldLoaded = saved.game != nil
+            roamRefresher = RoamRefresher()
+        }
         if let rideId = saved.rideId, let serverRide = try? await api.ride(id: rideId) { ride = serverRide }
         location.startTracking(mode: batteryMode)
         health.beginWorkout(startDate: Date())
         transition(to: .active)
         isActive = true
+        // Standing still counts from the next fix after a crash (0.9.2).
+        startIdleWatch(from: nil)
         sendWatchSummary()
     }
 
@@ -1163,6 +1365,7 @@ final class RideRecorder {
             self.package = package
             quest = package.quest
         }
+        isRoaming = saved.isRoam && package == nil
         // What the phone claimed before the crash goes with the ride.
         restoreGameLayer(saved)
         machine = NavigationStateMachine(state: .recovery)
@@ -1188,10 +1391,70 @@ final class RideRecorder {
     }
 
     func discardRecovered() {
-        RideActivityController.shared.end()
+        liveActivity.end()
         if let saved = recoverableRide { persistence.deleteActiveRide(clientRideId: saved.clientRideId) }
         recoverableRide = nil
         try? activeRideStore.clear()
+    }
+
+    // MARK: - A journey left standing (0.9.2)
+
+    /// Asked about every journey once the server's `ride_anywhere` is on; a roam always.
+    private var asksWhenIdle: Bool { isRoaming || session.isEnabled(FeatureFlag.rideAnywhere) }
+
+    private func startIdleWatch(from fix: LocationFix?) {
+        idleTicker?.cancel()
+        idleTicker = nil
+        guard asksWhenIdle else {
+            idleWatch = nil
+            return
+        }
+        idleWatch = IdleWatch(endsItself: isRoaming, startedAt: fix?.timestamp, at: fix?.coordinate)
+        // Fixes stop when the rider does: the clock is what notices.
+        idleTicker = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(30))
+                guard !Task.isCancelled, let self, self.isActive else { return }
+                self.checkIdle(at: self.fixClockNow)
+            }
+        }
+    }
+
+    /// What standing still this long calls for at `now` (the fixes' clock).
+    func checkIdle(at now: Date) {
+        guard isActive, var idle = idleWatch else { return }
+        let actions = idle.tick(at: now, paused: state == .paused)
+        idleWatch = idle
+        for action in actions { perform(idle: action) }
+    }
+
+    private func perform(idle action: IdleWatch.Action) {
+        switch action {
+        case .saveBattery:
+            location.apply(mode: .endurance)
+            watch.configure(batteryMode: .endurance)
+            AppLog.navigation.info("idle_endurance")
+        case .ask(let minutes):
+            stillOutPrompt = true
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            AppLog.navigation.info("idle_asked \(minutes, privacy: .public)")
+            sendWatchUpdate(force: true)
+        case .end(let lastMoved):
+            AppLog.navigation.info("idle_roam_ended")
+            Task { await self.finish(trimmedTo: lastMoved) }
+        case .moving:
+            stillOutPrompt = false
+            location.apply(mode: batteryMode)
+            watch.configure(batteryMode: batteryMode)
+            sendWatchUpdate(force: true)
+        }
+    }
+
+    /// "Keep going": the question goes. The GPS stays low until the rider moves.
+    func keepGoing() {
+        idleWatch?.keepGoing()
+        stillOutPrompt = false
+        sendWatchUpdate(force: true)
     }
 
     // MARK: - Helpers
@@ -1233,10 +1496,14 @@ final class RideRecorder {
         }
     }
 
-    private func configureTrackers(for package: RoutePackage, start: Coordinate?) {
-        progressTracker = RouteProgressTracker(route: package.route)
-        let origin = start ?? package.route.path.first ?? Coordinate(latitude: 0, longitude: 0)
-        if let quest = quest ?? package.quest {
+    /// With no package (Ride anywhere, 0.9.2) there is nothing to follow and no quest,
+    /// but the tiles are counted all the same.
+    private func configureTrackers(for package: RoutePackage?, start: Coordinate?) {
+        progressTracker = package.map { RouteProgressTracker(route: $0.route) }
+        objectiveTracker = nil
+        currentObjective = nil
+        let origin = start ?? package?.route.path.first ?? Coordinate(latitude: 0, longitude: 0)
+        if let quest = quest ?? package?.quest {
             objectiveTracker = ObjectiveTracker(objectives: quest.objectives, start: origin)
             currentObjective = objectiveTracker?.pendingObjectives.first
         }

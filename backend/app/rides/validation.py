@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 from app.core.activity import SPEED_CAP_MPS, normalise
 from app.core.geo import haversine_m
@@ -47,6 +49,22 @@ class ValidationResult:
     @property
     def suspicious(self) -> bool:
         return any(f.startswith("IMPOSSIBLE") or f == "TELEPORT" for f in self.flags)
+
+
+def as_raw(rows: Iterable[Any]) -> list[dict]:
+    """Stored ride points (`RidePoint` rows) in the shape `validate_points` reads."""
+    return [
+        {
+            "latitude": p.latitude,
+            "longitude": p.longitude,
+            "timestamp": p.timestamp,
+            "altitudeMeters": p.altitude_meters,
+            "horizontalAccuracyMeters": p.horizontal_accuracy_meters,
+            "speedMps": p.speed_mps,
+            "heartRateBpm": p.heart_rate_bpm,
+        }
+        for p in rows
+    ]
 
 
 def validate_points(

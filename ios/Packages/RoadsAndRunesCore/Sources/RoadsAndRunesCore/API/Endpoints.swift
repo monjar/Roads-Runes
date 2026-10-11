@@ -78,6 +78,11 @@ public enum Endpoints {
             QueryItem("radiusMeters", String(Int(radiusMeters))),
         ])
     }
+    public static func worldAround(near center: Coordinate, rideId: UUID?) -> Endpoint {
+        var query = [QueryItem("latitude", String(center.latitude)), QueryItem("longitude", String(center.longitude))]
+        if let rideId { query.append(QueryItem("rideId", rideId.uuidString)) }
+        return Endpoint(method: .get, path: "/world/around", query: query)
+    }
     public static func worldObject(id: UUID) -> Endpoint { Endpoint(method: .get, path: "/world/objects/\(id.uuidString)") }
     public static func bounty() -> Endpoint { Endpoint(method: .get, path: "/world/objects/bounty") }
     public static func claimWorldObject(id: UUID, _ body: WorldObjectClaimRequest) throws -> Endpoint {
@@ -193,6 +198,10 @@ public enum Endpoints {
     public static func questRoute(id: UUID, from origin: Coordinate? = nil) -> Endpoint {
         let query = origin.map { [QueryItem("latitude", format($0.latitude)), QueryItem("longitude", format($0.longitude))] } ?? []
         return Endpoint(method: .get, path: "/quests/\(id.uuidString)/route", query: query, timeout: 90)
+    }
+    /// The route as a file to hand on: a FIT course for a Garmin, or GPX. 409 `ROUTE_SEALED` for an open sealed quest's route.
+    public static func routeExport(id: UUID, format: RouteExportFormat) -> Endpoint {
+        Endpoint(method: .get, path: "/routes/\(id.uuidString)/export", query: [QueryItem("format", format.rawValue)])
     }
     /// Asked for mid-ride, so it gives up sooner than a plan does: the rider is told and shown the way back instead.
     public static func reroute(routeId: UUID, _ body: RerouteRequest) throws -> Endpoint {

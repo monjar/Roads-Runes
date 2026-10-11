@@ -30,6 +30,9 @@ class RouteMetrics:
     quest_objective_coverage: float
     poi_count: int
     scenic_fraction: float = 0.0
+    # The share of a loop's way back that rides its way out (0.9.2); None when the
+    # route is not a loop measured that way, and then it is not scored at all.
+    retrace: float | None = None
 
 
 @dataclass
@@ -90,6 +93,9 @@ def score_route(
     mismatch += max(0.0, gravel_fraction - rider.gravel_comfort) * 0.5
     mismatch += max(0.0, metrics.surface.get("trail", 0.0) - rider.technical_trail_comfort) * 0.5
     components["surfaceMismatchPenalty"] = _clamp(mismatch)
+    if metrics.retrace is not None:
+        # "To the tower and back" on one road is half a ride.
+        components["retracePenalty"] = _clamp(metrics.retrace)
 
     positive = (
         w["userPreferenceFit"] * components["userPreferenceFit"]
@@ -102,6 +108,7 @@ def score_route(
         w["trafficPenalty"] * components["trafficPenalty"]
         + w["excessiveDifficultyPenalty"] * components["excessiveDifficultyPenalty"]
         + w["surfaceMismatchPenalty"] * components["surfaceMismatchPenalty"]
+        + w.get("retracePenalty", 0.0) * components.get("retracePenalty", 0.0)
     )
     max_positive = (
         w["userPreferenceFit"] + w["questCompletionFit"] + w["explorationPotential"] + w["poiValue"] + w["scenicValue"]

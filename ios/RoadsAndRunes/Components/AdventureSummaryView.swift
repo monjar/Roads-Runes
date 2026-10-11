@@ -32,6 +32,8 @@ struct AdventureSummaryView: View {
     @State private var camera: MapCamera?
     @State private var reveal: Task<Void, Never>?
     @State private var sharing = false
+    /// "Save for Garmin": the journey as a FIT activity, imported by hand (docs/GARMIN.md, B1).
+    @State private var export: ExportRequest?
 
     private enum StravaLineState { case idle, sending, sent, failed(String) }
 
@@ -98,6 +100,7 @@ struct AdventureSummaryView: View {
                             if stage >= .items, !finds.isEmpty { itemsSection.id(Stage.items) }
                             if stage >= .quest { questSection.id(Stage.quest) }
                             if stage >= .quest, let goal = sealedGoal { sealedSection(goal) }
+                            if stage >= .quest, let also = summary.alsoFinished { alsoFinishedLine(also) }
                             if stage >= .entry, let entry = summary.entryToRead, !entry.isEmpty { entrySection(entry).id(Stage.entry) }
                             // Letters written here a season or more ago, found again (0.7.3).
                             if stage >= .entry, let letters = summary.letters, !letters.isEmpty { FoundLettersSection(letters: letters) }
@@ -655,7 +658,21 @@ struct AdventureSummaryView: View {
         }
     }
 
-    private var hasQuest: Bool { summary.questCompletion != nil && summary.quest != nil }
+    private var hasQuest: Bool { (summary.questCompletion != nil && summary.quest != nil) || summary.alsoFinished != nil }
+
+    /// A quest the rider had taken, finished on the way by a journey with no quest (0.9.2).
+    private func alsoFinishedLine(_ also: AlsoFinishedQuest) -> some View {
+        HStack(spacing: 10) {
+            MarkView(.icon(.scroll, spot: .sage)).frame(width: 24, height: 24)
+            Text(LoreCopy.alsoFinished(also.title))
+                .font(Theme.Typography.text(15, .semibold)).foregroundStyle(Theme.Colors.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .transition(.opacity)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("summary.alsoFinished")
+    }
 
     /// A sealed quest's goal, named at last (0.7.3).
     private var sealedGoal: SealedQuest.Goal? {
@@ -719,13 +736,21 @@ struct AdventureSummaryView: View {
                 Label("Saved to Health", systemImage: "heart.fill").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.sageDeep)
             }
             stravaLine
-            // The picture of this journey to send someone (0.7.3).
-            Button { sharing = true } label: {
-                Label("Share card", systemImage: "square.and.arrow.up")
+            FlowLayout(spacing: 8) {
+                // The picture of this journey to send someone (0.7.3).
+                Button { sharing = true } label: {
+                    Label("Share card", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.surfacePill)
+                .accessibilityIdentifier("summary.share")
+                .sheet(isPresented: $sharing) { ShareCardSheet(summary: summary) }
+                Button { export = .garminActivity(rideId: summary.ride.id, activity: summary.ride.activity) } label: {
+                    Label("Save for Garmin", systemImage: "square.and.arrow.down")
+                }
+                .buttonStyle(.surfacePill)
+                .accessibilityIdentifier("summary.garmin")
+                .sheet(item: $export) { ExportFileSheet(request: $0) }
             }
-            .buttonStyle(.surfacePill)
-            .accessibilityIdentifier("summary.share")
-            .sheet(isPresented: $sharing) { ShareCardSheet(summary: summary) }
             if let nudge = comeBackLine {
                 Label(nudge, systemImage: "flame.fill")
                     .font(Theme.Typography.captionStrong).foregroundStyle(Theme.Colors.terracottaDeep)

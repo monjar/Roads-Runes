@@ -3,9 +3,11 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, Response
 
+from app.core import fit
 from app.core.deps import CurrentUser, DBDep, SettingsDep, get_llm, get_router_client
+from app.routing import export as route_export
 from app.routing import service
 from app.routing.schemas import (
     RerouteRequest,
@@ -72,6 +74,28 @@ async def rune_ride(
 @router.get("/{route_id}", response_model=RouteOptionOut)
 async def get(route_id: uuid.UUID, user: CurrentUser, db: DBDep) -> RouteOptionOut:
     return service.route_out(await service.get_route(db, user, route_id))
+
+
+@router.get("/{route_id}/export")
+async def export(
+    route_id: uuid.UUID,
+    user: CurrentUser,
+    db: DBDep,
+    format: str = Query(default="fit", pattern="^(fit|gpx)$"),
+) -> Response:
+    """The route as a course for a Garmin (docs/GARMIN.md). 409 `ROUTE_SEALED` for an
+    open sealed quest's way."""
+    course = await route_export.course(db, user, await service.get_route(db, user, route_id))
+    if format == "fit":
+        body: bytes | str = route_export.to_fit_course(course)
+        media = fit.MEDIA_TYPE
+    else:
+        body, media = route_export.to_gpx_course(course), "application/gpx+xml"
+    return Response(
+        content=body,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{fit.filename(course.name, format)}"'},
+    )
 
 
 @router.get("/{route_id}/package", response_model=RoutePackageOut)

@@ -493,6 +493,8 @@ struct AdventureDetailView: View {
     @State private var sharing: AdventureSummary?
     @State private var loadingShare = false
     @State private var shareError: String?
+    /// The journey as a file (GPX, or FIT for Garmin), downloaded first and then shared.
+    @State private var export: ExportRequest?
 
     var body: some View {
         let f = UnitFormatter(units: container.session.units)
@@ -578,9 +580,19 @@ struct AdventureDetailView: View {
                 .disabled(loadingShare)
                 .accessibilityIdentifier("journal.share")
                 if let shareError { ErrorLine(text: shareError) }
-                HStack(spacing: 8) {
+                FlowLayout(spacing: 8) {
                     Button("Save notes") { Task { _ = try? await container.api.updateRide(id: entry.ride.id, RidePatch(notes: notes)) } }.buttonStyle(.inkPill)
-                    ShareLink(item: container.api.rideExportURL(id: entry.ride.id, format: .gpx)) { Label("Export GPX", systemImage: "square.and.arrow.up") }.buttonStyle(.surfacePill)
+                    // The file itself, fetched with the rider's token: a shared link to the API was refused by every app it went to.
+                    Button { export = .gpx(rideId: entry.ride.id, activity: entry.ride.activity) } label: {
+                        Label("Export GPX", systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(.surfacePill)
+                    .accessibilityIdentifier("journal.gpx")
+                    Button { export = .garminActivity(rideId: entry.ride.id, activity: entry.ride.activity) } label: {
+                        Label("Save for Garmin", systemImage: "square.and.arrow.down")
+                    }
+                    .buttonStyle(.surfacePill)
+                    .accessibilityIdentifier("journal.garmin")
                     stravaRow
                 }
             }
@@ -604,6 +616,7 @@ struct AdventureDetailView: View {
             AdventureSummaryView(summary: summary, units: container.session.units, animated: false) { reckoning = nil }
         }
         .sheet(item: $sharing) { summary in ShareCardSheet(summary: summary) }
+        .sheet(item: $export) { ExportFileSheet(request: $0) }
         .task {
             notes = entry.notes ?? ""
             geometry = try? await container.api.rideGeometry(id: entry.ride.id)

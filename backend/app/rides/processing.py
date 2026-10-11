@@ -45,7 +45,7 @@ from app.quests.models import QuestInstance, QuestObjective
 from app.quests.service import all_required_complete, completion_payload, quest_out
 from app.quests.state_machine import assert_transition
 from app.rides.models import Ride, RidePoint, RideRoute
-from app.rides.validation import CleanPoint, check_cell_plausibility, validate_points
+from app.rides.validation import CleanPoint, as_raw, check_cell_plausibility, validate_points
 from app.social.service import publish
 from app.users.models import User
 from app.world_objects import lairs
@@ -361,18 +361,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         .scalars()
         .all()
     )
-    raw = [
-        {
-            "latitude": p.latitude,
-            "longitude": p.longitude,
-            "timestamp": p.timestamp,
-            "altitudeMeters": p.altitude_meters,
-            "horizontalAccuracyMeters": p.horizontal_accuracy_meters,
-            "speedMps": p.speed_mps,
-            "heartRateBpm": p.heart_rate_bpm,
-        }
-        for p in points_rows
-    ]
+    raw = as_raw(points_rows)
     validation = validate_points(raw, client_distance_m=ride.distance_meters, activity=ride.activity)
     flags = list(validation.flags)
     points = validation.points
@@ -586,6 +575,12 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
     quest: QuestInstance | None = None
     quest_completed = False
     objectives_completed: list[QuestObjective] = []
+    # Ride anywhere (0.9.2): a journey with no quest of its own finished this one, a
+    # quest the rider had already taken whose goal the journey met.
+    also_finished: dict[str, Any] | None = None
+    judged = _QuestJudge(
+        db, settings, ride, points, traversal, exploration, claims, legend, lair, district_run, ended, discoveries
+    )
     if ride.quest_id:
         quest = await db.get(QuestInstance, ride.quest_id)
         if (
@@ -594,59 +589,38 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             and quest.status == "ACTIVE"
             and not validation.suspicious
         ):
-            loop = await _loop_for(db, settings, quest, points, set(traversal.cells) if traversal is not None else set(),
-                                   ride.distance_meters)  # fmt: skip
-            objectives_completed = evaluate_objectives(
-                quest,
-                points,
-                distance_m=ride.distance_meters,
-                duration_s=float(ride.duration_seconds or 0),
-                elevation_gain_m=ride.elevation_gain_meters,
-                new_roads_m=exploration.new_territory_m,
-                new_cells=set(exploration.new_cells),
-                resolution=settings.h3_resolution,
-                client_events=list(ride.objective_events or []),
-                claims=claims,
-                legend=legend,
-                lair=lair,
-                activity=ride.activity,
-                districts_done=district_run,
-                loop=loop,
-            )
-            for o in objectives_completed:
-                # A rune cut for a quest is a cut like any other: on the map, in the Hand.
-                if o.objective_type == "INSCRIBE_RUNE":
-                    form = str((o.extra or {}).get("roadForm") or "")
-                    rune_id = (o.extra or {}).get("rune") or (
-                        runes_catalog.rune_for_form(form) if form in runes_catalog.CUT_FORMS else None
-                    )
-                    at = (o.extra or {}).get("cutAt") or [o.latitude, o.longitude]
-                    if rune_id and at[0] is not None:
-                        await inventory.record_cut(
-                            db, ride.user_id, ride_id=ride.id, rune_id=str(rune_id), latitude=float(at[0]),
-                            longitude=float(at[1]), source="QUEST", place_name=(o.extra or {}).get("poiName"),
-                        )  # fmt: skip
-                if o.discovery_id:
-                    d = await db.get(Discovery, o.discovery_id)
-                    if d is not None:
-                        ud = await mark_found(db, ride.user_id, d, ride.id, ended)
-                        if ud is not None:
-                            discoveries.append(d)
+            objectives_completed = await judged.evaluate(quest)
             # Second Chance: one optional objective missed counts as done.
             if character is not None and all_required_complete(quest):
                 forgiven = _forgive_one(quest, character)
                 if forgiven is not None:
                     objectives_completed.append(forgiven)
             if all_required_complete(quest):
-                assert_transition(quest.status, "COMPLETED")
-                quest.status = "COMPLETED"
-                quest.completed_at = ended
-                quest.ride_id = ride.id
+                _complete(quest, ride, ended)
                 quest_completed = True
                 if character is not None:
                     items_found += await inventory.grant_quest_items(db, character, quest, ride_id=ride.id)
         elif quest is not None and quest.status != "ACTIVE":
             quest = None
+    elif character is not None and points and not validation.suspicious and is_enabled(settings, "ride_anywhere"):
+        # Every quest it fits keeps what the journey did for it; the first finished is
+        # finished, at most one a journey, and the rest wait for the next.
+        for candidate in await quests_that_fit(db, ride):
+            done = await judged.evaluate(candidate)
+            if quest is not None or not all_required_complete(candidate):
+                continue
+            forgiven = _forgive_one(candidate, character)
+            if forgiven is not None:
+                done.append(forgiven)
+            if candidate.status == "ACCEPTED":
+                assert_transition(candidate.status, "ACTIVE")
+                candidate.status = "ACTIVE"
+                candidate.started_at = candidate.started_at or ride.started_at or ended
+            _complete(candidate, ride, ended)
+            quest, quest_completed, objectives_completed = candidate, True, done
+            items_found += await inventory.grant_quest_items(db, character, candidate, ride_id=ride.id)
+            also_finished = {"id": str(candidate.id), "title": candidate.title}
+            log.info("quest_finished_on_the_way", ride_id=str(ride.id), quest_id=str(candidate.id))
 
     arc: dict[str, Any] | None = None
     reward: dict[str, Any] = {
@@ -805,6 +779,9 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         if quest_completed and quest
         else None,
         "objectivesCompleted": [str(o.id) for o in objectives_completed],
+        # 0.9.2: a quest this journey finished without being ridden for it, "Also
+        # finished: …". Absent otherwise.
+        **({"alsoFinished": also_finished} if also_finished else {}),
         "xpAwarded": reward["xpAwarded"],
         "xpBreakdown": reward["xpBreakdown"],
         "levelUps": reward["levelUps"],
@@ -998,6 +975,131 @@ async def _south(db: AsyncSession, ride: Ride, points: list[CleanPoint]) -> bool
     if start is None and points:
         start = (points[0].latitude, points[0].longitude)
     return is_south(start[0] if start else None)
+
+
+# Objectives only a planned route can meet: a rune cut where the route was drawn to
+# cut it, or the route itself ridden to the end.
+ROUTE_ONLY_OBJECTIVES = frozenset({"INSCRIBE_RUNE", "COMPLETE_ROUTE"})
+
+
+async def quests_that_fit(db: AsyncSession, ride: Ride) -> list[QuestInstance]:
+    """The quests a journey with no quest of its own may count towards (0.9.2): taken
+    before it started, for the same activity, not sealed, not a party's, and with no
+    objective that needs a planned route. Oldest taken first."""
+    from app.quests.sealed import TEMPLATE_ID as SEALED
+
+    started = ride.started_at
+    rows = (
+        await db.execute(
+            select(QuestInstance).where(
+                QuestInstance.user_id == ride.user_id,
+                QuestInstance.status.in_(["ACCEPTED", "ACTIVE"]),
+                QuestInstance.accepted_at.is_not(None),
+            )
+        )
+    ).scalars()
+    fit = [
+        q
+        for q in rows
+        if (started is None or q.accepted_at <= started)
+        and q.template_id != SEALED
+        and q.quest_type != SEALED
+        and q.party_id is None
+        and normalise(q.activity) == normalise(ride.activity)
+        and not any(o.objective_type in ROUTE_ONLY_OBJECTIVES for o in q.objectives)
+    ]
+    # A quest under way on another journey still being recorded or counted is that one's.
+    elsewhere = {q.ride_id for q in fit if q.status == "ACTIVE" and q.ride_id is not None and q.ride_id != ride.id}
+    busy = (
+        set(
+            (
+                await db.execute(
+                    select(Ride.id).where(
+                        Ride.id.in_(elsewhere), Ride.status.in_(["RECORDING", "UPLOADED", "PROCESSING"])
+                    )
+                )
+            ).scalars()
+        )
+        if elsewhere
+        else set()
+    )
+    fit = [q for q in fit if q.ride_id not in busy]
+    return sorted(fit, key=lambda q: (q.accepted_at, str(q.id)))
+
+
+def _complete(quest: QuestInstance, ride: Ride, ended: Any) -> None:
+    assert_transition(quest.status, "COMPLETED")
+    quest.status = "COMPLETED"
+    quest.completed_at = ended
+    quest.ride_id = ride.id
+
+
+class _QuestJudge:
+    """Judges a quest's objectives against one processed journey, as a quest ride is
+    judged: what the trace met is done, a rune cut is put on the map, and a place an
+    objective pointed at is found."""
+
+    def __init__(
+        self,
+        db: AsyncSession,
+        settings: Settings,
+        ride: Ride,
+        points: list[CleanPoint],
+        traversal: Any,
+        exploration: ExplorationOutcome,
+        claims: ClaimOutcome,
+        legend: dict[str, Any] | None,
+        lair: dict[str, Any] | None,
+        district_run: dict[str, Any] | None,
+        ended: Any,
+        discoveries: list[Discovery],
+    ) -> None:
+        self.db, self.settings, self.ride, self.points = db, settings, ride, points
+        self.traversal, self.exploration, self.claims = traversal, exploration, claims
+        self.legend, self.lair, self.district_run, self.ended = legend, lair, district_run, ended
+        self.discoveries = discoveries
+
+    async def evaluate(self, quest: QuestInstance) -> list[QuestObjective]:
+        db, ride, ended = self.db, self.ride, self.ended
+        cells = set(self.traversal.cells) if self.traversal is not None else set()
+        loop = await _loop_for(db, self.settings, quest, self.points, cells, ride.distance_meters)
+        completed = evaluate_objectives(
+            quest,
+            self.points,
+            distance_m=ride.distance_meters,
+            duration_s=float(ride.duration_seconds or 0),
+            elevation_gain_m=ride.elevation_gain_meters,
+            new_roads_m=self.exploration.new_territory_m,
+            new_cells=set(self.exploration.new_cells),
+            resolution=self.settings.h3_resolution,
+            client_events=list(ride.objective_events or []) if ride.quest_id == quest.id else [],
+            claims=self.claims,
+            legend=self.legend,
+            lair=self.lair,
+            activity=ride.activity,
+            districts_done=self.district_run,
+            loop=loop,
+        )
+        for o in completed:
+            # A rune cut for a quest is a cut like any other: on the map, in the Hand.
+            if o.objective_type == "INSCRIBE_RUNE":
+                form = str((o.extra or {}).get("roadForm") or "")
+                rune_id = (o.extra or {}).get("rune") or (
+                    runes_catalog.rune_for_form(form) if form in runes_catalog.CUT_FORMS else None
+                )
+                at = (o.extra or {}).get("cutAt") or [o.latitude, o.longitude]
+                if rune_id and at[0] is not None:
+                    await inventory.record_cut(
+                        db, ride.user_id, ride_id=ride.id, rune_id=str(rune_id), latitude=float(at[0]),
+                        longitude=float(at[1]), source="QUEST", place_name=(o.extra or {}).get("poiName"),
+                    )  # fmt: skip
+            if o.discovery_id:
+                d = await db.get(Discovery, o.discovery_id)
+                if d is not None:
+                    ud = await mark_found(db, ride.user_id, d, ride.id, ended)
+                    if ud is not None:
+                        self.discoveries.append(d)
+        return completed
 
 
 async def _guarded(db: AsyncSession, character: Character, event: str, ride: Ride, work: Any) -> Any:

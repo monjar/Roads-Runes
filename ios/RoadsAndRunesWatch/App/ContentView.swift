@@ -26,11 +26,18 @@ struct ContentView: View {
                     store.clearObjective()
                 }
                 .transition(.opacity)
+            } else if store.isAskingStillOut {
+                StillOutOverlay()
+                    .transition(.opacity)
             }
         }
         .animation(isLuminanceReduced ? nil : .easeInOut(duration: 0.2), value: store.pendingObjective)
         .onChange(of: store.turnCueToken) { _, _ in
             if let cue = store.turnCue { TurnHaptics.play(cue) }
+        }
+        // The journey's own question (0.9.2): one tap, never a turn's or a fight's.
+        .onChange(of: store.isAskingStillOut) { _, asking in
+            if asking { TurnHaptics.tap(.notice) }
         }
     }
 }
@@ -71,6 +78,7 @@ enum TurnHaptics {
         case .start: device.play(.start)
         case .success: device.play(.success)
         case .failure: device.play(.failure)
+        case .notice: device.play(.notification)
         }
     }
 
@@ -120,4 +128,30 @@ enum WatchTheme {
     static let heart = Color(red: 1.0, green: 0.561, blue: 0.561)         // #ff8f8f
     static let success = sage
     static let danger = accent
+}
+
+/// "Still out? End ride or keep going." (0.9.2), after a long stop: read at a
+/// standstill, so a line and two pills.
+struct StillOutOverlay: View {
+    @Environment(WatchContainer.self) private var container
+    @Environment(RideStore.self) private var store
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text(LoreCopy.stillOut(store.activity))
+                .font(.system(size: 16, weight: .semibold))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("watch.stillOut")
+            WatchPill(title: "End \(store.journey)", identifier: "watch.stillOut.end") {
+                container.send(.end)
+            }
+            WatchPill(title: "Keep going", identifier: "watch.stillOut.keepGoing", style: .quiet) {
+                container.send(.keepGoing)
+            }
+        }
+        .padding(.horizontal, 6)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.opacity(0.92))
+    }
 }

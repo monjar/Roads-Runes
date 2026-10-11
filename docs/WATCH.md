@@ -42,11 +42,34 @@ Watch ──► iPhone: pause / resume / end commands, heart-rate samples, and
        phone ignores one older than 120 s, plans it through the
        QuickStartCoordinator and starts without a tap. A failure comes back as
        StartResult; success is the route summary arriving
+   • 0.9.2, Ride anywhere, all optional both ways:
+       – RouteSummary.roam: a journey with no route sends a summary with no
+         turns, no line and no objectives, only the world marks within 2 km of
+         the rider, and `roam: true`. It is still the Watch's sign that the
+         journey started (planning ends). The Watch shows its no-route face
+         ("Free ride", "Every new road counts") and the map follows the rider
+         with the marks; the phone sends the summary again as the world round
+         the rider is refreshed. An older Watch reads it as a summary with no
+         route and shows the same no-route face
+       – NavigationUpdate.stillOut: after 20 minutes without moving (again at
+         an hour) the Watch shows "Still out? End ride or keep going." with
+         End ride and Keep going, and one `notice` tap (`WristTap.notice`, never
+         a turn's or a fight's). Keep going sends the command `keepGoing`
+         (an older phone drops it); moving off takes the question away
+       – idleInfo.rideAnywhere: the phone says it can start one (the server's
+         `ride_anywhere`); Next up then offers a "Ride anywhere" pill (Run /
+         Walk anywhere) that sends StartRequest kind `ROAM` with the activity.
+         The phone starts it without planning. An older phone sends no
+         `rideAnywhere`, so no pill; one that got a ROAM anyway refuses it as
+         a kind it does not know, and the Watch's "Couldn't plan" follows
+       – The Controls page no longer says "Auto-pauses when you stop" (it never
+         did): it says "Pause here when you stop"
 ```
 
 Every tap the Watch gives is named in Core (`WristTap`). Turns own `click`,
 `directionUp` and `directionDown`; a fight may only use `start`, `success` and
-`failure`, and `WristTapTests` keeps the two sets apart.
+`failure`; the journey's own question (0.9.2, "Still out?") uses `notice`; and
+`WristTapTests` keeps the sets apart.
 
 The watch runs its own `HKWorkoutSession` (cycling, outdoor) so heart rate
 streams and the workout continues if the phone connection drops. It keeps the
@@ -75,7 +98,8 @@ Five vertical pages (`App/ContentView.swift`, `RidePages`):
    redrawn in tenths, with no numbers.
 4. **Stats** – distance, duration, new ground, distance to go, climbed, heart
    rate. Speed is available but small.
-5. **Controls** – pause/resume, end ride (confirm).
+5. **Controls** – pause/resume, end ride (confirm). It never pauses by itself;
+   since 0.9.2 a long stop is asked about instead ("Still out?").
 
 **Turn taps** are worked out on the Watch from the navigation updates
 (`Core/Watch/TurnCue.swift`): two clicks as a turn comes up at 150 m, then at
@@ -120,7 +144,8 @@ the overlay's outcome `PHASE`; marks of kind `LEGEND` and `LAIR`.
 
 The idle screen is **Next up**: the streak, the bounty's mark and how far,
 and buttons to go — "Ride to bounty" (Run/Walk for the rider's activity), up
-to three "Start quest", and "Quick loop" for 20 or 40 minutes. Each sends a
+to three "Start quest", "Ride anywhere" (0.9.2, when the phone offers it), and
+"Quick loop" for 20 or 40 minutes. Each sends a
 start request; the Watch shows "Planning…" (75 s at most), then the ride, or
 "Couldn't plan. Try on your iPhone." with a Done button. With no phone in
 reach it says "Open the app on your iPhone to start." Without Next up (an
