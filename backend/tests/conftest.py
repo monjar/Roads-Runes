@@ -131,6 +131,7 @@ async def explorer_client(user_client: AsyncClient) -> AsyncClient:
 
 PARSE_FIELDS = (
     "destination",
+    "origin",
     "area",
     "via",
     "distanceKm",

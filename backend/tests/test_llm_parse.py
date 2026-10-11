@@ -116,6 +116,33 @@ async def test_a_place_named_on_the_way_is_kept_in_order_and_deduplicated():
 
 
 @pytest.mark.anyio
+async def test_where_the_ride_starts_is_read_and_said_back():
+    """ "From Aragon Tower to Westminster and back" had nowhere to put the tower (0.9.2)."""
+    parsed = await parse_request(
+        "From Aragon Tower to Westminster and back, checking out some pubs",
+        StubLLM(
+            parse(
+                origin={"query": " Aragon Tower "},
+                destination={"query": "Westminster"},
+                stops=stops("PUB"),
+                loop=True,
+            )
+        ),
+    )
+    prefs = parsed.preferences
+    assert prefs.origin == {"query": "Aragon Tower"}
+    assert "origin:Aragon Tower" in parsed.matched
+    # "Some pubs" names no number; the planner decides how many.
+    assert prefs.poi == {"category": "PUB", "preferredPosition": 0.5}
+    # Starting where it finishes is a loop from there, said twice.
+    parsed = await parse_request(
+        "from greenwich to greenwich",
+        StubLLM(parse(origin={"query": "Greenwich"}, destination={"query": "greenwich"}, loop=True)),
+    )
+    assert parsed.preferences.origin is None
+
+
+@pytest.mark.anyio
 async def test_the_finish_is_not_also_somewhere_to_pass_through():
     """Routed to twice, it is a there-and-back to the same door."""
     parsed = await parse_request(

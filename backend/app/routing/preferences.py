@@ -71,6 +71,9 @@ class RoutePreferences:
     # waypoint rather than a preference. Same shape as `area` once resolved.
     via: list[dict[str, Any]] | None = None
     loop: bool | None = None
+    # Where the ride starts when it is not where the rider is (0.9.2): "from Aragon
+    # Tower to Westminster and back". Same shape as `area` once resolved.
+    origin: dict[str, Any] | None = None
 
     def clamp(self) -> RoutePreferences:
         for name in SCALARS:
@@ -110,6 +113,9 @@ Places. A rider names a place in one of two ways, and they plan different rides:
   finishes at the tower. "past the old mill" is one. These are *named* places, so
   a name is the whole test: "2 pubs on the way" names none and belongs in
   `stops`, but "the Moby Dick" is one place and no other will do.
+- `origin` — where the ride STARTS, when the rider names it: "from Aragon Tower
+  to Westminster and back", "starting at the Cutty Sark". Null when they say
+  nothing about where it starts, or mean here ("from home", "from here").
 Use whichever the sentence means, not both for the same words. Return the name
 as the rider wrote it, trimmed to just the name. NEVER return coordinates,
 directions, or a description of the riding as a place: "a quiet 30 km loop"
@@ -120,7 +126,8 @@ PUB (pubs, bars, a pint), CAFE (cafés, coffee), FOOD (lunch, restaurants),
 NATURE (parks, woods, gardens), HISTORICAL (castles, churches, monuments,
 ruins), CULTURAL (museums, galleries), LANDMARK (attractions, sights),
 VIEWPOINT (views, peaks, summits), TRAIL (trails). `stops.count` is how many
-they asked for ("a couple" is 2, "a few" is 3). `stops.preferredPosition` is
+they asked for ("a couple" is 2, "a few" is 3); null when they gave no number
+("some pubs", "past a café or two" is 2). `stops.preferredPosition` is
 where along the ride they want them: 0 is the start, 1 the finish, 0.5 halfway;
 use 0.5 when they just said "on the way". `stops.quality` is true when they want
 a *good* one ("a nice cafe", "the best pub") rather than whichever is nearest.
@@ -176,6 +183,7 @@ SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "destination": _place_schema("Somewhere to ride to and finish at."),
+        "origin": _place_schema("Where the ride starts, when it is not where the rider is."),
         "area": _place_schema("Somewhere to ride in or around."),
         "via": {
             "description": "Named places to ride through on the way, in the order said.",
@@ -240,7 +248,7 @@ SCHEMA: dict[str, Any] = {
         "hillTolerance": _scalar_schema("How much climbing they will take."),
         "loop": {"description": "Back where they started.", "anyOf": [{"type": "boolean"}, {"type": "null"}]},
     },
-    "required": ["destination", "area", "via", "distanceKm", "stops", *SCALARS, "loop"],
+    "required": ["destination", "origin", "area", "via", "distanceKm", "stops", *SCALARS, "loop"],
     "additionalProperties": False,
 }
 
@@ -339,6 +347,7 @@ async def parse_request(text: str, llm: LLMClient, base: RoutePreferences | None
             matched.append("quality")
 
     prefs.destination = _name(result.get("destination"))
+    prefs.origin = _name(result.get("origin"))
     prefs.area = _name(result.get("area"))
     prefs.via = _places(result.get("via"))
     # The finish is not also somewhere to pass through, and neither name is the
@@ -350,8 +359,13 @@ async def parse_request(text: str, llm: LLMClient, base: RoutePreferences | None
     # more specific promise and the one a wrong answer ruins.
     if prefs.destination and prefs.area and prefs.destination["query"].lower() == prefs.area["query"].lower():
         prefs.area = None
+    # Starting where it finishes is a loop from there, said twice.
+    if prefs.origin and prefs.destination and prefs.origin["query"].lower() == prefs.destination["query"].lower():
+        prefs.origin = None
     if prefs.destination:
         matched.append(f"destination:{prefs.destination['query']}")
+    if prefs.origin:
+        matched.append(f"origin:{prefs.origin['query']}")
     if prefs.area:
         matched.append(f"area:{prefs.area['query']}")
     for place in prefs.via or []:

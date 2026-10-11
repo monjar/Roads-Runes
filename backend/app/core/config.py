@@ -32,6 +32,7 @@ ALL_FEATURE_FLAGS: tuple[str, ...] = (
     "pledge",
     "parchment_map",
     "place_lore",
+    "route_shapes",
 )
 
 DEFAULT_FLAGS: dict[str, bool] = {
@@ -63,6 +64,9 @@ DEFAULT_FLAGS: dict[str, bool] = {
     # Place lore from Wikidata (0.9.0, discoveries/place_lore.py): a checked one-line
     # description kept on a place at tile import. Off until it has been read over.
     "place_lore": False,
+    # Plan a ride's cards differ in shape, not only costing, and "to X and back" is a
+    # loop (0.9.2, docs/ROUTING.md). FEATURE_FLAGS=!route_shapes plans as 0.9.1 did.
+    "route_shapes": True,
 }
 
 # Flags on wherever ENVIRONMENT is development (the local stack and the Fly backend)

@@ -6,7 +6,8 @@ import bisect
 import hashlib
 import math
 import uuid
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, replace
 from time import monotonic
 from typing import Any
 
@@ -30,7 +31,7 @@ from app.exploration.cells import cell_for
 from app.exploration.service import known_cells
 from app.quests.models import QuestInstance
 from app.quests.service import quest_out
-from app.routing import budget, geocode
+from app.routing import budget, geocode, overlap, shapes
 from app.routing.analysis import (
     analyse_elevation,
     bounding_box,
@@ -40,7 +41,15 @@ from app.routing.analysis import (
     traffic_exposure,
 )
 from app.routing.custom_models import build_custom_model, strip_internal, valhalla_costing
-from app.routing.engine import PROFILE_FOR_BIKE, EngineRequest, EngineRoute, RoutingEngine, RoutingUnavailable
+from app.routing.engine import (
+    PROFILE_FOR_BIKE,
+    EngineRequest,
+    EngineRoute,
+    RoutingEngine,
+    RoutingUnavailable,
+    head_of,
+    join_routes,
+)
 from app.routing.models import Route
 from app.routing.pois import attach_pois, cumulative_distances
 from app.routing.preferences import RoutePreferences, parse_request
@@ -95,10 +104,15 @@ def _coverage(coords: list[list[float]], targets: QuestTargets) -> float:
     return hit / len(targets.points)
 
 
-def _new_territory_fraction(coords: list[list[float]], known: dict[str, str], resolution: int) -> float:
+def _new_territory_fraction(
+    coords: list[list[float]], known: dict[str, str], resolution: int, unique: bool = False
+) -> float:
     if len(coords) < 2:
         return 0.0
     cells = [cell_for(c[1], c[0], resolution) for c in coords]
+    if unique:
+        # A loop that rides a street twice has not found twice as much (0.9.2).
+        cells = list(dict.fromkeys(cells))
     unknown = sum(1 for c in cells if known.get(c) not in ("VISITED", "EXPLORED"))
     return round(unknown / len(cells), 3)
 
@@ -125,6 +139,7 @@ def route_out(route: Route, components: dict[str, float] | None = None) -> Route
         score=route.score,
         scoreComponents=components or route.request.get("scoreComponents", {}),
         detailsMissing=bool((route.request or {}).get("detailsMissing")),
+        selfOverlap=(route.request or {}).get("selfOverlap"),
         pois=route.pois,
         coordinates=route.coordinates,
         encodedPolyline=route.encoded_polyline,
@@ -329,6 +344,9 @@ def _understood(prefs: RoutePreferences, usual: RoutePreferences, wanted: int, c
     for "quiet roads", which changes the routes without naming a place or a stop.
     """
     parts: list[str] = []
+    origin = prefs.origin or {}
+    if origin.get("name") or origin.get("query"):
+        parts.append("from " + str(origin.get("name") or origin.get("query")))
     for place in prefs.via or []:
         parts.append("via " + str(place.get("name") or place.get("query")))
     destination = prefs.destination or {}
@@ -382,16 +400,22 @@ CLAIMS: dict[str, Any] = {
 }
 
 
-def _shortfalls(prefs: RoutePreferences, stops: list[Discovery], wanted: int, routes: list[Route]) -> list[str]:
+def _shortfalls(
+    prefs: RoutePreferences, stops: list[Discovery], wanted: int, routes: list[Route], implied: bool = False
+) -> list[str]:
     """What the rider asked for that the ground could not give.
 
     Asking for a gravel-heavy ride in a city and getting tarmac is not a bug, but
-    saying nothing about it looks like one.
+    saying nothing about it looks like one. "Some pubs" named no number (`implied`),
+    so two of the three the planner aimed for is not a shortfall; none is.
     """
     notes: list[str] = []
     if wanted and len(stops) < wanted:
         found = len(stops)
-        notes.append("no stops like that nearby" if not found else f"only {found} of those nearby")
+        if not found:
+            notes.append("no stops like that nearby")
+        elif not implied:
+            notes.append(f"only {found} of those nearby")
     if prefs.gravelPreference >= 0.7 and max(_unpaved(route) for route in routes) < 0.1:
         notes.append("hardly any gravel around here")
     if prefs.hillTolerance >= 0.8 and max(route.elevation_gain_meters for route in routes) < 150:
@@ -412,6 +436,8 @@ def _keep_labels_honest(results: list[tuple[Route, dict[str, float]]]) -> None:
 
 
 AREA_TAKEOVER_M = 2000.0
+# "From Aragon Tower" moves the start only when the tower is not where the rider is.
+ORIGIN_TAKEOVER_M = 300.0
 NEIGHBOURHOOD_RIDE_KM = 14.0
 
 
@@ -679,6 +705,125 @@ async def _pick_stops_between(
     return [poi for _, poi in sorted(chosen, key=lambda c: c[0])]
 
 
+async def _pick_stops_loop(
+    db: AsyncSession,
+    start: Coordinate,
+    destination: Coordinate,
+    categories: list[str],
+    count: int,
+    appeal_weight: float = 0.25,
+    *,
+    exclude: set[Any] | frozenset[Any] = frozenset(),
+    swap: bool = False,
+) -> tuple[list[Discovery], list[Discovery], int]:
+    """`count` stops for a ride out to a place and back another way.
+
+    ⌈N/2⌉ go on the way out, on the side of the line with more to choose from, in
+    the order they are reached; ⌊N/2⌋ on the way back, on the other side, in the
+    order they are reached coming home. Strung along the line instead
+    (`_pick_stops_between`), every pub sat on the way out and the way back had no
+    reason to go anywhere else. Stops about 0.15× the straight distance off the line
+    (400–1,500 m) are preferred, so the two halves stay apart.
+
+    `swap` puts the way out on the other side ("Other stops", with the first card's
+    stops in `exclude`). Returns (out, back, the side of the way out: +1 is left).
+    """
+    direct = haversine_m(start.latitude, start.longitude, destination.latitude, destination.longitude)
+    pool = await _candidates(
+        db,
+        (start.latitude + destination.latitude) / 2,
+        (start.longitude + destination.longitude) / 2,
+        max(2500.0, direct * 0.8),
+        categories,
+    )
+    ideal = shapes.stop_offset_m(direct)
+    measured: list[tuple[float, float, Discovery]] = []
+    for poi in pool:
+        if poi.id in exclude:
+            continue
+        signed, along = _signed_offset(poi.latitude, poi.longitude, start, destination)
+        if 0.05 <= along <= 0.95:
+            measured.append((signed, along, poi))
+    sides: dict[int, list[tuple[float, float, Discovery]]] = {1: [], -1: []}
+    for corridor in (max(600.0, direct * 0.2), max(1200.0, direct * 0.35), 2500.0):
+        sides = {
+            side: [
+                (along, abs(abs(signed) - ideal), poi)
+                for signed, along, poi in measured
+                if (signed > 0) == (side > 0) and abs(signed) <= corridor
+            ]
+            for side in (1, -1)
+        }
+        if len(sides[1]) + len(sides[-1]) >= count:
+            break
+    out_side = 1 if len(sides[1]) >= len(sides[-1]) else -1
+    if swap:
+        out_side = -out_side
+    n_out, n_back = (count + 1) // 2, count // 2
+    out = _take_side(sides[out_side], categories, n_out, appeal_weight)
+    back = _take_side(sides[-out_side], categories, n_back, appeal_weight)
+    if len(back) < n_back:
+        # The far side is short: the way out carries the rest, and the way back is
+        # pulled wide by an offset point instead.
+        taken = {poi.id for _, poi in out}
+        spare = [c for c in sides[out_side] if c[2].id not in taken]
+        out += _take_side(spare, categories, n_back - len(back), appeal_weight)
+    elif len(out) < n_out:
+        taken = {poi.id for _, poi in back}
+        spare = [c for c in sides[-out_side] if c[2].id not in taken]
+        back += _take_side(spare, categories, n_out - len(out), appeal_weight)
+    return (
+        [poi for _, poi in sorted(out, key=lambda c: c[0])],
+        [poi for _, poi in sorted(back, key=lambda c: -c[0])],
+        out_side,
+    )
+
+
+def _take_side(
+    entries: list[tuple[float, float, Discovery]], categories: list[str], count: int, appeal_weight: float
+) -> list[tuple[float, Discovery]]:
+    """Up to `count` of these, shared between the kinds asked for (`_quotas`)."""
+    chosen: list[tuple[float, Discovery]] = []
+    if count <= 0 or not entries:
+        return chosen
+    for category, quota in zip(categories, _quotas(count, len(categories)), strict=False):
+        _take_along([c for c in entries if c[2].category == category], quota, chosen, appeal_weight)
+    if len(chosen) < count:
+        _take_along(entries, count - len(chosen), chosen, appeal_weight)
+    return chosen
+
+
+async def _anchor(db: AsyncSession, latitude: float, longitude: float) -> tuple[float, float] | None:
+    """The nearest place within 400 m that sits on a street, so a point placed by
+    arithmetic lands on a road and not in the river or the middle of a park."""
+    for poi in await discoveries_nearby(db, latitude, longitude, shapes.OFFSET_ANCHOR_M, limit=30):
+        if poi.category not in ("NATURE", "TRAIL", "VIEWPOINT"):
+            return poi.latitude, poi.longitude
+    return None
+
+
+async def _offset_spot(
+    db: AsyncSession, start: Coordinate, destination: Coordinate, side: int, factor: float
+) -> tuple[float, float]:
+    """The offset point for a way back: off the middle of the line, on `side`, moved
+    onto a place nearby when there is one (the engine gets a 400 m search cutoff)."""
+    direct = haversine_m(start.latitude, start.longitude, destination.latitude, destination.longitude)
+    spot = _offset_point(start, destination, 0.5, side * shapes.offset_distance_m(direct, factor))
+    return await _anchor(db, *spot) or spot
+
+
+async def _return_side(db: AsyncSession, start: Coordinate, destination: Coordinate, seed: int) -> int:
+    """Which side the way back goes when no stop decides it: one with a place to aim
+    for, the seed's choice when both or neither have one."""
+    direct = haversine_m(start.latitude, start.longitude, destination.latitude, destination.longitude)
+    preferred = 1 if seed % 2 == 0 else -1
+    for side in (preferred, -preferred):
+        spot = _offset_point(start, destination, 0.5, side * shapes.offset_distance_m(direct, shapes.OFFSET_FACTOR))
+        if await _anchor(db, *spot) is not None:
+            return side
+    return preferred
+
+
 def _take_along(
     along: list[tuple[float, float, Discovery]],
     count: int,
@@ -742,6 +887,9 @@ class _Plan:
     poi_candidates: list[Discovery]
     seed_base: int
     details: bool = True
+    # Cards as shapes (0.9.2, flag `route_shapes`): loops measured for retracing,
+    # new ground counted once per tile.
+    shaped: bool = False
 
     @property
     def profile(self) -> str:
@@ -828,6 +976,7 @@ def _keep(
     *,
     label: str | None = None,
     extra: dict[str, Any] | None = None,
+    retrace: float | None = None,
 ) -> tuple[Route, dict[str, float]]:
     """An engine route as a card: measured, its stops attached, scored, stored."""
     label = label or variant.label
@@ -836,7 +985,7 @@ def _keep(
     surface = surface_composition(coords, er.details.get("surface"))
     cycle = cycleway_fraction(coords, er.details.get("road_class"), er.details.get("bike_network"))
     traffic = traffic_exposure(coords, er.details.get("road_class"))
-    new_fraction = _new_territory_fraction(coords, plan.known, plan.settings.h3_resolution)
+    new_fraction = _new_territory_fraction(coords, plan.known, plan.settings.h3_resolution, unique=plan.shaped)
     coverage = _coverage(coords, plan.targets)
     speed_mps = plan.speed_mps
     pois = attach_pois(
@@ -883,6 +1032,7 @@ def _keep(
         quest_objective_coverage=coverage,
         poi_count=len(pois),
         scenic_fraction=surface.get("gravel", 0) * 0.5 + surface.get("trail", 0) * 0.5 + cycle * 0.3,
+        retrace=retrace,
     )
     score, components = score_route(metrics, prefs, plan.rider, plan.target_km * 1000)
     route.score = score
@@ -912,6 +1062,372 @@ async def _legacy_cards(plan: _Plan, variants: list[Variant]) -> tuple[list[tupl
         seen_paths[polyline] = variant.label
         results.append(_keep(plan, variant, er, request))
     return results, same_road
+
+
+@dataclass
+class _Card:
+    """A route chosen for a card, before it is measured and stored."""
+
+    label: str
+    variant: Variant
+    er: EngineRoute
+    request: EngineRequest
+    direct: bool = False
+    self_overlap: float | None = None
+
+
+class _Cards:
+    """The cards of one plan as they are chosen: what is kept, what the engine sent
+    back spare, and what to say about a card that could not be offered."""
+
+    def __init__(self, plan: _Plan) -> None:
+        self.plan = plan
+        self.kept: list[_Card] = []
+        # Alternates no card has used yet: a card from these costs no request.
+        self.pool: list[tuple[EngineRoute, EngineRequest, Variant]] = []
+        self.dropped: list[tuple[bool, str]] = []  # (was it Direct, why)
+
+    def affordable(self, calls: int = 1) -> bool:
+        """Whether `calls` more requests fit, keeping one for each card's details."""
+        owed = sum(1 for card in self.kept if not card.er.details) + 1
+        return budget.allows(calls + owed)
+
+    def alike(self, card: _Card) -> str | None:
+        """Why this card is not another way to ride it, or None when it is."""
+        found = shapes.duplicate_of(
+            card.er.coordinates,
+            card.er.distance_m,
+            [(str(i), k.er.coordinates, k.er.distance_m) for i, k in enumerate(self.kept)],
+            direct=card.direct,
+        )
+        if found is None:
+            return None
+        other = self.kept[int(found[0])]
+        if card.direct and other.variant.stops:
+            return shapes.stops_add_only_note(other.er.distance_m - card.er.distance_m)
+        return f"{card.label} and {other.label} are the same road here"
+
+    def notes(self) -> list[str]:
+        out: list[str] = []
+        fewer = False
+        for direct, why in self.dropped:
+            if direct:
+                out.append(why)
+            elif not fewer:
+                out.append(shapes.fewer_cards_note(len(self.kept)))
+                fewer = True
+        return out
+
+
+@dataclass
+class _Candidate:
+    """One way to fill a card; a card's candidates are tried in order until one comes
+    back different enough from the cards already kept."""
+
+    make: Callable[[_Cards, bool], Awaitable[_Card | None]]
+    free: bool = False  # from routes already fetched: costs no request
+
+
+async def _fill(cards: _Cards, slots: list[list[_Candidate]]) -> None:
+    """Each card from the first of its candidates that is another way to ride it.
+    The first card is never refused; the rest are tried while the budget lasts."""
+    for number, slot in enumerate(slots):
+        rejected: list[tuple[bool, str]] = []
+        for position, candidate in enumerate(slot):
+            first = number == 0 and position == 0 and not cards.kept
+            if not (first or candidate.free or cards.affordable()):
+                continue
+            card = await candidate.make(cards, first)
+            if card is None:
+                continue
+            why = cards.alike(card)
+            if why is None:
+                cards.kept.append(card)
+                break
+            rejected.append((card.direct, why))
+        else:
+            if rejected:
+                cards.dropped.append(rejected[0])
+
+
+async def _attempt(
+    plan: _Plan, request: EngineRequest, label: str
+) -> tuple[list[EngineRoute], RoutingUnavailable | None]:
+    try:
+        return (await plan.engine.route(request)) or [], None
+    except RoutingUnavailable as exc:
+        log.error(EVENT_ROUTE_GENERATION_FAILED, label=label, error=str(exc)[:300])
+        return [], exc
+
+
+async def _shape_route(
+    cards: _Cards, variant: Variant, index: int, shape: shapes.LoopShape, label: str, first: bool
+) -> tuple[EngineRoute, EngineRequest, shapes.LoopShape] | None:
+    """The engine's way round a loop shape, giving ground once at each failure: a
+    destination at the end of a dead end needs its U-turn back (`downgraded`), and
+    an offset point the engine cannot reach is left out."""
+    plan = cards.plan
+    tried_downgrade = tried_without_offset = False
+    while True:
+        if not first and not cards.affordable():
+            return None
+        first = False
+        request = _request_for(
+            plan,
+            variant,
+            index,
+            shape.points(),
+            location_types=shape.types(),
+            search_cutoff_m=shape.cutoffs(),
+            details=False,
+        )
+        routes, error = await _attempt(plan, request, label)
+        if routes:
+            return routes[0], request, shape
+        if error is not None and error.no_path and shape.through and not tried_downgrade:
+            tried_downgrade = True
+            shape = shape.downgraded()
+            continue
+        if shape.offset is not None and not tried_without_offset:
+            tried_without_offset = True
+            shape = shape.without_offset()
+            continue
+        return None
+
+
+async def _loop_card(
+    cards: _Cards,
+    variant: Variant,
+    index: int,
+    label: str,
+    shape: shapes.LoopShape,
+    first: bool,
+    *,
+    direct: bool = False,
+) -> _Card | None:
+    """A loop out to a destination and back another way, checked twice: that the
+    offset point was reached, and that the way back is not the way out again."""
+    plan = cards.plan
+    got = await _shape_route(cards, variant, index, shape, label, first)
+    if got is None:
+        return None
+    er, request, shape = got
+    turn = shapes.turn_near(er.coordinates, er.leg_boundaries, shape.destination)
+    if shapes.snapped_wrong(er.coordinates, turn, shape) and cards.affordable() and plan.destination is not None:
+        # The offset point landed off its road (the river, a park): mirrored, or
+        # nearer the line when the other side carries the way out's stops; then
+        # without it (`_shape_route` drops it when the retry fails).
+        side, factor = shape.offset_side, shape.offset_factor
+        if shape.out_stops:
+            factor *= 0.6
+        else:
+            side = -side
+        spot = await _offset_spot(plan.db, plan.start, plan.destination, side, factor)
+        retry = await _shape_route(
+            cards, variant, index, replace(shape, offset=spot, offset_side=side, offset_factor=factor), label, False
+        )
+        if retry is not None:
+            again = shapes.turn_near(retry[0].coordinates, retry[0].leg_boundaries, shape.destination)
+            if not shapes.snapped_wrong(retry[0].coordinates, again, retry[2]):
+                (er, request, shape), turn = retry, again
+            elif cards.affordable():
+                plain = await _shape_route(cards, variant, index, shape.without_offset(), label, False)
+                if plain is not None:
+                    er, request, shape = plain
+                    turn = shapes.turn_near(er.coordinates, er.leg_boundaries, shape.destination)
+    retrace = overlap.self_overlap(er.coordinates, turn)
+    if retrace > shapes.SELF_OVERLAP_MAX and cards.affordable():
+        # The way back found the way out anyway: ask for the way back alone, kept off
+        # points along the way out, and join the two.
+        out = head_of(er, turn)
+        avoid = overlap.exclusion_samples(
+            out.coordinates,
+            avoid=[*shape.out_stops, *shape.via, *shape.back_stops],
+            manoeuvres=[(i["latitude"], i["longitude"]) for i in out.instructions if i.get("latitude") is not None],
+        )
+        if avoid:
+            points, types, cutoffs = shape.back()
+            back_request = _request_for(
+                plan,
+                variant,
+                index,
+                points,
+                location_types=types,
+                search_cutoff_m=cutoffs,
+                exclude_points=avoid,
+                details=False,
+            )
+            routes, _ = await _attempt(plan, back_request, label)
+            if routes:
+                joined = join_routes(out, routes[0])
+                joined_retrace = overlap.self_overlap(joined.coordinates, len(out.coordinates) - 1)
+                if joined_retrace < retrace:
+                    er, retrace = joined, joined_retrace
+    return _Card(label, variant, er, request, direct=direct, self_overlap=retrace)
+
+
+def _roles(variants: list[Variant]) -> tuple[Variant, Variant, Variant]:
+    """The card that answers the request, the plain one, and the third."""
+    plain = next((v for v in variants if v.label == DIRECT_LABEL), None)
+    others = [v for v in variants if v is not plain] or list(variants)
+    main = next((v for v in others if v.label == ASKED_LABEL), others[0])
+    rest = [v for v in others if v is not main]
+    third = rest[0] if rest else main
+    if plain is None:
+        plain = Variant(DIRECT_LABEL, main.prefs, [], 1.0)
+    return main, plain, third
+
+
+async def _main_loop_shape(
+    db: AsyncSession,
+    start: Coordinate,
+    destination: Coordinate,
+    via: list[Coordinate],
+    out_stops: list[Discovery],
+    back_stops: list[Discovery],
+    out_side: int,
+    seed: int,
+) -> shapes.LoopShape:
+    """The asked-for loop: the way out through its stops, the way back through the
+    others, or pulled wide by an offset point on the far side when it has none."""
+    side = -out_side if out_stops else await _return_side(db, start, destination, seed)
+    shape = shapes.LoopShape(
+        start=(start.latitude, start.longitude),
+        destination=(destination.latitude, destination.longitude),
+        out_stops=tuple((p.latitude, p.longitude) for p in out_stops),
+        via=tuple((p.latitude, p.longitude) for p in via),
+        back_stops=tuple((p.latitude, p.longitude) for p in back_stops),
+        offset_side=side,
+    )
+    if not back_stops:
+        shape = replace(shape, offset=await _offset_spot(db, start, destination, side, shapes.OFFSET_FACTOR))
+    return shape
+
+
+def _loop_destination_slots(
+    plan: _Plan,
+    variants: list[Variant],
+    main_shape: shapes.LoopShape,
+    categories: list[str],
+    wanted: int,
+    appeal_weight: float,
+) -> list[list[_Candidate]]:
+    """Three loops to the destination and back (docs/ROUTING.md, "Loops"):
+
+    1. As asked: stops split by side, or an offset point on a way back without any.
+    2. Direct: the cheapest loop, no stops, an offset point at 0.2×.
+    3. Other stops on the other sides, when stops were asked for; else (or when
+       those come back too alike) the long way, mirrored at 0.35×.
+    """
+    main, plain, third = _roles(variants)
+    assert plan.destination is not None
+    destination = plan.destination
+    side = main_shape.offset_side
+    chosen = list(main.stops)
+
+    async def as_asked() -> tuple[shapes.LoopShape, list[Discovery]] | None:
+        return main_shape, chosen
+
+    async def cheapest() -> tuple[shapes.LoopShape, list[Discovery]] | None:
+        spot = await _offset_spot(plan.db, plan.start, destination, side, shapes.DIRECT_OFFSET_FACTOR)
+        return replace(
+            main_shape,
+            out_stops=(),
+            back_stops=(),
+            offset=spot,
+            offset_factor=shapes.DIRECT_OFFSET_FACTOR,
+            through=True,
+        ), []
+
+    async def other_stops() -> tuple[shapes.LoopShape, list[Discovery]] | None:
+        out, back, out_side = await _pick_stops_loop(
+            plan.db,
+            plan.start,
+            destination,
+            categories,
+            wanted,
+            appeal_weight,
+            exclude={p.id for p in chosen},
+            swap=True,
+        )
+        if not out and not back:
+            return None
+        picked = [*out, *back]
+        ids = {p.id for p in picked}
+        plan.poi_candidates = [*picked, *(p for p in plan.poi_candidates if p.id not in ids)]
+        shape = replace(
+            main_shape,
+            out_stops=tuple((p.latitude, p.longitude) for p in out),
+            back_stops=tuple((p.latitude, p.longitude) for p in back),
+            offset=None,
+            offset_side=-out_side,
+            offset_factor=shapes.OFFSET_FACTOR,
+            through=True,
+        )
+        if not back:
+            shape = replace(
+                shape, offset=await _offset_spot(plan.db, plan.start, destination, -out_side, shapes.OFFSET_FACTOR)
+            )
+        return shape, picked
+
+    async def long_way() -> tuple[shapes.LoopShape, list[Discovery]] | None:
+        spot = await _offset_spot(plan.db, plan.start, destination, -side, shapes.LONG_OFFSET_FACTOR)
+        return replace(
+            main_shape,
+            out_stops=(),
+            back_stops=(),
+            offset=spot,
+            offset_side=-side,
+            offset_factor=shapes.LONG_OFFSET_FACTOR,
+            through=True,
+        ), []
+
+    def candidate(
+        variant: Variant,
+        index: int,
+        label: str,
+        build: Callable[[], Awaitable[tuple[shapes.LoopShape, list[Discovery]] | None]],
+        *,
+        direct: bool = False,
+    ) -> _Candidate:
+        async def make(cards: _Cards, first: bool) -> _Card | None:
+            built = await build()
+            if built is None:
+                return None
+            shape, stops = built
+            return await _loop_card(cards, replace(variant, stops=stops), index, label, shape, first, direct=direct)
+
+        return _Candidate(make)
+
+    third_slot = [candidate(third, 2, shapes.OTHER_STOPS, other_stops)] if chosen and categories else []
+    third_slot.append(candidate(third, 2, shapes.LONG_WAY, long_way))
+    return [
+        [candidate(main, 0, main.label, as_asked)],
+        [candidate(plain, 1, plain.label, cheapest, direct=True)],
+        third_slot,
+    ]
+
+
+async def _shaped_cards(
+    plan: _Plan, slots: list[list[_Candidate]]
+) -> tuple[list[tuple[Route, dict[str, float]]], list[_Card], list[str]]:
+    """The cards from their candidates, then the surface details for the kept ones
+    only: a card dropped as a duplicate costs one request, not two."""
+    cards = _Cards(plan)
+    await _fill(cards, slots)
+    for card in cards.kept:
+        if plan.details and not card.er.details and budget.allows():
+            try:
+                card.er = await plan.engine.details(card.er, card.request)
+            except RoutingUnavailable as exc:
+                log.warning("route_details_unavailable", label=card.label, error=str(exc)[:200])
+    results = []
+    for card, label in zip(cards.kept, shapes.unique_labels([c.label for c in cards.kept]), strict=True):
+        extra = {} if card.self_overlap is None else {"selfOverlap": round(card.self_overlap, 3)}
+        results.append(
+            _keep(plan, card.variant, card.er, card.request, label=label, extra=extra, retrace=card.self_overlap)
+        )
+    return results, cards.kept, cards.notes()
 
 
 async def generate(
@@ -993,6 +1509,34 @@ async def _generate(
             "matched": parsed.matched,
         }
     ms_parse = int((monotonic() - started) * 1000)
+    shapes_on = is_enabled(settings, "route_shapes")
+
+    # "From Aragon Tower to Westminster and back" names where the ride starts (0.9.2).
+    # Resolved like the destination; it moves the start only when it is not where
+    # the rider already is, and one nobody can find is said out loud.
+    origin_start: Coordinate | None = None
+    unresolved_origin: str | None = None
+    if shapes_on and (base_prefs.origin or {}).get("query"):
+        named_start = str(base_prefs.origin["query"])
+        found = await geocode.resolve(
+            settings, named_start, payload.origin.latitude, payload.origin.longitude, kind="point"
+        )
+        if found is None:
+            unresolved_origin = named_start
+            base_prefs.origin = None
+        else:
+            base_prefs.origin = {**base_prefs.origin, **found.to_dict()}
+            if (
+                haversine_m(payload.origin.latitude, payload.origin.longitude, found.latitude, found.longitude)
+                > ORIGIN_TAKEOVER_M
+            ):
+                origin_start = Coordinate(latitude=found.latitude, longitude=found.longitude)
+    else:
+        base_prefs.origin = None
+    if parsed_dict is not None:
+        parsed_dict["origin"] = base_prefs.origin
+        if base_prefs.origin is None:
+            parsed_dict["matched"] = [m for m in parsed_dict["matched"] if not str(m).startswith("origin:")]
 
     # "Go to the Aragon Tower" names a finish line, not a neighbourhood, so it is
     # resolved as a point — a tower, a bridge, a pub all count — and becomes the
@@ -1073,6 +1617,10 @@ async def _generate(
             parsed_dict["area"] = base_prefs.area
             if start is not payload.origin:
                 parsed_dict["startsAt"] = area.to_dict()
+    if origin_start is not None and base_prefs.origin is not None:
+        start = origin_start
+        if parsed_dict is not None:
+            parsed_dict["startsAt"] = {key: base_prefs.origin[key] for key in ("name", "latitude", "longitude")}
 
     # What the rider wrote wins over the slider: the slider always has a value, while
     # typing "a 12 km loop" is a deliberate act, and a 22 km answer to it is a lie.
@@ -1090,6 +1638,10 @@ async def _generate(
         if payload.loop is not None
         else (base_prefs.loop if base_prefs.loop is not None else destination is None)
     )
+    # Cards as shapes (0.9.2): every plan but a quest's or one through the planner's
+    # own waypoints (a rune's shape, a sealed quest), which keep their points.
+    shaped = shapes_on and quest is None and not payload.waypoints and not targets.points
+    loop_destination = shaped and destination is not None and bool(loop)
     # Riding somewhere has its own length: the way there and, if they asked to come
     # home, the way back. Scoring against the rider's usual 30 km would mark a 6 km
     # trip to the tower down for being short.
@@ -1129,6 +1681,14 @@ async def _generate(
     requested_stops: list[Discovery] = []
     wanted = int((base_prefs.poi or {}).get("count") or 0)
     categories = _stop_categories(base_prefs.poi)
+    count_implied = False
+    if shapes_on and categories and not wanted:
+        # "Checking out some pubs" names no number, and used to get none at all: a
+        # loop gets three, a ride one way two.
+        wanted = 3 if loop else 2
+        count_implied = True
+        if parsed_dict is not None and parsed_dict.get("poi"):
+            parsed_dict["poi"]["countImplied"] = True
     # "a nice cafe" is worth a detour past the nearest one; a plain "a cafe" is not.
     appeal_weight = 1.0 if (base_prefs.poi or {}).get("quality") else 0.25
 
@@ -1138,7 +1698,33 @@ async def _generate(
     # found everything — which looked like the planner ignoring the request.
     importing = monotonic()
     await osm_import.ensure_pois(settings, start.latitude, start.longitude, wait=bool(wanted and categories))
-    if wanted and categories:
+    out_stops: list[Discovery] = []
+    back_stops: list[Discovery] = []
+    out_side = 1
+    if wanted and categories and loop_destination:
+        assert destination is not None
+        # Out on one side of the line and back on the other, not strung along it.
+        out_stops, back_stops, out_side = await _pick_stops_loop(
+            db, start, destination, categories, wanted, appeal_weight
+        )
+        if len(out_stops) + len(back_stops) < wanted:
+            await osm_import.ensure_pois_along(
+                settings,
+                start.latitude,
+                start.longitude,
+                destination.latitude,
+                destination.longitude,
+                budget_s=CORRIDOR_IMPORT_BUDGET_S,
+            )
+            out_stops, back_stops, out_side = await _pick_stops_loop(
+                db, start, destination, categories, wanted, appeal_weight
+            )
+        requested_stops = [*out_stops, *back_stops]
+        if parsed_dict is not None:
+            parsed_dict["stops"] = [
+                {"name": p.name, "latitude": p.latitude, "longitude": p.longitude} for p in requested_stops
+            ]
+    elif wanted and categories:
         if destination is not None:
             # "Ride here, through three cafés" — a destination does not cancel the stops.
             requested_stops = await _pick_stops_between(db, start, destination, categories, wanted, appeal_weight)
@@ -1171,6 +1757,18 @@ async def _generate(
                 {"name": p.name, "latitude": p.latitude, "longitude": p.longitude} for p in requested_stops
             ]
     ms_import = int((monotonic() - importing) * 1000)
+    seed_base = int(
+        hashlib.sha256(f"{user.id}:{start.latitude:.4f}:{start.longitude:.4f}".encode()).hexdigest()[:8],
+        16,
+    )
+    main_shape: shapes.LoopShape | None = None
+    if loop_destination:
+        assert destination is not None
+        main_shape = await _main_loop_shape(db, start, destination, via, out_stops, back_stops, out_side, seed_base)
+        if typed_destination and not (base_prefs.distanceKm or {}).get("target"):
+            # The loop's own length, not 2.4× the crow's flight: out one side and
+            # back the other rides about 1.2× the polygon through its points.
+            target_km = max(2.0, main_shape.polygon_m() / 1000 * shapes.TARGET_DETOUR)
 
     # Understood at all? Then the cards are a trade-off around the request, even
     # when the ground could not give what was asked for.
@@ -1207,10 +1805,6 @@ async def _generate(
         bike_allows_gravel=allow_gravel,
         bike_allows_trails=allow_trails,
     )
-    seed_base = int(
-        hashlib.sha256(f"{user.id}:{start.latitude:.4f}:{start.longitude:.4f}".encode()).hexdigest()[:8],
-        16,
-    )
 
     plan = _Plan(
         db=db,
@@ -1238,16 +1832,25 @@ async def _generate(
         poi_candidates=poi_candidates,
         seed_base=seed_base,
         details=details,
+        shaped=shaped,
     )
     routing = monotonic()
-    variants = _variants(base_prefs, usual_prefs, requested_stops, labels, cfg, asked)[:max_variants]
-    results, same_road = await _legacy_cards(plan, variants)
+    variants = _variants(base_prefs, usual_prefs, requested_stops, labels, cfg, asked)
+    if loop_destination and main_shape is not None:
+        slots = _loop_destination_slots(plan, variants, main_shape, categories, wanted, appeal_weight)
+        results, kept, same_road = await _shaped_cards(plan, slots[:max_variants])
+        if kept and (kept[0].self_overlap or 0.0) > shapes.SELF_OVERLAP_MAX:
+            same_road.append(shapes.RETRACE_NOTE)
+    else:
+        results, same_road = await _legacy_cards(plan, variants[:max_variants])
     ms_engine = int((monotonic() - routing) * 1000)
     if not results:
         raise RouteGenerationFailed("We couldn't plan a route for that. Try a different distance or starting point.")
     if parsed_dict is not None:
         parsed_dict["understood"] = _understood(base_prefs, usual_prefs, wanted, categories)
-        notes = _shortfalls(base_prefs, requested_stops, wanted, [route for route, _ in results])
+        notes = _shortfalls(base_prefs, requested_stops, wanted, [route for route, _ in results], count_implied)
+        if unresolved_origin:
+            notes.append(f"couldn't find '{unresolved_origin}' — starting from here instead")
         if unresolved_place:
             notes.append(f"couldn't find a place called '{unresolved_place}'")
         if unresolved_destination:
@@ -1259,6 +1862,12 @@ async def _generate(
         parsed_dict["notes"] = notes + same_road
     await db.flush()
     _keep_labels_honest(results)
+    if shaped:
+        # A label renamed for breaking its promise must not repeat another card's.
+        for (route, _), label in zip(results, shapes.unique_labels([r.label for r, _ in results]), strict=True):
+            if route.label != label:
+                route.label = label
+                route.request = {**(route.request or {}), "label": label}
     results.sort(key=lambda r: -r[0].score)
     if quest is not None and quest.suggested_route_id is None:
         quest.suggested_route_id = results[0][0].id
@@ -1281,6 +1890,7 @@ async def _generate(
         ms_import=ms_import,
         ms_engine=ms_engine,
         engine_calls=budget.used(),
+        shape="loop" if loop_destination else ("shaped" if shaped else None),
     )
     return results, parsed_dict
 

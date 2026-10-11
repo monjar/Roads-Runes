@@ -77,6 +77,9 @@ class RouteOptionOut(APIModel):
     # 0.9.2: true when the engine's surface and road-class details could not be had, so
     # surface, cycleway and traffic are defaults rather than measurements.
     detailsMissing: bool = False
+    # 0.9.2: on a loop, the share of the way back that rides the way out (0..1); null
+    # on a ride one way, or where it was not measured.
+    selfOverlap: float | None = None
     pois: list[dict[str, Any]]
     coordinates: list[list[float]]
     encodedPolyline: str
