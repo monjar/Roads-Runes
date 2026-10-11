@@ -153,6 +153,13 @@ final class RideStore {
 
     var hasRoute: Bool { summary != nil }
 
+    /// A journey with no route (0.9.2, Ride anywhere): the phone's summary came with no
+    /// turns and no line, only the world round the rider.
+    var isRoaming: Bool { summary?.isRoam ?? false }
+
+    /// A route to follow: a summary that is not a roam.
+    var followsRoute: Bool { hasRoute && !isRoaming }
+
     var formatter: UnitFormatter { UnitFormatter(units: units) }
 
     var heartRate: Int? { localHeartRate ?? update?.heartRate }

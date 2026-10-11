@@ -21,6 +21,49 @@ final class RideAnywhereTests: XCTestCase {
         XCTAssertNil(before.alsoFinished)
     }
 
+    // MARK: - The Watch and recovery
+
+    func testARoamsSummaryIsEmptyButForTheWorldAndAnOlderWatchStillReadsIt() throws {
+        let start = Coordinate(latitude: 51.49, longitude: -0.04)
+        let chest = WorldObject(id: UUID(), kind: .chest, latitude: 51.495, longitude: -0.04, name: "Old chest", rewardAC: 25,
+                                expiresAt: Date().addingTimeInterval(86_400))
+        let far = WorldObject(id: UUID(), kind: .chest, latitude: 51.53, longitude: -0.04, name: "Far chest", rewardAC: 25,
+                              expiresAt: Date().addingTimeInterval(86_400))
+        // No route: things within 2 km of the rider.
+        let marks = WatchWorldMarks.select(objects: [chest, far], route: [], start: start)
+        XCTAssertEqual(marks.map(\.id), [chest.id])
+
+        let summary = WatchRouteSummary.roaming(activity: .run, worldMarks: marks)
+        XCTAssertTrue(summary.isRoam)
+        XCTAssertEqual(summary.roam, true)
+        XCTAssertTrue(summary.instructions.isEmpty && summary.routeCoordinates.isEmpty && summary.objectives.isEmpty)
+        let data = try JSONCoding.encode(summary)
+        let back = try JSONCoding.makeDecoder().decode(WatchRouteSummary.self, from: data)
+        XCTAssertEqual(back, summary)
+
+        // A Watch from before 0.9.2 reads it as a summary with no route (its own no-route face).
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(json["roam"] as? Bool, true)
+        json.removeValue(forKey: "roam")
+        let older = try JSONCoding.makeDecoder().decode(WatchRouteSummary.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertNil(older.roam)
+        XCTAssertTrue(older.isRoam, "no turns and no line is no route to follow")
+        XCTAssertEqual(older.worldMarks?.map(\.id), [chest.id])
+    }
+
+    func testARoamIsRememberedThroughACrash() throws {
+        let state = ActiveRideState(clientRideId: UUID(), navigationState: .active, startedAt: Date(), updatedAt: Date(),
+                                    stats: RideSnapshot(), visitedCells: ["89194ad1fffffff"], roam: true)
+        let back = try JSONCoding.makeDecoder().decode(ActiveRideState.self, from: JSONCoding.encode(state))
+        XCTAssertTrue(back.isRoam)
+        XCTAssertNil(back.routeId)
+        // A snapshot from before 0.9.2 is a planned ride.
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONCoding.encode(state)) as? [String: Any])
+        json.removeValue(forKey: "roam")
+        let older = try JSONCoding.makeDecoder().decode(ActiveRideState.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertFalse(older.isRoam)
+    }
+
     func testTheButtonSaysTheActivity() {
         XCTAssertEqual(LoreCopy.anywhere(.ride), "Ride anywhere")
         XCTAssertEqual(LoreCopy.anywhere(.run), "Run anywhere")

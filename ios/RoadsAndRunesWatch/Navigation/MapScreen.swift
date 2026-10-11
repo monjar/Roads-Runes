@@ -45,7 +45,7 @@ struct MapScreen: View {
             }
             .mapStyle(.standard(elevation: .flat, emphasis: isLuminanceReduced ? .muted : .automatic, pointsOfInterest: .excludingAll))
             .opacity(isLuminanceReduced ? 0.55 : 1)
-            if store.routePath.isEmpty {
+            if store.routePath.isEmpty, !store.isRoaming {
                 Text("No route on the watch yet")
                     .font(.system(size: 12))
                     .foregroundStyle(WatchTheme.secondary)

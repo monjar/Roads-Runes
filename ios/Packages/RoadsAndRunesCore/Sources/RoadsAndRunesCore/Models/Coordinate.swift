@@ -40,6 +40,14 @@ public struct BoundingBox: Codable, Hashable, Sendable {
         self.maxLon = maxLon
     }
 
+    /// The square `meters` each way round a point.
+    public init(around centre: Coordinate, meters: Double) {
+        let dLat = meters / 111_195
+        let dLon = meters / (111_195 * max(0.2, cos(centre.latitude * .pi / 180)))
+        self.init(minLat: centre.latitude - dLat, minLon: centre.longitude - dLon,
+                  maxLat: centre.latitude + dLat, maxLon: centre.longitude + dLon)
+    }
+
     public func contains(_ coordinate: Coordinate) -> Bool {
         coordinate.latitude >= minLat && coordinate.latitude <= maxLat
             && coordinate.longitude >= minLon && coordinate.longitude <= maxLon

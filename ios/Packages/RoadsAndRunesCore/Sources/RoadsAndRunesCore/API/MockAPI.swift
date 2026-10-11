@@ -17,6 +17,9 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     public var rerouteFailure: APIError?
     /// While true every call fails as a phone with no signal does, for the offline paths.
     public var offline = false
+    /// Every ride asked to be created and every completion sent, in order, for a test to read back.
+    public internal(set) var rideCreates: [RideCreate] = []
+    public internal(set) var rideCompletions: [RideComplete] = []
 
     let lock = NSLock()
     var user: User
