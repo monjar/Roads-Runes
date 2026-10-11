@@ -46,11 +46,17 @@ public struct WatchRouteSummary: Codable, Hashable, Sendable {
     /// reach of it, at most `WatchWorldMarks.limit`, then each objective's place.
     /// An older phone sends none and the Watch map shows only the route.
     public var worldMarks: [WatchWorldMark]?
+    /// A journey with no route (0.9.2, Ride anywhere): the summary is empty but for the
+    /// world round the rider, and still says "it started". An older Watch ignores the
+    /// flag and shows its no-route face ("Free ride", "Every new road counts").
+    public var roam: Bool?
 
     public init(
         questTitle: String?, instructions: [Instruction], objectives: [WatchObjective], totalDistanceMeters: Double,
-        routeCoordinates: [[Double]] = [], stops: [WatchStop] = [], activity: String? = nil, worldMarks: [WatchWorldMark]? = nil
+        routeCoordinates: [[Double]] = [], stops: [WatchStop] = [], activity: String? = nil, worldMarks: [WatchWorldMark]? = nil,
+        roam: Bool? = nil
     ) {
+        self.roam = roam
         self.worldMarks = worldMarks
         self.activity = activity
         self.questTitle = questTitle
@@ -62,6 +68,16 @@ public struct WatchRouteSummary: Codable, Hashable, Sendable {
     }
 
     public var path: [Coordinate] { routeCoordinates.compactMap { Coordinate(geoJSON: $0) } }
+
+    /// No route to follow: a Ride anywhere, or (from a phone before 0.9.2) a summary
+    /// with no turns and no line.
+    public var isRoam: Bool { roam ?? (instructions.isEmpty && routeCoordinates.isEmpty) }
+
+    /// A journey with no route (0.9.2): nothing to follow, only the world round the rider.
+    public static func roaming(activity: Activity, worldMarks: [WatchWorldMark]) -> WatchRouteSummary {
+        WatchRouteSummary(questTitle: nil, instructions: [], objectives: [], totalDistanceMeters: 0, routeCoordinates: [], stops: [],
+                          activity: activity.rawValue, worldMarks: worldMarks, roam: true)
+    }
 }
 
 /// A stop on the Watch map: what it is called and where, nothing more.
@@ -125,6 +141,10 @@ public struct WatchNavigationUpdate: Codable, Hashable, Sendable {
     /// journey, at a standstill (`DistrictNaming`, by `speedMps`), never while
     /// moving. Nil while the phone does not know, and from an older phone.
     public var districtName: String?
+    /// The journey has stood still a long while (0.9.2, `IdleWatch`): the Watch asks
+    /// "Still out? End ride or keep going." until the rider answers or moves. Nil
+    /// from an older phone, and an older Watch ignores it.
+    public var stillOut: Bool?
 
     public init(
         state: NavigationState, instruction: Instruction? = nil, distanceToInstructionMeters: Double? = nil,
@@ -132,8 +152,10 @@ public struct WatchNavigationUpdate: Codable, Hashable, Sendable {
         distanceMeters: Double, elapsedSeconds: Double, elevationGainMeters: Double, heartRate: Int? = nil,
         speedMps: Double? = nil, latitude: Double? = nil, longitude: Double? = nil, timestamp: Date = Date(),
         encounterLine: String? = nil, newTerritoryMeters: Double? = nil, remainingMeters: Double? = nil,
-        courseDegrees: Double? = nil, fight: WatchFight? = nil, goneMarkIds: [UUID]? = nil, districtName: String? = nil
+        courseDegrees: Double? = nil, fight: WatchFight? = nil, goneMarkIds: [UUID]? = nil, districtName: String? = nil,
+        stillOut: Bool? = nil
     ) {
+        self.stillOut = stillOut
         self.districtName = districtName
         self.fight = fight
         self.goneMarkIds = goneMarkIds
@@ -203,6 +225,8 @@ public enum WatchCommand: String, Codable, CaseIterable, Hashable, Sendable {
     case pause
     case resume
     case end
+    /// "Keep going" to "Still out?" (0.9.2). An older phone cannot read it and drops it.
+    case keepGoing
 }
 
 /// Watch → iPhone heart-rate sample from the Watch workout session.

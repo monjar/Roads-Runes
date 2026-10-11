@@ -29,9 +29,10 @@ struct NavigationScreen: View {
                     Image(systemName: "location.north.line.fill")
                         .font(.system(size: 30, weight: .bold))
                         .foregroundStyle(WatchTheme.accent)
-                    Text(store.hasRoute ? "Waiting for the first turn" : LoreCopy.free(store.activity))
+                    // A roam (0.9.2) has no turns to wait for: it is a free journey.
+                    Text(store.followsRoute ? "Waiting for the first turn" : LoreCopy.free(store.activity))
                         .font(.system(size: 14, weight: .semibold))
-                    Text(store.hasRoute ? "Directions start when you move" : "Every new road counts")
+                    Text(store.followsRoute ? "Directions start when you move" : "Every new road counts")
                         .font(.system(size: 12))
                         .foregroundStyle(WatchTheme.secondary)
                         .multilineTextAlignment(.center)

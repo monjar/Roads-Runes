@@ -100,6 +100,7 @@ struct AdventureSummaryView: View {
                             if stage >= .items, !finds.isEmpty { itemsSection.id(Stage.items) }
                             if stage >= .quest { questSection.id(Stage.quest) }
                             if stage >= .quest, let goal = sealedGoal { sealedSection(goal) }
+                            if stage >= .quest, let also = summary.alsoFinished { alsoFinishedLine(also) }
                             if stage >= .entry, let entry = summary.entryToRead, !entry.isEmpty { entrySection(entry).id(Stage.entry) }
                             // Letters written here a season or more ago, found again (0.7.3).
                             if stage >= .entry, let letters = summary.letters, !letters.isEmpty { FoundLettersSection(letters: letters) }
@@ -657,7 +658,21 @@ struct AdventureSummaryView: View {
         }
     }
 
-    private var hasQuest: Bool { summary.questCompletion != nil && summary.quest != nil }
+    private var hasQuest: Bool { (summary.questCompletion != nil && summary.quest != nil) || summary.alsoFinished != nil }
+
+    /// A quest the rider had taken, finished on the way by a journey with no quest (0.9.2).
+    private func alsoFinishedLine(_ also: AlsoFinishedQuest) -> some View {
+        HStack(spacing: 10) {
+            MarkView(.icon(.scroll, spot: .sage)).frame(width: 24, height: 24)
+            Text(LoreCopy.alsoFinished(also.title))
+                .font(Theme.Typography.text(15, .semibold)).foregroundStyle(Theme.Colors.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .transition(.opacity)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("summary.alsoFinished")
+    }
 
     /// A sealed quest's goal, named at last (0.7.3).
     private var sealedGoal: SealedQuest.Goal? {

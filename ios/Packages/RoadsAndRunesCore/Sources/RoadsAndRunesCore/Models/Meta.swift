@@ -168,6 +168,8 @@ public enum FeatureFlag {
     public static let parchmentMap = "parchment_map"
     /// 0.9.0: Wikidata's line on a place, "From Wikidata: …".
     public static let placeLore = "place_lore"
+    /// 0.9.2: "Ride anywhere", a journey with no route (`GET /world/around` as it goes).
+    public static let rideAnywhere = "ride_anywhere"
 }
 
 /// `GET /health`.

@@ -40,6 +40,15 @@ struct NavigationScreen: View {
             .ignoresSafeArea()
             VStack(spacing: 8) {
                 topCard
+                // A long stop (0.9.2): asked once at 20 minutes and again at an hour.
+                if recorder.stillOutPrompt {
+                    StillOutCard(activity: recorder.activity) {
+                        Task { await recorder.finish() }
+                    } onKeepGoing: {
+                        withAnimation(.snappy) { recorder.keepGoing() }
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
                 if recorder.recentReroute {
                     MapPill(text: "New route from here")
                         .transition(.move(edge: .top).combined(with: .opacity))
@@ -706,6 +715,46 @@ struct ObjectiveCompleteCard: View {
 /// It says what is being done about it and, always, the way back: which way and
 /// how far to the nearest of the route, which the map draws as a dashed line. A
 /// new route that cannot be fetched is said plainly, with a button to try again.
+/// A journey left standing (0.9.2): "Still out? End ride or keep going." Moving
+/// again takes it away too.
+struct StillOutCard: View {
+    let activity: Activity
+    var onEnd: () -> Void
+    var onKeepGoing: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(LoreCopy.stillOut(activity))
+                .font(Theme.Typography.text(18, .bold)).foregroundStyle(Theme.Colors.cream)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                Button(action: onEnd) {
+                    Text("End \(LoreCopy.journey(activity))")
+                        .font(Theme.Typography.text(15, .bold)).foregroundStyle(Theme.Colors.cream)
+                        .frame(maxWidth: .infinity).frame(height: 46)
+                        .background(Theme.Colors.terracotta, in: Capsule())
+                }
+                .buttonStyle(.pressable)
+                .accessibilityIdentifier("stillOut.end")
+                Button(action: onKeepGoing) {
+                    Text("Keep going")
+                        .font(Theme.Typography.text(15, .bold)).foregroundStyle(Theme.Colors.ink)
+                        .frame(maxWidth: .infinity).frame(height: 46)
+                        .background(Theme.Colors.cream, in: Capsule())
+                }
+                .buttonStyle(.pressable)
+                .accessibilityIdentifier("stillOut.keepGoing")
+            }
+        }
+        .padding(.vertical, 16)
+        .padding(.horizontal, 18)
+        .background(Theme.Colors.ink, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .shadow(color: Theme.Colors.ink.opacity(0.25), radius: 12, y: 6)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("stillOutCard")
+    }
+}
+
 struct OffRouteCard: View {
     let rerouting: Bool
     let rejoin: RejoinGuide?

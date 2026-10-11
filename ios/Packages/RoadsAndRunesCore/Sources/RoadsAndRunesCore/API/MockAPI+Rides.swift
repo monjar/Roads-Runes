@@ -6,6 +6,7 @@ extension MockAPI {
 
     public func createRide(_ request: RideCreate) async throws -> Ride {
         try await run {
+            self.rideCreates.append(request)
             if let existing = self.storedRides.values.first(where: { $0.clientRideId == request.clientRideId }) { return existing }
             let ride = Ride(id: UUID(), clientRideId: request.clientRideId, status: .recording, title: request.title, startedAt: request.startedAt,
                             distanceMeters: 0, durationSeconds: 0, movingSeconds: 0, elevationGainMeters: 0, questId: request.questId,
@@ -34,6 +35,7 @@ extension MockAPI {
     }
     public func completeRide(id: UUID, _ completion: RideComplete) async throws -> RideCompleteResponse {
         try await run {
+            self.rideCompletions.append(completion)
             var ride = try self.requireRide(id)
             ride.status = .processing
             ride.endedAt = completion.endedAt
@@ -296,6 +298,6 @@ extension MockAPI {
 
     public func registerDevice(_ registration: DeviceRegistration) async throws { try await run {} }
     public func unregisterDevice(token: String) async throws { try await run {} }
-    public func config() async throws -> AppConfig { try await run { SampleData.sampleConfig } }
+    public func config() async throws -> AppConfig { try await run { self.configOverride ?? SampleData.sampleConfig } }
     public func health() async throws -> HealthStatus { try await run { HealthStatus(status: "ok", version: "mock") } }
 }

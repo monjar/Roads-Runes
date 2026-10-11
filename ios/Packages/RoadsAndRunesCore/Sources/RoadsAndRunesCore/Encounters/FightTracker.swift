@@ -79,6 +79,9 @@ public struct FightTracker: Sendable {
     public private(set) var seenOff: Set<UUID> = []
     /// Legends in a phase that any rune shape cut near it lands on (0.8.0, rune `ANY`).
     private var anyRune: Set<UUID> = []
+    /// The first fix that counts against a thing that joined mid-journey (0.9.2, a
+    /// roam's world refreshed as it goes); 0 for everything there from the start.
+    private var countsFrom: [UUID: Int] = [:]
 
     public init(objects: [WorldObject], setup: Setup) {
         self.setup = setup
@@ -86,7 +89,15 @@ public struct FightTracker: Sendable {
         var cfg = setup.sheet.fightConstants(setup.constants)
         cfg.rates = cfg.rates.mapValues { $0 * Self.underClaim }
         self.cfg = cfg
-        for object in objects where object.kind == .monster && object.status == .spawned {
+        add(objects: objects)
+    }
+
+    public var isEmpty: Bool { foes.isEmpty }
+
+    /// Things that have joined the journey (0.9.2): fought only on the fixes from now
+    /// on, as the server judges something placed after the journey began.
+    public mutating func add(objects: [WorldObject]) {
+        for object in objects where object.kind == .monster && object.status == .spawned && foes[object.id] == nil {
             guard let monster = object.monster, let holdMax = monster.holdMax, let wants = monster.wants else { continue }
             let foe = FightResolver.Foe(
                 latitude: object.latitude, longitude: object.longitude, holdMax: Double(holdMax),
@@ -94,11 +105,22 @@ public struct FightTracker: Sendable {
                 roadForm: monster.roadForm
             )
             foes[object.id] = (object, foe)
+            if !points.isEmpty { countsFrom[object.id] = points.count }
             if object.isLegend, monster.rune == LegendPhase.anyRune { anyRune.insert(object.id) }
         }
     }
 
-    public var isEmpty: Bool { foes.isEmpty }
+    /// Things left far behind (0.9.2): out of the fight unless it is under way.
+    public mutating func remove(ids: Set<UUID>) {
+        for id in ids where !inPlay.contains(id) {
+            foes[id] = nil
+            countsFrom[id] = nil
+            anyRune.remove(id)
+        }
+    }
+
+    /// Whether the outing has reached it and the fight is under way.
+    public func isInPlay(_ id: UUID) -> Bool { inPlay.contains(id) }
 
     /// What is left of its hold, 0…1, once the outing has reached it; nil before.
     public func holdFraction(of id: UUID) -> Double? {
@@ -158,14 +180,19 @@ public struct FightTracker: Sendable {
 
     private mutating func evaluate(_ id: UUID) -> [FightNews] {
         guard let entry = foes[id] else { return [] }
-        if runeHits[id] == nil, let hit = runeHit(for: entry.foe, anyShape: anyRune.contains(id)) { runeHits[id] = hit }
+        let from = countsFrom[id] ?? 0
+        if runeHits[id] == nil, let hit = runeHit(for: entry.foe, anyShape: anyRune.contains(id), from: from) { runeHits[id] = hit }
         // The build against this one, as the server works it out (elders and bounties,
         // a long way; a legend's capstones); the Historian's old places are the server's alone.
         let (pct, against) = Self.against(entry.object, sheet: setup.sheet, cfg: cfg, madeGoodMeters: madeGood,
                                           onFoot: setup.activity == .run || setup.activity == .walk, quarry: id == setup.quarryId)
+        // Something that joined mid-journey is fought on the fixes since, as if they were all.
+        let shown = from == 0 ? points : Array(points[min(from, points.count)...])
+        let hit = runeHits[id].map { FightResolver.RuneHit(shape: $0.shape, index: $0.index - from) }
         var report = FightResolver.resolve(
-            points, foe: entry.foe, activity: setup.activity.rawValue, pct: pct, cfg: against,
-            newCellIndices: newCellIndices, runeHit: runeHits[id], wordIndices: wordIndices
+            shown, foe: entry.foe, activity: setup.activity.rawValue, pct: pct, cfg: against,
+            newCellIndices: newCellIndices.filter { $0 >= from }.map { $0 - from }, runeHit: hit,
+            wordIndices: wordIndices.filter { $0 >= from }.map { $0 - from }
         )
         // One phase a day (0.8.0): a legend whose phase broke today waits for tomorrow with 1 left.
         if report.seenOff, entry.object.monster?.phaseHeld == true {
@@ -198,13 +225,13 @@ public struct FightTracker: Sendable {
     /// Its own road form, cut with the last few kilometres of the track, as the
     /// server looks for it with the same matcher. A legend's phase that takes any
     /// rune (`ANY`) takes any shape, landing as a woken rune does (`rune_hit_for`).
-    private func runeHit(for foe: FightResolver.Foe, anyShape: Bool = false) -> FightResolver.RuneHit? {
-        guard points.count >= 4 else { return nil }
+    private func runeHit(for foe: FightResolver.Foe, anyShape: Bool = false, from floor: Int = 0) -> FightResolver.RuneHit? {
+        guard points.count - floor >= 4 else { return nil }
         let wanted = foe.roadForm.flatMap(RuneShape.init(rawValue:))
         guard anyShape || wanted != nil else { return nil }
         var arc = 0.0
         var from = points.count - 1
-        while from > 0, arc <= Self.runeBufferMeters {
+        while from > floor, arc <= Self.runeBufferMeters {
             arc += GeoMath.distance(points[from - 1].coordinate, points[from].coordinate)
             from -= 1
         }

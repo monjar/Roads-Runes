@@ -394,6 +394,8 @@ final class WorldViewModel {
 
     func loadObjects(force: Bool = false) async {
         guard let here = position else { return }
+        // Not on the move behind a journey, which keeps its own world (0.9.2).
+        if !force, container.rideRecorder.isActive { return }
         if !force, let last = objectsLoadedAt, GeoMath.distance(last, here) < 500 { return }
         objectsLoadedAt = here
         if let objects = try? await container.api.worldObjects(near: here, radiusMeters: 6000) {

@@ -12,6 +12,9 @@ public enum QuickStart: Codable, Hashable, Sendable {
     case sealed(minutes: Int)
     /// A quest already on the board.
     case quest(id: UUID)
+    /// Ride anywhere (0.9.2): a journey with no route, started without planning.
+    /// `.unknown` is the rider's usual activity.
+    case roam(activity: Activity)
 
     /// The lengths a sealed quest comes in, as the server accepts them.
     public static let sealedMinuteChoices = [20, 40, 90]
@@ -28,8 +31,14 @@ public enum QuickStart: Codable, Hashable, Sendable {
     public var minutes: Int? {
         switch self {
         case .loop(let minutes, _), .sealed(let minutes): return minutes
-        case .bounty, .quest: return nil
+        case .bounty, .quest, .roam: return nil
         }
+    }
+
+    /// A journey with no route: nothing to plan.
+    public var isRoam: Bool {
+        if case .roam = self { return true }
+        return false
     }
 }
 
@@ -79,6 +88,7 @@ extension QuickStart {
 /// - `roadsandrunes://quickstart?kind=loop&minutes=40&activity=RUN`
 /// - `roadsandrunes://quickstart?kind=bounty`
 /// - `roadsandrunes://quickstart?kind=quest&id=<uuid>`
+/// - `roadsandrunes://quickstart?kind=roam&activity=RUN` (0.9.2, Ride anywhere; activity optional)
 /// - `roadsandrunes://ride` (back to the ride on screen, from the Live Activity)
 public enum DeepLink: Hashable, Sendable {
     case world
@@ -136,6 +146,9 @@ public enum DeepLink: Hashable, Sendable {
         case "quest":
             guard let id = value("id").flatMap(UUID.init(uuidString:)) else { return nil }
             return .quest(id: id)
+        case "roam":
+            let activity = value("activity").map(Activity.lenient) ?? .unknown
+            return .roam(activity: activity.isUnknown ? .unknown : activity)
         default:
             return nil
         }
@@ -155,6 +168,9 @@ public enum DeepLink: Hashable, Sendable {
             return [URLQueryItem(name: "kind", value: "bounty")]
         case .quest(let id):
             return [URLQueryItem(name: "kind", value: "quest"), URLQueryItem(name: "id", value: id.uuidString)]
+        case .roam(let activity):
+            return [URLQueryItem(name: "kind", value: "roam")]
+                + (activity.isUnknown ? [] : [URLQueryItem(name: "activity", value: activity.rawValue)])
         }
     }
 }

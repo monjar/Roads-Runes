@@ -25,6 +25,9 @@ public protocol RoadsAndRunesAPI: Sendable {
     func wallet() async throws -> Wallet
     func walletTransactions(limit: Int?, cursor: String?) async throws -> Page<WalletTransaction>
     func worldObjects(near center: Coordinate, radiusMeters: Double) async throws -> [WorldObject]
+    /// Ride anywhere (0.9.2): the world round a journey with no route, asked as it goes.
+    /// With `rideId` naming a journey still recording, the server may place things here.
+    func worldAround(near center: Coordinate, rideId: UUID?) async throws -> WorldAround
     func worldObject(id: UUID) async throws -> WorldObject
     /// Today's bounty; nil until the world has been looked at today, or once it is gone.
     func bounty() async throws -> WorldObject?

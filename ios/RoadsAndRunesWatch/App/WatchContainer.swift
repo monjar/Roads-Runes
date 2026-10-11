@@ -63,6 +63,8 @@ final class WatchContainer {
             store.markPaused(false)
         case .end:
             store.markEnded()
+        case .keepGoing:
+            store.answerStillOut()
         }
         phone.send(command: command)
     }

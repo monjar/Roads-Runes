@@ -13,6 +13,8 @@ public struct WatchStartRequest: Codable, Hashable, Identifiable, Sendable {
     public static let bounty = "BOUNTY"
     public static let quest = "QUEST"
     public static let sealed = "SEALED"
+    /// Ride anywhere (0.9.2): no route; the phone starts it without planning.
+    public static let roam = "ROAM"
 
     /// A request heard later than this is let go: nobody wants a ride to start
     /// itself minutes after they asked for it.
@@ -20,8 +22,8 @@ public struct WatchStartRequest: Codable, Hashable, Identifiable, Sendable {
 
     /// So the phone's answer can be matched to the question.
     public var id: UUID
-    /// LOOP, BOUNTY, QUEST or SEALED; a string, so a kind added later reaches an
-    /// older phone as one it refuses rather than an error.
+    /// LOOP, BOUNTY, QUEST, SEALED or (0.9.2) ROAM; a string, so a kind added later
+    /// reaches an older phone as one it refuses rather than an error.
     public var kind: String
     /// How long a loop or a sealed quest should last.
     public var minutes: Int?
@@ -57,6 +59,10 @@ public struct WatchStartRequest: Codable, Hashable, Identifiable, Sendable {
         WatchStartRequest(kind: sealed, minutes: minutes)
     }
 
+    public static func roam(activity: Activity?) -> WatchStartRequest {
+        WatchStartRequest(kind: roam, activity: activity.flatMap { $0 == .unknown ? nil : $0.rawValue })
+    }
+
     /// Whether the phone should still act on it at `now`. A request with no time
     /// is taken as fresh: it can only have come straight from the wrist.
     public func isFresh(at now: Date = Date()) -> Bool {
@@ -80,6 +86,10 @@ public struct WatchStartRequest: Codable, Hashable, Identifiable, Sendable {
             return questId.map { .quest(id: $0) }
         case Self.sealed:
             return .sealed(minutes: QuickStart.sealedMinutes(nearest: minutes ?? 40))
+        case Self.roam:
+            // The activity asked for, else the rider's usual one on the phone.
+            let asked = activity.map(Activity.lenient) ?? .unknown
+            return .roam(activity: asked.isUnknown ? .unknown : asked)
         default:
             return nil
         }

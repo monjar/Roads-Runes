@@ -24,14 +24,18 @@ public struct ActiveRideState: Codable, Hashable, Sendable {
     public var activity: String?
     /// The game layer (0.7.2): encounters, claims and fights; nil in older snapshots.
     public var game: RideGameState?
+    /// A journey with no route (0.9.2, Ride anywhere): recovery puts back its exploration
+    /// and the world's refresh round it. Nil in older snapshots and for a planned ride.
+    public var roam: Bool?
 
     public init(
         rideId: UUID? = nil, clientRideId: UUID, questId: UUID? = nil, routeId: UUID? = nil, bikeId: UUID? = nil,
         navigationState: NavigationState, startedAt: Date, updatedAt: Date, stats: RideSnapshot,
         pendingCells: [String] = [], visitedCells: [String] = [], completedObjectiveIDs: [UUID] = [],
         pendingObjectiveEvents: [ObjectiveEvent] = [], lastFix: LocationFix? = nil, lastSegmentIndex: Int = 0,
-        title: String? = nil, activity: String? = nil, game: RideGameState? = nil
+        title: String? = nil, activity: String? = nil, game: RideGameState? = nil, roam: Bool? = nil
     ) {
+        self.roam = roam
         self.activity = activity
         self.game = game
         self.rideId = rideId
@@ -54,6 +58,9 @@ public struct ActiveRideState: Codable, Hashable, Sendable {
 
     /// A snapshot found on launch whose navigation state is not terminal needs recovery.
     public var needsRecovery: Bool { !navigationState.isTerminal }
+
+    /// A journey with no route (0.9.2).
+    public var isRoam: Bool { roam ?? false }
 }
 
 public protocol ActiveRideStore: Sendable {

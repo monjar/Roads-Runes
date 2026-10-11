@@ -256,6 +256,8 @@ public enum SampleData {
         expiresAt: referenceDate.addingTimeInterval(3 * 86_400), setId: "RUNES", piece: "Ansuz"
     )
     public static let sampleObjects: [WorldObject] = [sampleMonster, sampleChest, samplePiece]
+    /// `GET /world/around` (0.9.2): the world round a roam.
+    public static let sampleAround = WorldAround(objects: sampleObjects, places: sampleDiscoveries, importing: false)
 
     // MARK: Codex
 
@@ -480,7 +482,7 @@ public enum SampleData {
     public static let sampleConfig = AppConfig(
         featureFlags: ["fog_of_war": false, "story_quests": false, "party_quests": false, "strava": false,
                        "wizard_class": true, "warrior_class": true, "scribe_class": true, "codex": true,
-                       "pledge": true, "parchment_map": false],
+                       "pledge": true, "parchment_map": false, "ride_anywhere": true],
         h3Resolution: 9, levels: LevelLimits(max: 50, maxClass: 30), environment: "preview"
     )
 }

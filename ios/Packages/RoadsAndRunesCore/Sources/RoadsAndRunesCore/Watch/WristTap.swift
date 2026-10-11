@@ -8,11 +8,15 @@ import Foundation
 public enum WristTap: String, CaseIterable, Hashable, Sendable {
     case click, directionUp, directionDown
     case start, success, failure
+    /// The journey asks something (0.9.2): "Still out?" after a long stop.
+    case notice
 
     /// The taps navigation owns.
     public static let turns: Set<WristTap> = [.click, .directionUp, .directionDown]
     /// The only taps a fight may use.
     public static let fight: Set<WristTap> = [.start, .success, .failure]
+    /// A question from the journey itself, never a turn's or a fight's.
+    public static let notices: Set<WristTap> = [.notice]
 }
 
 /// Something about a fight worth a tap on the wrist, sent from the phone.

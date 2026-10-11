@@ -25,6 +25,7 @@ final class FlakyAPI: RoadsAndRunesAPI, @unchecked Sendable {
     func wallet() async throws -> Wallet { try await inner.wallet() }
     func walletTransactions(limit: Int?, cursor: String?) async throws -> Page<WalletTransaction> { try await inner.walletTransactions(limit: limit, cursor: cursor) }
     func worldObjects(near center: Coordinate, radiusMeters: Double) async throws -> [WorldObject] { try await inner.worldObjects(near: center, radiusMeters: radiusMeters) }
+    func worldAround(near center: Coordinate, rideId: UUID?) async throws -> WorldAround { try await inner.worldAround(near: center, rideId: rideId) }
     func worldObject(id: UUID) async throws -> WorldObject { try await inner.worldObject(id: id) }
     func bounty() async throws -> WorldObject? { try await inner.bounty() }
     func lure(at center: Coordinate) async throws -> [WorldObject] { try await inner.lure(at: center) }

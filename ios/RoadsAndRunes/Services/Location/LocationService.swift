@@ -96,6 +96,12 @@ final class LocationService: NSObject {
         tracking = false
     }
 
+    /// A fix from somewhere other than CoreLocation: a test standing in for the GPS.
+    func deliver(_ fix: LocationFix) {
+        lastFix = fix
+        onFix?(fix)
+    }
+
     func apply(mode: BatteryMode) {
         guard live else { return }
         let policy = BatteryPolicy.policy(for: mode)

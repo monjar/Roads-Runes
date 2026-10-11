@@ -153,6 +153,24 @@ final class RideStore {
 
     var hasRoute: Bool { summary != nil }
 
+    /// A journey with no route (0.9.2, Ride anywhere): the phone's summary came with no
+    /// turns and no line, only the world round the rider.
+    var isRoaming: Bool { summary?.isRoam ?? false }
+
+    /// A route to follow: a summary that is not a roam.
+    var followsRoute: Bool { hasRoute && !isRoaming }
+
+    /// "Still out? End ride or keep going." (0.9.2): the phone asks after a long stop,
+    /// until the rider answers here or there, or moves. Nil from an older phone.
+    var isAskingStillOut: Bool { isRiding && update?.stillOut == true && !stillOutAnswered }
+    /// Answered on the wrist; forgotten once the phone stops asking.
+    private(set) var stillOutAnswered = false
+
+    /// "Keep going" on the wrist: the question goes now, before the phone's next word.
+    func answerStillOut() {
+        stillOutAnswered = true
+    }
+
     var formatter: UnitFormatter { UnitFormatter(units: units) }
 
     var heartRate: Int? { localHeartRate ?? update?.heartRate }
@@ -242,6 +260,7 @@ final class RideStore {
             currentDistanceToInstruction = newUpdate.distanceToInstructionMeters
         }
         if let gone = newUpdate.goneMarkIds { goneMarkIds.formUnion(gone) }
+        if newUpdate.stillOut != true { stillOutAnswered = false }
         districts.update(district: newUpdate.districtName, speedMps: newUpdate.speedMps, at: receivedAt)
         if newUpdate.state == .active, let cue = turnCues.update(instruction: newUpdate.instruction, distanceMeters: newUpdate.distanceToInstructionMeters) {
             turnCue = cue

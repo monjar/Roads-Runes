@@ -54,16 +54,73 @@ public struct EncounterTracker: Sendable {
     private var lastStatus: [UUID: EncounterStatus] = [:]
     private let activity: Activity
     public private(set) var fights: FightTracker?
+    /// What fights are armed with, kept so a creature that joins later can be fought too.
+    private let fightSetup: FightTracker.Setup?
     /// How far off something comes into sight: 400 m, or further with Kenaz or a bell (`SIGHT_M`).
     public let sightMeters: Double
+    /// When each thing joined after the journey began (0.9.2), by the fixes' clock.
+    public private(set) var addedAt: [UUID: Date] = [:]
+    /// A roam keeps things within this far of the rider; the rest are let go.
+    public static let pruneBeyondMeters = 6000.0
 
     public init(objects: [WorldObject], activity: Activity, fights: FightTracker.Setup? = nil, sightMeters: Double? = nil) {
         self.objects = objects.filter { $0.status == .spawned }
         self.activity = activity
         self.sightMeters = max(Self.inSightMeters, sightMeters ?? 0)
+        self.fightSetup = fights
         if let fights {
             let tracker = FightTracker(objects: self.objects, setup: fights)
             self.fights = tracker.isEmpty ? nil : tracker
+        }
+    }
+
+    /// What a refresh changed: what joined and what was let go.
+    public struct Merge: Equatable, Sendable {
+        public var added: [WorldObject]
+        public var removed: [WorldObject]
+
+        public var isEmpty: Bool { added.isEmpty && removed.isEmpty }
+    }
+
+    /// The world round a roam, asked again as it goes (0.9.2): what is new joins at
+    /// `now` (the fixes' clock), counted only on the fixes from then on, and what is
+    /// more than 6 km from `position` is let go, unless it was claimed, is the legend
+    /// or the quarry, or is being fought.
+    public mutating func merge(_ fresh: [WorldObject], at position: Coordinate, now: Date, keeping kept: Set<UUID> = []) -> Merge {
+        let known = Set(objects.map(\.id))
+        var seen: Set<UUID> = []
+        let added = fresh.filter {
+            $0.status == .spawned && !$0.isLair && !known.contains($0.id) && !claimedIDs.contains($0.id) && seen.insert($0.id).inserted
+        }
+        let removed = objects.filter { object in
+            !claimedIDs.contains(object.id) && !object.isLegend && !kept.contains(object.id) && fights?.isInPlay(object.id) != true
+                && GeoMath.distance(position, object.coordinate) > Self.pruneBeyondMeters
+        }
+        let gone = Set(removed.map(\.id))
+        objects.removeAll { gone.contains($0.id) }
+        for id in gone {
+            addedAt[id] = nil
+            lastStatus[id] = nil
+            met.remove(id)
+            gainWhenMet[id] = nil
+        }
+        join(added, at: now)
+        if !gone.isEmpty { fights?.remove(ids: gone) }
+        return Merge(added: added, removed: removed)
+    }
+
+    /// Things joining at `now`: in play from the next fix, and in the fight if it is armed.
+    private mutating func join(_ added: [WorldObject], at now: Date) {
+        guard !added.isEmpty else { return }
+        objects += added
+        for object in added { addedAt[object.id] = now }
+        if var tracker = fights {
+            tracker.add(objects: added)
+            fights = tracker
+        } else if let fightSetup {
+            // The first creature fought by effort joined now: the fight starts with it.
+            let tracker = FightTracker(objects: added, setup: fightSetup)
+            fights = tracker.isEmpty ? nil : tracker
         }
     }
 
@@ -159,7 +216,7 @@ public struct EncounterTracker: Sendable {
     /// was claimed, and the events still to be sent with the ride.
     public func gameState(quarryId: UUID?, fights setup: FightSetupState?) -> RideGameState {
         RideGameState(objects: objects, claimedIDs: Array(claimedIDs), events: events, quarryId: quarryId, sightMeters: sightMeters,
-                      fights: setup)
+                      fights: setup, addedAt: addedAt.isEmpty ? nil : addedAt)
     }
 
     /// The game layer put back after a crash: the same things in play, what was
@@ -167,10 +224,15 @@ public struct EncounterTracker: Sendable {
     /// fights stand where they stood. Something the outing reached after the last
     /// save is claimed by the replay and joins the events, as it would have.
     public init(restoring game: RideGameState, activity: Activity, indexing: any CellIndexing, replaying fixes: [LocationFix]) {
-        self.init(objects: game.objects, activity: activity, fights: game.fights?.setup(activity: activity, indexing: indexing),
-                  sightMeters: game.sightMeters)
+        // What joined mid-journey (0.9.2) comes back into play only at the fix it joined at.
+        let joined = game.addedAt ?? [:]
+        self.init(objects: game.objects.filter { joined[$0.id] == nil }, activity: activity,
+                  fights: game.fights?.setup(activity: activity, indexing: indexing), sightMeters: game.sightMeters)
         claimedIDs = Set(game.claimedIDs)
         events = game.events
+        var later = game.objects
+            .compactMap { object in joined[object.id].map { (object: object, at: $0) } }
+            .sorted { $0.at < $1.at }
         // A note lands on what is near when it was written: put each back at its time.
         let notes = game.events
             .filter { $0.method == KillMethodKind.lore.rawValue && !($0.note ?? "").isEmpty }
@@ -179,6 +241,10 @@ public struct EncounterTracker: Sendable {
         var gain = 0.0
         var lastAltitude: Double?
         for fix in fixes {
+            while let first = later.first, first.at <= fix.timestamp {
+                join([first.object], at: first.at)
+                later.removeFirst()
+            }
             while next < notes.count, notes[next].occurredAt < fix.timestamp {
                 replay(note: notes[next].note ?? "")
                 next += 1
@@ -194,6 +260,8 @@ public struct EncounterTracker: Sendable {
             replay(note: notes[next].note ?? "")
             next += 1
         }
+        // Joined after the last fix saved: in play from the next one.
+        for entry in later { join([entry.object], at: entry.at) }
     }
 
     private mutating func replay(note: String) {
@@ -233,6 +301,8 @@ public struct EncounterTracker: Sendable {
 
     private func fight(_ object: WorldObject, position: Coordinate, elevationGainMeters: Double, newCellCentres: [Coordinate]) -> Verdict {
         var best = Verdict()
+        // Something that joined mid-journey (0.9.2) is judged on the fixes since, as the server judges it.
+        let buffer = addedAt[object.id].map { at in self.buffer.filter { $0.t >= at.timeIntervalSince1970 } } ?? self.buffer
         for method in object.monster?.killMethods ?? [] {
             var progress = 0.0
             switch method.method {
@@ -244,7 +314,7 @@ public struct EncounterTracker: Sendable {
                 if let found = PaceFinder.bestWindow(buffer, windowMeters: window, speedCap: Self.speedCap(activity), near: near) {
                     progress = min(1, target / found.paceSecondsPerKm)
                 } else {
-                    progress = min(0.95, nearMeters(within: radius, of: object) / window)
+                    progress = min(0.95, nearMeters(within: radius, of: object, in: buffer) / window)
                 }
             case .rune:
                 let wanted = method.params["shape"]?.stringValue.flatMap(RuneShape.init(rawValue:))
@@ -252,7 +322,7 @@ public struct EncounterTracker: Sendable {
                 let radius = method.double("searchRadiusMeters") ?? 1000
                 let minLength = method.double("minLengthMeters") ?? 300
                 // Nothing counts until the shape is there; being nearby is not tracing.
-                if nearMeters(within: radius, of: object) >= minLength, let wanted,
+                if nearMeters(within: radius, of: object, in: buffer) >= minLength, let wanted,
                    let match = RuneMatcher.match(track: buffer.map(\.coordinate), centre: object.coordinate, threshold: threshold, searchRadius: radius, minLength: minLength, maxLength: method.double("maxLengthMeters") ?? 4000),
                    match.shape == wanted {
                     progress = 1
@@ -277,7 +347,7 @@ public struct EncounterTracker: Sendable {
         return best
     }
 
-    private func nearMeters(within radius: Double, of object: WorldObject) -> Double {
+    private func nearMeters(within radius: Double, of object: WorldObject, in buffer: [TimedPoint]) -> Double {
         var total = 0.0
         for (a, b) in zip(buffer, buffer.dropFirst()) where GeoMath.distance(b.coordinate, object.coordinate) <= radius {
             total += GeoMath.distance(a.coordinate, b.coordinate)

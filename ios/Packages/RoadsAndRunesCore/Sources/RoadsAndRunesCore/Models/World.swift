@@ -37,6 +37,22 @@ public struct QuestMarker: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
+/// `GET /world/around` (0.9.2, Ride anywhere): what is round a journey with no route,
+/// asked as it goes. For a journey still recording the server may also place things.
+public struct WorldAround: Codable, Hashable, Sendable {
+    public var objects: [WorldObject]
+    /// Named places within 3 km, so the ride can say when it finds a new one.
+    public var places: [DiscoverySummary]
+    /// Places round here are still being fetched: ask again soon.
+    public var importing: Bool?
+
+    public init(objects: [WorldObject], places: [DiscoverySummary] = [], importing: Bool? = nil) {
+        self.objects = objects
+        self.places = places
+        self.importing = importing
+    }
+}
+
 /// `GET /world` (`WorldOut` on the server).
 public struct WorldSnapshot: Codable, Hashable, Sendable {
     public var center: Coordinate
