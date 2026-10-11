@@ -78,6 +78,11 @@ public enum Endpoints {
             QueryItem("radiusMeters", String(Int(radiusMeters))),
         ])
     }
+    public static func worldAround(near center: Coordinate, rideId: UUID?) -> Endpoint {
+        var query = [QueryItem("latitude", String(center.latitude)), QueryItem("longitude", String(center.longitude))]
+        if let rideId { query.append(QueryItem("rideId", rideId.uuidString)) }
+        return Endpoint(method: .get, path: "/world/around", query: query)
+    }
     public static func worldObject(id: UUID) -> Endpoint { Endpoint(method: .get, path: "/world/objects/\(id.uuidString)") }
     public static func bounty() -> Endpoint { Endpoint(method: .get, path: "/world/objects/bounty") }
     public static func claimWorldObject(id: UUID, _ body: WorldObjectClaimRequest) throws -> Endpoint {

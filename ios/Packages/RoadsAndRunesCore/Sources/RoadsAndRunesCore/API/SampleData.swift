@@ -256,6 +256,8 @@ public enum SampleData {
         expiresAt: referenceDate.addingTimeInterval(3 * 86_400), setId: "RUNES", piece: "Ansuz"
     )
     public static let sampleObjects: [WorldObject] = [sampleMonster, sampleChest, samplePiece]
+    /// `GET /world/around` (0.9.2): the world round a roam.
+    public static let sampleAround = WorldAround(objects: sampleObjects, places: sampleDiscoveries, importing: false)
 
     // MARK: Codex
 

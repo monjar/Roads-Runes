@@ -57,14 +57,19 @@ struct WorldView: View {
         .onChange(of: container.rideRecorder.isActive) { _, riding in
             guard !riding else { return }
             if onScreen { container.location.startBrowsing() } else { container.location.startPassive() }
+            // The world as the journey left it, at once.
+            if let here = container.location.lastFix?.coordinate, let model { Task { await model.load(around: here, force: true) } }
         }
         .onChange(of: container.location.lastFix) { _, fix in
             guard let fix, let model else { return }
             if model.center == nil { model.center = fix.coordinate }
+            // A journey looks after its own world (0.9.2, a roam refreshes it as it
+            // goes): the map behind it does not reload every 500 m until it ends.
+            guard !container.rideRecorder.isActive else { return }
             Task { await model.load(around: fix.coordinate) }
             // Which district this is, for Next up (0.9.0); the ride asks for its own.
-            if !container.rideRecorder.isActive { Task { await container.districts.noticePosition(fix.coordinate) } }
-            if !container.rideRecorder.isActive, withAnimation(.snappy, { model.noticeReach() }) {
+            Task { await container.districts.noticePosition(fix.coordinate) }
+            if withAnimation(.snappy, { model.noticeReach() }) {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
             }
         }

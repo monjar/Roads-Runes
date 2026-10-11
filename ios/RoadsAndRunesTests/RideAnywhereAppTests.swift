@@ -138,6 +138,59 @@ final class RideAnywhereAppTests: XCTestCase {
         resumed.discard()
     }
 
+    /// Something placed 7 km out after the start: not seen at first, joined once the
+    /// rider is 1.5 km on, and opened on the way past.
+    func testFurtherOnANewChestJoinsTheJourneyAndOpens() async throws {
+        let api = MockAPI()
+        let container = AppContainer(api: api, inMemory: true)
+        await container.session.bootstrap()
+        api.place([], replacing: true)
+        let start = SampleData.origin
+        let recorder = container.rideRecorder
+        await recorder.startRoam(activity: .ride, bikeId: nil)
+        ride(recorder, to: start)
+        await eventually("the world round the start loaded") { recorder.roamWorldLoaded }
+        XCTAssertTrue(recorder.objectsOnMap.isEmpty)
+
+        let ahead = chest("Iron chest", at: GeoMath.destination(from: start, bearingDegrees: 90, distanceMeters: 7000))
+        api.place([ahead])
+        ride(recorder, from: start, meters: 1000)
+        await eventually("the look again 90 s in") { api.aroundAsks.count == 1 }
+        XCTAssertFalse(recorder.objectsOnMap.contains { $0.id == ahead.id }, "6.5 km off is beyond the world round the rider")
+        ride(recorder, from: GeoMath.destination(from: start, bearingDegrees: 90, distanceMeters: 1100), meters: 1000)
+        await eventually("1.5 km on, the world is asked for again and the chest joins") {
+            recorder.objectsOnMap.contains { $0.id == ahead.id }
+        }
+        XCTAssertEqual(api.aroundAsks.count, 2)
+        XCTAssertEqual(api.aroundAsks.last?.rideId, recorder.ride?.id, "for the journey under way, so the server may place things")
+        XCTAssertEqual(container.worldCache.load()?.objects.contains { $0.id == ahead.id }, true, "kept for a stretch with no signal")
+
+        // On past it: opened, as a chest there from the start would be.
+        ride(recorder, from: GeoMath.destination(from: start, bearingDegrees: 90, distanceMeters: 2200), meters: 5200)
+        XCTAssertEqual(claims(recorder, of: "Iron chest"), 1)
+        recorder.discard()
+    }
+
+    /// No signal on the way: the ride backs off and keeps going on the world it has.
+    func testWithNoSignalTheRoamBacksOff() async throws {
+        let api = MockAPI()
+        let container = AppContainer(api: api, inMemory: true)
+        await container.session.bootstrap()
+        let start = SampleData.origin
+        let recorder = container.rideRecorder
+        await recorder.startRoam(activity: .ride, bikeId: nil)
+        ride(recorder, to: start)
+        await eventually("the world loaded") { recorder.roamWorldLoaded }
+        api.aroundRefusal = .server(code: "FEATURE_DISABLED", message: "That isn't switched on yet.", status: 403)
+        ride(recorder, from: start, meters: 600)
+        await eventually("the ask failed") { recorder.roamRefresher.failures == 1 }
+        XCTAssertTrue(recorder.isActive, "the journey goes on")
+        let asked = api.aroundAsks.count
+        ride(recorder, to: GeoMath.destination(from: start, bearingDegrees: 90, distanceMeters: 700), after: 10)
+        XCTAssertEqual(api.aroundAsks.count, asked, "not asked again before the backoff")
+        recorder.discard()
+    }
+
     func testAJourneyWithNoRouteIsOnTheLockScreen() async throws {
         let container = AppContainer(api: MockAPI(), inMemory: true)
         await container.session.bootstrap()

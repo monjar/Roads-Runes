@@ -264,6 +264,7 @@ public actor APIClient: RoadsAndRunesAPI {
     public func wallet() async throws -> Wallet { try await request(Endpoints.wallet()) }
     public func walletTransactions(limit: Int?, cursor: String?) async throws -> Page<WalletTransaction> { try await request(Endpoints.walletTransactions(limit: limit, cursor: cursor)) }
     public func worldObjects(near center: Coordinate, radiusMeters: Double) async throws -> [WorldObject] { try await request(Endpoints.worldObjects(near: center, radiusMeters: radiusMeters)) }
+    public func worldAround(near center: Coordinate, rideId: UUID?) async throws -> WorldAround { try await request(Endpoints.worldAround(near: center, rideId: rideId)) }
     public func worldObject(id: UUID) async throws -> WorldObject { try await request(Endpoints.worldObject(id: id)) }
     public func bounty() async throws -> WorldObject? {
         do { return try await request(Endpoints.bounty()) } catch let error as APIError {

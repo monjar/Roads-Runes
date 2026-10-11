@@ -125,6 +125,8 @@ final class RideRecorder {
     /// A roam's world: being fetched round the first fix, and loaded (0.9.2).
     @ObservationIgnored private var roamWorldLoading = false
     @ObservationIgnored private(set) var roamWorldLoaded = false
+    /// When a roam asks for the world round it again (Core `RoamRefresher`).
+    @ObservationIgnored private(set) var roamRefresher = RoamRefresher()
     private let audio: RideAudio
 
     init(api: any RoadsAndRunesAPI, location: LocationService, health: HealthKitService, watch: WatchSessionService, sync: SyncService,
@@ -360,6 +362,7 @@ final class RideRecorder {
         isRoaming = false
         roamWorldLoading = false
         roamWorldLoaded = false
+        roamRefresher = RoamRefresher()
     }
 
     // MARK: - Fix handling (spec §35, §36)
@@ -434,6 +437,11 @@ final class RideRecorder {
             let here = enriched.coordinate
             roamWorldLoading = true
             Task { await self.loadRoamWorld(around: here) }
+        } else if isRoaming, roamWorldLoaded, roamRefresher.shouldRefresh(from: enriched.coordinate, at: enriched.timestamp, paused: state == .paused) {
+            // On new ground: what has been placed round here since.
+            let here = enriched.coordinate
+            roamRefresher.began(from: here, at: enriched.timestamp)
+            Task { await self.refreshRoam(from: here) }
         }
         sayNext()
         if pendingPoints.count >= Config.pointsUploadBatchSize {
@@ -513,12 +521,56 @@ final class RideRecorder {
         guard isRoaming, journey == clientRideId, state != .completed, state != .cancelled else { return }
         roamWorldLoading = false
         roamWorldLoaded = true
+        roamRefresher = RoamRefresher()
+        roamRefresher.loaded(from: start, at: lastFix?.timestamp ?? location.lastFix?.timestamp ?? Date())
         encounterTracker = EncounterTracker(objects: all, activity: activity, fights: setup, sightMeters: loaded.sheet?.sightMeters)
         fightSetup = setup.map(FightSetupState.init)
         objectsOnMap = loaded.objects.filter { $0.status == .spawned }
         legendOnMap = loaded.legend
         unfoundPlaces = places
         guard isActive else { return }
+        sendWatchSummary()
+        persist(force: true)
+    }
+
+    /// How far round the rider a refresh keeps the world in the cache for a ride with no signal.
+    static let roamCacheMeters = 12_000.0
+
+    /// The world round a roam, asked again (0.9.2, `GET /world/around`): what the
+    /// server placed since joins the ride from this fix on, what is far behind is let
+    /// go, new places can be found, and the Watch's marks follow. With no answer, the
+    /// last world kept round here stands in, and the refresher backs off.
+    private func refreshRoam(from position: Coordinate) async {
+        let journey = clientRideId
+        do {
+            let around = try await api.worldAround(near: position, rideId: ride?.id)
+            guard isRoaming, journey == clientRideId, isActive else { return }
+            roamRefresher.succeeded(importing: around.importing ?? false)
+            mergeRoam(objects: around.objects, places: around.places, at: position)
+            let fresh = around.objects.filter { !$0.isLair }
+            try? worldCache.update { world in
+                let ids = Set(fresh.map(\.id))
+                world.objects = world.objects.filter { !ids.contains($0.id) && GeoMath.distance(position, $0.coordinate) <= Self.roamCacheMeters } + fresh
+            }
+        } catch {
+            guard isRoaming, journey == clientRideId, isActive else { return }
+            roamRefresher.failed()
+            AppLog.navigation.info("roam_refresh_failed \(error.localizedDescription, privacy: .public)")
+            let kept = worldCache.load()?.objects(near: position, radiusMeters: EncounterTracker.pruneBeyondMeters) ?? []
+            mergeRoam(objects: kept.filter { !$0.isLair }, places: [], at: position)
+        }
+    }
+
+    private func mergeRoam(objects fresh: [WorldObject], places: [DiscoverySummary], at position: Coordinate) {
+        guard var tracker = encounterTracker else { return }
+        let change = tracker.merge(fresh, at: position, now: lastFix?.timestamp ?? Date(), keeping: Set([quarryId].compactMap { $0 }))
+        encounterTracker = tracker
+        let known = Set(unfoundPlaces.map(\.id))
+        unfoundPlaces = unfoundPlaces.filter { GeoMath.distance(position, $0.coordinate) <= EncounterTracker.pruneBeyondMeters }
+            + places.filter { !$0.discoveredByUser && !known.contains($0.id) && !announcedPlaces.contains($0.id) }
+        guard !change.isEmpty else { return }
+        AppLog.navigation.info("roam_merged added=\(change.added.count, privacy: .public) removed=\(change.removed.count, privacy: .public)")
+        objectsOnMap = tracker.objects.filter { !tracker.claimedIDs.contains($0.id) && !$0.isLegend }
         sendWatchSummary()
         persist(force: true)
     }
@@ -1249,9 +1301,12 @@ final class RideRecorder {
             exploration?.restore(visitedCells: saved.visitedCells, pendingUpload: saved.pendingCells)
         }
         restoreGameLayer(saved)
-        // A roam whose world was loaded before the crash carries on refreshing it; one
-        // that had not loaded it yet loads it with the next fix.
-        if isRoaming { roamWorldLoaded = saved.game != nil }
+        // A roam whose world was loaded before the crash carries on refreshing it from
+        // the next fix; one that had not loaded it yet loads it with the next fix.
+        if isRoaming {
+            roamWorldLoaded = saved.game != nil
+            roamRefresher = RoamRefresher()
+        }
         if let rideId = saved.rideId, let serverRide = try? await api.ride(id: rideId) { ride = serverRide }
         location.startTracking(mode: batteryMode)
         health.beginWorkout(startDate: Date())
