@@ -302,7 +302,10 @@ async def test_location_types_exclusions_and_cutoffs_reach_the_body():
     assert [loc["type"] for loc in body["locations"]] == ["break", "break_through", "through", "break"]
     assert body["locations"][2]["search_cutoff"] == 400
     assert all("search_cutoff" not in loc for i, loc in enumerate(body["locations"]) if i != 2)
-    assert body["exclude_locations"] == [{"lat": 51.501, "lon": -0.1005}, {"lat": 51.502, "lon": -0.101}]
+    assert body["exclude_locations"] == [
+        {"lat": 51.501, "lon": -0.1005, "radius": 20},
+        {"lat": 51.502, "lon": -0.101, "radius": 20},
+    ]
     assert "alternates" not in body
     # Where the first leg ends, in the joined line.
     assert route.leg_boundaries == [len(SHAPE) - 1]

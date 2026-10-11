@@ -44,6 +44,10 @@ RETRY_DELAYS_S: tuple[float, ...] = (0.5, 1.5)
 RETRY_AFTER_CAP_S = 5.0
 # A 429 means the server wants a rest: nobody asks again for at least this long.
 COOL_DOWN_S = 2.0
+# A point the way back keeps off closes every edge this close to it. On 2026-10-11
+# the way back from Greenwich rode the carriageway 6–17 m beside the CS4 cycle track
+# its exclusions had closed.
+EXCLUDE_RADIUS_M = 20
 
 BICYCLE_TYPE_FOR_PROFILE = {"road": "Road", "gravel": "Cross", "mountain": "Mountain", "hybrid": "Hybrid"}
 
@@ -399,7 +403,9 @@ class ValhallaClient:
             "directions_options": {"units": "kilometers", "language": "en-US"},
         }
         if exclude:
-            body["exclude_locations"] = [{"lat": lat, "lon": lon} for lat, lon in exclude]
+            # Every road within the radius, not only the nearest: a cycle track and the
+            # carriageway beside it are the same street to a rider.
+            body["exclude_locations"] = [{"lat": lat, "lon": lon, "radius": EXCLUDE_RADIUS_M} for lat, lon in exclude]
         if alternates > 0:
             body["alternates"] = alternates
         payload = await self._post(client, "route", body)

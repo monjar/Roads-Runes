@@ -339,3 +339,40 @@ async def test_a_destination_up_a_dead_end_may_turn_back_after_all(app, explorer
     first, then = router.types[0], router.types[1]
     assert "break_through" in first and "through" in first
     assert "break_through" not in then and "through" not in then and then.count("break") == 3
+
+
+@pytest.mark.anyio
+async def test_an_offset_point_on_the_way_out_is_left_out_of_the_second_try(app, explorer_client, reading, places):
+    """Rotherhithe to Greenwich on real roads: the plain way there already bowed to
+    the offset point's side, so the way back through it met the way out again."""
+
+    class OutThroughTheOffset(SyntheticRouter):
+        def __init__(self) -> None:
+            self.requests: list[EngineRequest] = []
+
+        async def route(self, request: EngineRequest):
+            self.requests.append(request)
+            types = request.types()
+            if "through" in types and "break_through" in types:
+                o, d, spot = request.points[0], request.points[types.index("break_through")], request.points[2]
+                request = EngineRequest(
+                    [o, spot, d, spot, o],
+                    request.profile,
+                    seed=request.seed,
+                    location_types=["break", "via", "break_through", "via", "break"],
+                )
+            return await super().route(request)
+
+    router = OutThroughTheOffset()
+    app.state.router = router
+    reading(parse(destination={"query": "Westminster"}, loop=True))
+    r = await explorer_client.post(
+        "/routes/generate",
+        json={"origin": {"latitude": ARAGON[0], "longitude": ARAGON[1]}, "request": "to westminster and back"},
+    )
+    assert r.status_code == 200, r.text
+    second = [request for request in router.requests if request.exclude_points]
+    assert second and all("through" not in request.types() for request in second)
+    assert len(second[0].points) == 2  # Westminster, then home
+    asked = next(card for card in r.json()["alternatives"] if card["label"] == "As asked")
+    assert asked["selfOverlap"] < 0.4

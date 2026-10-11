@@ -44,6 +44,11 @@ OFFSET_MIN_M = 600.0
 OFFSET_MAX_M = 4000.0
 OFFSET_ANCHOR_M = 400.0
 OFFSET_CUTOFF_M = 400.0
+# Two cards' offset points closer than this are the same point.
+ANCHOR_APART_M = 150.0
+# An offset point this close to the way out pulls the way back onto it: the second
+# try at the way back goes without it.
+OFFSET_ON_WAY_OUT_M = 300.0
 # An offset point the road missed: the way back passes further from it than this,
 # or rides further than this many times the straight line through it.
 SNAP_OFF_LINE_M = 120.0

@@ -820,23 +820,35 @@ def _take_side(
     return chosen
 
 
-async def _anchor(db: AsyncSession, latitude: float, longitude: float) -> tuple[float, float] | None:
+async def _anchor(
+    db: AsyncSession, latitude: float, longitude: float, avoid: list[tuple[float, float]] | None = None
+) -> tuple[float, float] | None:
     """The nearest place within 400 m that sits on a street, so a point placed by
-    arithmetic lands on a road and not in the river or the middle of a park."""
+    arithmetic lands on a road and not in the river or the middle of a park. A place
+    another card already aims for (`avoid`) is passed over: two cards through one
+    point are one card."""
     for poi in await discoveries_nearby(db, latitude, longitude, shapes.OFFSET_ANCHOR_M, limit=30):
-        if poi.category not in ("NATURE", "TRAIL", "VIEWPOINT"):
-            return poi.latitude, poi.longitude
+        if poi.category in ("NATURE", "TRAIL", "VIEWPOINT"):
+            continue
+        if any(haversine_m(poi.latitude, poi.longitude, lat, lon) < shapes.ANCHOR_APART_M for lat, lon in avoid or []):
+            continue
+        return poi.latitude, poi.longitude
     return None
 
 
 async def _offset_spot(
-    db: AsyncSession, start: Coordinate, destination: Coordinate, side: int, factor: float
+    db: AsyncSession,
+    start: Coordinate,
+    destination: Coordinate,
+    side: int,
+    factor: float,
+    avoid: list[tuple[float, float]] | None = None,
 ) -> tuple[float, float]:
     """The offset point for a way back: off the middle of the line, on `side`, moved
     onto a place nearby when there is one (the engine gets a 400 m search cutoff)."""
     direct = haversine_m(start.latitude, start.longitude, destination.latitude, destination.longitude)
     spot = _offset_point(start, destination, 0.5, side * shapes.offset_distance_m(direct, factor))
-    return await _anchor(db, *spot) or spot
+    return await _anchor(db, *spot, avoid) or spot
 
 
 async def _return_side(db: AsyncSession, start: Coordinate, destination: Coordinate, seed: int) -> int:
@@ -1238,9 +1250,13 @@ async def _loop_card(
     first: bool,
     *,
     direct: bool = False,
+    mirror: bool = True,
 ) -> _Card | None:
     """A loop out to a destination and back another way, checked twice: that the
-    offset point was reached, and that the way back is not the way out again."""
+    offset point was reached, and that the way back is not the way out again.
+
+    `mirror=False` is for a card whose point is being on its own side ("The long
+    way", "Other stops"): mirrored, it would be the first card again."""
     plan = cards.plan
     got = await _shape_route(cards, variant, index, shape, label, first)
     if got is None:
@@ -1252,11 +1268,12 @@ async def _loop_card(
         # nearer the line when the other side carries the way out's stops; then
         # without it (`_shape_route` drops it when the retry fails).
         side, factor = shape.offset_side, shape.offset_factor
-        if shape.out_stops:
+        if shape.out_stops or not mirror:
             factor *= 0.6
         else:
             side = -side
-        spot = await _offset_spot(plan.db, plan.start, plan.destination, side, factor)
+        missed = [shape.offset] if shape.offset else None
+        spot = await _offset_spot(plan.db, plan.start, plan.destination, side, factor, missed)
         retry = await _shape_route(
             cards, variant, index, replace(shape, offset=spot, offset_side=side, offset_factor=factor), label, False
         )
@@ -1280,6 +1297,10 @@ async def _loop_card(
             manoeuvres=[(i["latitude"], i["longitude"]) for i in out.instructions if i.get("latitude") is not None],
         )
         if avoid:
+            if shape.offset is not None and _near_line(shape.offset, out.coordinates, shapes.OFFSET_ON_WAY_OUT_M):
+                # The offset point sits on the way out (the plain way there already
+                # bows that side): through it, the way back must meet the way out.
+                shape = shape.without_offset()
             points, types, cutoffs = shape.back()
             back_request = _request_for(
                 plan,
@@ -1298,6 +1319,10 @@ async def _loop_card(
                 if joined_retrace < retrace:
                     er, retrace = joined, joined_retrace
     return _Card(label, variant, er, request, direct=direct, self_overlap=retrace)
+
+
+def _near_line(point: tuple[float, float], coords: list[list[float]], within_m: float) -> bool:
+    return any(haversine_m(point[0], point[1], c[1], c[0]) <= within_m for c in coords)
 
 
 def _roles(variants: list[Variant]) -> tuple[Variant, Variant, Variant]:
@@ -1364,7 +1389,8 @@ def _loop_destination_slots(
         return main_shape, chosen
 
     async def cheapest() -> tuple[shapes.LoopShape, list[Discovery]] | None:
-        spot = await _offset_spot(plan.db, plan.start, destination, side, shapes.DIRECT_OFFSET_FACTOR)
+        taken = [main_shape.offset] if main_shape.offset else None
+        spot = await _offset_spot(plan.db, plan.start, destination, side, shapes.DIRECT_OFFSET_FACTOR, taken)
         return replace(
             main_shape,
             out_stops=(),
@@ -1424,18 +1450,21 @@ def _loop_destination_slots(
         build: Callable[[], Awaitable[tuple[shapes.LoopShape, list[Discovery]] | None]],
         *,
         direct: bool = False,
+        mirror: bool = True,
     ) -> _Candidate:
         async def make(cards: _Cards, first: bool) -> _Card | None:
             built = await build()
             if built is None:
                 return None
             shape, stops = built
-            return await _loop_card(cards, replace(variant, stops=stops), index, label, shape, first, direct=direct)
+            return await _loop_card(
+                cards, replace(variant, stops=stops), index, label, shape, first, direct=direct, mirror=mirror
+            )
 
         return _Candidate(make)
 
-    third_slot = [candidate(third, 2, shapes.OTHER_STOPS, other_stops)] if chosen and categories else []
-    third_slot.append(candidate(third, 2, shapes.LONG_WAY, long_way))
+    third_slot = [candidate(third, 2, shapes.OTHER_STOPS, other_stops, mirror=False)] if chosen and categories else []
+    third_slot.append(candidate(third, 2, shapes.LONG_WAY, long_way, mirror=False))
     return [
         [candidate(main, 0, main.label, as_asked)],
         [candidate(plain, 1, plain.label, cheapest, direct=True)],
@@ -1622,14 +1651,17 @@ def _loop_stops_slots(
     appeal_weight: float,
     max_ring_m: float | None,
 ) -> list[list[_Candidate]]:
-    """A loop through stops: as asked; Direct through the nearer half of them (a
-    round trip when that is none); and other stops, none of the first card's, turned
-    half a sector — else the third costing through the same stops."""
+    """A loop through stops: as asked; Direct through the nearer half of them, at
+    least two (a round trip under three: one stop is there and back on one road);
+    and other stops, none of the first card's, turned half a sector — else the third
+    costing through the same stops."""
     main, plain, third = _roles(variants)
     chosen = list(main.stops)
     start = plan.start
     nearest = sorted(chosen, key=lambda p: haversine_m(start.latitude, start.longitude, p.latitude, p.longitude))
-    plain = replace(_wider(plain), stops=_tour(start.latitude, start.longitude, nearest[: len(chosen) // 2]))
+    # One stop would be there and back on one road; under three, it is a plain loop.
+    fewer = max(2, math.ceil(len(chosen) / 2)) if len(chosen) >= 3 else 0
+    plain = replace(_wider(plain), stops=_tour(start.latitude, start.longitude, nearest[:fewer]))
 
     async def other_stops(cards: _Cards, first: bool) -> _Card | None:
         bearings = [bearing_deg(start.latitude, start.longitude, p.latitude, p.longitude) for p in chosen]
