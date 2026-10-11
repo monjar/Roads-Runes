@@ -89,6 +89,8 @@ class Settings(BaseSettings):
     valhalla_url: str = "https://valhalla1.openstreetmap.de"
     valhalla_api_key: str = ""
     valhalla_timeout_seconds: float = 30.0
+    # The public server's fair use is about one request a second (routing/valhalla.py Pacer).
+    valhalla_min_interval_s: float = 1.0
     # Discoveries are imported from OpenStreetMap per area on first use (discoveries/osm_import.py).
     poi_import_enabled: bool = True
     # Place names in a ride request ("a ride in Notting Hill") are resolved by these, in order.

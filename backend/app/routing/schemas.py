@@ -74,6 +74,9 @@ class RouteOptionOut(APIModel):
     questObjectiveCoverage: float
     score: float
     scoreComponents: dict[str, float] = {}
+    # 0.9.2: true when the engine's surface and road-class details could not be had, so
+    # surface, cycleway and traffic are defaults rather than measurements.
+    detailsMissing: bool = False
     pois: list[dict[str, Any]]
     coordinates: list[list[float]]
     encodedPolyline: str

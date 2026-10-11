@@ -30,7 +30,7 @@ from app.exploration.cells import cell_for
 from app.exploration.service import known_cells
 from app.quests.models import QuestInstance
 from app.quests.service import quest_out
-from app.routing import geocode
+from app.routing import budget, geocode
 from app.routing.analysis import (
     analyse_elevation,
     bounding_box,
@@ -124,6 +124,7 @@ def route_out(route: Route, components: dict[str, float] | None = None) -> Route
         questObjectiveCoverage=route.quest_objective_coverage,
         score=route.score,
         scoreComponents=components or route.request.get("scoreComponents", {}),
+        detailsMissing=bool((route.request or {}).get("detailsMissing")),
         pois=route.pois,
         coordinates=route.coordinates,
         encodedPolyline=route.encoded_polyline,
@@ -588,8 +589,10 @@ def _bearing_gap(a: float, b: float) -> float:
     return min(gap, 360 - gap)
 
 
-def _distance_to_leg(latitude: float, longitude: float, start: Coordinate, end: Coordinate) -> tuple[float, float]:
-    """Metres from the point to the start→end line, and how far along it falls (0..1).
+def _leg_frame(
+    latitude: float, longitude: float, start: Coordinate, end: Coordinate
+) -> tuple[float, float, float, float]:
+    """The point and the leg's end in metres east and north of the leg's start.
 
     Flat-earth projection around the leg's middle: over the length of a bike ride
     the error is a few metres, which a 600 m corridor does not care about.
@@ -599,11 +602,40 @@ def _distance_to_leg(latitude: float, longitude: float, start: Coordinate, end: 
     py = (latitude - start.latitude) * 110_540.0
     bx = (end.longitude - start.longitude) * lon_scale
     by = (end.latitude - start.latitude) * 110_540.0
+    return px, py, bx, by
+
+
+def _signed_offset(latitude: float, longitude: float, start: Coordinate, end: Coordinate) -> tuple[float, float]:
+    """Metres to the left (+) or right (−) of the line through start and end, and how
+    far along it the point falls (0 at the start, 1 at the end; outside either end
+    it runs past 0..1). Which side a stop is on decides whether it is on the way out
+    or the way back of a loop."""
+    px, py, bx, by = _leg_frame(latitude, longitude, start, end)
     length_sq = bx * bx + by * by
     if length_sq == 0:
         return math.hypot(px, py), 0.0
-    along = max(0.0, min(1.0, (px * bx + py * by) / length_sq))
-    return math.hypot(px - bx * along, py - by * along), along
+    return (bx * py - by * px) / math.sqrt(length_sq), (px * bx + py * by) / length_sq
+
+
+def _distance_to_leg(latitude: float, longitude: float, start: Coordinate, end: Coordinate) -> tuple[float, float]:
+    """Metres from the point to the start→end segment, and how far along it falls (0..1)."""
+    signed, along = _signed_offset(latitude, longitude, start, end)
+    clamped = max(0.0, min(1.0, along))
+    if clamped == along:
+        return abs(signed), along
+    px, py, bx, by = _leg_frame(latitude, longitude, start, end)
+    return math.hypot(px - bx * clamped, py - by * clamped), clamped
+
+
+def _offset_point(start: Coordinate, end: Coordinate, along: float, signed_m: float) -> tuple[float, float]:
+    """(lat, lon) `along` the start→end line and `signed_m` metres to its left (+) or right (−)."""
+    lon_scale = math.cos(math.radians((start.latitude + end.latitude) / 2)) * 111_320.0
+    bx = (end.longitude - start.longitude) * lon_scale
+    by = (end.latitude - start.latitude) * 110_540.0
+    length = math.hypot(bx, by) or 1.0
+    x = bx * along - by / length * signed_m
+    y = by * along + bx / length * signed_m
+    return start.latitude + y / 110_540.0, start.longitude + x / lon_scale
 
 
 async def _pick_stops_between(
@@ -689,9 +721,28 @@ async def generate(
     payload: RouteGenerateRequest,
     *,
     max_variants: int | None = None,
+    details: bool = True,
 ) -> tuple[list[tuple[Route, dict[str, float]]], dict[str, Any] | None]:
     """`max_variants` is for callers that want one route and not a choice of three:
-    every variant is an engine request, and a quest's own route needs only the first."""
+    every variant is an engine request, and a quest's own route needs only the first.
+
+    One plan, one budget of engine requests (`budget.py`). `details=False` skips the
+    surface and road-class request (the quest board's prefetch on Valhalla)."""
+    with budget.plan_budget():
+        return await _generate(db, settings, engine, llm, user, payload, max_variants=max_variants, details=details)
+
+
+async def _generate(
+    db: AsyncSession,
+    settings: Settings,
+    engine: RoutingEngine,
+    llm: LLMClient,
+    user: User,
+    payload: RouteGenerateRequest,
+    *,
+    max_variants: int | None = None,
+    details: bool = True,
+) -> tuple[list[tuple[Route, dict[str, float]]], dict[str, Any] | None]:
     profile: RiderProfile = await get_rider_profile(db, user.id)
     # How the player moves: asked for, or however they usually do. On foot there is
     # no bike to consult; the pedestrian costing and shorter distances do the work.
@@ -1008,6 +1059,7 @@ async def generate(
             heading=heading,
             costing=valhalla_costing(prefs, bike_type, allow_gravel, allow_trails, activity),
             activity=activity,
+            details=details,
         )
         try:
             engine_routes = await engine.route(request)
@@ -1049,7 +1101,14 @@ async def generate(
             er=er,
             speed_mps=speed_mps,
             pois=[p.to_dict() for p in pois],
-            request={"preferences": prefs.to_dict(), "label": label, "targetKm": target_km, "loop": loop},
+            request={
+                "preferences": prefs.to_dict(),
+                "label": label,
+                "targetKm": target_km,
+                "loop": loop,
+                # Surface and traffic below are defaults, not measurements.
+                **({"detailsMissing": True} if not er.details else {}),
+            },
             surface=surface,
             cycleway=cycle,
             traffic=traffic,
@@ -1111,6 +1170,7 @@ async def generate(
         ms_parse=ms_parse,
         ms_import=ms_import,
         ms_engine=ms_engine,
+        engine_calls=budget.used(),
     )
     return results, parsed_dict
 
@@ -1127,6 +1187,8 @@ QUEST_ROUTE_REUSE_M = 150.0
 # The board redraws a quest's route once the player has gone further than this from it.
 QUEST_ROUTE_PREFETCH_M = 750.0
 OPEN_QUEST_STATES = ("AVAILABLE", "ACCEPTED", "ACTIVE")
+# Quests the board routes ahead of time while every request queues for the public server.
+PREFETCH_ON_SHARED_ENGINE = 2
 
 
 def reanchor_quest(quest: QuestInstance, origin: Coordinate) -> None:
@@ -1152,6 +1214,8 @@ async def quest_route(
     user: User,
     quest_id: uuid.UUID,
     origin: Coordinate | None = None,
+    *,
+    details: bool = True,
 ) -> tuple[Route, dict[str, float]]:
     """The quest's route (spec §20 "suggested route"), from where the player is.
 
@@ -1193,7 +1257,7 @@ async def quest_route(
         quest.suggested_route_id = None
         # One way round, not a choice of three: each is a request to a shared engine,
         # and the planner is where the rider asks for alternatives.
-        results, _ = await generate(db, settings, engine, llm, user, payload, max_variants=1)
+        results, _ = await generate(db, settings, engine, llm, user, payload, max_variants=1, details=details)
         # The shortest way that still covers what the quest demands; failing that, the longest.
         enough = [r for r in results if r[0].distance_meters >= must_cover_m]
         pick = (
@@ -1259,7 +1323,14 @@ async def settle_quest_routes(
     Bounded by the number of routes, not by a clock: a timeout that cancelled a query
     mid-flight would leave the session unusable, and the engine's own HTTP timeout
     already caps each one.
+
+    On the public Valhalla server every request waits its turn, so the board routes
+    two quests, without the surface details, and steps aside for any rider waiting
+    on the planner (`budget.background`). The rest are routed when opened.
     """
+    shared_engine = settings.routing_engine == "valhalla"
+    if shared_engine:
+        limit = min(limit, PREFETCH_ON_SHARED_ENGINE)
     pending = [
         q
         for q in quests
@@ -1271,7 +1342,8 @@ async def settle_quest_routes(
         quest_id = quest.id
         try:
             async with db.begin_nested():
-                await quest_route(db, settings, engine, llm, user, quest_id, origin)
+                with budget.background():
+                    await quest_route(db, settings, engine, llm, user, quest_id, origin, details=not shared_engine)
         except Exception as exc:  # noqa: BLE001 - the board is more important than one route
             log.error("quest_route_prefetch_failed", quest=str(quest_id), error=str(exc)[:200])
             # The rollback expired what the attempt touched; the board is about to
