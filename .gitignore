@@ -7,6 +7,7 @@ __pycache__/
 .ruff_cache/
 test.db
 *.db-journal
+backend/scripts/.route_diversity_cache/
 
 # Env / secrets
 .env
