@@ -51,7 +51,11 @@ final class QuickStartCoordinator {
 
     var route: RouteOption? { plan?.route }
     var quest: Quest? { plan?.quest }
-    var activity: Activity { plan?.activity ?? container?.session.defaultActivity ?? .ride }
+    var activity: Activity {
+        if case .roam(let asked) = request, !asked.isUnknown { return asked }
+        let usual = plan?.activity ?? container?.session.defaultActivity ?? .ride
+        return usual.isUnknown ? .ride : usual
+    }
 
     @ObservationIgnored private weak var container: AppContainer?
     @ObservationIgnored private var waiting: [(start: QuickStart, autoStart: Bool, done: CheckedContinuation<QuickStartOutcome, Never>)] = []
@@ -96,6 +100,21 @@ final class QuickStartCoordinator {
         let mine = generation
         request = start
         plan = nil
+        // Ride anywhere (0.9.2): nothing to plan. The card says what it is and has
+        // Start; asked for on the wrist, it starts at once.
+        if case .roam = start {
+            guard autoStart else {
+                phase = .ready
+                isPresented = true
+                return .ready
+            }
+            phase = .planning
+            guard await ready(container), mine == generation else {
+                phase = .failed(QuickStartError.notSignedIn.line)
+                return .failed(QuickStartError.notSignedIn.line)
+            }
+            return await startRide() ? .started : .failed(errorLine)
+        }
         phase = .planning
         isPresented = true
         do {
@@ -120,6 +139,7 @@ final class QuickStartCoordinator {
 
     /// Downloads the route, closes the card and starts the journey.
     func startRide() async -> Bool {
+        if case .roam(let asked) = request { return await startRoam(asked) }
         guard let container, let plan, !isStarting else { return false }
         isStarting = true
         defer { isStarting = false }
@@ -147,6 +167,24 @@ final class QuickStartCoordinator {
             isPresented = true
             return false
         }
+    }
+
+    /// Ride anywhere (0.9.2): the journey with no route starts, on the rider's usual
+    /// activity when none was asked for, with their bike for a ride.
+    private func startRoam(_ asked: Activity) async -> Bool {
+        guard let container, !isStarting else { return false }
+        isStarting = true
+        defer { isStarting = false }
+        let usual = container.session.defaultActivity
+        let activity = asked.isUnknown ? (usual.isUnknown ? .ride : usual) : asked
+        let bike = activity == .ride ? await defaultBike(container) : nil
+        isPresented = false
+        await container.rideRecorder.startRoam(activity: activity, bikeId: bike)
+        container.analytics.track(.rideStarted, properties: ["from": "quickStart", "roam": "true"])
+        phase = .idle
+        plan = nil
+        request = nil
+        return container.rideRecorder.isActive
     }
 
     func dismiss() {
@@ -196,6 +234,9 @@ final class QuickStartCoordinator {
             guard [.available, .accepted, .active].contains(found.status) else { throw QuickStartError.questOver }
             let route = try await container.api.questRoute(id: id, from: origin)
             return Plan(route: route, quest: found, activity: Self.activity(of: found, or: usual))
+        case .roam:
+            // Never planned: `run` starts it before any route is asked for.
+            throw QuickStartError.noRoute
         }
     }
 

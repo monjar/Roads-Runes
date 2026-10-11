@@ -72,9 +72,14 @@ public struct WatchIdleInfo: Codable, Hashable, Sendable {
     public var units: String?
     /// When the phone made it: a streak not kept that day lapses the day after.
     public var updatedAt: Date?
+    /// The phone can start a journey with no route (0.9.2, the server's `ride_anywhere`):
+    /// the Watch offers "Ride anywhere". Nil from an older phone, which would refuse it.
+    public var rideAnywhere: Bool?
 
     public init(streakDays: Int = 0, streakActiveToday: Bool = false, bounty: Bounty? = nil, quests: [StartableQuest] = [],
-                activity: String? = nil, pledge: Pledge? = nil, units: String? = nil, updatedAt: Date? = Date()) {
+                activity: String? = nil, pledge: Pledge? = nil, units: String? = nil, updatedAt: Date? = Date(),
+                rideAnywhere: Bool? = nil) {
+        self.rideAnywhere = rideAnywhere
         self.streakDays = max(0, streakDays)
         self.streakActiveToday = streakActiveToday
         self.bounty = bounty
@@ -86,7 +91,7 @@ public struct WatchIdleInfo: Codable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case streakDays, streakActiveToday, bounty, quests, activity, pledge, units, updatedAt
+        case streakDays, streakActiveToday, bounty, quests, activity, pledge, units, updatedAt, rideAnywhere
     }
 
     /// Lenient: what is missing is nothing, so any phone's shape is read.
@@ -100,9 +105,13 @@ public struct WatchIdleInfo: Codable, Hashable, Sendable {
             activity: try container.decodeIfPresent(String.self, forKey: .activity),
             pledge: try container.decodeIfPresent(Pledge.self, forKey: .pledge),
             units: try container.decodeIfPresent(String.self, forKey: .units),
-            updatedAt: try container.decodeIfPresent(Date.self, forKey: .updatedAt)
+            updatedAt: try container.decodeIfPresent(Date.self, forKey: .updatedAt),
+            rideAnywhere: try container.decodeIfPresent(Bool.self, forKey: .rideAnywhere)
         )
     }
+
+    /// Whether the Watch offers "Ride anywhere".
+    public var offersRideAnywhere: Bool { rideAnywhere ?? false }
 
     public var activityKind: Activity? {
         guard let activity else { return nil }
@@ -161,7 +170,7 @@ public extension WatchIdleInfo {
     /// `icon` and `questIcon` name `GameIcon`s: the phone knows the art, Core does not.
     static func make(
         character: Character?, objects: [WorldObject], quests: [Quest], position: Coordinate?, activity: Activity,
-        units: Units, pledge: Pledge? = nil, now: Date = Date(),
+        units: Units, pledge: Pledge? = nil, rideAnywhere: Bool = false, now: Date = Date(),
         icon: (WorldObject) -> String? = { _ in nil }, questIcon: (Quest) -> String? = { _ in nil }
     ) -> WatchIdleInfo {
         let bounties = objects.filter { $0.isBounty && $0.status == .spawned && $0.expiresAt > now }
@@ -203,7 +212,8 @@ public extension WatchIdleInfo {
             activity: activity.isUnknown ? nil : activity.rawValue,
             pledge: pledge,
             units: units.isUnknown ? nil : units.rawValue,
-            updatedAt: now
+            updatedAt: now,
+            rideAnywhere: rideAnywhere ? true : nil
         )
     }
 }

@@ -111,6 +111,30 @@ struct QuickQuestIntent: AppIntent {
     }
 }
 
+/// "Ride anywhere" (0.9.2): a journey with no route. Opens on the card that says
+/// what it is, with Start.
+struct RideAnywhereIntent: AppIntent {
+    static let title: LocalizedStringResource = "Ride anywhere"
+    static let description: IntentDescription? = IntentDescription("No route. Every chest, creature and place on the way counts.")
+    static let openAppWhenRun = true
+
+    @Parameter(title: "Journey")
+    var kind: JourneyKind?
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("\(\.$kind) anywhere")
+    }
+
+    /// With no activity said, the coordinator uses the player's usual one.
+    var quickStart: QuickStart { .roam(activity: kind?.activity ?? .unknown) }
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        QuickStartCoordinator.shared.handle(quickStart, autoStart: false)
+        return .result()
+    }
+}
+
 /// What Siri listens for, and what the Shortcuts app and the Action Button list.
 struct RoadsAndRunesShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
@@ -142,6 +166,16 @@ struct RoadsAndRunesShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Sealed quest",
             systemImageName: "hourglass"
+        )
+        AppShortcut(
+            intent: RideAnywhereIntent(),
+            phrases: [
+                "Ride anywhere with \(.applicationName)",
+                "\(\.$kind) anywhere with \(.applicationName)",
+                "Go anywhere in \(.applicationName)",
+            ],
+            shortTitle: "Ride anywhere",
+            systemImageName: "location.north.line"
         )
     }
 }

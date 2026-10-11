@@ -29,11 +29,17 @@ struct QuickStartSheet: View {
                             .accessibilityIdentifier("quickStart.error")
                     }
             case .ready:
-                if let plan = coordinator.plan { ready(plan) }
+                if let plan = coordinator.plan {
+                    ready(plan)
+                } else if coordinator.request?.isRoam == true {
+                    roam
+                }
             case .planning, .idle:
                 planning
             }
         }
+        // Ride anywhere (0.9.2) is a small card: there is no route to show.
+        .presentationDetents(coordinator.request?.isRoam == true ? [.height(300)] : [.large])
         .presentationDragIndicator(.visible)
         .sheet(item: $export) { ExportFileSheet(request: $0) }
     }
@@ -58,6 +64,39 @@ struct QuickStartSheet: View {
         }
         .padding(.horizontal, 20)
         .padding(.top, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: Ride anywhere (0.9.2)
+
+    /// What a journey with no route is, and Start.
+    private var roam: some View {
+        let activity = coordinator.activity
+        return VStack(alignment: .leading, spacing: 14) {
+            header
+            Text(LoreCopy.anywhere(activity))
+                .font(Theme.Typography.voice(30, relativeTo: .largeTitle))
+                .foregroundStyle(Theme.Colors.ink)
+            Text(LoreCopy.anywhereLine)
+                .font(Theme.Typography.text(15)).foregroundStyle(Theme.Colors.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("quickStart.roamLine")
+            Spacer(minLength: 0)
+            Button {
+                Task { _ = await coordinator.startRide() }
+            } label: {
+                HStack(spacing: 10) {
+                    if coordinator.isStarting { ProgressView().tint(Theme.Colors.cream) } else { Image(systemName: "play.fill") }
+                    Text("Start \(activity.noun)")
+                }
+            }
+            .buttonStyle(.primary)
+            .disabled(coordinator.isStarting || container.rideRecorder.isActive)
+            .accessibilityIdentifier("quickStart.roamStart")
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -142,6 +181,7 @@ struct QuickStartSheet: View {
         case .bounty: return "Today's bounty"
         case .sealed(let minutes): return "Sealed quest · \(minutes) min"
         case .quest: return "Quest"
+        case .roam: return "No route"
         case nil: return "Quick start"
         }
     }
@@ -151,6 +191,7 @@ struct QuickStartSheet: View {
         case .loop(let minutes, let activity): return "A \(minutes)-minute \(activity == .unknown ? "loop" : activity.noun)"
         case .bounty: return "Off to the bounty"
         case .sealed: return "Sealed quest"
+        case .roam(let activity): return LoreCopy.anywhere(activity.isUnknown ? coordinator.activity : activity)
         case .quest, nil: return "Your route"
         }
     }
@@ -160,7 +201,7 @@ struct QuickStartSheet: View {
         case .sealed: return "Sealed quest"
         case .quest: return "Quest route"
         case .bounty: return "Bounty"
-        case .loop, nil: return nil
+        case .loop, .roam, nil: return nil
         }
     }
 

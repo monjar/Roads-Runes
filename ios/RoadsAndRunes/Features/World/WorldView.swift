@@ -159,22 +159,47 @@ struct WorldView: View {
                         }
                         IconCircleButton(symbol: "location.fill", size: 48) { model.locateMe() }
                             .accessibilityLabel("Show my location")
-                        // The main thing to do, said in words: an icon alone did not say it.
-                        Button { planningFreeRide = true } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
-                                    .font(.system(size: 18, weight: .bold))
-                                Text("Plan a \(container.session.defaultActivity.noun)")
-                                    .font(Theme.Typography.text(15, .bold))
+                        HStack(spacing: 10) {
+                            // Ride anywhere (0.9.2): a journey with no route, behind the server's flag.
+                            if container.session.isEnabled(FeatureFlag.rideAnywhere) {
+                                Button {
+                                    QuickStartCoordinator.shared.handle(.roam(activity: container.session.defaultActivity), autoStart: false)
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "location.north.line.fill")
+                                            .font(.system(size: 16, weight: .bold))
+                                        Text(LoreCopy.anywhere(container.session.defaultActivity))
+                                            .font(Theme.Typography.text(15, .bold))
+                                            .lineLimit(1)
+                                    }
+                                    .foregroundStyle(Theme.Colors.terracottaDeep)
+                                    .padding(.horizontal, 16)
+                                    .frame(height: 52)
+                                    .background(Theme.Colors.cream, in: Capsule())
+                                    .overlay(Capsule().stroke(Theme.Colors.terracotta.opacity(0.5), lineWidth: 1.5))
+                                    .shadow(color: Theme.Colors.ink.opacity(0.18), radius: 5, y: 2)
+                                }
+                                .buttonStyle(.pressable)
+                                .accessibilityIdentifier("world.rideAnywhere")
                             }
-                            .foregroundStyle(Theme.Colors.cream)
-                            .padding(.horizontal, 18)
-                            .frame(height: 52)
-                            .background(Theme.Colors.terracotta, in: Capsule())
-                            .shadow(color: Theme.Colors.ink.opacity(0.25), radius: 6, y: 3)
+                            // The main thing to do, said in words: an icon alone did not say it.
+                            Button { planningFreeRide = true } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
+                                        .font(.system(size: 18, weight: .bold))
+                                    Text("Plan a \(container.session.defaultActivity.noun)")
+                                        .font(Theme.Typography.text(15, .bold))
+                                        .lineLimit(1)
+                                }
+                                .foregroundStyle(Theme.Colors.cream)
+                                .padding(.horizontal, 18)
+                                .frame(height: 52)
+                                .background(Theme.Colors.terracotta, in: Capsule())
+                                .shadow(color: Theme.Colors.ink.opacity(0.25), radius: 6, y: 3)
+                            }
+                            .buttonStyle(.pressable)
+                            .accessibilityIdentifier("world.plan")
                         }
-                        .buttonStyle(.pressable)
-                        .accessibilityIdentifier("world.plan")
                     }
                 }
                 .padding(.horizontal, 16)

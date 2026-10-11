@@ -191,6 +191,70 @@ final class RideAnywhereAppTests: XCTestCase {
         recorder.discard()
     }
 
+    // MARK: - Entry points
+
+    private func coordinator(_ api: MockAPI = MockAPI()) async -> (AppContainer, QuickStartCoordinator) {
+        let container = AppContainer(api: api, inMemory: true)
+        await container.session.bootstrap()
+        let coordinator = QuickStartCoordinator(container: container)
+        coordinator.locate = { _ in SampleData.origin }
+        coordinator.patience = .milliseconds(300)
+        return (container, coordinator)
+    }
+
+    /// From the World tab, Siri or a link: the card says what it is, and nothing
+    /// starts until Start. No route is asked for.
+    func testRideAnywhereShowsItsCardAndStartsOnStart() async throws {
+        let api = MockAPI()
+        let (container, coordinator) = await coordinator(api)
+        XCTAssertTrue(container.session.isEnabled(FeatureFlag.rideAnywhere), "the mock server has it on, for previews and UI tests")
+        let outcome = await coordinator.run(.roam(activity: .run), autoStart: false)
+        XCTAssertEqual(outcome, .ready)
+        XCTAssertTrue(coordinator.isPresented)
+        XCTAssertNil(coordinator.plan, "nothing planned")
+        XCTAssertEqual(coordinator.activity, .run)
+        XCTAssertFalse(container.rideRecorder.isActive)
+        XCTAssertTrue(api.rideCreates.isEmpty)
+
+        let started = await coordinator.startRide()
+        XCTAssertTrue(started)
+        XCTAssertTrue(container.rideRecorder.isActive)
+        XCTAssertTrue(container.rideRecorder.isRoaming)
+        XCTAssertFalse(coordinator.isPresented)
+        XCTAssertEqual(coordinator.phase, .idle)
+        XCTAssertEqual(api.rideCreates.last?.activity, .run)
+        XCTAssertNil(api.rideCreates.last?.routeId)
+        container.rideRecorder.discard()
+    }
+
+    /// From the wrist it starts at once, on the rider's usual activity when none was asked for.
+    func testFromTheWatchARoamStartsWithoutATap() async throws {
+        let api = MockAPI()
+        let (container, coordinator) = await coordinator(api)
+        let start = try XCTUnwrap(WatchStartRequest.roam(activity: nil).quickStart(defaultActivity: .ride))
+        let outcome = await coordinator.run(start, autoStart: true)
+        XCTAssertEqual(outcome, .started)
+        XCTAssertTrue(container.rideRecorder.isRoaming)
+        XCTAssertEqual(api.rideCreates.last?.activity, container.session.defaultActivity.isUnknown ? .ride : container.session.defaultActivity)
+        XCTAssertEqual(api.rideCreates.last?.bikeId == nil, container.rideRecorder.activity != .ride, "a ride takes the usual bike")
+        // A second one while it is under way is refused.
+        let again = await coordinator.run(.roam(activity: .ride), autoStart: true)
+        XCTAssertEqual(again, .failed("A journey is already under way. End it first."))
+        container.rideRecorder.discard()
+    }
+
+    func testTheIntentAndTheLinkAskForARoam() throws {
+        XCTAssertEqual(RideAnywhereIntent().quickStart, .roam(activity: .unknown))
+        var walk = RideAnywhereIntent()
+        walk.kind = .walk
+        XCTAssertEqual(walk.quickStart, .roam(activity: .walk))
+        var heard: [QuickStart] = []
+        let inbox = DeepLinkInbox()
+        inbox.quickStart = { heard.append($0) }
+        XCTAssertTrue(inbox.open(try XCTUnwrap(URL(string: "roadsandrunes://quickstart?kind=roam&activity=RIDE"))))
+        XCTAssertEqual(heard, [.roam(activity: .ride)])
+    }
+
     func testAJourneyWithNoRouteIsOnTheLockScreen() async throws {
         let container = AppContainer(api: MockAPI(), inMemory: true)
         await container.session.bootstrap()

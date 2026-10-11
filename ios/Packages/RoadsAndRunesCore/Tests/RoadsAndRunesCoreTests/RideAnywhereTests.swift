@@ -282,6 +282,54 @@ final class RideAnywhereTests: XCTestCase {
         XCTAssertEqual(Endpoints.worldAround(near: start, rideId: nil).query.count, 2)
     }
 
+    // MARK: - Starting one
+
+    func testARoamIsAQuickStartWithADeepLinkThere_andBack() throws {
+        let run = QuickStart.roam(activity: .run)
+        XCTAssertTrue(run.isRoam)
+        XCTAssertNil(run.minutes)
+        XCTAssertNil(run.loopDistanceKm)
+        let url = DeepLink.quickStart(run).url
+        XCTAssertEqual(url.absoluteString, "roadsandrunes://quickstart?kind=roam&activity=RUN")
+        XCTAssertEqual(DeepLink(url: url), .quickStart(run))
+        // With no activity it is the rider's usual one, said as `.unknown`.
+        let usual = DeepLink.quickStart(.roam(activity: .unknown)).url
+        XCTAssertEqual(usual.absoluteString, "roadsandrunes://quickstart?kind=roam")
+        XCTAssertEqual(DeepLink(url: try XCTUnwrap(URL(string: "roadsandrunes://quickstart?kind=ROAM"))), .quickStart(.roam(activity: .unknown)))
+        XCTAssertEqual(DeepLink(url: try XCTUnwrap(URL(string: "roadsandrunes://quickstart?kind=roam&activity=hop"))),
+                       .quickStart(.roam(activity: .unknown)), "an activity it does not know is the usual one")
+        XCTAssertFalse(QuickStart.sealed(minutes: 40).isRoam)
+    }
+
+    func testTheWatchAsksForARoamAndAnOlderPhoneCanRefuseIt() throws {
+        var asked = WatchStartRequest.roam(activity: .walk)
+        asked.requestedAt = t0  // whole seconds: the messages carry times to the second
+        XCTAssertEqual(asked.kind, "ROAM")
+        let message = try WatchMessages.startRequest(asked)
+        let back = try WatchMessages.startRequest(from: message)
+        XCTAssertEqual(back, asked)
+        XCTAssertEqual(back.quickStart(defaultActivity: .ride, at: asked.requestedAt ?? Date()), .roam(activity: .walk))
+        XCTAssertEqual(WatchStartRequest.roam(activity: nil).quickStart(defaultActivity: .ride), .roam(activity: .unknown))
+        // Heard too late, it starts nothing.
+        let late = WatchStartRequest(kind: WatchStartRequest.roam, requestedAt: Date().addingTimeInterval(-600))
+        XCTAssertNil(late.quickStart(defaultActivity: .ride))
+        // An older phone knows the kinds it knows: an unknown one is refused, not an error.
+        XCTAssertNil(WatchStartRequest(kind: "TELEPORT").quickStart(defaultActivity: .ride))
+    }
+
+    func testNextUpSaysWhenTheWristMayOfferARoam() throws {
+        let made = WatchIdleInfo.make(character: nil, objects: [], quests: [], position: nil, activity: .run, units: .metric,
+                                      rideAnywhere: true)
+        XCTAssertTrue(made.offersRideAnywhere)
+        let back = try JSONCoding.makeDecoder().decode(WatchIdleInfo.self, from: JSONCoding.encode(made))
+        XCTAssertEqual(back.rideAnywhere, true)
+        let off = WatchIdleInfo.make(character: nil, objects: [], quests: [], position: nil, activity: .run, units: .metric)
+        XCTAssertNil(off.rideAnywhere, "nothing said when it cannot")
+        // From an older phone: no word, no button.
+        let older = try JSONCoding.makeDecoder().decode(WatchIdleInfo.self, from: Data(#"{"streakDays": 3}"#.utf8))
+        XCTAssertFalse(older.offersRideAnywhere)
+    }
+
     func testTheButtonSaysTheActivity() {
         XCTAssertEqual(LoreCopy.anywhere(.ride), "Ride anywhere")
         XCTAssertEqual(LoreCopy.anywhere(.run), "Run anywhere")

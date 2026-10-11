@@ -145,8 +145,34 @@ final class StartFlowTests: XCTestCase {
         XCTAssertEqual(store.activity, .walk)
         XCTAssertEqual(store.worldMarks.map(\.id), [chest.id])
         XCTAssertNil(store.currentInstruction)
+    }
 
-        // A planned route's summary is no roam.
+    /// "Ride anywhere" on the wrist: a ROAM request goes to the phone, and the roam's
+    /// summary takes the Watch to the ride.
+    func testARoamAskedForOnTheWristGoesToTheRide() throws {
+        let store = RideStore()
+        let link = FakeLink()
+        let phone = PhoneSessionService(store: store, link: link)
+        var request = WatchStartRequest.roam(activity: .run)
+        request.requestedAt = Date(timeIntervalSince1970: 1_790_000_000)
+        XCTAssertTrue(phone.requestStart(request))
+        XCTAssertTrue(store.isPlanning)
+        let asked = try WatchMessages.startRequest(from: try XCTUnwrap(link.sent.first))
+        XCTAssertEqual(asked.kind, WatchStartRequest.roam)
+        XCTAssertEqual(asked.activity, "RUN")
+        phone.apply(PhoneSessionService.read(try WatchMessages.routeSummary(.roaming(activity: .run, worldMarks: []))))
+        XCTAssertNil(store.planning)
+        XCTAssertTrue(store.hasRoute && store.isRoaming, "the ride pages, as a free journey")
+
+        // Next up offers it only when the phone says it can.
+        store.apply(idle: WatchIdleInfo(streakDays: 1, updatedAt: Date(timeIntervalSince1970: 1_000), rideAnywhere: true))
+        XCTAssertEqual(store.idle?.offersRideAnywhere, true)
+        store.apply(idle: WatchIdleInfo(streakDays: 1, updatedAt: Date(timeIntervalSince1970: 2_000)))
+        XCTAssertEqual(store.idle?.offersRideAnywhere, false)
+    }
+
+    /// A planned route's summary is no roam.
+    func testAPlannedRouteIsNoRoam() {
         let planned = RideStore()
         planned.apply(summary: WatchRouteSummary(questTitle: nil, instructions: [], objectives: [], totalDistanceMeters: 10_000,
                                                  routeCoordinates: [[-0.04, 51.49], [-0.03, 51.5]]))
