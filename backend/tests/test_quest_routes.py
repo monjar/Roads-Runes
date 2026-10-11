@@ -254,3 +254,34 @@ def test_a_route_does_not_go_back_to_what_is_done():
         ]
     )
     assert [(lat, lon) for lat, lon, _ in _quest_targets(quest).points] == [(51.48, -0.02)]
+
+
+@pytest.mark.anyio
+async def test_on_the_shared_engine_the_board_routes_two_quests_and_waits_its_turn(
+    app, explorer_client: AsyncClient, settings, monkeypatch
+):
+    """Every request to the public Valhalla server queues; a board of five quests at
+    two requests each used to keep a rider's plan waiting ten seconds or more."""
+    from app.routing import budget
+    from app.routing.engine import SyntheticRouter
+
+    asked: list[tuple[bool, bool]] = []
+
+    class Watching(SyntheticRouter):
+        async def route(self, request):
+            asked.append((request.details, budget.in_background()))
+            routes = await super().route(request)
+            for route in routes:
+                route.details = route.details if request.details else {}
+            return routes
+
+    monkeypatch.setattr(settings, "routing_engine", "valhalla")
+    app.state.router = Watching()
+    board = (await explorer_client.get("/quests", params={"latitude": ORIGIN[0], "longitude": ORIGIN[1]})).json()
+    routed = [q for q in board["items"] if q["suggestedRouteId"]]
+    assert 1 <= len(routed) <= 2 < len(board["items"]), (len(routed), len(board["items"]))
+    assert asked and all(not details and background for details, background in asked)
+
+    # A route drawn without its details says so rather than passing defaults off as measured.
+    route = (await explorer_client.get(f"/quests/{routed[0]['id']}/route")).json()
+    assert route["detailsMissing"] is True

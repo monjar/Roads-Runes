@@ -270,3 +270,220 @@ async def test_valhalla_by_name_is_valhalla_even_when_it_was_slow_at_boot(monkey
     monkeypatch.setattr(engine.GraphHopperClient, "healthy", down)
     assert (await engine.build_engine(Settings(routing_engine="valhalla"))).name == "valhalla"
     assert (await engine.build_engine(Settings(routing_engine="auto"))).name == "synthetic"
+
+
+# --- 0.9.2: loops that come back another way, a budget, a pace ---------------------
+
+
+def two_leg_payload() -> dict:
+    """A trip with a break in the middle: two legs, as a break_through point gives."""
+    first = route_payload()["trip"]["legs"][0]
+    second = {**route_payload()["trip"]["legs"][0], "shape": encode_polyline(list(reversed(SHAPE)), precision=6)}
+    return {"trip": {"summary": {"length": 0.8, "time": 200.0}, "legs": [first, second]}}
+
+
+async def test_location_types_exclusions_and_cutoffs_reach_the_body():
+    bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json=two_leg_payload())
+
+    request = EngineRequest(
+        [(51.5, -0.1), (51.503, -0.102), (51.502, -0.105), (51.5, -0.1)],
+        "hybrid",
+        location_types=["break", "break_through", "through", "break"],
+        exclude_points=[(51.501, -0.1005), (51.502, -0.101)],
+        search_cutoff_m=[None, None, 400.0, None],
+        details=False,
+    )
+    [route] = await client_for(handler).route(request)
+    [body] = bodies
+    assert [loc["type"] for loc in body["locations"]] == ["break", "break_through", "through", "break"]
+    assert body["locations"][2]["search_cutoff"] == 400
+    assert all("search_cutoff" not in loc for i, loc in enumerate(body["locations"]) if i != 2)
+    assert body["exclude_locations"] == [
+        {"lat": 51.501, "lon": -0.1005, "radius": 20},
+        {"lat": 51.502, "lon": -0.101, "radius": 20},
+    ]
+    assert "alternates" not in body
+    # Where the first leg ends, in the joined line.
+    assert route.leg_boundaries == [len(SHAPE) - 1]
+    assert [i["sign"] for i in route.instructions].count("WAYPOINT") == 1
+
+
+async def test_two_points_can_ask_for_alternates():
+    bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        payload = route_payload()
+        payload["alternates"] = [route_payload(0.5), route_payload(0.6)]
+        return httpx.Response(200, json=payload)
+
+    routes = await client_for(handler).route(
+        EngineRequest([(51.5, -0.1), (51.503, -0.102)], "hybrid", alternatives=3, details=False)
+    )
+    assert bodies[0]["alternates"] == 2
+    assert [r.distance_m for r in routes] == [400.0, 500.0, 600.0]
+
+
+async def test_details_are_fetched_only_when_asked_for():
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        return httpx.Response(200, json=route_payload() if request.url.path == "/route" else TRACE)
+
+    client = client_for(handler)
+    request = EngineRequest([(51.5, -0.1), (51.503, -0.102)], "gravel", details=False)
+    [route] = await client.route(request)
+    assert paths == ["/route"] and route.details == {}
+    await client.details(route, request)
+    assert paths == ["/route", "/trace_attributes"]
+    assert route.details["surface"] == [[0, 1, "asphalt"], [1, 3, "gravel"]]
+    # Asked twice, fetched once.
+    await client.details(route, request)
+    assert paths == ["/route", "/trace_attributes"]
+
+
+async def test_every_attempt_is_charged_to_the_plan(monkeypatch):
+    from app.routing import budget, valhalla
+
+    monkeypatch.setattr(valhalla, "RETRY_DELAYS_S", (0.0, 0.0))
+    answers = iter([httpx.Response(503, text="busy")])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/route":
+            return next(answers, httpx.Response(200, json=route_payload()))
+        return httpx.Response(200, json=TRACE)
+
+    with budget.plan_budget(10) as plan:
+        await client_for(handler).route(EngineRequest([(51.5, -0.1), (51.503, -0.102)], "gravel"))
+    assert plan.used == 3  # a refused route, the route, its details
+
+
+async def test_the_details_are_asked_again_only_while_the_plan_can_pay(monkeypatch):
+    from app.routing import budget, valhalla
+
+    monkeypatch.setattr(valhalla, "RETRY_DELAYS_S", (0.0, 0.0))
+    traces = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal traces
+        if request.url.path == "/route":
+            return httpx.Response(200, json=route_payload())
+        traces += 1
+        return httpx.Response(503, text="busy") if traces == 1 else httpx.Response(200, json=TRACE)
+
+    with budget.plan_budget(10):
+        [route] = await client_for(handler).route(EngineRequest([(51.5, -0.1), (51.503, -0.102)], "gravel"))
+    assert traces == 2 and route.details  # retried, and measured
+
+    traces = 0
+    with budget.plan_budget(2):  # the route and one try at the details, nothing over
+        [route] = await client_for(handler).route(EngineRequest([(51.5, -0.1), (51.503, -0.102)], "gravel"))
+    assert traces == 1 and route.details == {}
+
+
+async def test_requests_wait_their_turn():
+    """The public server asks for about one request a second, from every caller."""
+    import asyncio
+    import time
+
+    sent: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(time.monotonic())
+        return httpx.Response(200, json=route_payload())
+
+    client = ValhallaClient("https://valhalla.test", transport=httpx.MockTransport(handler), min_interval_s=0.15)
+    request = EngineRequest([(51.5, -0.1), (51.503, -0.102)], "gravel", details=False)
+    await asyncio.gather(*(client.route(request) for _ in range(3)))
+    await client.route(request)
+    gaps = [b - a for a, b in zip(sent, sent[1:], strict=False)]
+    assert len(gaps) == 3 and min(gaps) >= 0.14
+
+
+async def test_a_rider_goes_ahead_of_the_quest_board():
+    import asyncio
+
+    from app.routing import budget
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=route_payload())
+
+    client = ValhallaClient("https://valhalla.test", transport=httpx.MockTransport(handler), min_interval_s=0.1)
+    seen: list[str] = []
+
+    async def ask(who: str, background: bool) -> None:
+        request = EngineRequest([(51.5, -0.1), (51.503, -0.102)], "gravel", details=False)
+        if background:
+            with budget.background():
+                await client.route(request)
+        else:
+            await client.route(request)
+        seen.append(who)
+
+    board = [asyncio.create_task(ask(f"board{i}", True)) for i in range(4)]
+    await asyncio.sleep(0.02)  # the board is already queued when the rider asks
+    await asyncio.gather(ask("rider", False), *board)
+    # The first board request has gone and the second is already waiting out its
+    # interval; the rider goes next, ahead of the rest of the board.
+    assert seen == ["board0", "board1", "rider", "board2", "board3"], seen
+
+
+async def test_a_429_rests_the_server_for_everyone(monkeypatch):
+    import time
+
+    from app.routing import valhalla
+
+    monkeypatch.setattr(valhalla, "RETRY_DELAYS_S", (0.0,))
+    monkeypatch.setattr(valhalla, "COOL_DOWN_S", 0.3)
+    sent: list[float] = []
+    answers = iter([httpx.Response(429, text="slow down")])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(time.monotonic())
+        return next(answers, httpx.Response(200, json=route_payload()))
+
+    client = ValhallaClient("https://valhalla.test", transport=httpx.MockTransport(handler), min_interval_s=0.01)
+    await client.route(EngineRequest([(51.5, -0.1), (51.503, -0.102)], "gravel", details=False))
+    assert sent[1] - sent[0] >= 0.29
+
+
+async def test_no_path_says_so_and_a_busy_server_does_not(monkeypatch):
+    from app.routing import valhalla
+
+    monkeypatch.setattr(valhalla, "RETRY_DELAYS_S", ())
+
+    def no_path(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error_code": 442, "error": "No path could be found for input"})
+
+    def busy(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="busy")
+
+    with pytest.raises(RoutingUnavailable) as refused:
+        await client_for(no_path).route(EngineRequest([(51.5, -0.1), (51.6, -0.2)], "road"))
+    assert refused.value.no_path is True
+    with pytest.raises(RoutingUnavailable) as down:
+        await client_for(busy).route(EngineRequest([(51.5, -0.1), (51.6, -0.2)], "road"))
+    assert down.value.no_path is False
+
+
+async def test_the_synthetic_router_keeps_out_of_points_to_avoid():
+    from app.routing import overlap
+
+    o, d = (51.49, -0.04), (51.49, 0.0)
+    [there] = await SyntheticRouter().route(EngineRequest([o, d], "hybrid", seed=2))
+    [back] = await SyntheticRouter().route(EngineRequest([d, o], "hybrid", seed=2))
+    assert overlap.covered(back.coordinates, there.coordinates) > 0.9  # the same bend both ways
+    avoid = overlap.exclusion_samples(there.coordinates)
+    [detour] = await SyntheticRouter().route(EngineRequest([d, o], "hybrid", seed=2, exclude_points=avoid))
+    assert overlap.covered(detour.coordinates, there.coordinates, trim_m=250) < 0.2
+
+    [loop] = await SyntheticRouter().route(
+        EngineRequest([o, d, o], "hybrid", seed=2, location_types=["break", "break_through", "break"])
+    )
+    [turn] = loop.leg_boundaries
+    assert loop.coordinates[turn][:2] == pytest.approx([d[1], d[0]])

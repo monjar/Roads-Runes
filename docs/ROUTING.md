@@ -7,23 +7,33 @@
 ## Pipeline
 
 ```
-RouteGenerateRequest
+RouteGenerateRequest                                  (one plan, one budget of 10 engine requests)
   ├─ rider profile + bike → base RoutePreferences
-  ├─ free text → parse_request (rules, or Claude when LLM_PROVIDER=anthropic) → preferences
+  ├─ free text → parse_request (Claude) → preferences, places, stops
+  ├─ places → geocode: origin, destination, via, area
+  ├─ stops → picked from the places imported from OpenStreetMap
   ├─ quest → target points, RETURN_TO_START, heading
-  └─ for each label (3 from scoring.json bikeDefaultLabels, adjusted by preferences):
-        overlay label preferences → custom model → GraphHopper request
+  └─ cards (up to 3), each from the first of its candidates that is a different ride:
+        candidate → engine request (no details) → checks (offset point reached,
+        way back not the way out) → kept unless too like a kept card
+     then, for kept cards only: surface/road-class details
         → analysis (elevation, climbs, surface, cycleway, traffic)
-        → new-territory fraction (H3 vs user's cells)
-        → quest objective coverage
-        → POI corridor search
+        → new-territory fraction (H3 vs user's cells, each tile once)
+        → quest objective coverage → POI corridor search
         → score → Route row
 sorted by score; best becomes quest.suggested_route_id
 ```
 
 Labels are never "Route 1/2/3": Relaxed, Adventure, Scenic, Direct, Gravel,
 Challenge, chosen per bike type and adjusted when the request asks for
-gravel, hills or a destination.
+gravel, hills or a destination; As asked and Direct once the rider has asked
+for something; and, for cards that differ in shape rather than costing,
+Another way, The long way and Other stops. No label appears twice.
+
+A quest's route, a rune ride and a sealed quest go through their own points
+(objectives, a rune's shape, a goal) and keep 0.9.1's way of planning: one
+request per label, a path that comes back twice is one card. So does a plain
+round trip, whose seeds already turn and flip each card.
 
 ## Reading a request
 
@@ -45,6 +55,7 @@ The sentence can name a place in one of three ways, and they plan different ride
 | "a loop **in** Notting Hill with 5 pubs" | `area` | Moves there, wanders around it, comes home |
 | "go **to** the Aragon Tower, 2 pubs on the way" | `destination` | Starts where they are, finishes at the tower |
 | "visit **the Moby Dick** then to Aragon Tower" | `via` | Passes through that pub on the way to the tower |
+| "**from Aragon Tower** to Westminster and back" | `origin` | Starts at the tower (0.9.2), if that is not where the rider is |
 
 `via` and `stops` look alike in a sentence and are not the same promise. **A name
 is the whole test**: "2 pubs on the way" names no pub, so the router picks
@@ -79,6 +90,12 @@ straight distance marks the only route that does what was asked for as too long.
 One that does not resolve is named in the notes as well, and the rest of the ride
 is planned without it.
 
+`origin` (0.9.2) is resolved like a destination. More than 300 m from the rider
+it becomes the start (`parsedRequest.startsAt`); nearer, it is only said back
+("from Aragon Tower"). A stop kind with no number ("checking out some pubs")
+used to pick none at all: it now means three on a loop and two one way, marked
+`poi.countImplied` so that finding two of three is not called a shortfall.
+
 Everything the model returns is range-checked in `parse_request`: a category
 nobody imports, a 900 km "ride", a null where a float was expected. A bad answer
 narrows to a plain ride, never a wrong one.
@@ -106,17 +123,147 @@ Two different questions, tested in two places:
   A failure there means the prompt needs the case, not that a word list needs
   another word.
 
+## Cards that differ (0.9.2)
+
+Riding 0.9.1 on the hosted backend, the three cards were about 99% the same
+road: every card went through the same points and only the costing changed, and
+on Valhalla the costings barely differ. Now each card is a **shape** with
+fallbacks (`_*_slots` in `service.py`, thresholds in `shapes.py`), behind the
+`route_shapes` flag (on; `FEATURE_FLAGS=!route_shapes` plans as 0.9.1 did):
+
+| The plan | Card 1 | Card 2 (Direct) | Card 3: first that differs, else dropped |
+|---|---|---|---|
+| A place tapped on the map, nothing typed | the quietest flavour, `[O, D]`, asking for 2 alternates | Direct, `[O, D]`, 1 alternate | the alternate least like cards 1–2 (no request) |
+| A ride to a place, typed | As asked | `[O, via, D]`, asking for 2 alternates | through a point 0.2× the distance off the far side of card 1's line → a spare alternate (free) → the stops on the other side of the line ("Other stops") |
+| A loop through stops | As asked | through the nearer half of the stops, at least two (a round trip under three) | "Other stops": none of card 1's, each at least a quarter sector from them → the third costing through the same stops |
+| To a place and back | As asked (see Loops) | the cheapest loop: no stops, offset point at 0.2× | "Other stops" on swapped sides (when stops were asked) → "The long way": the offset point mirrored at 0.35× |
+| A plain round trip, a quest, a rune | unchanged | | |
+
+Direct's costing is wider: traffic aversion at most 0.4 and cycleway preference at
+most 0.3, which lifts Valhalla's `use_roads` from about 0.44 to 0.6. As asked also
+sets `use_living_streets`. Both are another knob between the two cards.
+
+**Alike is measured on shared distance** (`overlap.py`): both lines resampled
+every 25 m, a sample within 30 m of the other line counts as shared (London's
+parallel streets are 60–100 m apart), 200 m at the shared ends left out, and the
+similarity is the smaller of the two shares. A candidate at 0.75 or more to a
+kept card is the same ride: the next candidate is tried, and if none is left the
+card is dropped. Direct is the yardstick the phone prices the others against, so
+it goes only at 0.90 and within 5% of the length ("the stops add only 300 m").
+The planner shows fewer cards rather than the same one twice, says why in
+`parsedRequest.notes`, and the phone's heading counts what came back: "One way
+to ride it", "Two ways…", "Three ways…".
+
+Every card is asked for without the surface details; only the cards kept get
+them (one `trace_attributes` each on Valhalla). A card dropped as a duplicate
+costs one request, not two.
+
+## Loops to a place (0.9.2)
+
+"To Westminster and back" used to be one request `[O, D, O]`: nothing stopped
+the way back retracing the way out, and every stop sat on the way out. Now:
+
+* **Stops split by side** of the O→D line (`_pick_stops_loop`): ⌈N/2⌉ on the way
+  out, on the side with more to choose from, in the order reached; ⌊N/2⌋ on the
+  way back, on the other side, in the order reached coming home. Stops about
+  0.15× the straight distance off the line (400–1,500 m) are preferred.
+* **No U-turn at the destination**: it is `break_through`. A way back with no
+  stops goes through an **offset point**, 0.30× the straight distance (600 m–4 km)
+  off the middle of the line, moved onto the nearest place within 400 m (not a
+  park or a trail) and sent as `through` with a 400 m `search_cutoff`.
+  `[O(break), out-stops(via), named places(via), D(break_through), R(through)?, back-stops(via), O(break)]`.
+* **Checks on the answer**, each giving ground once:
+  * no path through `break_through`/`through` (a dead end): asked again as
+    `break`/`via`;
+  * the offset point missed (the way back passes further than 120 m from it, or
+    rides more than 1.6× the straight line through it — across the river, round
+    a park): tried mirrored, or nearer the line (0.6×) when the far side has the
+    way out's stops or the card's point is its own side, then left out;
+  * the way back still rides more than 40% of the way out (`self_overlap`, 250 m
+    left out at each end and at the turn): the way back is asked for alone, kept
+    off up to 25 points along the middle 60% of the way out (every 300 m, clear of
+    the ends, the stops and every junction where the rider turns), and joined to
+    it (`join_routes`). An offset point within 300 m of the way out is left out of
+    that try: through it, the way back must meet the way out. If the joined loop
+    is no better, the first stands and the note says "the way back shares some
+    roads with the way out". On Valhalla each point closes every edge within 20 m
+    (`radius`), so the carriageway beside a closed cycle track is closed too.
+* **The target** is the loop's own polygon × 1.2, not 2.4× the crow's flight.
+* **Scoring** subtracts `retracePenalty` (weight 0.8, `config/scoring.json`) times
+  the loop's `selfOverlap`, which every loop card carries.
+
 ## Engine
+
+The hosted backend routes on the public Valhalla server (`ROUTING_ENGINE=valhalla`,
+valhalla1.openstreetmap.de, about one request a second under its fair use);
+GraphHopper, with the project's custom bike models, serves the London extract
+locally (`ROUTING_ENGINE=auto` sends rides inside its graph to it).
+
+`ValhallaClient` posts `/route` with per-point location types (`break`, `via`,
+`through`, `break_through`), `exclude_locations` (each with a 20 m `radius`), a
+per-point `search_cutoff`, and `alternates` on a two-point request; it reports
+where each leg ends (`EngineRoute.leg_boundaries`). Loops with no destination go
+through three points on a circle, rescaled once toward the target while the
+budget allows. Surface, road class and cycle network come from a separate
+`trace_attributes` call (`details()`), translated into GraphHopper's detail format.
 
 `GraphHopperClient` posts to `/route` with `ch.disable=true`, a custom model,
 elevation and details. Loops use `round_trip` with a user/origin-derived seed
 per label; with a quest destination the loop is headed towards it and the
-target is inserted as a via-point. Point-to-point uses `alternative_route`.
+target is inserted as a via-point. Two points with alternatives use
+`alternative_route`; any `through` point sets `pass_through`; points to avoid
+become small low-priority `areas` in the custom model.
 
 `SyntheticRouter` produces plausible loops for tests and for development when
-GraphHopper is down. Routes carry `engine`; production refuses to boot on the
-synthetic engine and clients should treat `engine == "synthetic"` as
-non-navigable.
+no engine is reachable. Its legs bend the same way there and back, so "to the
+tower and back" on it rides one line twice, as a real engine does on a straight
+road; it honours points to avoid (bending the other way) and reports leg
+boundaries, so the tests can show the fix. Routes carry `engine`; production
+refuses to boot on the synthetic engine and clients should treat
+`engine == "synthetic"` as non-navigable.
+
+### Pace and budget
+
+* **Pacer** (`valhalla.Pacer`): every Valhalla request, retries included, waits
+  its turn behind one lock, at least `VALHALLA_MIN_INTERVAL_S` apart (1 s; 0 in
+  tests). A 429 rests the server for everyone for max(Retry-After, 2 s). A rider
+  waiting on the planner goes ahead of the quest board's prefetch
+  (`budget.background()`), which routes at most two quests, without details,
+  while `ROUTING_ENGINE=valhalla`. One machine, one lock: a second Fly machine
+  would need a shared limiter.
+* **Budget** (`budget.py`): each plan may make 10 requests, charged per HTTP
+  attempt. The first card is never refused; every other candidate, fallback and
+  second attempt checks what is left, keeping one request for each kept card's
+  details. The five test plans cost 4, 6, 6, 6 and 10; `engine_calls` is on the `route_generated` log
+  line.
+* **Details retry**: `trace_attributes` is retried while the budget lasts. A card
+  whose details never came carries `detailsMissing`, so its default surface and
+  traffic are not shown as measured.
+
+### Measuring it on the real engine
+
+`backend/scripts/route_diversity.py` plans five London requests in-process
+against public Valhalla (paced at 1 request/s, at most 60 per run, answers cached
+in `backend/scripts/.route_diversity_cache/`, readings scripted and place names
+fixed, so two runs differ only in the routing) and prints each card's length,
+how much of a loop's way back rides its way out, the similarity of every pair
+and the requests used. `--flags '!route_shapes'` plans as 0.9.1 did;
+`--offline` replays the cache without sending anything.
+
+On 2026-10-11:
+
+| | 0.9.1 | 0.9.2 |
+|---|---|---|
+| Cards from the five requests | 10 | 14 |
+| Mean / max similarity between cards | 0.75 / 1.00 | 0.38 / 0.70 |
+| Mean / max way back on way out (loops) | 0.39 / 0.68 | 0.28 / 0.59 |
+| "Some pubs" | no pubs | 3 pubs, split by side |
+| Engine requests | 30 | 32 |
+
+Rotherhithe → Greenwich and back is still the hard one: its As asked loop rode
+59% of its way out (the second try met the carriageway beside the cycle track it
+had closed; the 20 m exclusion radius came after that run and is not yet
+measured).
 
 ## Custom models
 
@@ -187,4 +334,5 @@ polyline, decide completion.
 
 The reroute is one engine request without the surface-details call. Valhalla
 requests are retried twice (0.5 s, 1.5 s, or `Retry-After`) on a timeout, a 429
-or a 5xx; "no path" is an answer and is not retried.
+or a 5xx; "no path" is an answer and is not retried. A reroute is outside any
+plan's budget but waits its turn at the pacer like every Valhalla request.

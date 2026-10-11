@@ -14,7 +14,7 @@ navigable in production.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
 import httpx
@@ -22,6 +22,7 @@ import httpx
 from app.core.config import Settings
 from app.core.geo import destination_point, haversine_m
 from app.core.logging import EVENT_ROUTE_GENERATION_FAILED, get_logger
+from app.routing import budget
 
 log = get_logger(__name__)
 
@@ -66,6 +67,21 @@ class EngineRequest:
     activity: str = "RIDE"  # RIDE | RUN | WALK; on foot the costing is pedestrian
     # Surface and road-class details cost a second request; a reroute mid-ride does without.
     details: bool = True
+    # Per point, what the engine may do there (0.9.2): "break" ends a leg, "via" passes
+    # and may turn back, "through" passes without turning back, "break_through" ends
+    # a leg without turning back. None: the ends break and everything between is via.
+    location_types: list[str] | None = None
+    # Places the route should not pass (a way back that must not retrace the way out).
+    exclude_points: list[tuple[float, float]] = field(default_factory=list)
+    # Per point, how far from it the engine may look for a road; None is its default.
+    search_cutoff_m: list[float | None] | None = None
+
+    def types(self) -> list[str]:
+        """The location type of every point, defaults filled in."""
+        last = len(self.points) - 1
+        if self.location_types and len(self.location_types) == len(self.points):
+            return list(self.location_types)
+        return ["break" if i in (0, last) else "via" for i in range(len(self.points))]
 
 
 @dataclass
@@ -76,6 +92,9 @@ class EngineRoute:
     instructions: list[dict[str, Any]]
     details: dict[str, list[list[Any]]] = field(default_factory=dict)
     engine: str = "graphhopper"
+    # Coordinate indices where one leg ends and the next begins (at each "break" or
+    # "break_through" point between the ends); empty for a single leg.
+    leg_boundaries: list[int] = field(default_factory=list)
 
 
 class RoutingEngine(Protocol):
@@ -84,6 +103,102 @@ class RoutingEngine(Protocol):
     async def route(self, request: EngineRequest) -> list[EngineRoute]: ...
 
     async def healthy(self) -> bool: ...
+
+    async def details(self, route: EngineRoute, request: EngineRequest) -> EngineRoute: ...
+
+
+THROUGH_TYPES = frozenset({"through", "break_through"})
+
+
+def downgraded(request: EngineRequest) -> EngineRequest:
+    """The same request with "no turning back" lifted: a dead end needs a U-turn."""
+    types = [{"through": "via", "break_through": "break"}.get(t, t) for t in request.types()]
+    return replace(request, location_types=types)
+
+
+def join_routes(out: EngineRoute, back: EngineRoute) -> EngineRoute:
+    """One route from two that meet: the way there, then the way back.
+
+    Instructions are numbered again and point into the joined line; the first
+    finish (the end of the way there) becomes a waypoint.
+    """
+    offset = max(0, len(out.coordinates) - 1)
+    coordinates = [*out.coordinates, *back.coordinates[1:]] if out.coordinates else list(back.coordinates)
+    instructions: list[dict[str, Any]] = []
+    finished = False
+    for ins in out.instructions:
+        item = dict(ins)
+        if item.get("sign") == "FINISH" and not finished:
+            item["sign"] = "WAYPOINT"
+            finished = True
+        instructions.append(item)
+    for ins in back.instructions:
+        item = dict(ins)
+        item["coordinateIndex"] = min(int(item.get("coordinateIndex", 0)) + offset, len(coordinates) - 1)
+        instructions.append(item)
+    for index, item in enumerate(instructions):
+        item["index"] = index
+    details: dict[str, list[list[Any]]] = {}
+    for key in out.details.keys() & back.details.keys():
+        details[key] = [list(entry) for entry in out.details[key]] + [
+            [int(entry[0]) + offset, int(entry[1]) + offset, entry[2]] for entry in back.details[key]
+        ]
+    return EngineRoute(
+        coordinates=coordinates,
+        distance_m=out.distance_m + back.distance_m,
+        duration_s=out.duration_s + back.duration_s,
+        instructions=instructions,
+        details=details,
+        engine=out.engine,
+        leg_boundaries=[*out.leg_boundaries, offset, *(b + offset for b in back.leg_boundaries)],
+    )
+
+
+def head_of(route: EngineRoute, index: int) -> EngineRoute:
+    """The route up to coordinate `index`, ending there (the way out of a loop)."""
+    index = max(0, min(index, len(route.coordinates) - 1))
+    coords = route.coordinates[: index + 1]
+    travelled = [0.0]
+    for a, b in zip(route.coordinates, route.coordinates[1:], strict=False):
+        travelled.append(travelled[-1] + haversine_m(a[1], a[0], b[1], b[0]))
+    share = travelled[index] / travelled[-1] if travelled[-1] > 0 else 0.0
+    instructions: list[dict[str, Any]] = []
+    for ins in route.instructions:
+        at = int(ins.get("coordinateIndex", 0))
+        if at < index:
+            instructions.append(dict(ins))
+        elif at == index and ins.get("sign") in ("WAYPOINT", "FINISH"):
+            instructions.append(dict(ins))
+            break
+    if not instructions or instructions[-1].get("coordinateIndex") != index:
+        instructions.append(
+            {
+                "text": "Arrive",
+                "streetName": "",
+                "sign": "FINISH",
+                "distanceMeters": 0.0,
+                "durationSeconds": 0,
+                "coordinateIndex": index,
+                "latitude": coords[-1][1],
+                "longitude": coords[-1][0],
+            }
+        )
+    instructions[-1]["sign"] = "FINISH"
+    for number, item in enumerate(instructions):
+        item["index"] = number
+    details = {
+        key: [[int(e[0]), min(int(e[1]), index), e[2]] for e in entries if int(e[0]) < index]
+        for key, entries in route.details.items()
+    }
+    return EngineRoute(
+        coordinates=coords,
+        distance_m=route.distance_m * share,
+        duration_s=int(route.duration_s * share),
+        instructions=instructions,
+        details={k: v for k, v in details.items() if v},
+        engine=route.engine,
+        leg_boundaries=[b for b in route.leg_boundaries if b < index],
+    )
 
 
 class GraphHopperClient:
@@ -133,17 +248,23 @@ class GraphHopperClient:
         }
         if request.custom_model:
             body["custom_model"] = request.custom_model
+        if request.exclude_points:
+            body["custom_model"] = _avoiding(body.get("custom_model"), request.exclude_points)
+        # GraphHopper has one switch for "no turning back at the points between".
+        if THROUGH_TYPES & set(request.types()):
+            body["pass_through"] = True
         if request.round_trip_distance_m:
             body["algorithm"] = "round_trip"
             body["round_trip.distance"] = int(request.round_trip_distance_m)
             body["round_trip.seed"] = request.seed
             if request.heading is not None:
                 body["heading"] = request.heading
-        elif request.alternatives > 1:
+        elif request.alternatives > 1 and len(request.points) == 2:
             body["algorithm"] = "alternative_route"
             body["alternative_route.max_paths"] = request.alternatives
             body["alternative_route.max_weight_factor"] = 1.6
             body["alternative_route.max_share_factor"] = 0.7
+        budget.charge()
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(f"{self.base_url}/route", json=body)
@@ -157,7 +278,9 @@ class GraphHopperClient:
                 status=response.status_code,
                 body=response.text[:500],
             )
-            raise RoutingUnavailable(f"GraphHopper returned {response.status_code}")
+            raise RoutingUnavailable(
+                f"GraphHopper returned {response.status_code}", no_path=response.status_code == 400
+            )
         payload = response.json()
         routes: list[EngineRoute] = []
         for path in payload.get("paths", []):
@@ -189,13 +312,54 @@ class GraphHopperClient:
                     duration_s=int(path["time"] / 1000),
                     instructions=instructions,
                     details=path.get("details", {}),
+                    leg_boundaries=[i["coordinateIndex"] for i in instructions if i["sign"] == "WAYPOINT"],
                 )
             )
         return routes
 
+    async def details(self, route: EngineRoute, request: EngineRequest) -> EngineRoute:
+        """GraphHopper sends its details with the route; there is nothing more to ask."""
+        return route
+
+
+AVOID_HALF_SIDE_M = 25.0
+
+
+def _avoiding(model: dict[str, Any] | None, points: list[tuple[float, float]]) -> dict[str, Any]:
+    """A custom model that all but forbids small squares around each point."""
+    model = dict(model or {})
+    features = []
+    for index, (lat, lon) in enumerate(points):
+        dlat = AVOID_HALF_SIDE_M / 111_320
+        dlon = AVOID_HALF_SIDE_M / (111_320 * max(0.2, math.cos(math.radians(lat))))
+        ring = [
+            [lon - dlon, lat - dlat],
+            [lon + dlon, lat - dlat],
+            [lon + dlon, lat + dlat],
+            [lon - dlon, lat + dlat],
+            [lon - dlon, lat - dlat],
+        ]
+        features.append(
+            {
+                "type": "Feature",
+                "id": f"avoid{index}",
+                "properties": {},
+                "geometry": {"type": "Polygon", "coordinates": [ring]},
+            }
+        )
+    model["areas"] = {"type": "FeatureCollection", "features": features}
+    condition = " || ".join(f"in_avoid{index}" for index in range(len(points)))
+    model["priority"] = [*model.get("priority", []), {"if": condition, "multiply_by": "0.05"}]
+    return model
+
 
 class RoutingUnavailable(Exception):
-    pass
+    """No route. `no_path` is true when the engine answered that there is none (a
+    400), and false when it could not answer at all (down, busy, timed out)."""
+
+    def __init__(self, message: str = "", *, no_path: bool = False) -> None:
+        super().__init__(message)
+        self.no_path = no_path
 
 
 class SyntheticRouter:
@@ -207,12 +371,25 @@ class SyntheticRouter:
         return True
 
     async def route(self, request: EngineRequest) -> list[EngineRoute]:
+        budget.charge()
         lat0, lon0 = request.points[0]
         seed = request.seed
         if request.round_trip_distance_m:
-            coords = self._loop(lat0, lon0, request.round_trip_distance_m, seed, request.heading)
-        else:
-            coords = self._chain(request.points, seed)
+            return [self._answer(self._loop(lat0, lon0, request.round_trip_distance_m, seed, request.heading), request)]
+        types = request.types()
+        boundaries = {
+            i for i, kind in enumerate(types) if kind in ("break", "break_through") and 0 < i < len(types) - 1
+        }
+        # No alternates: a test that wants them uses a router of its own.
+        coords, legs = self._chain(request.points, seed, request.exclude_points, boundaries)
+        route = self._answer(coords, request)
+        route.leg_boundaries = legs
+        return [route]
+
+    async def details(self, route: EngineRoute, request: EngineRequest) -> EngineRoute:
+        return route  # made up with the route
+
+    def _answer(self, coords: list[list[float]], request: EngineRequest) -> EngineRoute:
         distance = sum(haversine_m(a[1], a[0], b[1], b[0]) for a, b in zip(coords, coords[1:], strict=False))
         speed_mps = 4.5
         n = len(coords)
@@ -283,16 +460,14 @@ class SyntheticRouter:
             ],
             "bike_network": [[0, n - 1, "missing"]],
         }
-        return [
-            EngineRoute(
-                coords,
-                distance,
-                int(distance / speed_mps),
-                instructions,
-                details,
-                engine="synthetic",
-            )
-        ]
+        return EngineRoute(
+            coords,
+            distance,
+            int(distance / speed_mps),
+            instructions,
+            details,
+            engine="synthetic",
+        )
 
     @staticmethod
     def _loop(lat0: float, lon0: float, distance_m: float, seed: int, heading: float | None) -> list[list[float]]:
@@ -312,23 +487,56 @@ class SyntheticRouter:
         return coords
 
     @staticmethod
-    def _chain(points: list[tuple[float, float]], seed: int) -> list[list[float]]:
+    def _chain(
+        points: list[tuple[float, float]],
+        seed: int,
+        exclude: list[tuple[float, float]] | None = None,
+        boundaries: set[int] | None = None,
+    ) -> tuple[list[list[float]], list[int]]:
+        """Each leg a bend whose size and side follow the seed.
+
+        The bend is the same for a leg there and its leg back, so "to the tower and
+        back" rides one line twice: the bug a real engine shows on a straight road,
+        kept on purpose so the tests can show the fix. A leg that would pass a point
+        to avoid bends the other way, wider.
+        """
         coords: list[list[float]] = []
-        for (lat1, lon1), (lat2, lon2) in zip(points, points[1:], strict=False):
-            steps = 40
-            for i in range(steps):
-                t = i / steps
-                # Size and side of the bend both follow the seed, so each label's alternative
-                # is a different path (seeds 17 apart would otherwise share one).
-                bulge = 0.0008 * (1 + (seed % 5) * 0.5) * math.sin(math.pi * t) * (1 if seed % 2 == 0 else -1)
-                lat = lat1 + (lat2 - lat1) * t + bulge
-                lon = lon1 + (lon2 - lon1) * t + bulge
-                # The seed is a large hash; only a few metres of it may reach the elevation.
-                ele = 15 + 25 * math.sin(math.pi * t) + seed % 11
-                coords.append([lon, lat, round(ele, 1)])
+        legs: list[int] = []
+        side = 1 if seed % 2 == 0 else -1
+        # Size and side of the bend both follow the seed, so each label's alternative
+        # is a different path (seeds 17 apart would otherwise share one).
+        size = 0.0008 * (1 + (seed % 5) * 0.5)
+        for index, ((lat1, lon1), (lat2, lon2)) in enumerate(zip(points, points[1:], strict=False)):
+            leg = SyntheticRouter._leg(lat1, lon1, lat2, lon2, size * side, seed)
+            if exclude:
+                for bend in (-side * size * 3, side * size * 5, -side * size * 6):
+                    if not SyntheticRouter._passes(leg, exclude):
+                        break
+                    leg = SyntheticRouter._leg(lat1, lon1, lat2, lon2, bend, seed)
+            coords.extend(leg)
+            if boundaries and index + 1 in boundaries:
+                legs.append(len(coords))
         last = points[-1]
         coords.append([last[1], last[0], 15.0])
-        return coords
+        return coords, legs
+
+    @staticmethod
+    def _leg(lat1: float, lon1: float, lat2: float, lon2: float, bend: float, seed: int) -> list[list[float]]:
+        out = []
+        steps = 40
+        for i in range(steps):
+            t = i / steps
+            bulge = bend * math.sin(math.pi * t)
+            lat = lat1 + (lat2 - lat1) * t + bulge
+            lon = lon1 + (lon2 - lon1) * t + bulge
+            # The seed is a large hash; only a few metres of it may reach the elevation.
+            ele = 15 + 25 * math.sin(math.pi * t) + seed % 11
+            out.append([lon, lat, round(ele, 1)])
+        return out
+
+    @staticmethod
+    def _passes(leg: list[list[float]], exclude: list[tuple[float, float]], within_m: float = 60.0) -> bool:
+        return any(haversine_m(lat, lon, c[1], c[0]) <= within_m for lat, lon in exclude for c in leg)
 
 
 class RegionalRouter:
@@ -370,6 +578,10 @@ class RegionalRouter:
                 log.warning("local_routing_failed_using_fallback", engine=self.local.name, error=str(exc)[:300])
         return await self.fallback.route(request)
 
+    async def details(self, route: EngineRoute, request: EngineRequest) -> EngineRoute:
+        engine = self.local if route.engine == self.local.name else self.fallback
+        return await engine.details(route, request)
+
 
 async def build_engine(settings: Settings) -> RoutingEngine:
     """The engine for ROUTING_ENGINE (routing/README.md).
@@ -385,7 +597,12 @@ async def build_engine(settings: Settings) -> RoutingEngine:
     if mode == "synthetic":
         return SyntheticRouter()
     gh = GraphHopperClient(settings.graphhopper_url, settings.graphhopper_timeout_seconds)
-    valhalla = ValhallaClient(settings.valhalla_url, settings.valhalla_timeout_seconds, settings.valhalla_api_key)
+    valhalla = ValhallaClient(
+        settings.valhalla_url,
+        settings.valhalla_timeout_seconds,
+        settings.valhalla_api_key,
+        min_interval_s=settings.valhalla_min_interval_s,
+    )
     if mode in ("auto", "graphhopper") and await gh.healthy():
         bbox = await gh.bbox() if mode == "auto" else None
         return RegionalRouter(gh, bbox, valhalla) if bbox else gh
