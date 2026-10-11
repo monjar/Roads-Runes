@@ -1042,6 +1042,22 @@ guessed at). Three of those preferences change where the ride goes:
   `parsedRequest.stops` as `[{"name", "latitude", "longitude"}]` and appear in the route's
   `pois` like any other stop.
 
+0.9.2 (flag `route_shapes`, on; `FEATURE_FLAGS=!route_shapes` plans as 0.9.1 did):
+
+* **where it starts** — "**from Aragon Tower** to Westminster and back". `origin` is resolved
+  like `destination`; it comes back in `parsedRequest.origin` (`{"query", "name", "latitude",
+  "longitude"}`) and the understood line starts "from Aragon Tower". When it is more than 300 m
+  from `origin` in the request body the ride starts there and `parsedRequest.startsAt` says so.
+  One the geocoder cannot place is a note: "couldn't find 'X' — starting from here instead".
+* **"some pubs"** — a kind of stop with no number means 3 on a loop and 2 one way.
+  `parsedRequest.poi.countImplied` is `true` then, and finding fewer is not a shortfall (only
+  finding none is: "no stops like that nearby").
+* **to a place and back** is a loop: stops split between the way out and the way back (a stop
+  after the destination is the usual case), and `parsedRequest.stops` lists them in riding order.
+* **fewer cards** — 1 to 3. A card too like another is dropped, and `parsedRequest.notes` may say
+  why: "Direct and As asked are the same road here", "the stops add only 300 m", "only two
+  different ways here", "the way back shares some roads with the way out". Labels are unique;
+  "Another way", "The long way" and "Other stops" name cards that differ in shape.
 
 Response `{"alternatives": [RouteOption], "parsedRequest": RoutePreferences|null}`.
 
@@ -1062,6 +1078,8 @@ Response `{"alternatives": [RouteOption], "parsedRequest": RoutePreferences|null
   "newTerritoryFraction": 0.62,
   "questObjectiveCoverage": 1.0,
   "score": 0.81,
+  "detailsMissing": false,
+  "selfOverlap": 0.12,
   "pois": [RoutePOI],
   "coordinates": [[-0.04, 51.49], ...],
   "encodedPolyline": "...",
@@ -1070,6 +1088,12 @@ Response `{"alternatives": [RouteOption], "parsedRequest": RoutePreferences|null
   "climbs": [Climb]
 }
 ```
+
+`detailsMissing` (0.9.2, default `false`): the engine's surface and road-class details could not be
+had (Valhalla's `trace_attributes` failed, or the quest board's prefetch skipped them), so `surface`,
+`cyclewayFraction` and `trafficExposure` are defaults, not measurements. `selfOverlap` (0.9.2,
+optional): on a loop, the share of the way back that rides the way out (0..1); `null` one way, on a
+quest's or rune's route, and from servers before 0.9.2. An older app ignores both.
 
 `Instruction`:
 
@@ -1322,4 +1346,4 @@ Parties:
 ## Meta
 
 - `GET /health` → `{"status": "ok", "version": "..."}`
-- `GET /config` → `{"featureFlags": {...}, "h3Resolution": 9, "levels": {"max": 50, "maxClass": 50}, "environment": "development", "combat": {...}, "letterMinAgeDays": 90}`. 0.7.3 adds the flags `pledge` (on where `ENVIRONMENT=development`, off elsewhere) and `parchment_map` (off: the World tab's parchment map style), and `letterMinAgeDays`. `combat` (0.6.1) holds the fight's constants from `world_objects.json`; see `docs/COMBAT.md`. Flags added since 0.6.0: `codex` (on), `effort_combat` (off until ridden), `ink_fog` (0.7.0, off: the World tab's fog as one ink wash with a frontier chevron; the Journal's map card draws the wash regardless). 0.9.0 adds `place_lore` (off: Wikidata's line on a place). An objective event may carry `note` (0.7.0): the note written for a `WRITE_NOTE` or an Ansuz `INSCRIBE_RUNE`, which the server judges by.
+- `GET /config` → `{"featureFlags": {...}, "h3Resolution": 9, "levels": {"max": 50, "maxClass": 50}, "environment": "development", "combat": {...}, "letterMinAgeDays": 90}`. 0.7.3 adds the flags `pledge` (on where `ENVIRONMENT=development`, off elsewhere) and `parchment_map` (off: the World tab's parchment map style), and `letterMinAgeDays`. `combat` (0.6.1) holds the fight's constants from `world_objects.json`; see `docs/COMBAT.md`. Flags added since 0.6.0: `codex` (on), `effort_combat` (off until ridden), `ink_fog` (0.7.0, off: the World tab's fog as one ink wash with a frontier chevron; the Journal's map card draws the wash regardless). 0.9.0 adds `place_lore` (off: Wikidata's line on a place). 0.9.2 adds `route_shapes` (on: Plan a ride's cards differ in shape and "to X and back" is a loop; see `docs/ROUTING.md`). An objective event may carry `note` (0.7.0): the note written for a `WRITE_NOTE` or an Ansuz `INSCRIBE_RUNE`, which the server judges by.
