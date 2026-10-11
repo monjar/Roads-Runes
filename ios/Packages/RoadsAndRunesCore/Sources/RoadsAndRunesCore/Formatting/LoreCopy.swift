@@ -68,6 +68,29 @@ public enum LoreCopy {
         }
     }
 
+    /// "Ride anywhere", "Run anywhere", "Walk anywhere" (0.9.2): a journey with no route.
+    public static func anywhere(_ activity: Activity?) -> String {
+        switch activity {
+        case .run: return "Run anywhere"
+        case .walk: return "Walk anywhere"
+        default: return "Ride anywhere"
+        }
+    }
+
+    /// What a journey with no route is, said once before it starts.
+    public static let anywhereLine = "No route. Every chest, creature and place on the way counts."
+
+    /// "Also finished: Ten Miles Out": a quest a journey with no quest finished on the way.
+    public static func alsoFinished(_ title: String) -> String {
+        "Also finished: \(title)"
+    }
+
+    /// The question when a journey has stood still a long while (0.9.2, `IdleWatch`):
+    /// "Still out? End ride or keep going."
+    public static func stillOut(_ activity: Activity?) -> String {
+        "Still out? End \(journey(activity)) or keep going."
+    }
+
     public static let loading = "Unrolling the map…"
     public static let journeysEnd = "Journey's end"
     public static let done = "Done"

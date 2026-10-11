@@ -276,6 +276,9 @@ public struct AdventureSummary: Codable, Hashable, Sendable {
     /// first journey of an ISO week.
     public var districts: [DistrictOutcome]?
     public var districtPay: DistrictPay?
+    /// 0.9.2: a quest the rider had taken that this journey, ridden for no quest
+    /// (Ride anywhere), finished on the way: "Also finished: …". `quest` stays nil.
+    public var alsoFinished: AlsoFinishedQuest?
 
     /// The districts this journey made yours, by name.
     public var districtsMadeYours: [String] { (districts ?? []).filter(\.becameYours).map(\.name) }
@@ -310,6 +313,17 @@ public struct AdventureSummary: Codable, Hashable, Sendable {
         self.acAwarded = acAwarded
         self.acBreakdown = acBreakdown
         self.walletBalance = walletBalance
+    }
+}
+
+/// A quest finished on the way by a journey ridden for no quest (0.9.2).
+public struct AlsoFinishedQuest: Codable, Hashable, Sendable {
+    public var id: String
+    public var title: String
+
+    public init(id: String, title: String) {
+        self.id = id
+        self.title = title
     }
 }
 

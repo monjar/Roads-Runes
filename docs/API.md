@@ -1280,6 +1280,17 @@ What a ride pays:
 - `pledge` and `letters` (0.7.3): a pledge this journey kept (absent otherwise; a missed pledge is
   never mentioned) and the letters it found again. See **Between rides**.
 - `legend`, `lair`, `treasureFound` and `legendWoke` (0.8.0). See **Legends, lairs and treasure**.
+- `alsoFinished` (0.9.2, flag `ride_anywhere`): `{"id", "title"}` of a quest the rider had taken that
+  a journey with no quest of its own finished on the way ("Also finished: Ten miles out"); absent
+  otherwise. Such a journey (`questId` null, a Ride anywhere or a planned ride with no quest) is
+  judged against the rider's quests that were taken before it started, are for the same activity,
+  are not sealed or a party's, and have no objective that needs a planned route (`INSCRIBE_RUNE`,
+  `COMPLETE_ROUTE`). What the trace meets is marked done on each of them, as on a quest ride; the
+  first (oldest taken) with every required objective done is finished through the usual
+  `ACCEPTED → ACTIVE → COMPLETED` and paid as a quest ride (`questCompletion`, the `QUEST_COMPLETED`
+  XP and coin lines). At most one a journey: the others keep their progress and finish on the next.
+  `quest` and `ride.questId` stay null, so the journey is still a free one in the Journal. An app
+  from before 0.9.2 ignores `alsoFinished` and shows no quest card (it needs `quest`).
 
 - `GET /rides` paginated, newest first. `GET /rides/{id}`. `GET /rides/{id}/geometry` → `{"coordinates": [...], "encodedPolyline": "..."}`.
 - `PATCH /rides/{id}` `{"visibility": "FRIENDS", "title": "...", "notes": "..."}`

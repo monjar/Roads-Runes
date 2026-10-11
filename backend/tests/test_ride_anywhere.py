@@ -227,3 +227,117 @@ def fresh_limits():
     world_objects.forget_checks()
     yield
     world_objects.forget_checks()
+
+
+# --- quests where they fit ----------------------------------------------------------
+
+
+def roam_trace(meters_out: float = 2000.0) -> list[dict]:
+    """Out and back from the origin, ridden in the last half hour."""
+    pts = line_trace(ORIGIN, destination_point(*ORIGIN, 90, meters_out), 5.0)
+    shift = (utcnow() - timedelta(minutes=30)) - datetime.fromisoformat(pts[0]["timestamp"])
+    for p in pts:
+        p["timestamp"] = (datetime.fromisoformat(p["timestamp"]) + shift).isoformat()
+    return pts
+
+
+async def distance_quests(c, monkeypatch, n: int) -> list[dict]:
+    """`n` quests to ride 3 km, taken yesterday."""
+    from app.quests import generator
+    from app.quests.models import QuestInstance, QuestObjective
+
+    five = [t for t in generator.templates_for("EXPLORER", 1) if t["id"] == "ANY_FIRST_FIVE"]
+    monkeypatch.setattr(generator, "templates_for", lambda *a, **k: five)
+    r = await c.post("/quests/generate", json={"latitude": ORIGIN[0], "longitude": ORIGIN[1], "count": 1})
+    assert r.status_code == 200, r.text
+    made = [r.json()["items"][0]]
+    yesterday = utcnow() - timedelta(days=1)
+    async with get_session_factory()() as db:
+        row = await db.get(QuestInstance, uuid.UUID(made[0]["id"]))
+        row.status, row.accepted_at = "ACCEPTED", yesterday
+        for o in row.objectives:
+            o.target_meters, o.progress_target = 3000.0, 3000.0
+        # The board deals one of a kind; the rest are copies of it, a minute apart.
+        skip = {"id", "objectives", "created_at", "updated_at"}
+        for i in range(1, n):
+            copy = QuestInstance(
+                **{k: getattr(row, k) for k in QuestInstance.__mapper__.columns.keys() if k not in skip}
+            )
+            copy.title, copy.accepted_at = f"{row.title} {i + 1}", yesterday + timedelta(minutes=i)
+            copy.objectives = [
+                QuestObjective(**{k: getattr(o, k) for k in QuestObjective.__mapper__.columns.keys()
+                                  if k not in skip | {"quest_id"}})
+                for o in row.objectives
+            ]  # fmt: skip
+            db.add(copy)
+            await db.flush()
+            made.append({"id": str(copy.id), "title": copy.title})
+        await db.commit()
+    return made
+
+
+async def quest_row(quest_id: str):
+    from app.quests.models import QuestInstance
+
+    async with get_session_factory()() as db:
+        return await db.get(QuestInstance, uuid.UUID(quest_id))
+
+
+async def test_a_roam_finishes_one_quest_it_fits_and_the_rest_keep_their_progress(explorer_client, monkeypatch):
+    from app.quests.models import QuestInstance, QuestObjective
+
+    c = explorer_client
+    first, second, sealed, rune, untaken = await distance_quests(c, monkeypatch, 5)
+    async with get_session_factory()() as db:
+        (await db.get(QuestInstance, uuid.UUID(sealed["id"]))).template_id = "SEALED"
+        db.add(QuestObjective(quest_id=uuid.UUID(rune["id"]), objective_type="INSCRIBE_RUNE", title="Cut a rune",
+                              latitude=ORIGIN[0], longitude=ORIGIN[1], required=False, order=9))  # fmt: skip
+        row = await db.get(QuestInstance, uuid.UUID(untaken["id"]))
+        row.status, row.accepted_at = "AVAILABLE", None
+        await db.commit()
+
+    summary = await ride(c, roam_trace())
+    assert summary["ride"]["questId"] is None and summary["quest"] is None
+    assert summary["alsoFinished"] == {"id": first["id"], "title": first["title"]}
+    assert summary["questCompletion"]["quest"]["status"] == "COMPLETED"
+    assert any(line["kind"] == "QUEST_COMPLETED" for line in summary["acBreakdown"])
+    assert any(line["source"] == "QUEST_COMPLETED" for line in summary["xpBreakdown"]), summary["xpBreakdown"]
+
+    done = await quest_row(first["id"])
+    assert done.status == "COMPLETED" and str(done.ride_id) == summary["ride"]["id"] and done.started_at is not None
+    # One a journey: the second has its distance done and waits, taken.
+    waiting = await quest_row(second["id"])
+    assert waiting.status == "ACCEPTED" and all(o.status == "COMPLETED" for o in waiting.objectives)
+    # Sealed, needing a rune, or never taken: untouched.
+    for quest in (sealed, rune, untaken):
+        row = await quest_row(quest["id"])
+        assert row.status in ("ACCEPTED", "AVAILABLE")
+        assert all(o.status == "PENDING" for o in row.objectives), (quest["title"], row.template_id)
+
+    # The next journey anywhere finishes the one that was waiting.
+    summary = await ride(c, roam_trace(400))
+    assert summary["alsoFinished"]["id"] == second["id"]
+    assert (await quest_row(second["id"])).status == "COMPLETED"
+
+
+async def test_a_quest_taken_after_the_journey_began_is_not_counted(explorer_client, monkeypatch):
+    from app.quests.models import QuestInstance
+
+    c = explorer_client
+    (late,) = await distance_quests(c, monkeypatch, 1)
+    async with get_session_factory()() as db:
+        (await db.get(QuestInstance, uuid.UUID(late["id"]))).accepted_at = utcnow()
+        await db.commit()
+    summary = await ride(c, roam_trace())
+    assert summary.get("alsoFinished") is None
+    assert (await quest_row(late["id"])).status == "ACCEPTED"
+
+
+async def test_with_the_flag_off_a_roam_counts_for_no_quest(explorer_client, settings, monkeypatch):
+    c = explorer_client
+    (quest,) = await distance_quests(c, monkeypatch, 1)
+    monkeypatch.setattr(settings, "feature_flags", "!ride_anywhere")
+    summary = await ride(c, roam_trace())
+    assert summary.get("alsoFinished") is None and summary["questCompletion"] is None
+    row = await quest_row(quest["id"])
+    assert row.status == "ACCEPTED" and all(o.status == "PENDING" for o in row.objectives)
