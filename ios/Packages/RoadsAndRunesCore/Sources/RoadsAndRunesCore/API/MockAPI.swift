@@ -28,6 +28,8 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     public internal(set) var aroundAsks: [WorldAroundAsk] = []
     public var aroundImporting = false
     public var aroundRefusal: APIError?
+    /// `/config` as a test wants it (a flag off); the sample otherwise.
+    public var configOverride: AppConfig?
     /// Every ride asked to be created and every completion sent, in order, for a test to read back.
     public internal(set) var rideCreates: [RideCreate] = []
     public internal(set) var rideCompletions: [RideComplete] = []

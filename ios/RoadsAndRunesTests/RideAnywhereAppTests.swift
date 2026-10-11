@@ -301,6 +301,23 @@ final class RideAnywhereAppTests: XCTestCase {
         container.rideRecorder.discard()
     }
 
+    /// FEATURE_FLAGS=!ride_anywhere: the phone starts none, from anywhere, and says so plainly.
+    func testWithTheFlagOffNoRoamStarts() async throws {
+        let api = MockAPI()
+        var config = SampleData.sampleConfig
+        config.featureFlags["ride_anywhere"] = false
+        api.configOverride = config
+        let (container, coordinator) = await coordinator(api)
+        XCTAssertFalse(container.session.isEnabled(FeatureFlag.rideAnywhere), "the World tab hides its button")
+        let fromTheWatch = await coordinator.run(.roam(activity: .ride), autoStart: true)
+        XCTAssertEqual(fromTheWatch, .failed("Ride anywhere isn't switched on yet. Plan a ride instead."))
+        XCTAssertFalse(container.rideRecorder.isActive)
+        let fromALink = await coordinator.run(.roam(activity: .ride), autoStart: false)
+        XCTAssertEqual(fromALink, .failed("Ride anywhere isn't switched on yet. Plan a ride instead."))
+        XCTAssertTrue(coordinator.isPresented, "the planner, with the reason, to plan one instead")
+        XCTAssertTrue(api.rideCreates.isEmpty)
+    }
+
     func testTheIntentAndTheLinkAskForARoam() throws {
         XCTAssertEqual(RideAnywhereIntent().quickStart, .roam(activity: .unknown))
         var walk = RideAnywhereIntent()

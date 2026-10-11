@@ -103,15 +103,20 @@ final class QuickStartCoordinator {
         // Ride anywhere (0.9.2): nothing to plan. The card says what it is and has
         // Start; asked for on the wrist, it starts at once.
         if case .roam = start {
+            guard await ready(container), mine == generation else {
+                phase = .failed(QuickStartError.notSignedIn.line)
+                return .failed(QuickStartError.notSignedIn.line)
+            }
+            // Behind the server's flag on the phone too (FEATURE_FLAGS=!ride_anywhere).
+            guard container.session.isEnabled(FeatureFlag.rideAnywhere) else {
+                phase = .failed(QuickStartError.roamOff.line)
+                isPresented = !autoStart
+                return .failed(QuickStartError.roamOff.line)
+            }
             guard autoStart else {
                 phase = .ready
                 isPresented = true
                 return .ready
-            }
-            phase = .planning
-            guard await ready(container), mine == generation else {
-                phase = .failed(QuickStartError.notSignedIn.line)
-                return .failed(QuickStartError.notSignedIn.line)
             }
             return await startRide() ? .started : .failed(errorLine)
         }
@@ -291,6 +296,7 @@ enum QuickStartError: Error, Equatable {
     case noRoute
     case noBounty
     case questOver
+    case roamOff
 
     var line: String {
         switch self {
@@ -299,6 +305,7 @@ enum QuickStartError: Error, Equatable {
         case .noRoute: return "Couldn't find a route from here. Try planning one."
         case .noBounty: return "No bounty out right now. A new one comes at dawn."
         case .questOver: return "That quest is over. Pick another on the board."
+        case .roamOff: return "Ride anywhere isn't switched on yet. Plan a ride instead."
         }
     }
 }
