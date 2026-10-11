@@ -1339,6 +1339,8 @@ final class RideRecorder {
         health.beginWorkout(startDate: Date())
         transition(to: .active)
         isActive = true
+        // Standing still counts from the next fix after a crash (0.9.2).
+        startIdleWatch(from: nil)
         sendWatchSummary()
     }
 

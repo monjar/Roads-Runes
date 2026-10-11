@@ -130,6 +130,7 @@ final class RideAnywhereAppTests: XCTestCase {
         XCTAssertTrue(resumed.isRoaming)
         XCTAssertNil(resumed.package)
         XCTAssertTrue(resumed.roamWorldLoaded, "the world it had is put back, not fetched again")
+        XCTAssertEqual(resumed.idleWatch?.endsItself, true, "a long stop is still asked about, and a roam still ends itself")
         XCTAssertTrue(resumed.objectsOnMap.contains { $0.id == ahead.id })
 
         clock = 10_000
