@@ -562,6 +562,46 @@ moving; Journey's end on the wrist says which districts were kept.
 
 ---
 
+## 0.9.2 Ride anywhere, and loops that are loops
+
+Not in the original plan: three problems found riding 0.9.1. Built 2026-10-11 on `feat/0.9.2`.
+
+- **Ride anywhere** (flag `ride_anywhere`, on).
+  - A journey with no route, started from the World tab, the Watch, Siri or a link.
+  - The world is refreshed as the rider goes (`GET /world/around`).
+  - It finishes at most one accepted quest it fits.
+  - A long stop asks "Still out? End ride or keep going.", and a roam idle for two hours ends itself.
+- **Round trips** (flag `route_shapes`, on).
+  - "To X and back" goes out one side and home the other.
+  - "Some pubs" means three, split between the way out and the way back.
+  - A "from" place is read.
+- **Cards that differ** (same flag).
+  - Each card is a different shape, not only a different costing.
+  - A card too like another, or one that pushes the bike through a foot tunnel, is dropped, and the heading counts the cards.
+- **Plumbing.** Valhalla requests are paced, and each plan has a budget of 10 requests. `scripts/route_diversity.py` measures it all on the real server.
+
+Contract (everything optional; an older client ignores it):
+- **Server:**
+  - route `selfOverlap`, `detailsMissing`;
+  - parsed `startsAt`, `countImplied`;
+  - summary `alsoFinished`;
+  - `GET /world/around` → `{objects, places, importing}`.
+- **Phone ↔ Watch:**
+  - `WatchRouteSummary.roam`, `WatchNavigationUpdate.stillOut`, `WatchIdleInfo.rideAnywhere`;
+  - `WatchStartRequest` kind `ROAM`, `WatchCommand.keepGoing`.
+  - An older Watch shows "Waiting for the first turn" on a roam. An older phone refuses a ROAM start quickly.
+- **Phone storage:** `ActiveRideState.roam`, `RideGameState.addedAt`.
+
+**On the Watch:**
+- a Ride anywhere pill on Next up;
+- the roam's map marks;
+- the long-stop prompt;
+- "Pause here when you stop" replaces the false auto-pause line.
+
+**Gate outings:**
+- protocol 13 (Ride anywhere);
+- protocol 7 re-ridden with "from Aragon Tower to Westminster and back with some pubs".
+
 ## 1.0 The long way round
 
 Migration `0015`: `familiars`. The game is whole for one player.
