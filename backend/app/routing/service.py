@@ -712,6 +712,208 @@ def _take_along(
             chosen.append((progress, poi))
 
 
+@dataclass
+class _Plan:
+    """What every card of one plan shares: who rides, from where to where, and how
+    the cards are measured."""
+
+    db: AsyncSession
+    settings: Settings
+    engine: RoutingEngine
+    user: User
+    quest: QuestInstance | None
+    bike: Bike | None
+    bike_type: str
+    allow_gravel: bool
+    allow_trails: bool
+    on_foot: bool
+    activity: str
+    origin: Coordinate  # where the rider is
+    start: Coordinate  # where the ride starts
+    destination: Coordinate | None
+    via: list[Coordinate]
+    waypoints: list[Coordinate]
+    targets: QuestTargets
+    loop: bool
+    target_km: float
+    cfg: dict[str, Any]
+    rider: RiderLimits
+    known: dict[str, str]
+    poi_candidates: list[Discovery]
+    seed_base: int
+    details: bool = True
+
+    @property
+    def profile(self) -> str:
+        return "foot" if self.on_foot else PROFILE_FOR_BIKE.get(self.bike_type, "hybrid")
+
+    @property
+    def speed_mps(self) -> float:
+        kmh = ASSUMED_SPEED_KMH[self.activity] if self.on_foot else self.cfg["assumedSpeedKmh"].get(self.bike_type, 15)
+        return kmh / 3.6
+
+
+def _points_for(plan: _Plan, variant: Variant) -> list[tuple[float, float]]:
+    """The points a card goes through, in order: start, quest targets, stops, the
+    named places, the planner's waypoints, the finish, and home again on a loop."""
+    points = [(plan.start.latitude, plan.start.longitude)]
+    for lat, lon, _ in plan.targets.points:
+        points.append((lat, lon))
+    for stop in variant.stops:
+        points.append((stop.latitude, stop.longitude))
+    # In the order the rider said them, and before the finish: "the Moby Dick
+    # then the tower" is a sequence, not a set.
+    for point in plan.via:
+        points.append((point.latitude, point.longitude))
+    for wp in plan.waypoints:
+        points.append((wp.latitude, wp.longitude))
+    if plan.destination is not None:
+        points.append((plan.destination.latitude, plan.destination.longitude))
+        # "to the tower and back" — the way home is a second leg, not a U-turn.
+        if plan.loop:
+            points.append(points[0])
+    elif plan.loop and len(points) > 1:
+        points.append(points[0])
+    return points
+
+
+def _request_for(
+    plan: _Plan, variant: Variant, index: int, points: list[tuple[float, float]], **overrides: Any
+) -> EngineRequest:
+    """The engine request for one card: its points, its costing, its seed."""
+    prefs = variant.prefs
+    distance_m = plan.target_km * 1000 * variant.distance_factor
+    custom_model = (
+        None if plan.on_foot else build_custom_model(prefs, plan.bike_type, plan.allow_gravel, plan.allow_trails)
+    )
+    round_trip = distance_m if (plan.loop and len(points) == 1) else None
+    heading = None
+    if round_trip and plan.targets.points:
+        heading = bearing_deg(
+            plan.origin.latitude,
+            plan.origin.longitude,
+            plan.targets.points[0][0],
+            plan.targets.points[0][1],
+        )
+    fields: dict[str, Any] = {
+        "points": points,
+        "profile": plan.profile,
+        "round_trip_distance_m": round_trip,
+        "seed": plan.seed_base + index * 17,
+        "custom_model": custom_model
+        if (plan.engine.name == "synthetic" or custom_model is None)
+        else strip_internal(custom_model),
+        "heading": heading,
+        "costing": valhalla_costing(prefs, plan.bike_type, plan.allow_gravel, plan.allow_trails, plan.activity),
+        "activity": plan.activity,
+        "details": plan.details,
+    }
+    return EngineRequest(**{**fields, **overrides})
+
+
+async def _route_for(plan: _Plan, request: EngineRequest, label: str) -> list[EngineRoute]:
+    """The engine's answer, or nothing when it has none (the card is skipped)."""
+    try:
+        return await plan.engine.route(request) or []
+    except RoutingUnavailable as exc:
+        log.error(EVENT_ROUTE_GENERATION_FAILED, label=label, error=str(exc))
+        return []
+
+
+def _keep(
+    plan: _Plan,
+    variant: Variant,
+    er: EngineRoute,
+    request: EngineRequest,
+    *,
+    label: str | None = None,
+    extra: dict[str, Any] | None = None,
+) -> tuple[Route, dict[str, float]]:
+    """An engine route as a card: measured, its stops attached, scored, stored."""
+    label = label or variant.label
+    prefs = variant.prefs
+    coords = er.coordinates
+    surface = surface_composition(coords, er.details.get("surface"))
+    cycle = cycleway_fraction(coords, er.details.get("road_class"), er.details.get("bike_network"))
+    traffic = traffic_exposure(coords, er.details.get("road_class"))
+    new_fraction = _new_territory_fraction(coords, plan.known, plan.settings.h3_resolution)
+    coverage = _coverage(coords, plan.targets)
+    speed_mps = plan.speed_mps
+    pois = attach_pois(
+        coords,
+        plan.poi_candidates,
+        speed_mps=speed_mps,
+        preferred_category=(prefs.poi or {}).get("category"),
+        preferred_position=(prefs.poi or {}).get("preferredPosition"),
+        required_ids={str(stop.id) for stop in variant.stops},
+    )
+    route = _route_row(
+        user=plan.user,
+        quest=plan.quest,
+        bike_id=plan.bike.id if plan.bike else None,
+        label=label,
+        profile=request.profile,
+        activity=plan.activity,
+        er=er,
+        speed_mps=speed_mps,
+        pois=[p.to_dict() for p in pois],
+        request={
+            "preferences": prefs.to_dict(),
+            "label": label,
+            "targetKm": plan.target_km,
+            "loop": plan.loop,
+            # Surface and traffic below are defaults, not measurements.
+            **({"detailsMissing": True} if not er.details else {}),
+            **(extra or {}),
+        },
+        surface=surface,
+        cycleway=cycle,
+        traffic=traffic,
+        new_fraction=new_fraction,
+        coverage=coverage,
+    )
+    metrics = RouteMetrics(
+        distance_m=er.distance_m,
+        elevation_gain_m=route.elevation_gain_meters,
+        max_gradient_percent=route.max_gradient_percent,
+        surface=surface,
+        cycleway_fraction=cycle,
+        traffic_exposure=traffic,
+        new_territory_fraction=new_fraction,
+        quest_objective_coverage=coverage,
+        poi_count=len(pois),
+        scenic_fraction=surface.get("gravel", 0) * 0.5 + surface.get("trail", 0) * 0.5 + cycle * 0.3,
+    )
+    score, components = score_route(metrics, prefs, plan.rider, plan.target_km * 1000)
+    route.score = score
+    route.request = {**route.request, "scoreComponents": components}
+    plan.db.add(route)
+    return route, components
+
+
+async def _legacy_cards(plan: _Plan, variants: list[Variant]) -> tuple[list[tuple[Route, dict[str, float]]], list[str]]:
+    """One engine request per variant; a path that came back twice is one card."""
+    results: list[tuple[Route, dict[str, float]]] = []
+    seen_paths: dict[str, str] = {}
+    same_road: list[str] = []
+    for index, variant in enumerate(variants):
+        points = _points_for(plan, variant)
+        request = _request_for(plan, variant, index, points)
+        engine_routes = await _route_for(plan, request, variant.label)
+        if not engine_routes:
+            continue
+        er = engine_routes[0]
+        polyline = encode_polyline((c[1], c[0]) for c in er.coordinates)
+        if polyline in seen_paths:
+            # Short A→B trips often give every label the same path; one card is
+            # enough, but two cards becoming one deserves a word.
+            same_road.append(f"{variant.label} and {seen_paths[polyline]} are the same road here")
+            continue
+        seen_paths[polyline] = variant.label
+        results.append(_keep(plan, variant, er, request))
+    return results, same_road
+
+
 async def generate(
     db: AsyncSession,
     settings: Settings,
@@ -1010,128 +1212,36 @@ async def _generate(
         16,
     )
 
-    results: list[tuple[Route, dict[str, float]]] = []
-    seen_paths: dict[str, str] = {}
-    same_road: list[str] = []
+    plan = _Plan(
+        db=db,
+        settings=settings,
+        engine=engine,
+        user=user,
+        quest=quest,
+        bike=bike,
+        bike_type=bike_type,
+        allow_gravel=allow_gravel,
+        allow_trails=allow_trails,
+        on_foot=on_foot,
+        activity=activity,
+        origin=payload.origin,
+        start=start,
+        destination=destination,
+        via=via,
+        waypoints=list(payload.waypoints),
+        targets=targets,
+        loop=loop,
+        target_km=target_km,
+        cfg=cfg,
+        rider=rider,
+        known=known,
+        poi_candidates=poi_candidates,
+        seed_base=seed_base,
+        details=details,
+    )
     routing = monotonic()
     variants = _variants(base_prefs, usual_prefs, requested_stops, labels, cfg, asked)[:max_variants]
-    for index, variant in enumerate(variants):
-        label, prefs = variant.label, variant.prefs
-        distance_m = target_km * 1000 * variant.distance_factor
-        custom_model = None if on_foot else build_custom_model(prefs, bike_type, allow_gravel, allow_trails)
-        points = [(start.latitude, start.longitude)]
-        for lat, lon, _ in targets.points:
-            points.append((lat, lon))
-        for stop in variant.stops:
-            points.append((stop.latitude, stop.longitude))
-        # In the order the rider said them, and before the finish: "the Moby Dick
-        # then the tower" is a sequence, not a set.
-        for point in via:
-            points.append((point.latitude, point.longitude))
-        for wp in payload.waypoints:
-            points.append((wp.latitude, wp.longitude))
-        if destination is not None:
-            points.append((destination.latitude, destination.longitude))
-            # "to the tower and back" — the way home is a second leg, not a U-turn.
-            if loop:
-                points.append(points[0])
-        elif loop and len(points) > 1:
-            points.append(points[0])
-        round_trip = distance_m if (loop and len(points) == 1) else None
-        heading = None
-        if round_trip and targets.points:
-            from app.core.geo import bearing_deg
-
-            heading = bearing_deg(
-                payload.origin.latitude,
-                payload.origin.longitude,
-                targets.points[0][0],
-                targets.points[0][1],
-            )
-        request = EngineRequest(
-            points=points,
-            profile="foot" if on_foot else PROFILE_FOR_BIKE.get(bike_type, "hybrid"),
-            round_trip_distance_m=round_trip,
-            seed=seed_base + index * 17,
-            custom_model=custom_model
-            if (engine.name == "synthetic" or custom_model is None)
-            else strip_internal(custom_model),
-            heading=heading,
-            costing=valhalla_costing(prefs, bike_type, allow_gravel, allow_trails, activity),
-            activity=activity,
-            details=details,
-        )
-        try:
-            engine_routes = await engine.route(request)
-        except RoutingUnavailable as exc:
-            log.error(EVENT_ROUTE_GENERATION_FAILED, label=label, error=str(exc))
-            continue
-        if not engine_routes:
-            continue
-        er = engine_routes[0]
-        coords = er.coordinates
-        polyline = encode_polyline((c[1], c[0]) for c in coords)
-        if polyline in seen_paths:
-            # Short A→B trips often give every label the same path; one card is
-            # enough, but two cards becoming one deserves a word.
-            same_road.append(f"{label} and {seen_paths[polyline]} are the same road here")
-            continue
-        seen_paths[polyline] = label
-        surface = surface_composition(coords, er.details.get("surface"))
-        cycle = cycleway_fraction(coords, er.details.get("road_class"), er.details.get("bike_network"))
-        traffic = traffic_exposure(coords, er.details.get("road_class"))
-        new_fraction = _new_territory_fraction(coords, known, settings.h3_resolution)
-        coverage = _coverage(coords, targets)
-        speed_mps = (ASSUMED_SPEED_KMH[activity] if on_foot else cfg["assumedSpeedKmh"].get(bike_type, 15)) / 3.6
-        pois = attach_pois(
-            coords,
-            poi_candidates,
-            speed_mps=speed_mps,
-            preferred_category=(prefs.poi or {}).get("category"),
-            preferred_position=(prefs.poi or {}).get("preferredPosition"),
-            required_ids={str(stop.id) for stop in variant.stops},
-        )
-        route = _route_row(
-            user=user,
-            quest=quest,
-            bike_id=bike.id if bike else None,
-            label=label,
-            profile=request.profile,
-            activity=activity,
-            er=er,
-            speed_mps=speed_mps,
-            pois=[p.to_dict() for p in pois],
-            request={
-                "preferences": prefs.to_dict(),
-                "label": label,
-                "targetKm": target_km,
-                "loop": loop,
-                # Surface and traffic below are defaults, not measurements.
-                **({"detailsMissing": True} if not er.details else {}),
-            },
-            surface=surface,
-            cycleway=cycle,
-            traffic=traffic,
-            new_fraction=new_fraction,
-            coverage=coverage,
-        )
-        metrics = RouteMetrics(
-            distance_m=er.distance_m,
-            elevation_gain_m=route.elevation_gain_meters,
-            max_gradient_percent=route.max_gradient_percent,
-            surface=surface,
-            cycleway_fraction=cycle,
-            traffic_exposure=traffic,
-            new_territory_fraction=new_fraction,
-            quest_objective_coverage=coverage,
-            poi_count=len(pois),
-            scenic_fraction=surface.get("gravel", 0) * 0.5 + surface.get("trail", 0) * 0.5 + cycle * 0.3,
-        )
-        score, components = score_route(metrics, prefs, rider, target_km * 1000)
-        route.score = score
-        route.request = {**route.request, "scoreComponents": components}
-        db.add(route)
-        results.append((route, components))
+    results, same_road = await _legacy_cards(plan, variants)
     ms_engine = int((monotonic() - routing) * 1000)
     if not results:
         raise RouteGenerationFailed("We couldn't plan a route for that. Try a different distance or starting point.")
