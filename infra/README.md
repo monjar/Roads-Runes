@@ -54,8 +54,29 @@ tokens are stored regardless so enabling it later needs no client change.
 
 ## Admin
 
-MVP admin operations are scripts under `backend/scripts/` (level table
-generation, discovery seeding). A lightweight admin UI is a later phase.
+`/admin` on the API (`backend/app/admin/`) is the developer's page: the last 7, 30
+or 90 days across every rider (active and returning riders, outings, distance, new
+cells, quests, coins, the world, rides stuck or failed in processing), the same as
+JSON at `/admin/stats.json?days=N`, and every feature flag with an override switch.
+
+It is off until `ADMIN_TOKEN` is set, and signs in with HTTP Basic: any user name,
+the token as the password. A player's sign-in never opens it (developer sign-in lets
+anyone claim any dev account, so `users.is_admin` guards nothing).
+
+```bash
+fly secrets set -a roadsandrunes ADMIN_TOKEN=$(openssl rand -hex 24)
+open https://roadsandrunes.fly.dev/admin
+```
+
+A flag resolves as the code's default, then `FEATURE_FLAGS`, then an override saved
+on the page (table `feature_flag_overrides`). The override needs no deploy: the
+process that saves it has it at once and every other process (another machine, the
+Redis worker) within 30 seconds. The app reads flags from `/api/v1/config` when it
+starts. Clearing an override falls back to `FEATURE_FLAGS`.
+
+Other admin operations are scripts under `backend/scripts/` (level table
+generation, discovery seeding, `play_report.py` for one rider) and
+`python -m app.jobs.reprocess` for rides that failed processing.
 
 ## Fly.io (hosted development backend)
 

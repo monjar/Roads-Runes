@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Roads &amp; Runes admin</title>
+<style>
+:root {
+  color-scheme: light;
+  --surface-0: #f4f3ef;
+  --surface-1: #fcfcfb;
+  --line: #e2e0d9;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #77756f;
+  --series-1: #2a78d6;
+  --accent: #b5532f;
+  --good: #1f7a3a;
+  --warning: #9a6300;
+  --critical: #b42318;
+  --good-bg: #e6f2e9;
+  --warning-bg: #fbf0d9;
+  --critical-bg: #fbe7e5;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-0: #121211;
+    --surface-1: #1a1a19;
+    --line: #2f2e2b;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --text-muted: #9a998f;
+    --series-1: #3987e5;
+    --accent: #e07a52;
+    --good: #5cc27a;
+    --warning: #e0a83a;
+    --critical: #f07167;
+    --good-bg: #17291c;
+    --warning-bg: #2e2412;
+    --critical-bg: #331a17;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0: #121211;
+  --surface-1: #1a1a19;
+  --line: #2f2e2b;
+  --text-primary: #f0efec;
+  --text-secondary: #c3c2b7;
+  --text-muted: #9a998f;
+  --series-1: #3987e5;
+  --accent: #e07a52;
+  --good: #5cc27a;
+  --warning: #e0a83a;
+  --critical: #f07167;
+  --good-bg: #17291c;
+  --warning-bg: #2e2412;
+  --critical-bg: #331a17;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--surface-0);
+  color: var(--text-primary);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+header { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; justify-content: space-between; }
+h1 { font-size: 22px; margin: 0; }
+h2 { font-size: 16px; margin: 32px 0 12px; }
+h3 { font-size: 13px; margin: 0 0 8px; color: var(--text-secondary); font-weight: 600; }
+a { color: var(--accent); }
+.muted { color: var(--text-muted); }
+.small { font-size: 12px; }
+.windows a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; text-decoration: none; color: var(--text-secondary); }
+.windows a[aria-current="page"] { background: var(--text-primary); color: var(--surface-1); border-color: var(--text-primary); }
+.notes { display: grid; gap: 8px; margin-top: 16px; }
+.note { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); }
+.note b { margin-right: 6px; }
+.note.warning { background: var(--warning-bg); border-color: transparent; }
+.note.warning b { color: var(--warning); }
+.note.critical { background: var(--critical-bg); border-color: transparent; }
+.note.critical b { color: var(--critical); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 20px; }
+.tile, .card { background: var(--surface-1); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.tile .label { color: var(--text-secondary); font-size: 12px; }
+.tile .value { font-size: 26px; font-weight: 600; margin-top: 2px; }
+.tile .delta { color: var(--text-muted); font-size: 12px; }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+svg { display: block; width: 100%; height: auto; }
+svg .grid { stroke: var(--line); stroke-width: 1; }
+svg .tick { fill: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+svg .bar { fill: var(--series-1); }
+svg .hit { fill: transparent; }
+svg .hit:hover + .bar, svg g:hover .bar { opacity: .75; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 5px 8px 5px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--text-secondary); font-weight: 600; font-size: 12px; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr:last-child td { border-bottom: 0; }
+details { margin-top: 12px; }
+summary { cursor: pointer; color: var(--text-secondary); }
+.scroll { overflow-x: auto; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.pill.on { background: var(--good-bg); color: var(--good); }
+.pill.off { background: var(--surface-0); color: var(--text-muted); border: 1px solid var(--line); }
+.source { font-size: 12px; color: var(--text-secondary); }
+.source.override { color: var(--accent); font-weight: 600; }
+form.flag { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; }
+form.flag input[type="text"] { flex: 1 1 140px; min-width: 0; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-0); color: var(--text-primary); font: inherit; }
+button { padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-0); color: var(--text-primary); font: inherit; cursor: pointer; }
+button:hover { border-color: var(--text-muted); }
+dl.server { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+dl.server dt { color: var(--text-secondary); }
+dl.server dd { margin: 0; }
+code { font-size: 12px; }
+@media (max-width: 700px) {
+  table.flags thead { display: none; }
+  table.flags tr { display: grid; grid-template-columns: 1fr auto auto; gap: 6px 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  table.flags tr:last-child { border-bottom: 0; }
+  table.flags td { border: 0; padding: 0; }
+  table.flags td.wide { display: none; }
+  table.flags td.form { grid-column: 1 / -1; }
+}
+</style>
+</head>
+<body>
+<main>
+{% macro delta(cur, prev) -%}
+  {%- set d = cur - prev -%}
+  {%- if d > 0 %}+{{ d|round(1) if d is float else d }}{% elif d < 0 %}{{ d|round(1) if d is float else d }}{% else %}no change{% endif %} vs the {{ days }} days before
+{%- endmacro %}
+{% macro onoff(value) -%}
+  {%- if value is none %}<span class="muted">·</span>{% elif value %}<span class="pill on">on</span>{% else %}<span class="pill off">off</span>{% endif -%}
+{%- endmacro %}
+{% macro pct(rate) -%}{% if rate is none %}–{% else %}{{ (rate * 100)|round|int }}%{% endif %}{%- endmacro %}
+
+<header>
+  <div>
+    <h1>Roads &amp; Runes admin</h1>
+    <div class="muted small">{{ server.environment }} · {{ server.version }} · the last {{ days }} days (UTC, today included) · read {{ s.generatedAt[:16].replace("T", " ") }} UTC</div>
+  </div>
+  <nav class="windows" aria-label="Window">
+    {% for w in windows %}<a href="?days={{ w }}"{% if w == days %} aria-current="page"{% endif %}>{{ w }} days</a> {% endfor %}
+  </nav>
+</header>
+
+<div class="notes">
+  {% if server.devAuth %}<div class="note warning"><b>Warning</b>Developer sign-in is on: anyone with the URL can create an account or sign in as any developer account.</div>{% endif %}
+  {% if s.rides.stuck %}<div class="note critical"><b>Critical</b>{{ s.rides.stuck }} ride{{ "s" if s.rides.stuck != 1 }} uploaded or processing for over an hour.</div>{% endif %}
+  {% if s.rides.failed %}<div class="note critical"><b>Critical</b>{{ s.rides.failed }} outing{{ "s" if s.rides.failed != 1 }} in this window failed processing (<code>PROCESSING_ERROR</code>). <code>python -m app.jobs.reprocess --list</code> finds them to run again.</div>{% endif %}
+  {% if s.rides.unfinished %}<div class="note warning"><b>Warning</b>{{ s.rides.unfinished }} recording{{ "s" if s.rides.unfinished != 1 }} started over a day ago and never finished.</div>{% endif %}
+</div>
+
+<section class="tiles" aria-label="Headline numbers">
+  <div class="tile"><div class="label">Active riders</div><div class="value">{{ s.riders.active }}</div><div class="delta">{{ delta(s.riders.active, s.riders.activeBefore) }}</div></div>
+  <div class="tile"><div class="label">Returning riders</div><div class="value">{{ s.riders.returning }}</div><div class="delta">also rode in the {{ days }} days before</div></div>
+  <div class="tile"><div class="label">Outings</div><div class="value">{{ s.rides.outings }}</div><div class="delta">{{ delta(s.rides.outings, s.rides.outingsBefore) }}</div></div>
+  <div class="tile"><div class="label">Distance, km</div><div class="value">{{ s.rides.km }}</div><div class="delta">{{ delta(s.rides.km, s.rides.kmBefore) }}</div></div>
+  <div class="tile"><div class="label">New cells explored</div><div class="value">{{ s.exploration.newCells }}</div><div class="delta">{{ delta(s.exploration.newCells, s.exploration.newCellsBefore) }}</div></div>
+  <div class="tile"><div class="label">New riders</div><div class="value">{{ s.riders.new }}</div><div class="delta">{{ delta(s.riders.new, s.riders.newBefore) }}</div></div>
+</section>
+
+<h2>Day by day</h2>
+<div class="charts">
+  {% for title, c in charts %}
+  <figure class="card" style="margin:0">
+    <h3>{{ title }}</h3>
+    <svg viewBox="0 0 {{ c.view_w }} {{ c.view_h }}" role="img" aria-label="{{ title }}, {{ c.first }} to {{ c.last }}">
+      <line class="grid" x1="{{ c.left }}" x2="{{ c.right }}" y1="{{ c.top_y }}" y2="{{ c.top_y }}"/>
+      <line class="grid" x1="{{ c.left }}" x2="{{ c.right }}" y1="{{ c.base_y }}" y2="{{ c.base_y }}"/>
+      <text class="tick" x="{{ c.left - 6 }}" y="{{ c.top_y + 4 }}" text-anchor="end">{{ c.top }}</text>
+      <text class="tick" x="{{ c.left - 6 }}" y="{{ c.base_y + 4 }}" text-anchor="end">0</text>
+      {% for m in c.marks %}
+      <g><title>{{ m.label }}: {{ m.value }}</title>
+        <rect class="hit" x="{{ m.slot_x }}" y="{{ c.top_y }}" width="{{ m.slot_w }}" height="{{ c.base_y - c.top_y }}"/>
+        {% if m.path %}<path class="bar" d="{{ m.path }}"/>{% endif %}
+      </g>
+      {% endfor %}
+      <text class="tick" x="{{ c.left }}" y="{{ c.view_h - 4 }}">{{ c.first[5:] }}</text>
+      <text class="tick" x="{{ c.right }}" y="{{ c.view_h - 4 }}" text-anchor="end">{{ c.last[5:] }}</text>
+    </svg>
+  </figure>
+  {% endfor %}
+</div>
+<details>
+  <summary>As a table</summary>
+  <div class="scroll card" style="margin-top:8px">
+    <table>
+      <thead><tr><th>Day</th><th class="num">Outings</th><th class="num">Riders</th><th class="num">km</th><th class="num">New riders</th></tr></thead>
+      <tbody>
+        {% for d in s.daily|reverse %}<tr><td>{{ d.date }}</td><td class="num">{{ d.outings }}</td><td class="num">{{ d.riders }}</td><td class="num">{{ d.km }}</td><td class="num">{{ d.signups }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<h2>The game</h2>
+<div class="cards">
+  <div class="card">
+    <h3>Quests</h3>
+    <table>
+      <tr><td>Accepted</td><td class="num">{{ s.quests.accepted }}</td></tr>
+      {% for status, n in s.quests.ended.items() %}<tr><td>{{ status|capitalize }}</td><td class="num">{{ n }}</td></tr>{% endfor %}
+      <tr><td>Story steps finished</td><td class="num">{{ s.quests.storySteps }}</td></tr>
+      <tr><td>Completed, of those ended</td><td class="num">{{ pct(s.quests.completionRate) }}</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h3>The world: placed in the window, and claimed</h3>
+    {% if s.world %}
+    <table>
+      <thead><tr><th>Kind</th><th class="num">Placed</th><th class="num">Claimed</th><th class="num">Rate</th></tr></thead>
+      {% for w in s.world %}<tr><td>{{ w.kind|capitalize }}</td><td class="num">{{ w.placed }}</td><td class="num">{{ w.claimed }}</td><td class="num">{{ pct(w.rate) }}</td></tr>{% endfor %}
+    </table>
+    {% else %}<p class="muted">Nothing placed.</p>{% endif %}
+  </div>
+  <div class="card">
+    <h3>Coins</h3>
+    <table>
+      <tr><td>Earned</td><td class="num">{{ s.coins.earned }}</td></tr>
+      <tr><td>Spent</td><td class="num">{{ s.coins.spent }}</td></tr>
+      <tr><td>Held in every wallet now</td><td class="num">{{ s.coins.balances }}</td></tr>
+    </table>
+    {% if s.coins.byKind %}
+    <details><summary>By kind</summary>
+      <table>{% for k in s.coins.byKind %}<tr><td><code>{{ k.kind }}</code></td><td class="num">{{ k.amount }}</td><td class="num muted">×{{ k.count }}</td></tr>{% endfor %}</table>
+    </details>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h3>Rides</h3>
+    <table>
+      <tr><td>Moving time, hours</td><td class="num">{{ s.rides.movingHours }}</td></tr>
+      {% for activity, n in s.rides.byActivity.items() %}<tr><td>{{ activity|capitalize }}</td><td class="num">{{ n }}</td></tr>{% endfor %}
+    </table>
+    <details><summary>Every ride started, by status</summary>
+      <table>{% for status, n in s.rides.byStatus.items() %}<tr><td><code>{{ status }}</code></td><td class="num">{{ n }}</td></tr>{% else %}<tr><td class="muted">None</td></tr>{% endfor %}</table>
+    </details>
+  </div>
+  <div class="card">
+    <h3>Riders</h3>
+    <table>
+      <tr><td>Accounts</td><td class="num">{{ s.riders.total }}</td></tr>
+      <tr><td>Strava connected</td><td class="num">{{ s.riders.strava }}</td></tr>
+      {% for cls, n in s.riders.classes.items() %}<tr><td>{{ cls|capitalize }}</td><td class="num">{{ n }}</td></tr>{% endfor %}
+    </table>
+  </div>
+</div>
+
+<h2 id="flags">Feature flags</h2>
+<p class="muted small">The code's default, then <code>FEATURE_FLAGS</code>{% if feature_flags_env %} (<code>{{ feature_flags_env }}</code>){% endif %}, then an override saved here. An override reaches this process at once and every other within {{ refresh_seconds }} s; the app reads flags from <code>/api/v1/config</code> when it starts. Clear an override to fall back.</p>
+<div class="card">
+  <table class="flags">
+    <thead><tr><th>Flag</th><th>Now</th><th>From</th><th>Default</th><th>Env</th><th>Override</th></tr></thead>
+    <tbody>
+    {% for f in flags %}
+      <tr>
+        <td><code>{{ f.name }}</code>{% if f.note %}<div class="muted small">{{ f.note }}</div>{% endif %}{% if f.updatedAt %}<div class="muted small">saved {{ f.updatedAt.strftime("%Y-%m-%d %H:%M") }} UTC</div>{% endif %}</td>
+        <td>{{ onoff(f.effective) }}</td>
+        <td><span class="source{% if f.source == 'override' %} override{% endif %}">{{ f.source }}</span></td>
+        <td class="wide">{{ onoff(f.default) }}</td>
+        <td class="wide">{{ onoff(f.env) }}</td>
+        <td class="form">
+          <form class="flag" method="post" action="/admin/flags">
+            <input type="hidden" name="token" value="{{ form_token }}">
+            <input type="hidden" name="name" value="{{ f.name }}">
+            <input type="hidden" name="days" value="{{ days }}">
+            <input type="text" name="note" maxlength="200" placeholder="Why (optional)" value="{{ f.note or '' }}" aria-label="Note for {{ f.name }}">
+            <button name="action" value="on">On</button>
+            <button name="action" value="off">Off</button>
+            {% if f.override is not none %}<button name="action" value="clear">Clear</button>{% endif %}
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2>Server</h2>
+<div class="card">
+  <dl class="server">
+    <dt>Version</dt><dd>{{ server.version }}</dd>
+    <dt>Environment</dt><dd>{{ server.environment }}</dd>
+    <dt>Routing</dt><dd>{{ server.routing }}</dd>
+    <dt>Jobs</dt><dd>{{ server.jobs }}</dd>
+    <dt>Model reader</dt><dd>{{ "on" if server.llm else "off" }}</dd>
+    <dt>Developer sign-in</dt><dd>{{ "on" if server.devAuth else "off" }}</dd>
+    <dt>Numbers as JSON</dt><dd><a href="/admin/stats.json?days={{ days }}">/admin/stats.json?days={{ days }}</a></dd>
+  </dl>
+</div>
+</main>
+</body>
+</html>

@@ -1,5 +1,6 @@
-"""Feature flag access. Flags are resolved from settings; a per-user override
-table is a later addition — the interface stays the same."""
+"""Feature flag access. Flags are resolved from settings: the code's defaults, then
+FEATURE_FLAGS, then the overrides saved on /admin (app/admin/flags.py). A per-user
+override is a later addition — the interface stays the same."""
 
 from __future__ import annotations
 

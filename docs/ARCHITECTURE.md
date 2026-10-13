@@ -127,7 +127,10 @@ Resolved in `app/core/config.py` from `FEATURE_FLAGS`; exposed via
 `GET /config` and `GET /world`. The four classes ship enabled; parties, story
 quests, Strava and LLM narrative default off and are switched on per
 environment (`backend/fly.toml` turns on parties, story quests and LLM
-narrative, and turns the fog drawing off).
+narrative, and turns the fog drawing off). An override saved on `/admin`
+(`app/admin/flags.py`, table `feature_flag_overrides`) wins over
+`FEATURE_FLAGS` without a deploy; every process reloads overrides within 30
+seconds (`infra/README.md`).
 
 ## Testing
 
