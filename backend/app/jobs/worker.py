@@ -6,6 +6,7 @@ import asyncio
 
 import redis.asyncio as redis
 
+from app.admin import flags as flag_overrides
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.jobs.handlers import HANDLERS
@@ -19,10 +20,12 @@ async def main() -> None:
     configure_logging(settings.log_level, json_output=settings.environment != "development")
     queue = RedisJobQueue(redis.from_url(settings.redis_url))
     log.info("worker_started", redis=settings.redis_url)
+    await flag_overrides.refresh(force=True)
     while True:
         item = await queue.pop()
         if item is None:
             continue
+        await flag_overrides.refresh()  # what /admin switched reaches the jobs too
         name, payload = item
         handler = HANDLERS.get(name)
         if handler is None:

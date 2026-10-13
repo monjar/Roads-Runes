@@ -8,6 +8,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import __version__
+from app.admin import flags as flag_overrides
+from app.admin.router import router as admin_router
 from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.errors import install_error_handlers
@@ -24,6 +26,7 @@ log = get_logger(__name__)
 
 async def build_state(app: FastAPI, settings: Settings) -> None:
     app.state.settings = settings
+    await flag_overrides.refresh(force=True)
     app.state.llm = build_llm(settings)
     redis_client = None
     if settings.job_queue == "redis" or settings.environment in ("staging", "production"):
@@ -68,7 +71,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         docs_url="/docs" if not settings.is_production else None,
     )
     install_error_handlers(app)
+    app.add_middleware(flag_overrides.RefreshFlagsMiddleware)
     app.include_router(api_router, prefix=settings.api_prefix)
+    app.include_router(admin_router)
     return app
 
 

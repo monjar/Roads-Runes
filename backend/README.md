@@ -87,6 +87,8 @@ app/
   notifications/device tokens, push (APNs behind a flag)
   jobs/         queue abstraction (inline / Redis), worker, and reprocess (rerun a
                 ride whose processing failed)
+  admin/        /admin: stats across every rider and feature flag overrides
+                (off until ADMIN_TOKEN is set; ../infra/README.md)
   api/v1/       router assembly
 alembic/        migrations (PostGIS columns + indexes live here)
 scripts/        gen_levels.py, seed_discoveries.py, seed_dev.py, eval_requests.py,
@@ -95,5 +97,5 @@ scripts/        gen_levels.py, seed_discoveries.py, seed_dev.py, eval_requests.p
 
 ## Environment variables
 
-See `.env.example`. `FEATURE_FLAGS` is a comma list (`story_quests,!fog_of_war`).
-Never use production credentials locally.
+See `.env.example`. `FEATURE_FLAGS` is a comma list (`story_quests,!fog_of_war`);
+an override saved on `/admin` wins over it. Never use production credentials locally.

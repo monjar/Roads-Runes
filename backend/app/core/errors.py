@@ -111,4 +111,5 @@ def install_error_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=exc.status_code,
             content={"error": {"code": code, "message": str(exc.detail), "details": {}}},
+            headers=getattr(exc, "headers", None),  # a 401's WWW-Authenticate (app/admin/router.py)
         )

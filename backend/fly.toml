@@ -2,7 +2,8 @@
 #
 #   cd backend && fly deploy
 #
-# Secrets (never in this file): DATABASE_URL, JWT_SECRET, DEV_AUTH_ENABLED.
+# Secrets (never in this file): DATABASE_URL, JWT_SECRET, DEV_AUTH_ENABLED, and
+# ADMIN_TOKEN for /admin (infra/README.md).
 # The database is a separate app with PostGIS and a volume (infra/fly/db).
 # GraphHopper is not deployed here, so routing goes through Valhalla; see
 # routing/README.md before pointing this at real riders.

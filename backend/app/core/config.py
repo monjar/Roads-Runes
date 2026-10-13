@@ -76,6 +76,21 @@ DEFAULT_FLAGS: dict[str, bool] = {
 # until FEATURE_FLAGS says otherwise; tests and production keep DEFAULT_FLAGS.
 DEVELOPMENT_FLAGS: dict[str, bool] = {"pledge": True}
 
+# Overrides saved on /admin (app/admin/flags.py), applied over FEATURE_FLAGS. Held per
+# process and read by every Settings instance, since every caller asks `settings.flags`.
+RUNTIME_FLAG_OVERRIDES: dict[str, bool] = {}
+
+
+def parse_feature_flags(raw: str) -> dict[str, bool]:
+    """FEATURE_FLAGS is a comma separated list; `name` enables, `!name` disables."""
+    parsed: dict[str, bool] = {}
+    for token in (t.strip() for t in raw.split(",")):
+        if token.startswith("!"):
+            parsed[token[1:]] = False
+        elif token:
+            parsed[token] = True
+    return parsed
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -136,6 +151,9 @@ class Settings(BaseSettings):
     apns_enabled: bool = False
 
     feature_flags: str = ""
+    # HTTP Basic password for /admin (app/admin/router.py); empty turns the page off.
+    # Separate from user sign-in, which developer sign-in makes anyone's to claim.
+    admin_token: str = ""
     job_queue: Literal["inline", "redis"] = "inline"
     rate_limit_per_minute: int = 240
     # A letter is shown again only on a journey this many days after it was written
@@ -154,23 +172,22 @@ class Settings(BaseSettings):
         return self.environment == "production"
 
     @property
-    def flags(self) -> dict[str, bool]:
-        """Resolved feature flags: defaults overridden by FEATURE_FLAGS.
-
-        FEATURE_FLAGS is a comma separated list; `name` enables, `!name` disables.
-        """
+    def default_flags(self) -> dict[str, bool]:
+        """The code's flags for this environment, before FEATURE_FLAGS."""
         resolved = dict(DEFAULT_FLAGS)
         if self.environment == "development":
             resolved.update(DEVELOPMENT_FLAGS)
-        for raw in self.feature_flags.split(","):
-            token = raw.strip()
-            if not token:
-                continue
-            if token.startswith("!"):
-                resolved[token[1:]] = False
-            else:
-                resolved[token] = True
         return resolved
+
+    @property
+    def env_flags(self) -> dict[str, bool]:
+        """Defaults overridden by FEATURE_FLAGS."""
+        return self.default_flags | parse_feature_flags(self.feature_flags)
+
+    @property
+    def flags(self) -> dict[str, bool]:
+        """Resolved feature flags: FEATURE_FLAGS overridden by what /admin saved."""
+        return self.env_flags | RUNTIME_FLAG_OVERRIDES
 
     def validate_for_environment(self) -> None:
         if self.is_production:
@@ -178,6 +195,8 @@ class Settings(BaseSettings):
                 raise RuntimeError("DEV_AUTH_ENABLED must be false in production")
             if self.jwt_secret == "change-me-in-real-environments":
                 raise RuntimeError("JWT_SECRET must be set in production")
+        if self.admin_token and len(self.admin_token) < 24:
+            raise RuntimeError("ADMIN_TOKEN must be at least 24 characters (openssl rand -hex 24)")
 
 
 @lru_cache

@@ -23,6 +23,8 @@ dependencies = [
     "structlog>=24.1",
     "orjson>=3.10",
     "python-multipart>=0.0.9",
+    # The /admin page's template (app/admin/templates).
+    "jinja2>=3.1",
     # Garmin's FIT SDK: courses and activities for Garmin devices (docs/GARMIN.md).
     # 21.200.0 is the first release that can write files, not only read them.
     "garmin-fit-sdk>=21.200.0",
