@@ -152,7 +152,7 @@ async def test_first_playable_journey(explorer_client: AsyncClient):
     r = await c.post(f"/quests/{quest['id']}/accept")
     assert r.status_code == 200 and r.json()["status"] == "ACCEPTED"
 
-    # 10-11. Three routes; pick "Adventure" (or the best available).
+    # 10-11. Three routes; pick "As asked" (or the best available), as the phone does.
     r = await c.post(
         "/routes/generate",
         json={
@@ -170,7 +170,7 @@ async def test_first_playable_journey(explorer_client: AsyncClient):
     for a in alts:
         assert a["distanceMeters"] > 0 and a["instructions"] and a["elevationSamples"] and "paved" in a["surface"]
         assert 0 <= a["score"] <= 1
-    chosen = next((a for a in alts if a["label"] == "Adventure"), alts[0])
+    chosen = next((a for a in alts if a["label"] == "As asked"), alts[0])
 
     # 12. Download route package.
     r = await c.get(f"/routes/{chosen['id']}/package")

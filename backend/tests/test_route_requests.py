@@ -169,11 +169,14 @@ async def test_a_ride_in_a_named_place_goes_there_with_the_stops_asked_for(
     carrying = [r for r in body["alternatives"] if carried(r)]
     assert carrying, "no alternative honoured the request"
     if shapes:
-        # As asked carries every pub, on the line; Direct the nearer half of them; and
-        # "Other stops" a different set, none of the first card's (0.9.2).
+        # As asked carries every pub, on the line; the plain card (Direct, renamed on a
+        # loop for what it is) the nearer half of them; and "Other stops" a different
+        # set, none of the first card's (0.9.2).
         by_label = {route["label"]: route for route in body["alternatives"]}
+        assert "Direct" not in by_label
+        plain = next(route for label, route in by_label.items() if label not in ("As asked", "Other stops"))
         assert carried(by_label["As asked"]) == asked
-        assert carried(by_label["Direct"]) < asked
+        assert carried(plain) < asked
         if "Other stops" in by_label:
             assert carried(by_label["Other stops"]) and not carried(by_label["Other stops"]) & asked
         carrying = [by_label["As asked"]]

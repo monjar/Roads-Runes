@@ -86,14 +86,16 @@ struct RouteCard: View {
 }
 
 /// Functional colour for the three labelled alternatives: terracotta is the
-/// selected route, sage the Relaxed alternative, dashed grey the Fast one.
+/// selected route, sage the Relaxed alternative, dashed grey the Fast one. The
+/// server names cards for what came back ("Quietest", "Shortest"), older ones for
+/// the preset they asked for.
 enum RouteStyle {
     case relaxed, adventure, fast
 
     static func of(_ label: String) -> RouteStyle {
         switch label.lowercased() {
-        case "relaxed", "gentle", "easy", "scenic": return .relaxed
-        case "fast", "direct", "quick": return .fast
+        case "relaxed", "gentle", "easy", "scenic", "quietest", "flattest", "most cycleways": return .relaxed
+        case "fast", "direct", "quick", "shortest": return .fast
         default: return .adventure
         }
     }

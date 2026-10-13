@@ -436,6 +436,133 @@ def _keep_labels_honest(results: list[tuple[Route, dict[str, float]]]) -> None:
         route.label = "The long way" if route.distance_meters > asked.distance_meters * 1.05 else "Another way"
 
 
+# A preset (scoring.json "labels") names what a card asked the engine for, not what
+# came back: a gravel costing over London's tarmac comes back tarmac, and the card
+# still said "Gravel". Each is renamed after what its numbers show beside the other
+# cards, by a margin a rider would notice, and so is a card that is only "Another
+# way". Each name is true of one card at most.
+EARNED: dict[str, Callable[[Route, list[Route]], bool]] = {
+    "Most gravel": lambda r, others: _unpaved(r) >= 0.10 and all(_unpaved(r) >= _unpaved(o) + 0.05 for o in others),
+    "Hilliest": lambda r, others: all(
+        r.elevation_gain_meters >= max(o.elevation_gain_meters * 1.2, o.elevation_gain_meters + 25) for o in others
+    ),
+    "Flattest": lambda r, others: all(
+        r.elevation_gain_meters <= min(o.elevation_gain_meters * 0.8, o.elevation_gain_meters - 15) for o in others
+    ),
+    "Quietest": lambda r, others: all(r.traffic_exposure <= o.traffic_exposure - 0.05 for o in others),
+    "Most cycleways": lambda r, others: (
+        r.cycleway_fraction >= 0.2 and all(r.cycleway_fraction >= o.cycleway_fraction + 0.05 for o in others)
+    ),
+    "Most new ground": lambda r, others: (
+        r.new_territory_fraction >= 0.1
+        and all(r.new_territory_fraction >= o.new_territory_fraction + 0.1 for o in others)
+    ),
+    "Shortest": lambda r, others: all(r.distance_meters <= o.distance_meters * 0.95 for o in others),
+    "The long way": lambda r, others: all(r.distance_meters >= o.distance_meters * 1.1 for o in others),
+}
+# Read from the engine's surface and road-class details: without them on every card
+# these are defaults, not measurements, and name nothing.
+FROM_DETAILS = ("Most gravel", "Quietest", "Most cycleways")
+# What each preset was after, tried first; then any other name the card has earned.
+PRESET_HINTS: dict[str, tuple[str, ...]] = {
+    "Relaxed": ("Quietest", "Most cycleways", "Flattest"),
+    "Adventure": ("Most new ground", "Most gravel", "Hilliest"),
+    "Scenic": ("Most new ground", "Quietest"),
+    "Gravel": ("Most gravel",),
+    "Challenge": ("Hilliest", "The long way"),
+    "Parks": ("Quietest", "Most cycleways"),
+    "Longer": ("The long way",),
+    DIRECT_LABEL: ("Shortest",),
+    shapes.ANOTHER_WAY: (),
+    shapes.LONG_WAY: (),
+}
+# Direct stays Direct on a ride to a place while nothing is shorter than it by more;
+# The long way, given for intent ("the same ride, longer"), stays only if it is.
+DIRECT_SLACK = 1.03
+LONG_WAY_SLACK = 1.05
+COMPASS = ("north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west")
+# A route this close around its own ends keeps to no side worth naming.
+SIDE_MIN_M = 150.0
+FALLBACK_LABELS = (shapes.ANOTHER_WAY, "One more way", "Yet another way")
+# A dropped card a note may still name: Direct is a role ("the plain way there"),
+# and "Another way" claims nothing.
+KEPT_IN_NOTES = (DIRECT_LABEL, shapes.ANOTHER_WAY)
+SAME_ROAD = " are the same road here"
+
+
+def _side(route: Route) -> str | None:
+    """The side a route keeps to: for a loop, where it goes from home; for a ride
+    somewhere, which side of the straight line it bows to. From the middle of its
+    ends to the middle of its length."""
+    coords = route.coordinates
+    lat = lon = total = 0.0
+    for a, b in zip(coords, coords[1:], strict=False):
+        length = haversine_m(a[1], a[0], b[1], b[0])
+        lat += (a[1] + b[1]) / 2 * length
+        lon += (a[0] + b[0]) / 2 * length
+        total += length
+    if total == 0:
+        return None
+    end_lat, end_lon = (coords[0][1] + coords[-1][1]) / 2, (coords[0][0] + coords[-1][0]) / 2
+    lat, lon = lat / total, lon / total
+    if haversine_m(end_lat, end_lon, lat, lon) < SIDE_MIN_M:
+        return None
+    return f"Via the {COMPASS[round(bearing_deg(end_lat, end_lon, lat, lon) / 45) % 8]}"
+
+
+def _name_presets(results: list[tuple[Route, dict[str, float]]], to_a_place: bool) -> dict[str, str]:
+    """Renames every card still wearing a preset, and says which became what. With
+    nothing to tell two cards apart, not even a side, the name says only that."""
+    routes = [route for route, _ in results]
+
+    def holds(route: Route) -> bool:
+        others = [other.distance_meters for other in routes if other is not route]
+        if route.label == DIRECT_LABEL:
+            return to_a_place and route.distance_meters <= min(others, default=math.inf) * DIRECT_SLACK
+        if route.label == shapes.LONG_WAY:
+            return bool(others) and route.distance_meters >= max(others) * LONG_WAY_SLACK
+        return route.label not in PRESET_HINTS
+
+    renamed = [route for route in routes if not holds(route)]
+    taken = {route.label for route in routes if route not in renamed}
+    if any((route.request or {}).get("detailsMissing") for route in routes):
+        taken.update(FROM_DETAILS)
+    renames: dict[str, str] = {}
+    for route in renamed:
+        others = [other for other in routes if other is not route]
+        if not others:
+            name = "The way there" if to_a_place else "Round trip"
+        else:
+            hints = PRESET_HINTS[route.label]
+            order = [*hints, *(n for n in EARNED if n not in hints)]
+            name = next((n for n in order if n not in taken and EARNED[n](route, others)), None)
+            side = None if name else _side(route)
+            name = name or (side if side not in taken else None)
+            name = name or next(n for n in FALLBACK_LABELS if n not in taken)
+        renames[route.label] = name
+        taken.add(name)
+        route.label = name
+        route.request = {**(route.request or {}), "label": name}
+    return renames
+
+
+def _renamed_notes(notes: list[str], renames: dict[str, str], count: int) -> list[str]:
+    """The notes in the names the cards now wear. A note about a preset card that was
+    dropped would name a card the rider never sees, so it says how many ways there
+    are instead."""
+    out: list[str] = []
+    for note in notes:
+        if note.endswith(SAME_ROAD) and " and " in note:
+            pair = note[: -len(SAME_ROAD)].split(" and ", 1)
+            if any(name in PRESET_HINTS and name not in KEPT_IN_NOTES and name not in renames for name in pair):
+                note = shapes.fewer_cards_note(count)
+            else:
+                note = " and ".join(renames.get(name, name) for name in pair) + SAME_ROAD
+        if note not in out:
+            out.append(note)
+    return out
+
+
 AREA_TAKEOVER_M = 2000.0
 # "From Aragon Tower" moves the start only when the tower is not where the rider is.
 ORIGIN_TAKEOVER_M = 300.0
@@ -2163,6 +2290,9 @@ async def _generate(
         parsed_dict["notes"] = notes + same_road
     await db.flush()
     _keep_labels_honest(results)
+    renames = _name_presets(results, destination is not None)
+    if renames and parsed_dict is not None:
+        parsed_dict["notes"] = _renamed_notes(parsed_dict["notes"], renames, len(results))
     if shaped:
         # A label renamed for breaking its promise must not repeat another card's.
         for (route, _), label in zip(results, shapes.unique_labels([r.label for r, _ in results]), strict=True):
