@@ -85,6 +85,15 @@ otherwise. Both targets take the same pair — the watch app and the phone app
 have to agree or validation rejects them. `ITSAppUsesNonExemptEncryption: false`
 is already in the Info.plist, so no export-compliance question is asked per build.
 
+The widgets, the Live Activity and the Watch complication are left out of the
+archive unless the run is started with **extensions** ticked. Their App IDs
+(`com.roadsandrunes.app.widgets`, `com.roadsandrunes.app.watchkitapp.widgets`)
+need the app group `group.com.roadsandrunes.app`, and an API key cannot attach an
+app group: the archive fails with "Authentication failed" and no profile for
+either. Attach it once in the developer portal (Certificates, Identifiers &
+Profiles → Identifiers → each App ID → App Groups → Configure), then tick
+**extensions**, and make it the default once a build with them has gone through.
+
 The dSYMs are kept as a workflow artifact for 90 days to symbolicate crash
 reports against.
 

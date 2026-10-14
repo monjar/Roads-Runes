@@ -21,6 +21,10 @@ on:
       build:
         description: "Build number (blank uses the date, which never repeats)"
         required: false
+      extensions:
+        description: "Include the widgets, Live Activity and Watch complication (their App IDs need the app group first)"
+        type: boolean
+        default: false
   push:
     tags: ["v*"]
 
@@ -98,7 +102,23 @@ jobs:
             exit 1
           fi
 
-      - run: brew install xcodegen
+      - run: brew install xcodegen yq
+
+      # The widget extensions' App IDs (com.roadsandrunes.app.widgets and
+      # ...watchkitapp.widgets) need group.com.roadsandrunes.app attached, and an API
+      # key cannot attach an app group: Xcode answers "Authentication failed" and finds
+      # no profile. Until that is done in the developer portal, the archive leaves the
+      # two extensions out, as the 0.9.0 and 0.9.1 builds did. A tag push has no
+      # inputs and leaves them out too.
+      - name: Leave out the extensions
+        if: ${{ inputs.extensions != true }}
+        working-directory: ios
+        run: |
+          yq -i 'del(.targets.RoadsAndRunes.dependencies[] | select(.target == "RoadsAndRunesWidgets"))
+            | del(.targets.RoadsAndRunesWatch.dependencies[] | select(.target == "RoadsAndRunesWatchWidgets"))
+            | del(.targets.RoadsAndRunesWidgets) | del(.targets.RoadsAndRunesWatchWidgets)' project.yml
+          if grep -q Widgets project.yml; then echo "::error::project.yml still names a widget target"; exit 1; fi
+          echo "Archiving without the widgets, the Live Activity and the Watch complication"
 
       - name: Generate the project
         working-directory: ios
