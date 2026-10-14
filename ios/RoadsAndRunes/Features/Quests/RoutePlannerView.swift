@@ -106,7 +106,12 @@ final class RoutePlannerViewModel {
         if let rune { return "\(rune.prefix(1).uppercased() + rune.dropFirst()) rune ride" }
         if let destination { return "\(activity.verb) to \(destination.name)" }
         let asked = request.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !asked.isEmpty else { return "\(selected.label) \(activity.noun)" }
+        guard !asked.isEmpty else {
+            // "Quietest ride"; a name of more than one word reads as itself: "Ride · via the north".
+            let label = selected.label
+            guard label.contains(" ") else { return "\(label) \(activity.noun)" }
+            return "\(activity.verb) · \(label.prefix(1).lowercased() + label.dropFirst())"
+        }
         return String((asked.prefix(1).uppercased() + asked.dropFirst()).prefix(120))
     }
 

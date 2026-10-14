@@ -106,8 +106,10 @@ async def test_a_map_tap_gets_three_ways_from_two_requests(explorer_client, same
     cards = r.json()["alternatives"]
     # The quiet way (the gravel bike's quietest flavour) and Direct are the same road
     # here: Direct is dropped, and the third card is an alternate the two requests
-    # already brought back.
-    assert sorted(c["label"] for c in cards) == ["Another way", "Gravel"], [c["label"] for c in cards]
+    # already brought back. The synthetic roads are alike in every number and keep to
+    # no side, so neither card earns a name, and the quiet one no longer says "Gravel"
+    # over tarmac.
+    assert [c["label"] for c in cards] == ["Another way", "One more way"], [c["label"] for c in cards]
     assert_different(cards)
     assert len(same_road.requests) == 2
     assert [rq.alternatives for rq in same_road.requests] == [3, 2]
@@ -169,7 +171,8 @@ async def test_another_way_that_pushes_the_bike_through_a_tunnel_is_not_offered(
     cards = r.json()["alternatives"]
     # The pooled alternates all go through the tunnel: the third card is left out
     # rather than offer a walk as a ride (Direct is the same road, as on the map tap).
-    assert [c["label"] for c in cards] == ["Gravel"], [c["label"] for c in cards]
+    # One card has nothing to be compared with; it is the way there, not "Gravel".
+    assert [c["label"] for c in cards] == ["The way there"], [c["label"] for c in cards]
 
 
 @pytest.mark.anyio
@@ -344,7 +347,9 @@ async def test_a_loop_through_stops_offers_other_stops(explorer_client, same_roa
     )
     assert r.status_code == 200, r.text
     cards = {c["label"]: c for c in r.json()["alternatives"]}
-    assert set(cards) == {"As asked", "Direct", "Other stops"}, set(cards)
+    # The plain card of a loop goes nowhere directly: it is named for being shorter.
+    assert set(cards) == {"As asked", "Shortest", "Other stops"}, set(cards)
+    assert cards["Shortest"]["distanceMeters"] < 0.95 * cards["As asked"]["distanceMeters"]
     assert_different(list(cards.values()))
     asked = {p["name"] for p in cards["As asked"]["pois"] if p.get("requested")}
     other = {p["name"] for p in cards["Other stops"]["pois"] if p.get("requested")}

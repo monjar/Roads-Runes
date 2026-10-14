@@ -112,14 +112,10 @@ async def test_a_walker_plans_walks_by_default(explorer_client):
     assert r.status_code == 200, r.text
     alternatives = r.json()["alternatives"]
     assert {a["activity"] for a in alternatives} == {"WALK"}
-    assert {a["label"] for a in alternatives} <= {
-        "Direct",
-        "Parks",
-        "Longer",
-        "As asked",
-        "The long way",
-        "Another way",
-    }
+    labels = [a["label"] for a in alternatives]
+    # A walk's presets (Direct, Parks, Longer) say what was asked of the engine; the
+    # cards are named for what came back, and a loop is direct to nowhere.
+    assert len(set(labels)) == len(labels) and not {"Direct", "Parks", "Longer"} & set(labels), labels
     for a in alternatives:
         # A walk of about three kilometres, timed at walking pace, not a 25 km ride at 15 km/h.
         assert a["distanceMeters"] < 8000, a["distanceMeters"]

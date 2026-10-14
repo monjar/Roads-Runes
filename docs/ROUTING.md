@@ -24,11 +24,39 @@ RouteGenerateRequest                                  (one plan, one budget of 1
 sorted by score; best becomes quest.suggested_route_id
 ```
 
-Labels are never "Route 1/2/3": Relaxed, Adventure, Scenic, Direct, Gravel,
-Challenge, chosen per bike type and adjusted when the request asks for
-gravel, hills or a destination; As asked and Direct once the rider has asked
-for something; and, for cards that differ in shape rather than costing,
-Another way, The long way and Other stops. No label appears twice.
+Labels are never "Route 1/2/3", and never a promise the route does not keep.
+The planner asks the engine for presets (Relaxed, Adventure, Scenic, Direct,
+Gravel, Challenge, Parks, Longer; per bike type or activity, adjusted when the
+request asks for gravel, hills or a destination), but a preset names the
+request, not what came back: a gravel costing over London's tarmac returns
+tarmac. So once the cards are measured, a card still wearing a preset is
+renamed for what sets it apart from the other cards, by a margin a rider would
+notice (`EARNED` in `app/routing/service.py`):
+
+| Name | True of the card when |
+|---|---|
+| Most gravel | at least 10% unpaved, and 5 points more than every other card |
+| Hilliest / Flattest | 20% and 25 m more / 20% and 15 m less climbing than every other card |
+| Quietest | traffic exposure 0.05 under every other card |
+| Most cycleways | at least 20% cycleway, and 5 points more than every other card |
+| Most new ground | at least 10% new to the rider, and 10 points more than every other card |
+| Shortest / The long way | 5% shorter / 10% longer than every other card |
+
+The preset's own aim is tried first (Gravel → Most gravel, Relaxed → Quietest).
+The surface names need the engine's surface details on every card; without
+them those figures are defaults. A card that earns none is named for the side
+it keeps to ("Via the north": for a loop, where it goes from home; for a ride
+somewhere, the side of the straight line it bows to), else Another way. One
+card alone is The way there or Round trip.
+
+Some names are kept because they are true by construction or checked: As asked;
+Other stops; More gravel, Quieter and the rest of a stated preference pushed
+further (checked against As asked, `CLAIMS`); Direct on a ride to a place while
+no card is more than 3% shorter (the phone prices the other cards against it);
+The long way while it is 5% longer than every other card. Direct on a loop
+goes nowhere directly and is renamed like a preset, usually Shortest. A note
+about a preset card that was dropped would name a card the rider never sees,
+so it becomes "only two different ways here". No label appears twice.
 
 A quest's route, a rune ride and a sealed quest go through their own points
 (objectives, a rune's shape, a goal) and keep 0.9.1's way of planning: one
