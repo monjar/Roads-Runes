@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "snitch": {
+      "command": "npx",
+      "args": ["-y", "snitch-cli", "mcp"],
+      "env": { "SNITCH_URL": "https://mochiro-snitch.fly.dev" }
+    }
+  }
+}
