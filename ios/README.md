@@ -133,6 +133,7 @@ tile server before beta.
 * `RoadsAndRunesCore` (local)
 * MapLibre Native iOS (`maplibre-gl-native-distribution`)
 * `H3` (local package vendoring the uber/h3 v4.1.0 C library, since upstream has no SwiftPM manifest) — wrapped by `Services/Location/H3CellIndexing.swift`
+* [Snitch](https://github.com/onl1ner/Snitch) 1.0.0 (exact) — the version, build, server and size in the Home Screen quick actions for testers, from `Services/QA/QAQuickActions.swift`. On while `QA_QUICK_ACTIONS` is `YES` in `project.yml`, which it is for Debug and Release because every Release build goes to TestFlight; set it to `NO` for an App Store build. iPhone only: watchOS has no Home Screen quick actions.
 
 ## Tests
 

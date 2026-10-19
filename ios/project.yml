@@ -24,6 +24,9 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_STRICT_CONCURRENCY: minimal
     ENABLE_USER_SCRIPT_SANDBOXING: YES
+    # Version, build, server and size in the Home Screen quick actions (Snitch), for
+    # testers. Every Release build goes to TestFlight today; an App Store build sets NO.
+    QA_QUICK_ACTIONS: YES
   configs:
     Debug:
       API_BASE_URL: "http://localhost:8000"
@@ -41,6 +44,9 @@ packages:
     from: "6.5.0"
   H3:
     path: Packages/H3
+  Snitch:
+    url: https://github.com/onl1ner/Snitch
+    exactVersion: "1.0.0"
 
 targets:
   RoadsAndRunes:
@@ -57,6 +63,7 @@ targets:
         product: MapLibre
       - package: H3
         product: H3
+      - package: Snitch
       - target: RoadsAndRunesWatch
       # The widgets and the journey's Live Activity (0.7.3), embedded in PlugIns.
       - target: RoadsAndRunesWidgets
@@ -78,6 +85,7 @@ targets:
         # answering the export-compliance question by hand on every TestFlight build.
         ITSAppUsesNonExemptEncryption: false
         API_BASE_URL: $(API_BASE_URL)
+        QA_QUICK_ACTIONS: $(QA_QUICK_ACTIONS)
         # NO for builds signed by a free Personal Team, which cannot carry the entitlement.
         APPLE_SIGN_IN_ENABLED: $(APPLE_SIGN_IN_ENABLED)
         # A physical device reaches the dev backend by LAN address over plain HTTP

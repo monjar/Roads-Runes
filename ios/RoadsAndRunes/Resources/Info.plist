@@ -76,6 +76,8 @@
 	<string>Attach photos to discoveries and adventures.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<key>QA_QUICK_ACTIONS</key>
+	<string>$(QA_QUICK_ACTIONS)</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>Caprasimo-Regular.ttf</string>
