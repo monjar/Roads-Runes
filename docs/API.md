@@ -495,7 +495,7 @@ post-processing re-validates.
 
 ### The sealed quest (0.7.3)
 
-Pick a time, the board picks the way, the goal opens halfway. The server picks somewhere about half the time away at the activity's usual pace (`core/activity.py`: ride 15, run 9.5, walk 4.8 km/h), as the crow flies over roads about 1.3 times longer: a hidden place or a creature when there is one in reach, a place already found when not, a tile on the map at the last (never a memorial, grave, place of worship or hospital). The route goes there and back, so the journey lasts about the minutes asked. One at a time: a new sealed quest retires one that is `AVAILABLE` or `ACCEPTED` (`EXPIRED`); one already `ACTIVE` is left alone. It expires a day after it is made.
+Pick a time, the board picks the way, the goal opens halfway. The server picks somewhere about half the time away at the activity's usual pace (`core/activity.py`: ride 15, run 9.5, walk 4.8 km/h), as the crow flies over roads about 1.3 times longer: a hidden place or a creature when there is one in reach, a place already found when not, a tile on the map at the last (never a memorial, grave, place of worship or hospital). The route goes out to it and home another way (a loop to a place, docs/ROUTING.md), so the journey lasts about the minutes asked. One at a time: a new sealed quest retires one that is `AVAILABLE` or `ACCEPTED` (`EXPIRED`); one already `ACTIVE` is left alone. It expires a day after it is made.
 
 ```json
 {

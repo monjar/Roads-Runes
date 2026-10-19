@@ -12,6 +12,11 @@ So a card is now a shape:
   on a way back with no stops an offset point to pull it wide (`LoopShape`).
 * Cards that come back too alike are dropped, honestly, rather than shown twice
   (`duplicate_of`): the planner shows fewer cards and says why.
+* A quest's loop and a sealed quest's are the same shape (2026-10-19): the objective
+  furthest from the start is where it turns, the others go out on one side and
+  home on the other (`back_via`), and the way back is pulled wide enough for the
+  quest's distance (`offset_factor_for`). Before, a quest went `[O, T, O]` and
+  rode the same road both ways.
 
 `service.py` places the points and asks the engine; this module holds the shapes,
 the thresholds and the tests applied to what comes back.
@@ -19,6 +24,7 @@ the thresholds and the tests applied to what comes back.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
@@ -28,7 +34,12 @@ from app.routing import overlap
 LatLon = tuple[float, float]
 
 # How much of a loop's way back may ride its way out before a second try at it.
-SELF_OVERLAP_MAX = 0.40
+# 0.40 let a loop whose whole length was more than half one road ridden twice
+# through untried (2026-10-19): a quarter of the way home already reads as a line.
+SELF_OVERLAP_MAX = 0.25
+# How much of a loop through stops may ride along itself (`overlap.ridden_twice`),
+# both times counted, before its way home is asked for again.
+RIDDEN_TWICE_MAX = 0.40
 # A card this like one already kept is not another way to ride it.
 SIMILAR = 0.75
 # Direct stays as the yardstick unless it is the same road and about the same length.
@@ -78,6 +89,21 @@ def offset_distance_m(direct_m: float, factor: float) -> float:
     return clamp(direct_m * factor, OFFSET_MIN_M, OFFSET_MAX_M)
 
 
+def offset_factor_for(direct_m: float, target_m: float) -> float:
+    """The offset factor that makes a loop out to a point `direct_m` away and home
+    through an offset point about `target_m` long, never under `OFFSET_FACTOR`.
+
+    The polygon O→D→R→O, with R off the middle of the line by h, is
+    d + 2·√((d/2)² + h²); the road rides about `TARGET_DETOUR` times that.
+    """
+    if direct_m <= 0:
+        return OFFSET_FACTOR
+    half_back = (target_m / TARGET_DETOUR - direct_m) / 2
+    if half_back <= direct_m / 2:
+        return OFFSET_FACTOR
+    return max(OFFSET_FACTOR, math.sqrt(half_back**2 - (direct_m / 2) ** 2) / direct_m)
+
+
 def stop_offset_m(direct_m: float) -> float:
     return clamp(direct_m * STOP_OFFSET_FACTOR, STOP_OFFSET_MIN_M, STOP_OFFSET_MAX_M)
 
@@ -87,10 +113,13 @@ class LoopShape:
     """Out to a destination and back another way.
 
     `[O(break), out-stops(via), named places(via), D(break_through),
-    R(through)?, back-stops(via), O(break)]`. `break_through` forbids the U-turn
-    at D; R, the offset point, is only on a way back with no stops of its own.
-    `through=False` is the same shape with turning back allowed again, for a
-    destination at the end of a dead end.
+    R(through)?, back-stops(via), back-places(via), O(break)]`. `break_through`
+    forbids the U-turn at D; R, the offset point, is only on a way back with no
+    stops or places of its own. `through=False` is the same shape with turning back
+    allowed again, for a destination at the end of a dead end.
+
+    `via` and `back_via` are places the ride must pass whatever the card (a
+    quest's objectives); stops are the card's own and another card may swap them.
     """
 
     start: LatLon
@@ -98,6 +127,7 @@ class LoopShape:
     out_stops: tuple[LatLon, ...] = ()
     via: tuple[LatLon, ...] = ()
     back_stops: tuple[LatLon, ...] = ()
+    back_via: tuple[LatLon, ...] = ()
     offset: LatLon | None = None
     offset_side: int = 1  # +1 left of O→D, −1 right
     offset_factor: float = OFFSET_FACTOR
@@ -111,6 +141,7 @@ class LoopShape:
             self.destination,
             *([self.offset] if self.offset else []),
             *self.back_stops,
+            *self.back_via,
             self.start,
         ]
 
@@ -121,7 +152,7 @@ class LoopShape:
             *(["via"] * (len(self.out_stops) + len(self.via))),
             turn,
             *([through] if self.offset else []),
-            *(["via"] * len(self.back_stops)),
+            *(["via"] * (len(self.back_stops) + len(self.back_via))),
             "break",
         ]
 
@@ -129,7 +160,7 @@ class LoopShape:
         cut: list[float | None] = [None] * (2 + len(self.out_stops) + len(self.via))
         if self.offset:
             cut.append(OFFSET_CUTOFF_M)
-        return [*cut, *([None] * (len(self.back_stops) + 1))]
+        return [*cut, *([None] * (len(self.back_stops) + len(self.back_via) + 1))]
 
     def turn(self) -> int:
         """Where the destination is in `points()`."""

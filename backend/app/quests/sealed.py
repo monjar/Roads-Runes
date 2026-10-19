@@ -3,8 +3,8 @@
 One objective, `hidden` like a puzzle's (quests/service.objective_out drops its
 place until it is done), at somewhere about half the asked time away at the
 activity's usual speed: a hidden place or a creature when there is one, a place
-already found when not, a tile on the map at the last. The route goes there and
-back, so the journey lasts about the minutes asked. The objective's `extra`
+already found when not, a tile on the map at the last. The route goes out to it
+and home another way, so the journey lasts about the minutes asked. The objective's `extra`
 carries `revealAtFraction` and the `goal` itself (name, kind, where), which the
 phone keeps back until the route is that far along: the hiding is the phone's,
 and the route already leads there.
@@ -323,12 +323,13 @@ async def _route_to(
     total_km: float,
     activity: str,
 ) -> Route:
-    """There and back through the goal: one route, not a choice of three."""
+    """Out to the goal and home another way: one route, not a choice of three. The
+    goal is the loop's destination, so the way back does not ride the way out."""
     from app.routing import service as routing
 
     payload = RouteGenerateRequest(
         origin=origin,
-        waypoints=[Coordinate(latitude=goal.latitude, longitude=goal.longitude)],
+        destination=Coordinate(latitude=goal.latitude, longitude=goal.longitude),
         loop=True,
         distanceTargetKm=min(400.0, max(1.0, total_km)),
         activity=activity,  # type: ignore[arg-type]
