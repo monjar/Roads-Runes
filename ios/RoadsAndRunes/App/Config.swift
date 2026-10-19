@@ -28,13 +28,6 @@ enum Config {
         #endif
     }
 
-    /// The version, build, server and size in the Home Screen quick actions (Snitch),
-    /// for testers. On for every build today, because every Release build goes to
-    /// TestFlight; an App Store build passes QA_QUICK_ACTIONS=NO.
-    static var showsQAQuickActions: Bool {
-        (info["QA_QUICK_ACTIONS"] as? String)?.uppercased() == "YES"
-    }
-
     static func mapStyleURL(for style: MapStyleKey) -> URL {
         let key = "MAP_STYLE_\(style.rawValue)"
         let raw = info[key] as? String ?? "https://tiles.openfreemap.org/styles/bright"

@@ -57,6 +57,7 @@ the design option it implements, and the design renders beside them.
 | [GARMIN.md](docs/GARMIN.md) | Routes on a Garmin, journeys into Garmin Connect |
 | [PRIVACY.md](docs/PRIVACY.md) | What is stored, what is shared, what never leaves |
 | [FIELD_TESTS.md](docs/FIELD_TESTS.md) | One ride per question: the protocols a release is ridden against |
+| [QA.md](docs/QA.md) | Reporting a problem from a test build (Snitch), and where reports go |
 | [SCREENS.md](docs/SCREENS.md) | Every screen, the design option behind it, and what a ride says |
 
 Elsewhere: `infra/README.md` (the Fly apps and environments), `routing/README.md`
@@ -108,18 +109,18 @@ key) to your machine's address when running on a device.
 
 ## QA builds
 
-Debug and TestFlight builds show which build they are, one long press on the
-Home Screen icon away: the version, the build number TestFlight shows, the
-server the build talks to and the app's size on the device.
+Debug, ad hoc and TestFlight builds carry
+[Snitch](https://github.com/monjar/mobile-app-qa-sdk), the reporter Mochiro
+uses. Pull the terracotta tab on the right edge of the screen to the left, pick
+Bug, Idea or Other, say what happened and send it: the screen, the last seconds
+of video and a timeline of the last minutes go with it, to the Roads & Runes
+project (`RR-…` tickets) on the Snitch server. App Store builds have no tab and
+send nothing.
 
-<img src="docs/screenshots/app/11-qa-quick-actions.png" alt="Home Screen quick actions: size, server, build, version" width="240">
+<img src="docs/screenshots/app/11-qa-tab.png" alt="The Snitch tab on the right edge" width="200"> <img src="docs/screenshots/app/12-qa-report.png" alt="The report sheet" width="200">
 
-That is [Snitch](https://github.com/onl1ner/Snitch) (MIT, pinned at 1.0.0),
-filled at launch and each time the app goes to the background
-(`ios/RoadsAndRunes/Services/QA/QAQuickActions.swift`). When reporting a bug,
-say what the menu says. `QA_QUICK_ACTIONS` in `ios/project.yml` turns it on;
-every Release build goes to TestFlight today, so it is on in both
-configurations, and an App Store build sets it to `NO`.
+What a report carries, where it goes, and how the ingest key stays out of git
+(`secrets/Snitch.xcconfig`): [docs/QA.md](docs/QA.md).
 
 ## Tests
 

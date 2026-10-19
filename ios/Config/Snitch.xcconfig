@@ -1,0 +1,5 @@
+// Snitch's ingest key (docs/QA.md), read from the gitignored secrets/ folder at the
+// repository root. Without that file the key is empty and Snitch stays inert, with one
+// warning in the log: that is what CI and a fresh clone get.
+SNITCH_INGEST_KEY =
+#include? "../../secrets/Snitch.xcconfig"

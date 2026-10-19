@@ -5,6 +5,10 @@ struct RoadsAndRunesApp: App {
     @State private var container = AppContainer()
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        QAReporting.start()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -12,7 +16,6 @@ struct RoadsAndRunesApp: App {
                 .task {
                     // The widgets' snapshot is written from this container (0.7.3).
                     WidgetSnapshotWriter.shared.attach(container)
-                    QAQuickActions.refresh()
                     await container.bootstrap()
                 }
                 // A widget, the Live Activity or a Shortcut (0.7.3); anything else (Strava) is the container's.
@@ -24,7 +27,6 @@ struct RoadsAndRunesApp: App {
             // Leaving the app is when the reminders are set, from what is true right now.
             guard phase == .background else { return }
             WidgetSnapshotWriter.shared.appBackgrounded()
-            QAQuickActions.refresh()
             Task { await container.nudges.reschedule(character: container.session.character, activity: container.session.defaultActivity, units: container.session.units) }
         }
     }

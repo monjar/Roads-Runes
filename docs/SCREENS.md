@@ -17,10 +17,10 @@ live in `docs/screenshots/app/` at half the device resolution.
 | ![Quest route](screenshots/app/05-quest-route.png) | ![Navigation](screenshots/app/06-navigation.png) | ![Journey's end](screenshots/app/07-journeys-end.png) | ![Journal](screenshots/app/08-journal.png) |
 | The planner opened on the quest's own route: why this route, surface and climbing, the map and the elevation, Start ride. | The instruction card, the quest's goal and progress, the Watch pill, and distance, new ground and time in the stats pill. | The reckoning part-way through: districts, the codex, the written entry, places and new ground, Share card and Save for Garmin. | The month in exploration terms, letters, and the journey's entry with its XP. |
 
-| Character | Ride anywhere | QA quick actions |
-|---|---|---|
-| ![Character](screenshots/app/09-character.png) | ![Ride anywhere](screenshots/app/10-ride-anywhere.png) | ![QA quick actions](screenshots/app/11-qa-quick-actions.png) |
-| Class level and title, the two XP bars, what the rider has explored, found and finished, and the skills still to learn. | The card Ride anywhere opens: no route, and everything on the way counts. | A long press on the Home Screen icon in Debug and TestFlight builds (Snitch): size, server, build, version. |
+| Character | Ride anywhere | Reporting a problem | The report |
+|---|---|---|---|
+| ![Character](screenshots/app/09-character.png) | ![Ride anywhere](screenshots/app/10-ride-anywhere.png) | ![The Snitch tab](screenshots/app/11-qa-tab.png) | ![The report sheet](screenshots/app/12-qa-report.png) |
+| Class level and title, the two XP bars, what the rider has explored, found and finished, and the skills still to learn. | The card Ride anywhere opens: no route, and everything on the way counts. | Test builds only (Snitch, `docs/QA.md`): the terracotta tab on the right edge, and the card a new install shows once. | Pulled left, the tab opens the sheet: Bug, Idea or Other, what happened, the screenshot and the last seconds of video. |
 
 The Watch has not been captured yet; its screens below are still the design
 renders.
