@@ -111,7 +111,12 @@ struct WorldView: View {
                 camera: model.camera,
                 onMapTap: { coordinate, feature in withAnimation(.snappy) { model.tapMap(at: coordinate, feature: feature) } },
                 onLongPress: { coordinate in withAnimation(.snappy) { model.dropPin(at: coordinate) } },
-                onVisibleRegionChanged: { model.regionChanged($0) }
+                onVisibleRegionChanged: { model.regionChanged($0) },
+                // The ⓘ in the gap between the cards and the tab bar, not under the bar's end.
+                attributionMargins: CGPoint(
+                    x: Theme.Spacing.md,
+                    y: Theme.Layout.tabBarHeight + Theme.Layout.tabBarBottomPadding + 2
+                )
             )
             .ignoresSafeArea()
 
@@ -139,109 +144,7 @@ struct WorldView: View {
                 }
                 .padding(.horizontal, 16)
                 Spacer(minLength: 0)
-                HStack {
-                    Spacer()
-                    VStack(spacing: 12) {
-                        // The frontier chevron (0.7.0, ink fog): which way the nearest unexplored tile lies.
-                        if let bearing = model.frontierBearing {
-                            Button { model.goToFrontier() } label: {
-                                Image(systemName: "chevron.up")
-                                    .font(.system(size: 18, weight: .heavy))
-                                    .foregroundStyle(Theme.Colors.ink)
-                                    .rotationEffect(.degrees(bearing))
-                                    .frame(width: 48, height: 48)
-                                    .background(Theme.Colors.cream, in: Circle())
-                                    .overlay(Circle().stroke(Theme.Colors.ink.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [1, 3])))
-                            }
-                            .buttonStyle(.pressable)
-                            .accessibilityLabel("Nearest unexplored area")
-                            .accessibilityIdentifier("world.frontier")
-                        }
-                        IconCircleButton(symbol: "location.fill", size: 48) { model.locateMe() }
-                            .accessibilityLabel("Show my location")
-                        HStack(spacing: 10) {
-                            // Ride anywhere (0.9.2): a journey with no route, behind the server's flag.
-                            if container.session.isEnabled(FeatureFlag.rideAnywhere) {
-                                Button {
-                                    QuickStartCoordinator.shared.handle(.roam(activity: container.session.defaultActivity), autoStart: false)
-                                } label: {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "location.north.line.fill")
-                                            .font(.system(size: 16, weight: .bold))
-                                        Text(LoreCopy.anywhere(container.session.defaultActivity))
-                                            .font(Theme.Typography.text(15, .bold))
-                                            .lineLimit(1)
-                                    }
-                                    .foregroundStyle(Theme.Colors.terracottaDeep)
-                                    .padding(.horizontal, 16)
-                                    .frame(height: 52)
-                                    .background(Theme.Colors.cream, in: Capsule())
-                                    .overlay(Capsule().stroke(Theme.Colors.terracotta.opacity(0.5), lineWidth: 1.5))
-                                    .shadow(color: Theme.Colors.ink.opacity(0.18), radius: 5, y: 2)
-                                }
-                                .buttonStyle(.pressable)
-                                .accessibilityIdentifier("world.rideAnywhere")
-                            }
-                            // The main thing to do, said in words: an icon alone did not say it.
-                            Button { planningFreeRide = true } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
-                                        .font(.system(size: 18, weight: .bold))
-                                    Text("Plan a \(container.session.defaultActivity.noun)")
-                                        .font(Theme.Typography.text(15, .bold))
-                                        .lineLimit(1)
-                                }
-                                .foregroundStyle(Theme.Colors.cream)
-                                .padding(.horizontal, 18)
-                                .frame(height: 52)
-                                .background(Theme.Colors.terracotta, in: Capsule())
-                                .shadow(color: Theme.Colors.ink.opacity(0.25), radius: 6, y: 3)
-                            }
-                            .buttonStyle(.pressable)
-                            .accessibilityIdentifier("world.plan")
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)
-                if let claimed = model.recentClaim {
-                    VStack(spacing: 6) {
-                        ClaimToast(object: claimed)
-                        if let detail = model.recentClaimDetail {
-                            MapPill(text: detail, icon: .sparkles).accessibilityIdentifier("claimSet")
-                        }
-                        if let quest = model.recentQuestTitle {
-                            MapPill(text: "Quest complete: \(quest)", icon: .scroll)
-                                .accessibilityIdentifier("claimQuestComplete")
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .transition(.scale(scale: 0.9).combined(with: .opacity))
-                }
-                if let note = model.cutNote {
-                    MapPill(text: note, icon: .runeStone)
-                        .accessibilityIdentifier("world.cutNote")
-                        .transition(.opacity)
-                }
-                if model.selectedPlace == nil, model.selectedObject == nil, model.resultsTitle == nil {
-                    VStack(alignment: .leading, spacing: 8) {
-                        // The streak; what is near is the Next up card's to say.
-                        TodayStrip(
-                            character: container.session.character,
-                            nearest: nil,
-                            activity: container.session.defaultActivity,
-                            units: model.units,
-                            onNearest: {}
-                        )
-                        NextUpCard(next: model.nextUp, units: model.units, activity: container.session.defaultActivity,
-                                   pledge: container.pledges.isOn ? container.pledges.today : nil,
-                                   district: container.districts.milestoneLine) {
-                            act(on: model.nextUp, model)
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-                bottomCard(model)
+                bottomStack(model)
             }
             .padding(.top, 8)
             // The floating tab bar is drawn over the content, not inset from it.
@@ -274,6 +177,133 @@ struct WorldView: View {
         .sheet(isPresented: $planningFreeRide) { RoutePlannerView(quest: nil) }
     }
 
+    /// Everything that floats over the bottom of the map, as one stack above the tab
+    /// bar: one margin, one spacing, every card and the action row the same width.
+    /// The map's own buttons stand at the trailing edge, beside the streak, rather
+    /// than in a row of their own over the middle of the map.
+    @ViewBuilder
+    private func bottomStack(_ model: WorldViewModel) -> some View {
+        let showsToday = model.selectedPlace == nil && model.selectedObject == nil && model.resultsTitle == nil
+        VStack(spacing: 10) {
+            HStack(alignment: .bottom, spacing: 10) {
+                if showsToday {
+                    // The streak; what is near is the Next up card's to say.
+                    TodayStrip(
+                        character: container.session.character,
+                        nearest: nil,
+                        activity: container.session.defaultActivity,
+                        units: model.units,
+                        onNearest: {}
+                    )
+                    .transition(.opacity)
+                }
+                Spacer(minLength: 0)
+                mapButtons(model)
+            }
+            actionRow
+            if let claimed = model.recentClaim {
+                VStack(spacing: 6) {
+                    ClaimToast(object: claimed)
+                    if let detail = model.recentClaimDetail {
+                        MapPill(text: detail, icon: .sparkles).accessibilityIdentifier("claimSet")
+                    }
+                    if let quest = model.recentQuestTitle {
+                        MapPill(text: "Quest complete: \(quest)", icon: .scroll)
+                            .accessibilityIdentifier("claimQuestComplete")
+                    }
+                }
+                .transition(.scale(scale: 0.9).combined(with: .opacity))
+            }
+            if let note = model.cutNote {
+                MapPill(text: note, icon: .runeStone)
+                    .accessibilityIdentifier("world.cutNote")
+                    .transition(.opacity)
+            }
+            if showsToday {
+                NextUpCard(next: model.nextUp, units: model.units, activity: container.session.defaultActivity,
+                           pledge: container.pledges.isOn ? container.pledges.today : nil,
+                           district: container.districts.milestoneLine) {
+                    act(on: model.nextUp, model)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            bottomCard(model)
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+    }
+
+    /// The frontier chevron over the locate button, at the trailing edge.
+    private func mapButtons(_ model: WorldViewModel) -> some View {
+        VStack(spacing: 10) {
+            // The frontier chevron (0.7.0, ink fog): which way the nearest unexplored tile lies.
+            if let bearing = model.frontierBearing {
+                Button { model.goToFrontier() } label: {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 18, weight: .heavy))
+                        .foregroundStyle(Theme.Colors.ink)
+                        .rotationEffect(.degrees(bearing))
+                        .frame(width: 48, height: 48)
+                        .background(Theme.Colors.cream, in: Circle())
+                        .overlay(Circle().stroke(Theme.Colors.ink.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [1, 3])))
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel("Nearest unexplored area")
+                .accessibilityIdentifier("world.frontier")
+            }
+            IconCircleButton(symbol: "location.fill", size: 48) { model.locateMe() }
+                .accessibilityLabel("Show my location")
+        }
+    }
+
+    /// Ride anywhere and Plan a ride, sharing the stack's width between them.
+    private var actionRow: some View {
+        HStack(spacing: 10) {
+            // Ride anywhere (0.9.2): a journey with no route, behind the server's flag.
+            if container.session.isEnabled(FeatureFlag.rideAnywhere) {
+                Button {
+                    QuickStartCoordinator.shared.handle(.roam(activity: container.session.defaultActivity), autoStart: false)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "location.north.line.fill")
+                            .font(.system(size: 16, weight: .bold))
+                        Text(LoreCopy.anywhere(container.session.defaultActivity))
+                            .font(Theme.Typography.text(15, .bold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .foregroundStyle(Theme.Colors.terracottaDeep)
+                    .padding(.horizontal, 14)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(Theme.Colors.cream, in: Capsule())
+                    .overlay(Capsule().stroke(Theme.Colors.terracotta.opacity(0.5), lineWidth: 1.5))
+                    .shadow(color: Theme.Colors.ink.opacity(0.18), radius: 5, y: 2)
+                }
+                .buttonStyle(.pressable)
+                .accessibilityIdentifier("world.rideAnywhere")
+            }
+            // The main thing to do, said in words: an icon alone did not say it.
+            Button { planningFreeRide = true } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
+                        .font(.system(size: 18, weight: .bold))
+                    Text("Plan a \(container.session.defaultActivity.noun)")
+                        .font(Theme.Typography.text(15, .bold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .foregroundStyle(Theme.Colors.cream)
+                .padding(.horizontal, 14)
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+                .background(Theme.Colors.terracotta, in: Capsule())
+                .shadow(color: Theme.Colors.ink.opacity(0.25), radius: 6, y: 3)
+            }
+            .buttonStyle(.pressable)
+            .accessibilityIdentifier("world.plan")
+        }
+    }
+
     /// The Next up card's one button.
     private func act(on next: NextUp, _ model: WorldViewModel) {
         switch next {
@@ -297,7 +327,6 @@ struct WorldView: View {
                 onPlan: { directionsTo = WorldViewModel.place(for: lair) },
                 onClose: { withAnimation(.snappy) { model.closeObject() } }
             )
-            .padding(.horizontal, 12)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         } else if let object = model.selectedObject {
             EncounterCard(
@@ -312,7 +341,6 @@ struct WorldView: View {
                 onPlan: { directionsTo = WorldViewModel.place(for: object) },
                 onClose: { withAnimation(.snappy) { model.closeObject() } }
             )
-            .padding(.horizontal, 12)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         } else if let place = model.selectedPlace {
             PlaceCard(
@@ -332,7 +360,6 @@ struct WorldView: View {
             .task(id: place.id) {
                 if container.session.config?.combat != nil { await model.checkLamp(at: place) }
             }
-            .padding(.horizontal, 12)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         } else if let title = model.resultsTitle {
             PlaceResultsCard(
@@ -344,7 +371,6 @@ struct WorldView: View {
                 onSelect: { place in withAnimation(.snappy) { model.select(place) } },
                 onClose: { withAnimation(.snappy) { model.clearResults() } }
             )
-            .padding(.horizontal, 12)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }

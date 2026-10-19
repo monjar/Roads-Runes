@@ -107,6 +107,9 @@ struct MapLibreView: UIViewRepresentable {
     var onMapTap: ((Coordinate, MapFeature?) -> Void)?
     var onLongPress: ((Coordinate) -> Void)?
     var onVisibleRegionChanged: ((BoundingBox) -> Void)?
+    /// Where the ⓘ sits, from the bottom-right of the safe area: clear of anything
+    /// drawn over the map's corner (the World's floating tab bar). Nil keeps MapLibre's.
+    var attributionMargins: CGPoint?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -115,6 +118,7 @@ struct MapLibreView: UIViewRepresentable {
         view.delegate = context.coordinator
         view.logoView.isHidden = true
         view.attributionButton.alpha = 0.5
+        if let attributionMargins { view.attributionButtonMargins = attributionMargins }
         view.showsUserLocation = true
         // Asks the location manager for heading, so the rider's marker can point
         // somewhere while they are stopped (MLNUserLocation.heading is nil without it).
