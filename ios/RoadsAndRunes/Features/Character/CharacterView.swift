@@ -295,24 +295,27 @@ struct BikeEditorView: View {
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Name", text: $name)
-                Picker("Type", selection: $type) {
-                    ForEach([BikeType.road, .gravel, .mountain, .hybrid, .folding, .other], id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+                FormSection {
+                    TextField("Name", text: $name)
+                    Picker("Type", selection: $type) {
+                        ForEach([BikeType.road, .gravel, .mountain, .hybrid, .folding, .other], id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+                    }
+                    Toggle("Gravel OK", isOn: $allowGravel)
+                    Toggle("Trails OK", isOn: $allowTrails)
+                    VStack(alignment: .leading) {
+                        Text("Max technical surface \(Int(technical))")
+                        Slider(value: $technical, in: 0...3, step: 1)
+                    }
+                    Toggle("Default bike", isOn: $isDefault)
                 }
-                Toggle("Gravel OK", isOn: $allowGravel)
-                Toggle("Trails OK", isOn: $allowTrails)
-                VStack(alignment: .leading) {
-                    Text("Max technical surface \(Int(technical))")
-                    Slider(value: $technical, in: 0...3, step: 1)
-                }
-                Toggle("Default bike", isOn: $isDefault)
                 if bike != nil {
-                    Button("Delete bike", role: .destructive) { onDelete(); dismiss() }
+                    FormSection {
+                        Button("Delete bike", role: .destructive) { onDelete(); dismiss() }
+                            .themedDestructive()
+                    }
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background(Theme.Colors.cream)
-            .tint(Theme.Colors.terracotta)
+            .themedForm(clearsTabBar: false)
             .navigationTitle(bike == nil ? "New bike" : "Edit bike")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -341,24 +344,22 @@ struct RiderProfileView: View {
 
     var body: some View {
         Form {
-            Section("Comfort") {
+            FormSection("Comfort") {
                 slider("Comfortable distance", value: $profile.comfortableDistanceKm, range: 5...200, unit: "km")
                 slider("Comfortable climbing", value: $profile.comfortableElevationGain, range: 0...3000, unit: "m")
                 slider("Max preferred gradient", value: $profile.maxPreferredGradient, range: 2...25, unit: "%")
             }
-            Section("Preferences") {
+            FormSection("Preferences") {
                 fraction("Traffic tolerance", value: $profile.trafficTolerance)
                 fraction("Gravel comfort", value: $profile.gravelComfort)
                 fraction("Technical trail comfort", value: $profile.technicalTrailComfort)
                 fraction("Cycleway preference", value: $profile.cyclewayPreference)
             }
-            Section {
+            FormSection {
                 Text("Used for route recommendations and safety. Levelling up never changes these.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
             }
         }
-        .scrollContentBackground(.hidden)
-        .background(Theme.Colors.cream)
-        .tint(Theme.Colors.terracotta)
+        .themedForm()
         .navigationTitle("Cycling profile")
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Save") { onSave(profile) } } }
     }
