@@ -162,6 +162,8 @@ enum Theme {
 
     enum Layout {
         static let tabBarHeight: CGFloat = 62
+        /// The gap under the floating tab bar, above the home indicator.
+        static let tabBarBottomPadding: CGFloat = 8
         /// Bottom padding that keeps scrolling content clear of the floating tab bar.
         static let tabBarClearance: CGFloat = 96
         static let primaryButtonHeight: CGFloat = 60
@@ -525,6 +527,20 @@ struct MapPill: View {
         .padding(.vertical, 9)
         .background(Theme.Colors.cream.opacity(0.94), in: Capsule())
         .shadow(color: Theme.Colors.ink.opacity(0.14), radius: 2, y: 1)
+    }
+}
+
+extension View {
+    /// Fades a horizontal scroll row out at its edges, so a row that runs past the
+    /// screen says there is more to scroll to, even when a chip ends right at the edge.
+    func horizontalEdgeFade(leading: CGFloat = Theme.Spacing.md, trailing: CGFloat = Theme.Spacing.xl) -> some View {
+        mask {
+            HStack(spacing: 0) {
+                LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing).frame(width: leading)
+                Rectangle()
+                LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: trailing)
+            }
+        }
     }
 }
 

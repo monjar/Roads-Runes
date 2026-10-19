@@ -124,7 +124,7 @@ struct MainTabView: View {
             if !tabBar.isHidden {
                 FloatingTabBar(selected: $tab)
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, Theme.Layout.tabBarBottomPadding)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }

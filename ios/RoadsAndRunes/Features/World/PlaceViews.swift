@@ -72,6 +72,8 @@ struct PlaceShortcutChips: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 4)
         }
+        // Six shortcuts never fit across a phone; the fade says the row goes on.
+        .horizontalEdgeFade()
     }
 }
 
