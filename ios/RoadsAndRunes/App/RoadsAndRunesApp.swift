@@ -5,6 +5,10 @@ struct RoadsAndRunesApp: App {
     @State private var container = AppContainer()
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        QAReporting.start()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()

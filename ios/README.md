@@ -133,6 +133,7 @@ tile server before beta.
 * `RoadsAndRunesCore` (local)
 * MapLibre Native iOS (`maplibre-gl-native-distribution`)
 * `H3` (local package vendoring the uber/h3 v4.1.0 C library, since upstream has no SwiftPM manifest) — wrapped by `Services/Location/H3CellIndexing.swift`
+* [Snitch](https://github.com/monjar/mobile-app-qa-sdk) 0.6.0 (exact, package `mobile-app-qa-sdk`, product `Snitch`) — the QA reporter behind the tab on the screen's edge, started by `Services/QA/QAReporting.swift` with the `Snitch` dictionary in `project.yml`. On in Debug, ad hoc and TestFlight builds, inert on the App Store and under tests. Its ingest key comes from the gitignored `../secrets/Snitch.xcconfig` through `Config/Snitch.xcconfig`; without it Snitch is inert, so make TestFlight builds where that file is. See `../docs/QA.md`.
 
 ## Tests
 

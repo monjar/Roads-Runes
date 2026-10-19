@@ -76,6 +76,33 @@
 	<string>Attach photos to discoveries and adventures.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<key>Snitch</key>
+	<dict>
+		<key>CaptureMode</key>
+		<string>snapshot</string>
+		<key>CaptureNetwork</key>
+		<true/>
+		<key>CheckInWhenInactive</key>
+		<true/>
+		<key>EdgeHandleColor</key>
+		<string>#C67139</string>
+		<key>EnabledReleaseTypes</key>
+		<array>
+			<string>debug</string>
+			<string>adhoc</string>
+			<string>testflight</string>
+		</array>
+		<key>Gesture</key>
+		<string>edgeHandle</string>
+		<key>IngestKey</key>
+		<string>$(SNITCH_INGEST_KEY)</string>
+		<key>MaskTextInputs</key>
+		<true/>
+		<key>ScreenshotPrompt</key>
+		<true/>
+		<key>ServerURL</key>
+		<string>https://mochiro-snitch.fly.dev</string>
+	</dict>
 	<key>UIAppFonts</key>
 	<array>
 		<string>Caprasimo-Regular.ttf</string>

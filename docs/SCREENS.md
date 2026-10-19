@@ -1,16 +1,42 @@
 # Screens
 
+## As built (0.9.2)
+
+Captured on the iPhone 17 Pro simulator (iOS 26.5) on 2026-10-19 against the
+local backend: a new Explorer in Rotherhithe, from choosing a class through a
+quest's route, a short simulated ride and its reckoning, to the Journal. They
+live in `docs/screenshots/app/` at half the device resolution.
+
+| Choose your class | World | Quests | Quest detail |
+|---|---|---|---|
+| ![Choose your class](screenshots/app/01-choose-class.png) | ![World](screenshots/app/02-world.png) | ![Quests](screenshots/app/03-quests.png) | ![Quest detail](screenshots/app/04-quest-detail.png) |
+| The name, then the four trades; any class can take any quest. | Ride anywhere beside Plan a ride, place shortcuts, the fog's dashed edges, chests, creatures and mysteries on the map; Next up and the streak above the tabs. | Your own journey, a sealed quest by time, the week's notice, today's bounty, rune rides, then quests nearby. | The quest's fixed route through its stops, the notice that posted it, the objective and the journey facts before Start quest. |
+
+| Quest route | On the ride | Journey's end | Journal |
+|---|---|---|---|
+| ![Quest route](screenshots/app/05-quest-route.png) | ![Navigation](screenshots/app/06-navigation.png) | ![Journey's end](screenshots/app/07-journeys-end.png) | ![Journal](screenshots/app/08-journal.png) |
+| The planner opened on the quest's own route: why this route, surface and climbing, the map and the elevation, Start ride. | The instruction card, the quest's goal and progress, the Watch pill, and distance, new ground and time in the stats pill. | The reckoning part-way through: districts, the codex, the written entry, places and new ground, Share card and Save for Garmin. | The month in exploration terms, letters, and the journey's entry with its XP. |
+
+| Character | Ride anywhere | Reporting a problem | The report |
+|---|---|---|---|
+| ![Character](screenshots/app/09-character.png) | ![Ride anywhere](screenshots/app/10-ride-anywhere.png) | ![The Snitch tab](screenshots/app/11-qa-tab.png) | ![The report sheet](screenshots/app/12-qa-report.png) |
+| Class level and title, the two XP bars, what the rider has explored, found and finished, and the skills still to learn. | The card Ride anywhere opens: no route, and everything on the way counts. | Test builds only (Snitch, `docs/QA.md`): the terracotta tab on the right edge, and the card a new install shows once. | Pulled left, the tab opens the sheet: Bug, Idea or Other, what happened, the screenshot and the last seconds of video. |
+
+The Watch has not been captured yet; its screens below are still the design
+renders.
+
+## As designed
+
 The images below are renders of the app screens as designed in the Claude
 Design project *Cycling Companion* (`docs/design/`), drawn with the same
 tokens, fonts and layout the SwiftUI code uses. They are HTML/CSS renders
 with synthetic ink maps, not device captures; regenerate them with
-`node docs/screenshots/render.js` (see the header of that file). Replace
-them with simulator screenshots once the app has been run.
+`node docs/screenshots/render.js` (see the header of that file).
 
 Each screen names the design option it implements (turn 2 of the design
 file: `9a`, `10a`, …), so the design canvas and the code can be compared.
 
-## Design system in one paragraph
+### Design system in one paragraph
 
 Cream ground, surface cards and pills. Terracotta is reserved for *the*
 route and the one primary action on a screen; sage is the calm second
@@ -22,7 +48,7 @@ meaning before colour: quest waypoints are diamonds, riders are circles,
 friends are initials, mysteries are dashed `?` circles. Speed appears
 nowhere on a primary surface.
 
-## iPhone
+### iPhone
 
 | Choose your class (11a) | World (9a) | Quests |
 |---|---|---|
@@ -44,7 +70,7 @@ nowhere on a primary surface.
 | ![Character](screenshots/09-character.png) | ![Friends](screenshots/11-friends.png) |
 | Heraldic mark, class level and XP, abilities as pills, and beneath it a clearly separate Cycling Profile that keeps rides suitable. | The light feed: "look where people went". Exact locations are never shared. |
 
-## Apple Watch (7a, 16a)
+### Apple Watch (7a, 16a)
 
 | Navigation (§44) | Quest (§45) | Ride (§46) | Objective complete (§47) | Always-On (§48) |
 |---|---|---|---|---|

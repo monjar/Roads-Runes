@@ -8,6 +8,11 @@ options:
   createIntermediateGroups: true
   generateEmptyDirectories: true
 
+# Snitch's ingest key comes from secrets/, outside git (Config/Snitch.xcconfig).
+configFiles:
+  Debug: Config/Snitch.xcconfig
+  Release: Config/Snitch.xcconfig
+
 settings:
   base:
     # The Swift *language mode*, which has only ever been 4.0, 4.2, 5.0 or 6.0 —
@@ -41,6 +46,10 @@ packages:
     from: "6.5.0"
   H3:
     path: Packages/H3
+  # Snitch, the QA reporter (docs/QA.md): the tab on the screen's edge.
+  mobile-app-qa-sdk:
+    url: https://github.com/monjar/mobile-app-qa-sdk
+    exactVersion: "0.6.0"
 
 targets:
   RoadsAndRunes:
@@ -57,6 +66,8 @@ targets:
         product: MapLibre
       - package: H3
         product: H3
+      - package: mobile-app-qa-sdk
+        product: Snitch
       - target: RoadsAndRunesWatch
       # The widgets and the journey's Live Activity (0.7.3), embedded in PlugIns.
       - target: RoadsAndRunesWidgets
@@ -78,6 +89,23 @@ targets:
         # answering the export-compliance question by hand on every TestFlight build.
         ITSAppUsesNonExemptEncryption: false
         API_BASE_URL: $(API_BASE_URL)
+        # Snitch (docs/QA.md). On in Debug, ad hoc and TestFlight builds; an App Store
+        # build is inert: no tab, no capture, no network. No key, no Snitch.
+        Snitch:
+          ServerURL: https://mochiro-snitch.fly.dev
+          IngestKey: $(SNITCH_INGEST_KEY)
+          EnabledReleaseTypes: [debug, adhoc, testflight]
+          # Mochiro's testers never found the three-finger hold; a tab on the right edge,
+          # pulled left, is seen. Terracotta, a third of the way down, clear of the keyboard.
+          Gesture: edgeHandle
+          EdgeHandleColor: "#C67139"
+          # No ReplayKit prompt. MapLibre draws with Metal: check the map shows in a report.
+          CaptureMode: snapshot
+          MaskTextInputs: true
+          ScreenshotPrompt: true
+          # Method, path, status and timing of API calls; never headers, bodies or query values.
+          CaptureNetwork: true
+          CheckInWhenInactive: true
         # NO for builds signed by a free Personal Team, which cannot carry the entitlement.
         APPLE_SIGN_IN_ENABLED: $(APPLE_SIGN_IN_ENABLED)
         # A physical device reaches the dev backend by LAN address over plain HTTP
