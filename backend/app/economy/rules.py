@@ -38,6 +38,8 @@ TRANSACTION_KINDS = (
     # districts that are yours; both outside the per-journey cap.
     "DISTRICT",
     "DISTRICT_PAY",
+    # 2026-10-19: a quest finished on a way with a bonus (the long way, new ground).
+    "QUEST_WAY",
 )
 
 

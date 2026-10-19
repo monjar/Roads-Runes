@@ -199,6 +199,15 @@ public enum Endpoints {
         let query = origin.map { [QueryItem("latitude", format($0.latitude)), QueryItem("longitude", format($0.longitude))] } ?? []
         return Endpoint(method: .get, path: "/quests/\(id.uuidString)/route", query: query, timeout: 90)
     }
+    /// The ways to ride a quest (a loop, one way, the long way…) from `origin`. As slow as `questRoute`: every way is drawn.
+    public static func questWays(id: UUID, from origin: Coordinate? = nil) -> Endpoint {
+        let query = origin.map { [QueryItem("latitude", format($0.latitude)), QueryItem("longitude", format($0.longitude))] } ?? []
+        return Endpoint(method: .get, path: "/quests/\(id.uuidString)/ways", query: query, timeout: 90)
+    }
+    /// Makes one of the quest's ways its route. 404 `NOT_FOUND` for a route that is not one of them.
+    public static func chooseQuestWay(id: UUID, routeId: UUID) throws -> Endpoint {
+        try .json(.post, "/quests/\(id.uuidString)/way", body: QuestWayChoice(routeId: routeId))
+    }
     /// The route as a file to hand on: a FIT course for a Garmin, or GPX. 409 `ROUTE_SEALED` for an open sealed quest's route.
     public static func routeExport(id: UUID, format: RouteExportFormat) -> Endpoint {
         Endpoint(method: .get, path: "/routes/\(id.uuidString)/export", query: [QueryItem("format", format.rawValue)])

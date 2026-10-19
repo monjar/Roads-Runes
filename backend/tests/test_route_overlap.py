@@ -181,3 +181,20 @@ def test_the_way_out_of_a_loop_ends_at_the_turn():
     assert head.distance_m == pytest.approx(500.0, rel=0.02)
     assert head.leg_boundaries == []
     assert all(entry[1] <= turn for entry in head.details["surface"])
+
+
+def test_ridden_twice_is_both_ways_of_one_road_wherever_the_loop_turns():
+    out = line(ORIGIN, 45, 3000)
+    assert overlap.ridden_twice(out + list(reversed(out))[1:]) > 0.9
+    square = through(
+        ORIGIN,
+        destination_point(*ORIGIN, 0, 2000),
+        destination_point(*destination_point(*ORIGIN, 0, 2000), 90, 2000),
+        destination_point(*ORIGIN, 90, 2000),
+        ORIGIN,
+    )
+    assert overlap.ridden_twice(square) == 0.0
+    # Two there-and-backs through home, with no one turn to split at.
+    west, north = destination_point(*ORIGIN, 270, 2000), destination_point(*ORIGIN, 0, 3000)
+    spokes = through(ORIGIN, west, ORIGIN, north, ORIGIN)
+    assert overlap.ridden_twice(spokes) > 0.8  # all but the tips, where each spoke turns

@@ -126,6 +126,8 @@ public struct RouteOption: Codable, Hashable, Identifiable, Sendable {
     public var climbs: [Climb]
     public var boundingBox: BoundingBox?
     public var createdAt: Date?
+    /// Which of its quest's ways this route is (`GET /quests/{id}/ways`); nil for any other route.
+    public var questWay: QuestWayKind?
 
     public init(
         id: UUID, label: String, engine: String? = nil, distanceMeters: Double, estimatedDurationSeconds: Int,
@@ -134,7 +136,7 @@ public struct RouteOption: Codable, Hashable, Identifiable, Sendable {
         trafficExposure: Double, newTerritoryFraction: Double, questObjectiveCoverage: Double, score: Double,
         scoreComponents: [String: Double]? = nil, pois: [RoutePOI], coordinates: [[Double]], encodedPolyline: String,
         instructions: [Instruction], elevationSamples: [ElevationSample], climbs: [Climb], boundingBox: BoundingBox? = nil,
-        createdAt: Date? = nil
+        createdAt: Date? = nil, questWay: QuestWayKind? = nil
     ) {
         self.id = id
         self.label = label
@@ -162,6 +164,7 @@ public struct RouteOption: Codable, Hashable, Identifiable, Sendable {
         self.climbs = climbs
         self.boundingBox = boundingBox
         self.createdAt = createdAt
+        self.questWay = questWay
     }
 
     /// Route geometry as `Coordinate`s (drops malformed entries).

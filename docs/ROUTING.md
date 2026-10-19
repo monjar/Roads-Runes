@@ -163,9 +163,10 @@ fallbacks (`_*_slots` in `service.py`, thresholds in `shapes.py`), behind the
 |---|---|---|---|
 | A place tapped on the map, nothing typed | the quietest flavour, `[O, D]`, asking for 2 alternates | Direct, `[O, D]`, 1 alternate | the alternate least like cards 1–2 (no request) |
 | A ride to a place, typed | As asked | `[O, via, D]`, asking for 2 alternates | through a point 0.2× the distance off the far side of card 1's line → a spare alternate (free) → the stops on the other side of the line ("Other stops") |
-| A loop through stops | As asked | through the nearer half of the stops, at least two (a round trip under three) | "Other stops": none of card 1's, each at least a quarter sector from them → the third costing through the same stops |
+| A loop through stops | As asked | through half of the stops, at least two, the shortest set that opens out 45–150° from the start (a round trip under three) | "Other stops": none of card 1's, each at least a quarter sector from them → the third costing through the same stops |
 | To a place and back | As asked (see Loops) | the cheapest loop: no stops, offset point at 0.2× | "Other stops" on swapped sides (when stops were asked) → "The long way": the offset point mirrored at 0.35× |
-| A plain round trip, a quest, a rune | unchanged | | |
+| A quest with somewhere to go, a sealed quest | as To a place and back, turning at the furthest objective (see Quests) | | |
+| A plain round trip, a quest with nowhere to go, a rune | unchanged | | |
 
 Direct's costing is wider: traffic aversion at most 0.4 and cycleway preference at
 most 0.3, which lifts Valhalla's `use_roads` from about 0.44 to 0.6. As asked also
@@ -207,7 +208,7 @@ the way back retracing the way out, and every stop sat on the way out. Now:
     rides more than 1.6× the straight line through it — across the river, round
     a park): tried mirrored, or nearer the line (0.6×) when the far side has the
     way out's stops or the card's point is its own side, then left out;
-  * the way back still rides more than 40% of the way out (`self_overlap`, 250 m
+  * the way back still rides more than 25% of the way out (`self_overlap`, 250 m
     left out at each end and at the turn): the way back is asked for alone, kept
     off up to 25 points along the middle 60% of the way out (every 300 m, clear of
     the ends, the stops and every junction where the rider turns), and joined to
@@ -219,6 +220,73 @@ the way back retracing the way out, and every stop sat on the way out. Now:
 * **The target** is the loop's own polygon × 1.2, not 2.4× the crow's flight.
 * **Scoring** subtracts `retracePenalty` (weight 0.8, `config/scoring.json`) times
   the loop's `selfOverlap`, which every loop card carries.
+
+The bar was 40% until 2026-10-19. It let through loops whose whole length was
+more than half one road ridden twice: a quarter of the way home already reads as
+a line on the map.
+
+## Quests and loops through stops (2026-10-19)
+
+"All of the loops still look like a line." 0.9.2 shaped the planner's loops,
+but a quest kept its points: `[O, T, O]`, with a U-turn allowed at the objective.
+On public Valhalla, three of a board's six routes from Aragon Tower rode 87–94%
+of their length twice (the Green Hour, whose way home says "Come back the way you
+did not go"). A sealed quest went `[O, goal, O]` the same way.
+
+* **A quest with somewhere to go** (`_quest_loop_shape`) is a loop to a place:
+  it turns at the objective furthest from the start (`break_through`). The other
+  objectives go out on the side of the line with more of them and come home on
+  the other (`LoopShape.via` / `back_via`, places every card keeps, where a card
+  may swap stops). A way home with no objective of its own goes through an offset
+  point sized to the quest's distance (`shapes.offset_factor_for`: the polygon
+  O→T→R→O × 1.2 is the target, never under 0.30×, at most 4 km off). The checks
+  above apply. A quest with nowhere to go (new roads, a distance) is still the
+  circle; a rune keeps its points.
+* **A sealed quest** asks for its goal as the loop's `destination`, not a
+  waypoint, so it is a loop to a place.
+* **A loop through stops** has no single turn, so `self_overlap` sees only part of
+  a road ridden twice. A card that rides more than 40% of itself twice
+  (`overlap.ridden_twice`: within 30 m of another stretch at least 500 m away
+  along the route, 250 m at each end left out), or 25% of its way home on its way
+  out, gets its way home asked for again. The request starts at the stop nearest
+  where it turns and keeps off the way out, as above. The joined loop stands only
+  if it rides less of itself twice. Its shorter card (`_round_stops`) takes stops
+  that open 45–150° from the start, ordered round the compass, instead of the
+  nearest few. The nearest two pubs from Rotherhithe sat either side of it, and
+  that card rode out to one, back through home to the other, and home again.
+
+Measured on public Valhalla the same day, as the share of each route ridden twice:
+
+| | Before | After |
+|---|---|---|
+| Quest board from Aragon Tower (six quests) | 87–94% for quests to a place | 5–25% |
+| Sealed quest, 40 / 90 min | there and back | 11% / 2% |
+| "A 15 km loop through 3 pubs", Shortest | 63% | 1% (one more request) |
+| "Aragon Tower to Westminster and back", Direct / As asked | 33% / 30% | 18% / 12% (two more requests) |
+
+What is left is the ground: the first few hundred metres from a start with one
+road out, and the 20-minute sealed goal up the Rotherhithe peninsula, where the
+Thames leaves one corridor in (69% after every retry).
+
+## A quest's ways (2026-10-19)
+
+`generate(..., way=)` plans one of a quest's ways (`shapes.WAYS`) for
+`quest_ways.py`, one card each, at most 5 requests each (`calls`), behind any
+rider waiting on the planner (`budget.background`):
+
+* `ONE_WAY`: `loop=False` and the objectives sorted nearest first, so the ride
+  ends at the furthest. The target is the straight lines through them × 1.25.
+* `QUIET`: traffic aversion raised to at least 0.95 and cycleways to 0.9.
+* `LONG_WAY`: the quest loop's offset point on the other side, sized for 1.5×
+  the loop's length and at least 0.5× the line (`_way_shape`). A circle quest
+  asks for a circle 1.5× as long.
+* `NEW_GROUND`: of the offset points on both sides at 0.30× and 0.5×, the one
+  whose polygon crosses the most cells never visited, judged by straight lines
+  every 200 m (`_unknown_share`). A circle quest sets off on the heading whose
+  circle crosses the most (`_newest_heading`, every 45°).
+
+A loop whose way home passes objectives of its own has no offset point to move.
+Its long way and new ground usually come back as the loop, and are left out.
 
 ## Engine
 

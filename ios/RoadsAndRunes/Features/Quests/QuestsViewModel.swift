@@ -89,6 +89,22 @@ final class QuestDetailModel {
     private(set) var routeCamera: MapCamera?
     /// A stop on the quest route that the rider tapped on the map.
     private(set) var focusedStop: RoutePOI?
+
+    /// Ways to ride it (a loop, one way, the long way…), fetched once the route is drawn.
+    enum WaysState: Equatable { case idle, loading, loaded, failed }
+    private(set) var ways: [QuestWay] = []
+    private(set) var wayNotes: [String] = []
+    private(set) var waysState: WaysState = .idle
+    /// The way picked on this screen, shown at once; `confirmedWayId` is the one the server has.
+    private(set) var chosenWayId: UUID?
+    private var confirmedWayId: UUID?
+    /// Counts taps, so only the last one's answer is acted on.
+    private var choiceGeneration = 0
+    private(set) var isChoosingWay = false
+    /// A short line under the chips when a way could not be taken.
+    private(set) var wayError: String?
+    /// Where the route was asked from, so the ways start from the same place.
+    private var routeOrigin: Coordinate?
     private let container: AppContainer
 
     init(quest: Quest, container: AppContainer) {
@@ -112,6 +128,7 @@ final class QuestDetailModel {
         guard route == nil, routeState != .loading else { return }
         routeState = .loading
         let here = await firstPosition()
+        routeOrigin = here
         // Until it arrives the map shows the player and where the quest goes, not an empty square.
         let overview = (here.map { [$0] } ?? []) + targets
         if overview.count >= 2 { routeCamera = MapCamera(fit: overview, padding: Self.mapPadding) }
@@ -131,6 +148,69 @@ final class QuestDetailModel {
         route = nil
         routeState = .idle
         await loadRoute()
+        await loadWays()
+    }
+
+    /// The board picks a sealed quest's way (0.7.3), and a quest under way or done keeps its own.
+    var offersWays: Bool {
+        !SealedQuest.isSealed(quest) && (quest.status == .available || quest.status == .accepted)
+    }
+
+    /// The other ways to ride it, after the route: slow on the server, and the route alone
+    /// is enough to go on, so a failure here is kept quiet.
+    func loadWays() async {
+        guard offersWays, waysState == .idle || waysState == .failed else { return }
+        waysState = .loading
+        do {
+            let result = try await container.api.questWays(id: quest.id, from: routeOrigin ?? position)
+            ways = result.ways
+            wayNotes = result.notes
+            let chosen = result.chosenRouteId.flatMap { id in result.ways.first { $0.route.id == id } }
+                ?? route.flatMap { drawn in result.ways.first { $0.route.id == drawn.id } }
+                ?? result.ways.first
+            chosenWayId = chosen?.route.id
+            confirmedWayId = chosenWayId
+            // The map and the tiles follow the chip that is lit.
+            if let chosen, chosen.route.id != route?.id { draw(chosen.route) }
+            waysState = .loaded
+        } catch {
+            waysState = .failed
+        }
+    }
+
+    /// Draws the way at once, then tells the server; if it says no, the last way it agreed to comes back.
+    func choose(_ way: QuestWay) async {
+        guard way.route.id != chosenWayId else { return }
+        choiceGeneration += 1
+        let generation = choiceGeneration
+        chosenWayId = way.route.id
+        wayError = nil
+        draw(way.route)
+        UISelectionFeedbackGenerator().selectionChanged()
+        isChoosingWay = true
+        do {
+            let updated = try await container.api.chooseQuestWay(id: quest.id, routeId: way.route.id)
+            guard generation == choiceGeneration else { return }
+            quest = updated
+            confirmedWayId = way.route.id
+            isChoosingWay = false
+            container.analytics.track(.routeSelected, properties: [
+                "questId": quest.id.uuidString, "routeId": way.route.id.uuidString, "questWay": way.kind.rawValue,
+            ])
+        } catch {
+            guard generation == choiceGeneration else { return }
+            isChoosingWay = false
+            chosenWayId = confirmedWayId
+            if let confirmed = ways.first(where: { $0.route.id == confirmedWayId }) { draw(confirmed.route) }
+            wayError = "Couldn't take that road just now. Try again in a moment."
+        }
+    }
+
+    private func draw(_ newRoute: RouteOption) {
+        route = newRoute
+        routeState = .loaded
+        focusedStop = nil
+        routeCamera = MapCamera(fit: newRoute.path, padding: Self.mapPadding)
     }
 
     /// The crow's flight from the player through the quest's places, drawn dashed

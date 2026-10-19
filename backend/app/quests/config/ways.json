@@ -1,0 +1,23 @@
+{
+  "_comment": "The ways a quest can be ridden (app/routing/quest_ways.py). Names and summaries are what the quest's page shows; a bonus is a small extra, paid only when the journey did what the way promised.",
+  "names": {
+    "LOOP": "Loop",
+    "ONE_WAY": "One way",
+    "QUIET": "Quiet roads",
+    "NEW_GROUND": "New ground",
+    "LONG_WAY": "The long way"
+  },
+  "summaries": {
+    "LOOP": "Out to it and home another way",
+    "LOOP_ROUND": "Round and home again",
+    "ONE_WAY": "Ends at {place}",
+    "ONE_WAY_PLAIN": "Ends where the quest does",
+    "QUIET": "Back streets and cycle paths",
+    "NEW_GROUND": "Roads you have never been down",
+    "LONG_WAY": "A wider loop, for a little more"
+  },
+  "bonus": {
+    "LONG_WAY": {"xp": 60, "ac": 10, "condition": "Go the whole long way", "shareOfRoute": 0.85},
+    "NEW_GROUND": {"xp": 60, "ac": 10, "condition": "Find a kilometre of new roads", "minNewRoadsM": 1000}
+  }
+}

@@ -11,6 +11,8 @@ line: linear in length, not length squared.
   and last 200 m, which every card of one plan shares.
 * `self_overlap(coords, turn)` — the share of the way back that runs along the
   way out, leaving out 250 m at each end and at the turn.
+* `ridden_twice(coords)` — the share of a route that runs along another stretch
+  of itself, wherever it turns: a loop through stops has no one turn to split at.
 * `exclusion_samples(...)` — points along the way out for a second try at the
   way back to stay off.
 
@@ -129,6 +131,43 @@ def self_overlap(coords: Line, turn: int | None = None, near: float = NEAR_M) ->
     if len(out) < 2 or len(back) < 2:
         return 0.0
     return covered(back, out, near, trim_m=TURN_TRIM_M)
+
+
+def ridden_twice(coords: Line, near: float = NEAR_M, apart_m: float = 2 * TURN_TRIM_M) -> float:
+    """The share of a route within `near` metres of another stretch of itself at
+    least `apart_m` further along or back (0..1), 250 m at each end left out.
+
+    A road ridden out and home counts both times, a spur to a stop and back counts,
+    a corner does not. `self_overlap` splits a loop at its furthest point, and a
+    loop through two stops either side of one corridor rode 55% of itself twice
+    while its way back measured 24% on its way out.
+    """
+    if len(coords) < 3:
+        return 0.0
+    lat0, lon0 = float(coords[0][1]), float(coords[0][0])
+    samples, spacing = _samples(_xy(coords, lat0, lon0))
+    if len(samples) < 3 or spacing <= 0:
+        return 0.0
+    reach = math.hypot(near, spacing / 2)
+    cell = max(reach, 1.0)
+    buckets: dict[tuple[int, int], list[int]] = {}
+    for i, p in enumerate(samples):
+        buckets.setdefault((math.floor(p.real / cell), math.floor(p.imag / cell)), []).append(i)
+    gap = math.ceil(apart_m / spacing)
+    trim = round(TURN_TRIM_M / spacing)
+    measured = range(trim, len(samples) - trim) if len(samples) > 2 * trim + 1 else range(len(samples))
+    hits = 0
+    for i in measured:
+        p = samples[i]
+        ci, cj = math.floor(p.real / cell), math.floor(p.imag / cell)
+        if any(
+            abs(i - j) > gap and abs(p - samples[j]) <= reach
+            for di in (-1, 0, 1)
+            for dj in (-1, 0, 1)
+            for j in buckets.get((ci + di, cj + dj), ())
+        ):
+            hits += 1
+    return hits / len(measured)
 
 
 def exclusion_samples(

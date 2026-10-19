@@ -211,6 +211,15 @@ final class RideEventTests: XCTestCase {
         XCTAssertEqual(RewardCopy.coins(kind: "STREAK"), "Streak bonus")
     }
 
+    func testWayBonusLinesNameTheWay() throws {
+        let detail = try JSONCoding.decode(JSONValue.self, json: #"{"way": "The long way"}"#)
+        XCTAssertEqual(RewardCopy.xp(source: "QUEST_WAY_BONUS", detail: detail), "The long way bonus")
+        XCTAssertEqual(RewardCopy.coins(kind: "QUEST_WAY", detail: detail), "The long way bonus")
+        // A server that leaves the way out still gets words.
+        XCTAssertEqual(RewardCopy.xp(source: "QUEST_WAY_BONUS"), "Way bonus")
+        XCTAssertEqual(RewardCopy.coins(kind: "QUEST_WAY", detail: .object([:])), "Way bonus")
+    }
+
     // MARK: Turns on the wrist
 
     func testATurnIsCuedAsItComesUpAndAgainWhenItIsHere() {

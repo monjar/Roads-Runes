@@ -220,6 +220,8 @@ struct QuestDetailView: View {
             if model == nil { model = QuestDetailModel(quest: quest, container: container) }
             await model?.refresh()
             await model?.loadRoute()
+            // The other ways come after the quest's own route, which is enough to go on.
+            await model?.loadWays()
         }
         .sheet(isPresented: $showPlanner) {
             if let model { RoutePlannerView(quest: model.quest) }
@@ -279,6 +281,7 @@ struct QuestDetailView: View {
                         .padding(.top, geometry.safeAreaInsets.top + 8)
                     }
                     VStack(alignment: .leading, spacing: 12) {
+                        if model.offersWays { waysRow(model, formatter: formatter) }
                         Text(quest.title).font(Theme.Typography.voice(30, relativeTo: .largeTitle)).foregroundStyle(Theme.Colors.ink)
                         Text(quest.narrative.hook ?? quest.description).font(Theme.Typography.text(14)).foregroundStyle(Theme.Colors.inkSoft).lineSpacing(3)
                         if let poster = quest.narrative.poster { PosterLine(poster: poster) }
@@ -360,6 +363,73 @@ struct QuestDetailView: View {
         }
     }
 
+    /// One chip per way to ride it, under the map: tapping one draws it and makes it the quest's.
+    /// Quiet while it loads, and gone if it fails; the quest's own route is enough to go on.
+    @ViewBuilder
+    private func waysRow(_ model: QuestDetailModel, formatter: UnitFormatter) -> some View {
+        switch model.waysState {
+        case .loading:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.mini).tint(Theme.Colors.muted)
+                Text("Finding other ways…").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.muted)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("quest.ways.loading")
+        case .loaded:
+            VStack(alignment: .leading, spacing: 6) {
+                if model.ways.count > 1 {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        // Every chip as tall as the tallest, badge or no badge.
+                        HStack(alignment: .top, spacing: 8) {
+                            ForEach(model.ways) { way in
+                                Button { Task { await model.choose(way) } } label: {
+                                    WayChip(way: way, selected: way.route.id == model.chosenWayId, formatter: formatter)
+                                }
+                                .buttonStyle(.pressable)
+                                .accessibilityLabel(wayAccessibilityLabel(way, formatter: formatter))
+                                .accessibilityHint(way.summary)
+                                .accessibilityAddTraits(way.route.id == model.chosenWayId ? .isSelected : [])
+                                .accessibilityIdentifier("quest.way.\(way.kind.rawValue.lowercased())")
+                            }
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 2)
+                    }
+                    .padding(.horizontal, -22)
+                    .disabled(container.rideRecorder.isActive)
+                }
+                if let error = model.wayError {
+                    ErrorLine(text: error).accessibilityIdentifier("quest.ways.error")
+                } else if !model.wayNotes.isEmpty {
+                    Text(model.wayNotes.joined(separator: " · "))
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.muted)
+                        .lineLimit(2)
+                        .accessibilityIdentifier("quest.ways.notes")
+                }
+            }
+        case .idle, .failed:
+            EmptyView()
+        }
+    }
+
+    /// "The long way, 14.2 km, 52 min, bonus 60 XP and 10 coins: ride the whole long way".
+    private func wayAccessibilityLabel(_ way: QuestWay, formatter: UnitFormatter) -> String {
+        var parts = [way.name, formatter.distance(meters: way.route.distanceMeters),
+                     formatter.duration(seconds: Double(way.route.estimatedDurationSeconds))]
+        if let bonus = way.bonus {
+            var pays: [String] = []
+            if bonus.xp > 0 { pays.append("\(bonus.xp) XP") }
+            if bonus.ac > 0 { pays.append("\(bonus.ac) \(bonus.ac == 1 ? "coin" : "coins")") }
+            if !pays.isEmpty {
+                let condition = bonus.condition.isEmpty ? "" : ": \(bonus.condition.prefix(1).lowercased() + bonus.condition.dropFirst())"
+                parts.append("bonus \(pays.joined(separator: " and "))\(condition)")
+            }
+        }
+        return parts.joined(separator: ", ")
+    }
+
     private func requiredIndex(_ objectives: [Objective], _ offset: Int) -> Int {
         objectives.prefix(offset + 1).filter { $0.required }.count
     }
@@ -438,7 +508,8 @@ struct QuestDetailView: View {
                         .background(Theme.Colors.surface, in: Capsule())
                 }
             }
-            .disabled(model.busy || container.rideRecorder.isActive)
+            // Not while a new way is being settled: the planner asks for the quest's route.
+            .disabled(model.busy || model.isChoosingWay || container.rideRecorder.isActive)
         }
     }
 
@@ -448,5 +519,41 @@ struct QuestDetailView: View {
             Text(title).opacity(busy ? 0 : 1)
             if busy { ProgressView().tint(Theme.Colors.ink) }
         }
+    }
+}
+
+/// A way to ride a quest: its name, how far and how long, and what it pays on top.
+private struct WayChip: View {
+    let way: QuestWay
+    let selected: Bool
+    let formatter: UnitFormatter
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(way.name)
+                    .font(Theme.Typography.captionStrong)
+                    .foregroundStyle(selected ? Theme.Colors.cream : Theme.Colors.ink)
+                    .lineLimit(1)
+                if let bonus = way.bonus, bonus.xp > 0 || bonus.ac > 0 {
+                    Text(bonus.xp > 0 ? "+\(bonus.xp) XP" : "+\(bonus.ac) coins")
+                        .font(Theme.Typography.text(10.5, .bold, relativeTo: .caption2))
+                        .foregroundStyle(selected ? Theme.Colors.ink : Theme.Colors.sageText)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(selected ? Theme.Colors.sageLight : Theme.Colors.sageTint, in: Capsule())
+                        .lineLimit(1)
+                }
+            }
+            Text("\(formatter.distance(meters: way.route.distanceMeters)) · \(formatter.duration(seconds: Double(way.route.estimatedDurationSeconds)))")
+                .font(Theme.Typography.caption)
+                .foregroundStyle(selected ? Theme.Colors.cream.opacity(0.8) : Theme.Colors.muted)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .background(selected ? Theme.Colors.ink : Theme.Colors.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }

@@ -367,6 +367,8 @@ public actor APIClient: RoadsAndRunesAPI {
     public func route(id: UUID) async throws -> RouteOption { try await request(Endpoints.route(id: id)) }
     public func routePackage(id: UUID) async throws -> RoutePackage { try await request(Endpoints.routePackage(id: id)) }
     public func questRoute(id: UUID, from origin: Coordinate?) async throws -> RouteOption { try await request(Endpoints.questRoute(id: id, from: origin)) }
+    public func questWays(id: UUID, from origin: Coordinate?) async throws -> QuestWays { try await request(Endpoints.questWays(id: id, from: origin)) }
+    public func chooseQuestWay(id: UUID, routeId: UUID) async throws -> Quest { try await request(try Endpoints.chooseQuestWay(id: id, routeId: routeId)) }
     public func reroute(routeId: UUID, _ request: RerouteRequest) async throws -> RouteOption { try await self.request(try Endpoints.reroute(routeId: routeId, request)) }
     public func downloadRouteExport(id: UUID, format: RouteExportFormat) async throws -> URL {
         try await download(Endpoints.routeExport(id: id, format: format), fallbackName: "route.\(format.rawValue)")

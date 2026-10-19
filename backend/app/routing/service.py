@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import bisect
 import hashlib
+import itertools
 import math
 import uuid
 from collections.abc import Awaitable, Callable
@@ -19,7 +20,7 @@ from app.core.activity import ASSUMED_SPEED_KMH, DISTANCE_SCALE, comfortable_dis
 from app.core.config import Settings
 from app.core.errors import NotFound, RouteGenerationFailed
 from app.core.feature_flags import is_enabled
-from app.core.geo import bearing_deg, encode_polyline, haversine_m
+from app.core.geo import bearing_deg, destination_point, encode_polyline, haversine_m
 from app.core.llm import LLMClient
 from app.core.logging import EVENT_ROUTE_GENERATED, EVENT_ROUTE_GENERATION_FAILED, get_logger
 from app.core.schemas import Coordinate
@@ -141,6 +142,7 @@ def route_out(route: Route, components: dict[str, float] | None = None) -> Route
         scoreComponents=components or route.request.get("scoreComponents", {}),
         detailsMissing=bool((route.request or {}).get("detailsMissing")),
         selfOverlap=(route.request or {}).get("selfOverlap"),
+        questWay=(route.request or {}).get("questWay"),
         pois=route.pois,
         coordinates=route.coordinates,
         encodedPolyline=route.encoded_polyline,
@@ -756,6 +758,45 @@ def _tour(latitude: float, longitude: float, stops: list[Discovery]) -> list[Dis
     return ordered
 
 
+# Stops for a shorter loop open out from the start by this much: under it they sit
+# up one road and the loop is that road out and back; over it the loop rides back
+# through home between them, two there-and-backs.
+LOOP_ARC_MIN_DEG = 45.0
+LOOP_ARC_MAX_DEG = 150.0
+
+
+def _arc(bearings: list[float]) -> tuple[float, float]:
+    """The narrowest arc of the compass holding all these bearings: its width and the
+    bearing it starts from, going clockwise."""
+    ordered = sorted(b % 360 for b in bearings)
+    gaps = [((ordered[(i + 1) % len(ordered)] - b) % 360, i) for i, b in enumerate(ordered)]
+    widest, i = max(gaps) if len(ordered) > 1 else (360.0, 0)
+    return 360.0 - widest, ordered[(i + 1) % len(ordered)]
+
+
+def _round_stops(latitude: float, longitude: float, stops: list[Discovery], count: int) -> list[Discovery]:
+    """`count` of these stops for a shorter loop, in order round the compass: the
+    shortest way round among those that open out from the start (`LOOP_ARC_*`).
+
+    The nearest few were the old choice, and on 2026-10-19 the nearest two pubs
+    sat either side of Rotherhithe: the "Shortest" card rode out to one, back
+    through the start to the other and home the same way, 63% of it twice.
+    """
+    pool = sorted(stops, key=lambda p: haversine_m(latitude, longitude, p.latitude, p.longitude))[:10]
+    best: tuple[float, list[Discovery]] | None = None
+    for combo in itertools.combinations(pool, count):
+        bearings = {p.id: bearing_deg(latitude, longitude, p.latitude, p.longitude) for p in combo}
+        width, first = _arc(list(bearings.values()))
+        if not LOOP_ARC_MIN_DEG <= width <= LOOP_ARC_MAX_DEG:
+            continue
+        ordered = sorted(combo, key=lambda p: (bearings[p.id] - first) % 360)
+        ring = [(latitude, longitude), *((p.latitude, p.longitude) for p in ordered), (latitude, longitude)]
+        length = sum(haversine_m(*a, *b) for a, b in zip(ring, ring[1:], strict=False))
+        if best is None or length < best[0]:
+            best = (length, ordered)
+    return best[1] if best else _tour(latitude, longitude, pool[:count])
+
+
 def _bearing_gap(a: float, b: float) -> float:
     gap = abs(a - b) % 360
     return min(gap, 360 - gap)
@@ -1056,6 +1097,8 @@ class _Plan:
     # Cards as shapes (0.9.2, flag `route_shapes`): loops measured for retracing,
     # new ground counted once per tile.
     shaped: bool = False
+    # Which way a circle loop sets off (a quest's new ground); None lets the seed pick.
+    heading: float | None = None
 
     @property
     def profile(self) -> str:
@@ -1101,7 +1144,7 @@ def _request_for(
         None if plan.on_foot else build_custom_model(prefs, plan.bike_type, plan.allow_gravel, plan.allow_trails)
     )
     round_trip = distance_m if (plan.loop and len(points) == 1) else None
-    heading = None
+    heading = plan.heading if round_trip else None
     if round_trip and plan.targets.points:
         heading = bearing_deg(
             plan.origin.latitude,
@@ -1396,7 +1439,7 @@ async def _loop_card(
         return None
     er, request, shape = got
     turn = shapes.turn_near(er.coordinates, er.leg_boundaries, shape.destination)
-    if shapes.snapped_wrong(er.coordinates, turn, shape) and cards.affordable() and plan.destination is not None:
+    if shapes.snapped_wrong(er.coordinates, turn, shape) and cards.affordable():
         # The offset point landed off its road (the river, a park): mirrored, or
         # nearer the line when the other side carries the way out's stops; then
         # without it (`_shape_route` drops it when the retry fails).
@@ -1406,7 +1449,7 @@ async def _loop_card(
         else:
             side = -side
         missed = [shape.offset] if shape.offset else None
-        spot = await _offset_spot(plan.db, plan.start, plan.destination, side, factor, missed)
+        spot = await _offset_spot(plan.db, plan.start, _coordinate(shape.destination), side, factor, missed)
         retry = await _shape_route(
             cards, variant, index, replace(shape, offset=spot, offset_side=side, offset_factor=factor), label, False
         )
@@ -1426,7 +1469,7 @@ async def _loop_card(
         out = head_of(er, turn)
         avoid = overlap.exclusion_samples(
             out.coordinates,
-            avoid=[*shape.out_stops, *shape.via, *shape.back_stops],
+            avoid=[*shape.out_stops, *shape.via, *shape.back_stops, *shape.back_via],
             manoeuvres=[(i["latitude"], i["longitude"]) for i in out.instructions if i.get("latitude") is not None],
         )
         if avoid:
@@ -1496,6 +1539,124 @@ async def _main_loop_shape(
     return shape
 
 
+def _coordinate(point: tuple[float, float]) -> Coordinate:
+    return Coordinate(latitude=point[0], longitude=point[1])
+
+
+# A quest's objectives within this of the start give a loop nowhere to turn: it is
+# routed through its points as before.
+QUEST_LOOP_MIN_M = 300.0
+
+
+async def _quest_loop_shape(
+    db: AsyncSession, start: Coordinate, targets: QuestTargets, target_km: float, seed: int
+) -> shapes.LoopShape:
+    """A quest's loop: out to the objective furthest from the start and home another
+    way, not `[O, T, O]` ridden down one road and back up it.
+
+    The other objectives go out on one side of the line and home on the other, in
+    the order they are reached; a way back with none of its own goes through an
+    offset point far enough off the line for the quest's distance.
+    """
+    points = [(lat, lon) for lat, lon, _ in targets.points]
+    turn = max(points, key=lambda p: haversine_m(start.latitude, start.longitude, *p))
+    destination = _coordinate(turn)
+    placed = [(*_signed_offset(lat, lon, start, destination), (lat, lon)) for lat, lon in points if (lat, lon) != turn]
+    left = [entry for entry in placed if entry[0] >= 0]
+    right = [entry for entry in placed if entry[0] < 0]
+    out_side = 1 if len(left) >= len(right) else -1
+    out, back = (left, right) if out_side > 0 else (right, left)
+    shape = shapes.LoopShape(
+        start=(start.latitude, start.longitude),
+        destination=turn,
+        via=tuple(point for _, _, point in sorted(out, key=lambda e: e[1])),
+        back_via=tuple(point for _, _, point in sorted(back, key=lambda e: -e[1])),
+    )
+    if shape.back_via:
+        return replace(shape, offset_side=-out_side)
+    side = -out_side if shape.via else await _return_side(db, start, destination, seed)
+    direct = haversine_m(start.latitude, start.longitude, *turn)
+    factor = shapes.offset_factor_for(direct, target_km * 1000)
+    spot = await _offset_spot(db, start, destination, side, factor)
+    return replace(shape, offset=spot, offset_side=side, offset_factor=factor)
+
+
+# A quiet way asks at least this much (cf. Direct's 0.4 and 0.3).
+QUIET_TRAFFIC_AVERSION = 0.95
+QUIET_CYCLEWAY = 0.9
+# Points sampled along a candidate shape for how much of it is new ground.
+NEW_GROUND_STEP_M = 200.0
+
+
+def _unknown_share(points: list[tuple[float, float]], known: dict[str, str], resolution: int) -> float:
+    """The share of the straight lines through these points, sampled every 200 m, in
+    cells the rider has never been: a guess at new ground before asking the engine."""
+    cells: list[str] = []
+    for a, b in zip(points, points[1:], strict=False):
+        steps = max(1, int(haversine_m(*a, *b) / NEW_GROUND_STEP_M))
+        for i in range(steps):
+            t = i / steps
+            cells.append(cell_for(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, resolution))
+    cells = list(dict.fromkeys(cells))
+    if not cells:
+        return 0.0
+    return sum(1 for c in cells if known.get(c) not in ("VISITED", "EXPLORED")) / len(cells)
+
+
+async def _way_shape(
+    db: AsyncSession,
+    shape: shapes.LoopShape,
+    start: Coordinate,
+    way: str | None,
+    target_km: float,
+    known: dict[str, str],
+    resolution: int,
+) -> shapes.LoopShape:
+    """A quest's loop bent for one of its ways. A loop whose way home passes
+    objectives of its own has no point to move, and stays as it is.
+
+    * The long way: on the other side from the loop, pulled out for 1.5× the
+      quest's distance (the caller asks for it) and at least 0.5× the line.
+    * New ground: the side and the reach whose polygon crosses the most cells the
+      rider has never been, by straight lines; the engine's road decides the rest.
+    """
+    if shape.offset is None or way not in (shapes.WAY_LONG, shapes.WAY_NEW_GROUND):
+        return shape
+    destination = _coordinate(shape.destination)
+    direct = haversine_m(start.latitude, start.longitude, *shape.destination)
+    if way == shapes.WAY_LONG:
+        side = -shape.offset_side
+        factor = max(shapes.LONG_WAY_MIN_FACTOR, shapes.offset_factor_for(direct, target_km * 1000))
+    else:
+        home = (start.latitude, start.longitude)
+        candidates = [
+            (side, factor) for side in (shape.offset_side, -shape.offset_side) for factor in shapes.NEW_GROUND_FACTORS
+        ]
+
+        def newness(candidate: tuple[int, float]) -> float:
+            side, factor = candidate
+            spot = _offset_point(start, destination, 0.5, side * shapes.offset_distance_m(direct, factor))
+            return _unknown_share([home, *shape.via, shape.destination, spot, home], known, resolution)
+
+        side, factor = max(candidates, key=newness)
+    spot = await _offset_spot(db, start, destination, side, factor)
+    return replace(shape, offset=spot, offset_side=side, offset_factor=factor)
+
+
+def _newest_heading(start: Coordinate, target_km: float, known: dict[str, str], resolution: int) -> float:
+    """The way a circle loop of this length sets off to cross the most cells the
+    rider has never been (every 45°, by the circle's straight sides)."""
+    radius = target_km * 1000 / (2 * math.pi) / 1.25
+    home = (start.latitude, start.longitude)
+
+    def newness(bearing: float) -> float:
+        centre = destination_point(*home, bearing, radius)
+        ring = [destination_point(*centre, (bearing + 180 + 30 * k) % 360, radius) for k in range(13)]
+        return _unknown_share(ring, known, resolution)
+
+    return max((45.0 * k for k in range(8)), key=newness)
+
+
 def _loop_destination_slots(
     plan: _Plan,
     variants: list[Variant],
@@ -1513,17 +1674,22 @@ def _loop_destination_slots(
     """
     main, plain, third = _roles(variants)
     plain = _wider(plain)
-    assert plan.destination is not None
-    destination = plan.destination
+    destination = _coordinate(main_shape.destination)
     side = main_shape.offset_side
     chosen = list(main.stops)
+    # A quest whose way back passes objectives of its own needs no point to pull it wide.
+    pulled = not main_shape.back_via
 
     async def as_asked() -> tuple[shapes.LoopShape, list[Discovery]] | None:
         return main_shape, chosen
 
     async def cheapest() -> tuple[shapes.LoopShape, list[Discovery]] | None:
         taken = [main_shape.offset] if main_shape.offset else None
-        spot = await _offset_spot(plan.db, plan.start, destination, side, shapes.DIRECT_OFFSET_FACTOR, taken)
+        spot = (
+            await _offset_spot(plan.db, plan.start, destination, side, shapes.DIRECT_OFFSET_FACTOR, taken)
+            if pulled
+            else None
+        )
         return replace(
             main_shape,
             out_stops=(),
@@ -1558,21 +1724,25 @@ def _loop_destination_slots(
             offset_factor=shapes.OFFSET_FACTOR,
             through=True,
         )
-        if not back:
+        if not back and pulled:
             shape = replace(
                 shape, offset=await _offset_spot(plan.db, plan.start, destination, -out_side, shapes.OFFSET_FACTOR)
             )
         return shape, picked
 
     async def long_way() -> tuple[shapes.LoopShape, list[Discovery]] | None:
-        spot = await _offset_spot(plan.db, plan.start, destination, -side, shapes.LONG_OFFSET_FACTOR)
+        if not pulled:
+            return None
+        # A quest's loop may already be wider than the long way's usual 0.35×.
+        factor = max(shapes.LONG_OFFSET_FACTOR, main_shape.offset_factor)
+        spot = await _offset_spot(plan.db, plan.start, destination, -side, factor)
         return replace(
             main_shape,
             out_stops=(),
             back_stops=(),
             offset=spot,
             offset_side=-side,
-            offset_factor=shapes.LONG_OFFSET_FACTOR,
+            offset_factor=factor,
             through=True,
         ), []
 
@@ -1659,8 +1829,53 @@ async def _plain_card(
     if not routes:
         return None
     cards.pool.extend((alt, request, variant) for alt in routes[1:])
-    retrace = overlap.self_overlap(routes[0].coordinates) if plan.loop else None
-    return _Card(label, variant, routes[0], request, direct=direct, self_overlap=retrace)
+    er = routes[0]
+    retrace = overlap.self_overlap(er.coordinates) if plan.loop else None
+    if (
+        retrace is not None
+        and len(points) > 2
+        and (retrace > shapes.SELF_OVERLAP_MAX or overlap.ridden_twice(er.coordinates) > shapes.RIDDEN_TWICE_MAX)
+        and cards.affordable()
+    ):
+        er, retrace = await _home_another_way(cards, variant, index, label, points, er, retrace)
+    return _Card(label, variant, er, request, direct=direct, self_overlap=retrace)
+
+
+async def _home_another_way(
+    cards: _Cards,
+    variant: Variant,
+    index: int,
+    label: str,
+    points: list[tuple[float, float]],
+    er: EngineRoute,
+    retrace: float,
+) -> tuple[EngineRoute, float]:
+    """A loop through stops whose way home rides its way out: the way home asked for
+    again from the stop where the loop turns, kept off the way out, and joined to it
+    (as `_loop_card` does for a loop to a place). The first answer stands unless the
+    joined one rides less of itself twice (`overlap.ridden_twice`)."""
+    coords = er.coordinates
+    lon, lat = coords[overlap.turn_index(coords)][:2]
+    turn = min(range(1, len(points) - 1), key=lambda i: haversine_m(lat, lon, *points[i]))
+    at = min(range(len(coords)), key=lambda i: haversine_m(*points[turn], coords[i][1], coords[i][0]))
+    if not 0 < at < len(coords) - 1:
+        return er, retrace
+    out = head_of(er, at)
+    avoid = overlap.exclusion_samples(
+        out.coordinates,
+        avoid=points[1:-1],
+        manoeuvres=[(i["latitude"], i["longitude"]) for i in out.instructions if i.get("latitude") is not None],
+    )
+    if not avoid:
+        return er, retrace
+    request = _request_for(cards.plan, variant, index, points[turn:], exclude_points=avoid, details=False)
+    routes, _ = await _attempt(cards.plan, request, label)
+    if not routes:
+        return er, retrace
+    joined = join_routes(out, routes[0])
+    if overlap.ridden_twice(joined.coordinates) >= overlap.ridden_twice(er.coordinates):
+        return er, retrace
+    return joined, overlap.self_overlap(joined.coordinates)
 
 
 def _plain(
@@ -1784,17 +1999,16 @@ def _loop_stops_slots(
     appeal_weight: float,
     max_ring_m: float | None,
 ) -> list[list[_Candidate]]:
-    """A loop through stops: as asked; Direct through the nearer half of them, at
-    least two (a round trip under three: one stop is there and back on one road);
-    and other stops, none of the first card's, turned half a sector — else the third
-    costing through the same stops."""
+    """A loop through stops: as asked; Direct through half of them, at least two, that
+    make the shortest loop that opens out from the start (a round trip under three:
+    one stop is there and back on one road); and other stops, none of the first
+    card's, turned half a sector — else the third costing through the same stops."""
     main, plain, third = _roles(variants)
     chosen = list(main.stops)
     start = plan.start
-    nearest = sorted(chosen, key=lambda p: haversine_m(start.latitude, start.longitude, p.latitude, p.longitude))
     # One stop would be there and back on one road; under three, it is a plain loop.
     fewer = max(2, math.ceil(len(chosen) / 2)) if len(chosen) >= 3 else 0
-    plain = replace(_wider(plain), stops=_tour(start.latitude, start.longitude, nearest[:fewer]))
+    plain = replace(_wider(plain), stops=_round_stops(start.latitude, start.longitude, chosen, fewer) if fewer else [])
 
     async def other_stops(cards: _Cards, first: bool) -> _Card | None:
         bearings = [bearing_deg(start.latitude, start.longitude, p.latitude, p.longitude) for p in chosen]
@@ -1856,14 +2070,19 @@ async def generate(
     *,
     max_variants: int | None = None,
     details: bool = True,
+    way: str | None = None,
+    calls: int = budget.PLAN_CALLS,
 ) -> tuple[list[tuple[Route, dict[str, float]]], dict[str, Any] | None]:
     """`max_variants` is for callers that want one route and not a choice of three:
     every variant is an engine request, and a quest's own route needs only the first.
 
-    One plan, one budget of engine requests (`budget.py`). `details=False` skips the
-    surface and road-class request (the quest board's prefetch on Valhalla)."""
-    with budget.plan_budget():
-        return await _generate(db, settings, engine, llm, user, payload, max_variants=max_variants, details=details)
+    One plan, one budget of `calls` engine requests (`budget.py`). `details=False`
+    skips the surface and road-class request (the quest board's prefetch on Valhalla).
+    `way` is one of a quest's ways (`shapes.WAYS`, `quest_ways.py`)."""
+    with budget.plan_budget(calls):
+        return await _generate(
+            db, settings, engine, llm, user, payload, max_variants=max_variants, details=details, way=way
+        )
 
 
 async def _generate(
@@ -1876,6 +2095,7 @@ async def _generate(
     *,
     max_variants: int | None = None,
     details: bool = True,
+    way: str | None = None,
 ) -> tuple[list[tuple[Route, dict[str, float]]], dict[str, Any] | None]:
     profile: RiderProfile = await get_rider_profile(db, user.id)
     # How the player moves: asked for, or however they usually do. On foot there is
@@ -1900,6 +2120,13 @@ async def _generate(
         if quest is None or quest.user_id != user.id:
             raise NotFound("We couldn't find that quest. It may have ended, so check the quest board.")
     targets = _quest_targets(quest)
+    if way == shapes.WAY_ONE_WAY:
+        # One way ends at the objective furthest from the start, the others on the way.
+        here = payload.origin
+        targets = QuestTargets(
+            sorted(targets.points, key=lambda t: haversine_m(here.latitude, here.longitude, t[0], t[1])),
+            targets.return_to_start,
+        )
 
     base_prefs = RoutePreferences(
         trafficAversion=1 - profile.traffic_tolerance,
@@ -1914,6 +2141,9 @@ async def _generate(
     if payload.preferences:
         for k, v in payload.preferences.model_dump().items():
             setattr(base_prefs, k, v)
+    if way == shapes.WAY_QUIET:
+        base_prefs.trafficAversion = max(base_prefs.trafficAversion, QUIET_TRAFFIC_AVERSION)
+        base_prefs.cyclewayPreference = max(base_prefs.cyclewayPreference, QUIET_CYCLEWAY)
     parsed_dict: dict[str, Any] | None = None
     started = monotonic()
     if payload.request and settings.flags.get("nl_route_requests", True):
@@ -2054,9 +2284,22 @@ async def _generate(
         if payload.loop is not None
         else (base_prefs.loop if base_prefs.loop is not None else destination is None)
     )
-    # Cards as shapes (0.9.2): every plan but a quest's or one through the planner's
-    # own waypoints (a rune's shape, a sealed quest), which keep their points.
-    shaped = shapes_on and quest is None and not payload.waypoints and not targets.points
+    # A quest's loop with somewhere to go turns at its furthest objective and comes
+    # home another way; `[O, T, O]` rode the same road there and back.
+    quest_loop = (
+        shapes_on
+        and bool(loop)
+        and destination is None
+        and not payload.waypoints
+        # An objective at the start leaves no line to turn on.
+        and any(
+            haversine_m(start.latitude, start.longitude, lat, lon) > QUEST_LOOP_MIN_M for lat, lon, _ in targets.points
+        )
+    )
+    # Cards as shapes (0.9.2): every plan but one through the planner's own
+    # waypoints (a rune's shape), which keeps its points, and a quest's that is not
+    # a loop to somewhere.
+    shaped = shapes_on and not payload.waypoints and ((quest is None and not targets.points) or quest_loop)
     loop_destination = shaped and destination is not None and bool(loop)
     # Riding somewhere has its own length: the way there and, if they asked to come
     # home, the way back. Scoring against the rider's usual 30 km would mark a 6 km
@@ -2178,7 +2421,14 @@ async def _generate(
         16,
     )
     main_shape: shapes.LoopShape | None = None
-    if loop_destination:
+    known = await known_cells(db, user.id)
+    heading: float | None = None
+    if quest_loop:
+        main_shape = await _quest_loop_shape(db, start, targets, target_km, seed_base)
+        main_shape = await _way_shape(db, main_shape, start, way, target_km, known, settings.h3_resolution)
+    elif way == shapes.WAY_NEW_GROUND and loop and destination is None and not targets.points:
+        heading = _newest_heading(start, target_km, known, settings.h3_resolution)
+    elif loop_destination:
         assert destination is not None
         main_shape = await _main_loop_shape(db, start, destination, via, out_stops, back_stops, out_side, seed_base)
         if typed_destination and not (base_prefs.distanceKm or {}).get("target"):
@@ -2200,7 +2450,6 @@ async def _generate(
         )
     )
 
-    known = await known_cells(db, user.id)
     poi_candidates = await discoveries_nearby(
         db,
         start.latitude,
@@ -2249,13 +2498,15 @@ async def _generate(
         seed_base=seed_base,
         details=details,
         shaped=shaped,
+        heading=heading,
     )
     routing = monotonic()
     variants = _variants(base_prefs, usual_prefs, requested_stops, labels, cfg, asked)
     # Which shapes the cards take (docs/ROUTING.md, "Cards that differ").
     slots: list[list[_Candidate]] | None = None
     case: str | None = None
-    if loop_destination and main_shape is not None:
+    # A quest planned with stops typed in is a loop through them and its objectives.
+    if (loop_destination or (quest_loop and not requested_stops)) and main_shape is not None:
         case, slots = "loop", _loop_destination_slots(plan, variants, main_shape, categories, wanted, appeal_weight)
     elif shaped and destination is not None:
         if asked:
