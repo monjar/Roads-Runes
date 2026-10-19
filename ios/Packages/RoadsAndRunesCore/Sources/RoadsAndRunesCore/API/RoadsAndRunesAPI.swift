@@ -133,6 +133,10 @@ public protocol RoadsAndRunesAPI: Sendable {
     /// The quest's route from where the player is: stable while they stay about there,
     /// drawn again once they have moved. With no origin, whatever route it last had.
     func questRoute(id: UUID, from origin: Coordinate?) async throws -> RouteOption
+    /// Every way to ride the quest from where the player is, the loop first, and the one it has now.
+    func questWays(id: UUID, from origin: Coordinate?) async throws -> QuestWays
+    /// Makes one of the quest's ways its route; the quest comes back with that route's distance and time.
+    func chooseQuestWay(id: UUID, routeId: UUID) async throws -> Quest
     /// The rest of a ride from where the rider is, when they have left the route.
     func reroute(routeId: UUID, _ request: RerouteRequest) async throws -> RouteOption
     /// Downloads the route as a file (a FIT course by default) to a temporary file named

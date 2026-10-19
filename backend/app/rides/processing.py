@@ -46,6 +46,7 @@ from app.quests.service import all_required_complete, completion_payload, quest_
 from app.quests.state_machine import assert_transition
 from app.rides.models import Ride, RidePoint, RideRoute
 from app.rides.validation import CleanPoint, as_raw, check_cell_plausibility, validate_points
+from app.routing import quest_ways
 from app.social.service import publish
 from app.users.models import User
 from app.world_objects import lairs
@@ -310,6 +311,7 @@ async def _reward_for_ride(
     wrote_note: bool = False,
     days_away: int | None = None,
     regions_completed: int = 0,
+    way_bonus: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     inp = RideRewardInput(
         character_class=character.character_class,
@@ -337,6 +339,7 @@ async def _reward_for_ride(
         optional_xp_scale=float(sheet.rules.get("OPTIONAL_XP_SCALE", 1.0)) if sheet else 1.0,
         foot_xp_scale=float(sheet.rules.get("FOOT_XP_SCALE", 1.0)) if sheet else 1.0,
         regions_completed=regions_completed,
+        way_bonus=(way_bonus["name"], way_bonus["xp"]) if way_bonus else None,
     )
     lines = compute_ride_xp(inp)
     outcome = await grant(db, character, lines, ride_id=ride.id, quest_id=quest.id if quest else None)
@@ -622,6 +625,12 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             also_finished = {"id": str(candidate.id), "title": candidate.title}
             log.info("quest_finished_on_the_way", ride_id=str(ride.id), quest_id=str(candidate.id))
 
+    # The way the quest was ridden, when it has a bonus the journey earned.
+    way_bonus = (
+        await quest_ways.bonus_earned(db, ride, quest, exploration.new_territory_m)
+        if quest_completed and not validation.suspicious
+        else None
+    )
     arc: dict[str, Any] | None = None
     reward: dict[str, Any] = {
         "xpAwarded": 0,
@@ -646,6 +655,7 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
             wrote_note=_wrote_note(ride),
             days_away=await _days_away(db, ride),
             regions_completed=len((district_run or {}).get("completed") or []),
+            way_bonus=way_bonus,
         )
     # What a legend's phase paid (0.8.0): its XP, levels and title join the journey's.
     reward = merge_paid_xp(reward, legend)
@@ -679,6 +689,8 @@ async def process_ride(db: AsyncSession, settings: Settings, ride_id: uuid.UUID)
         streak = await update_streak(db, ride.user_id, ended.date(), ride.distance_meters)
         extra = streak_lines(streak)
         extra += [ACLine("SET_COMPLETED", done["bonusAC"], {"set": done["name"]}) for done in claims.sets_completed]
+        if way_bonus and way_bonus["ac"] > 0:
+            extra.append(ACLine("QUEST_WAY", way_bonus["ac"], {"way": way_bonus["name"]}))
         coins = await economy.credit_lines(
             db,
             ride.user_id,

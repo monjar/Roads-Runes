@@ -87,6 +87,8 @@ final class FlakyAPI: RoadsAndRunesAPI, @unchecked Sendable {
     func route(id: UUID) async throws -> RouteOption { try await inner.route(id: id) }
     func routePackage(id: UUID) async throws -> RoutePackage { try await inner.routePackage(id: id) }
     func questRoute(id: UUID, from origin: Coordinate?) async throws -> RouteOption { try await inner.questRoute(id: id, from: origin) }
+    func questWays(id: UUID, from origin: Coordinate?) async throws -> QuestWays { try await inner.questWays(id: id, from: origin) }
+    func chooseQuestWay(id: UUID, routeId: UUID) async throws -> Quest { try await inner.chooseQuestWay(id: id, routeId: routeId) }
     func reroute(routeId: UUID, _ request: RerouteRequest) async throws -> RouteOption { try await inner.reroute(routeId: routeId, request) }
     func downloadRouteExport(id: UUID, format: RouteExportFormat) async throws -> URL { try await inner.downloadRouteExport(id: id, format: format) }
     func downloadRideExport(id: UUID, format: RideExportFormat) async throws -> URL { try await inner.downloadRideExport(id: id, format: format) }

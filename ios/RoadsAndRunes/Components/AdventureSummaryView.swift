@@ -84,7 +84,7 @@ struct AdventureSummaryView: View {
                             if stage >= .legend, let legend = summary.legend { LegendOutcomeSection(outcome: legend).id(Stage.legend) }
                             if stage >= .legend, let woke = summary.legendWoke { LegendWokeLine(woke: woke) }
                             if stage >= .xp, animated, let character { levelBar(character) }
-                            if stage >= .lines, !xpLines.isEmpty { breakdown(xpLines.map { (RewardCopy.xp(source: $0.source, className: className), "+\($0.xp)") }).id(Stage.lines) }
+                            if stage >= .lines, !xpLines.isEmpty { breakdown(xpLines.map { (RewardCopy.xp(source: $0.source, className: className, detail: $0.detail), "+\($0.xp)") }).id(Stage.lines) }
                             if stage >= .coins, coins > 0 { coinSection.id(Stage.coins) }
                             if stage >= .levels { levelCards.id(Stage.levels) }
                             if stage >= .world { worldSection.id(Stage.world) }
@@ -362,7 +362,7 @@ struct AdventureSummaryView: View {
             if !coinLines.isEmpty {
                 FlowLayout(spacing: 6) {
                     ForEach(Array(coinLines.enumerated()), id: \.offset) { _, line in
-                        Text("\(RewardCopy.coins(kind: line.kind)) +\(line.ac)")
+                        Text("\(RewardCopy.coins(kind: line.kind, detail: line.detail)) +\(line.ac)")
                             .font(Theme.Typography.caption)
                             .foregroundStyle(Theme.Colors.inkSoft)
                             .padding(.horizontal, 10).padding(.vertical, 5)

@@ -126,6 +126,9 @@ class RideRewardInput:
     optional_xp_scale: float = 1.0
     # XP for distance × this on a run or a walk (Mannaz, FOOT_XP_SCALE), 0.9.0.
     foot_xp_scale: float = 1.0
+    # A quest finished on a way with a bonus that the journey earned (the long way,
+    # new ground; routing/quest_ways.py): its name and XP.
+    way_bonus: tuple[str, int] | None = None
 
 
 CLAIM_SOURCES = {"CHEST": "CHEST_OPENED", "COLLECTABLE": "COLLECTABLE_FOUND", "MONSTER": "MONSTER_BEATEN"}
@@ -178,6 +181,8 @@ def compute_ride_xp(inp: RideRewardInput) -> list[XPLine]:
         )
         if inp.is_story_quest:
             lines.append(XPLine("STORY_QUEST_COMPLETED", rules["storyQuestBonus"]))
+        if inp.way_bonus and inp.way_bonus[1] > 0:
+            lines.append(XPLine("QUEST_WAY_BONUS", inp.way_bonus[1], {"way": inp.way_bonus[0]}))
 
     objective_xp = int(
         round(

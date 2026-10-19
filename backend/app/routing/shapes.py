@@ -74,6 +74,21 @@ STOP_OFFSET_FACTOR = 0.15
 STOP_OFFSET_MIN_M = 400.0
 STOP_OFFSET_MAX_M = 1500.0
 
+# The ways a quest can be ridden (`quest_ways.py`): planned one each, from the
+# quest's origin, and the rider picks one on the quest's page.
+WAY_LOOP = "LOOP"
+WAY_ONE_WAY = "ONE_WAY"
+WAY_QUIET = "QUIET"
+WAY_NEW_GROUND = "NEW_GROUND"
+WAY_LONG = "LONG_WAY"
+WAYS = (WAY_LOOP, WAY_ONE_WAY, WAY_QUIET, WAY_NEW_GROUND, WAY_LONG)
+# The long way is about this much longer than the quest asks, and pulled at least
+# this far off the line, on the other side from the loop.
+LONG_WAY_SCALE = 1.5
+LONG_WAY_MIN_FACTOR = 0.5
+# New ground looks at offset points this far off the line on both sides.
+NEW_GROUND_FACTORS = (OFFSET_FACTOR, 0.5)
+
 # Labels for cards that are a different shape rather than a different costing.
 ANOTHER_WAY = "Another way"
 LONG_WAY = "The long way"

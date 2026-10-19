@@ -268,6 +268,26 @@ What is left is the ground: the first few hundred metres from a start with one
 road out, and the 20-minute sealed goal up the Rotherhithe peninsula, where the
 Thames leaves one corridor in (69% after every retry).
 
+## A quest's ways (2026-10-19)
+
+`generate(..., way=)` plans one of a quest's ways (`shapes.WAYS`) for
+`quest_ways.py`, one card each, at most 5 requests each (`calls`), behind any
+rider waiting on the planner (`budget.background`):
+
+* `ONE_WAY`: `loop=False` and the objectives sorted nearest first, so the ride
+  ends at the furthest. The target is the straight lines through them × 1.25.
+* `QUIET`: traffic aversion raised to at least 0.95 and cycleways to 0.9.
+* `LONG_WAY`: the quest loop's offset point on the other side, sized for 1.5×
+  the loop's length and at least 0.5× the line (`_way_shape`). A circle quest
+  asks for a circle 1.5× as long.
+* `NEW_GROUND`: of the offset points on both sides at 0.30× and 0.5×, the one
+  whose polygon crosses the most cells never visited, judged by straight lines
+  every 200 m (`_unknown_share`). A circle quest sets off on the heading whose
+  circle crosses the most (`_newest_heading`, every 45°).
+
+A loop whose way home passes objectives of its own has no offset point to move.
+Its long way and new ground usually come back as the loop, and are left out.
+
 ## Engine
 
 The hosted backend routes on the public Valhalla server (`ROUTING_ENGINE=valhalla`,

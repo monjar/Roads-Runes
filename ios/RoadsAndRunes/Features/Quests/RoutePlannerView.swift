@@ -458,7 +458,7 @@ struct RoutePlannerView: View {
                             RouteCard(
                                 route: route, selected: model.selected?.id == route.id, units: model.units,
                                 bestMatch: model.bestMatchId == route.id,
-                                badge: route.id == model.questRoute?.id ? "Quest route" : nil,
+                                badge: route.id == model.questRoute?.id ? (route.questWay?.displayName ?? "Quest route") : nil,
                                 tradeOff: model.tradeOff(for: route)
                             )
                         }

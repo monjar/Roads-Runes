@@ -18,10 +18,13 @@ from app.quests.schemas import (
     QuestOut,
     QuestProgressRequest,
     QuestStartRequest,
+    QuestWayChoice,
+    QuestWaysOut,
     SealedQuestRequest,
     StoryArcOut,
     WeekNoticeOut,
 )
+from app.routing import quest_ways
 from app.routing import service as routing
 from app.routing.schemas import RouteOptionOut
 
@@ -155,6 +158,33 @@ async def route(
     )
     chosen, components = await routing.quest_route(db, settings, engine, llm, user, quest_id, origin)  # type: ignore[arg-type]
     return routing.route_out(chosen, components)
+
+
+@router.get("/{quest_id}/ways", response_model=QuestWaysOut)
+async def ways(
+    quest_id: uuid.UUID,
+    user: CurrentUser,
+    db: DBDep,
+    settings: SettingsDep,
+    engine: Annotated[object, Depends(get_router_client)],
+    llm: Annotated[object, Depends(get_llm)],
+    latitude: float | None = Query(default=None, ge=-90, le=90),
+    longitude: float | None = Query(default=None, ge=-180, le=180),
+) -> QuestWaysOut:
+    """The ways to ride the quest from where the player is (a loop, one way, quiet
+    roads, new ground, the long way), the chosen one marked, and why any is missing."""
+    origin = (
+        Coordinate(latitude=latitude, longitude=longitude) if latitude is not None and longitude is not None else None
+    )
+    found = await quest_ways.quest_ways(db, settings, engine, llm, user, quest_id, origin)  # type: ignore[arg-type]
+    return QuestWaysOut(**found)
+
+
+@router.post("/{quest_id}/way", response_model=QuestOut)
+async def choose_way(quest_id: uuid.UUID, payload: QuestWayChoice, user: CurrentUser, db: DBDep) -> QuestOut:
+    """One of the quest's ways becomes its route: the board, the planner and the
+    Watch follow it."""
+    return service.quest_out(await quest_ways.choose(db, user, quest_id, payload.routeId))
 
 
 @router.post("/{quest_id}/accept", response_model=QuestOut)

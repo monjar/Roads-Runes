@@ -181,3 +181,29 @@ class QuestCompletion(APIModel):
     storyProgress: dict[str, Any] | None = None
     # The quest's item reward, given (ItemFoundOut), 0.7.2.
     itemsFound: list[dict[str, Any]] = []
+
+
+class QuestWayBonus(APIModel):
+    xp: int
+    ac: int
+    condition: str
+
+
+class QuestWayOut(APIModel):
+    """One way to ride a quest (2026-10-19, app/routing/quest_ways.py)."""
+
+    kind: Literal["LOOP", "ONE_WAY", "QUIET", "NEW_GROUND", "LONG_WAY"]
+    name: str
+    summary: str
+    bonus: QuestWayBonus | None = None
+    route: Any  # RouteOptionOut
+
+
+class QuestWaysOut(APIModel):
+    ways: list[QuestWayOut]
+    chosenRouteId: uuid.UUID | None = None
+    notes: list[str] = []
+
+
+class QuestWayChoice(APIModel):
+    routeId: uuid.UUID

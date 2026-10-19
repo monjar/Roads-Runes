@@ -80,6 +80,9 @@ class RouteOptionOut(APIModel):
     # 0.9.2: on a loop, the share of the way back that rides the way out (0..1); null
     # on a ride one way, or where it was not measured.
     selfOverlap: float | None = None
+    # 2026-10-19: which of its quest's ways this is (LOOP, ONE_WAY, QUIET, NEW_GROUND,
+    # LONG_WAY); null for a route that is not one.
+    questWay: str | None = None
     pois: list[dict[str, Any]]
     coordinates: list[list[float]]
     encodedPolyline: str

@@ -3,8 +3,9 @@ import Foundation
 /// The words Journey's end uses for what a journey earned and what got away. Kept
 /// here, away from the views, so the copy can be tested and the Watch can share it.
 public enum RewardCopy {
-    /// A line of the XP breakdown, in plain words.
-    public static func xp(source: String, className: String? = nil) -> String {
+    /// A line of the XP breakdown, in plain words. `detail` is the line's own, for
+    /// the lines that name something (the way a quest was ridden).
+    public static func xp(source: String, className: String? = nil, detail: JSONValue? = nil) -> String {
         switch source {
         case "QUEST_COMPLETED": return "Quest"
         case "STORY_QUEST_COMPLETED": return "Story quest"
@@ -28,12 +29,13 @@ public enum RewardCopy {
         case "WEEK_NOTICE": return "This week's notice"
         case "REGION_COMPLETED": return "Region complete"
         case "CLASS_BONUS": return className.map { "\($0) bonus" } ?? "Class bonus"
+        case "QUEST_WAY_BONUS": return wayBonus(detail)
         default: return humanised(source)
         }
     }
 
     /// A line of the coin breakdown.
-    public static func coins(kind: String) -> String {
+    public static func coins(kind: String, detail: JSONValue? = nil) -> String {
         switch kind {
         case "RIDE_DISTANCE": return "Distance"
         case "NEW_CELLS": return "New tiles"
@@ -50,6 +52,7 @@ public enum RewardCopy {
         case "LEVEL_REWARD": return "Level reward"
         case "DISTRICT": return "District complete"
         case "DISTRICT_PAY": return "Weekly pay from your districts"
+        case "QUEST_WAY": return wayBonus(detail)
         default: return humanised(kind)
         }
     }
@@ -97,6 +100,12 @@ public enum RewardCopy {
     public static func pace(_ secondsPerUnit: Double) -> String {
         let total = Int(secondsPerUnit.rounded())
         return "\(total / 60):\(String(format: "%02d", total % 60))"
+    }
+
+    /// "The long way bonus", from the way named in the line's detail; "Way bonus" without one.
+    static func wayBonus(_ detail: JSONValue?) -> String {
+        guard let way = detail?["way"]?.stringValue?.trimmingCharacters(in: .whitespaces), !way.isEmpty else { return "Way bonus" }
+        return "\(way) bonus"
     }
 
     static func spelled(_ number: Int) -> String {

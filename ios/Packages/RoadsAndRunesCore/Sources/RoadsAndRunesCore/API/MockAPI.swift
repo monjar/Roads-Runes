@@ -45,6 +45,8 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     var storedRiderProfile: RiderProfile
     var storedQuests: [UUID: Quest]
     var storedRoutes: [UUID: RouteOption]
+    /// The ways drawn for each quest (`questWays`), by quest id; drawn again when its route is.
+    var storedWays: [UUID: [QuestWay]] = [:]
     var storedRides: [UUID: Ride]
     var rideNotes: [UUID: String] = [:]
     var summaryPolls: [UUID: Int] = [:]
@@ -550,23 +552,27 @@ public final class MockAPI: RoadsAndRunesAPI, @unchecked Sendable {
     // MARK: Routes
 
     public func questRoute(id: UUID, from origin: Coordinate?) async throws -> RouteOption {
-        try await run {
-            var quest = try self.requireQuest(id)
-            // Like the server: the same route while the player stays about where it starts.
-            let moved = origin.map { GeoMath.distance($0, quest.origin) > 150 } ?? false
-            if !moved, let routeId = quest.suggestedRouteId, let route = self.storedRoutes[routeId] { return route }
-            var route = SampleData.sampleRoute
-            route.id = UUID()
-            route.label = "Adventure"
-            if moved, let origin, let start = route.path.first {
-                route = Self.moved(route, byLatitude: origin.latitude - start.latitude, longitude: origin.longitude - start.longitude)
-                quest.origin = origin
-            }
-            self.storedRoutes[route.id] = route
-            quest.suggestedRouteId = route.id
-            self.storedQuests[id] = quest
-            return route
+        try await run { try self.currentQuestRoute(id, from: origin) }
+    }
+
+    /// The quest's route as it stands, drawn afresh when there is none or the player has
+    /// moved. Called with the lock held.
+    func currentQuestRoute(_ id: UUID, from origin: Coordinate?) throws -> RouteOption {
+        var quest = try requireQuest(id)
+        // Like the server: the same route while the player stays about where it starts.
+        let moved = origin.map { GeoMath.distance($0, quest.origin) > 150 } ?? false
+        if !moved, let routeId = quest.suggestedRouteId, let route = storedRoutes[routeId] { return route }
+        var route = SampleData.sampleRoute
+        route.id = UUID()
+        route.label = "Adventure"
+        if moved, let origin, let start = route.path.first {
+            route = Self.moved(route, byLatitude: origin.latitude - start.latitude, longitude: origin.longitude - start.longitude)
+            quest.origin = origin
         }
+        storedRoutes[route.id] = route
+        quest.suggestedRouteId = route.id
+        storedQuests[id] = quest
+        return route
     }
 
     /// One straight way from the rider to where the route was going: enough to tell a

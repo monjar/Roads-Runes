@@ -23,6 +23,19 @@
   `app/quests/config/story_arcs.json` and on in the deployed flags (see "Story
   arcs" below).
 
+## Ways to ride it (2026-10-19)
+
+A quest is not always a loop. Its page offers its ways (`GET /quests/{id}/ways`,
+`app/routing/quest_ways.py`): Loop, One way (ending at the furthest objective,
+unless coming home is required), Quiet roads, New ground and The long way. Each
+is planned once from the quest's origin. One that comes back as the same road
+as another is left out, and the page says why. The rider's pick becomes the
+quest's route (`POST /quests/{id}/way`). The board's distance, the planner and
+the Watch's "Start quest" then follow it.
+
+Rewards stay the quest's own. The long way and new ground add a small bonus,
+paid only when the journey did what the way promised (`ways.json`).
+
 ## State machine
 
 ```
