@@ -19,7 +19,7 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("General") {
+            FormSection("General") {
                 Picker("Battery mode", selection: $settings.batteryMode) {
                     ForEach([BatteryMode.full, .balanced, .endurance], id: \.self) { Text($0.rawValue.capitalized).tag($0) }
                 }
@@ -30,7 +30,7 @@ struct SettingsView: View {
                     Text("Metric").tag(Units.metric); Text("Imperial").tag(Units.imperial)
                 }
             }
-            Section("Sound on a journey") {
+            FormSection("Sound on a journey") {
                 Picker("Sound", selection: Binding(
                     get: { container.mapPreferences.rideSound },
                     set: { sound in
@@ -52,7 +52,7 @@ struct SettingsView: View {
                 .disabled(container.mapPreferences.rideSound == .off)
                 .accessibilityIdentifier("settings.hearAFight")
             }
-            Section("Privacy") {
+            FormSection("Privacy") {
                 Picker("New journeys are", selection: $settings.defaultRideVisibility) {
                     Text("Private").tag(RoadsAndRunesCore.Visibility.privateOnly)
                     Text("Friends").tag(RoadsAndRunesCore.Visibility.friends)
@@ -60,12 +60,12 @@ struct SettingsView: View {
                 }
                 Text("Your live location, and where your journeys start and end, are never shown to anyone.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
             }
-            Section("Strava") {
+            FormSection("Strava") {
                 Picker("Send to Strava", selection: $settings.stravaUploadMode) {
                     Text("Never").tag(StravaUploadMode.never); Text("Ask every time").tag(StravaUploadMode.ask); Text("Automatically").tag(StravaUploadMode.auto)
                 }
             }
-            Section("Reminders") {
+            FormSection("Reminders") {
                 Toggle("Streak and bounty reminders", isOn: Binding(
                     get: { container.nudges.isEnabled },
                     set: { enabled in
@@ -76,7 +76,7 @@ struct SettingsView: View {
                 Text("One in the evening if your streak is about to end, and one in the morning when the day's bounty is out. Nothing else, and nothing leaves your phone.")
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
             }
-            Section("Character") {
+            FormSection("Character") {
                 Button {
                     changingClass = true
                 } label: {
@@ -92,20 +92,22 @@ struct SettingsView: View {
                 Text("Your level, XP, coins and places found stay. Your first change is free; after that it costs coins and you wait a day between changes.")
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
                 Button("Start over", role: .destructive) { confirmingReset = true }
+                    .themedDestructive()
                     .disabled(resetting)
                     .accessibilityIdentifier("settings.startOver")
                 Text("Deletes your character, quests, XP and coins so you can choose a class again. Your journeys stay in the Journal.")
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
             }
-            Section {
+            FormSection {
                 Button("Save") { Task { await container.session.update(settings: settings); container.mapPreferences.apply(settings: settings) } }
                 Button("Sign out", role: .destructive) { Task { await container.session.signOut() } }
+                    .themedDestructive()
             }
-            Section {
+            FormSection {
                 Button("How to play") { showingHowToPlay = true }
                     .accessibilityIdentifier("settings.howToPlay")
             }
-            Section("Credits") {
+            FormSection("Credits") {
                 // CC BY 3.0 asks for this: who drew the pictures, and where they are from.
                 Text("Icons by \(Self.iconAuthors) from game-icons.net, under CC BY 3.0.")
                     .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
@@ -113,6 +115,7 @@ struct SettingsView: View {
                     .font(Theme.Typography.caption)
             }
         }
+        .themedForm()
         .navigationTitle("Settings")
         .onAppear { settings = container.session.settings }
         .sheet(isPresented: $changingClass) { ClassChangeSheet() }
@@ -141,7 +144,7 @@ struct IntegrationsView: View {
 
     var body: some View {
         Form {
-            Section("Health") {
+            FormSection("Health") {
                 HStack {
                     Text("HealthKit")
                     Spacer()
@@ -152,13 +155,14 @@ struct IntegrationsView: View {
                 }
                 Text("Journeys are saved as cycling, running or walking workouts with route and heart rate. The app works fully without Health.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
             }
-            Section("Strava") {
+            FormSection("Strava") {
                 if let strava {
                     HStack { Text("Status"); Spacer(); Text(strava.connected ? (strava.athleteName ?? "Connected") : "Not connected").foregroundStyle(Theme.Colors.textSecondary) }
                     if strava.enabled == false {
                         Text("Strava isn't turned on for this server yet.").font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
                     } else if strava.connected {
                         Button("Disconnect", role: .destructive) { Task { try? await container.api.disconnectStrava(); await load() } }
+                            .themedDestructive()
                     } else {
                         Button("Connect Strava") { Task { await connect() } }
                     }
@@ -166,6 +170,7 @@ struct IntegrationsView: View {
                 if let error { Text(error).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.ember) }
             }
         }
+        .themedForm()
         .navigationTitle("Integrations")
         .task { await load() }
         .onChange(of: container.pendingStravaCode) { _, code in
