@@ -41,3 +41,7 @@ elevation-cache/
 .DS_Store
 
 secrets/
+
+# Claude Code: the shared skills are committed, local settings and worktrees are not.
+.claude/*
+!.claude/skills/
